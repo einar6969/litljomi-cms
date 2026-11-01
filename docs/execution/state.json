@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-01T23:24:18.075Z",
+  "updatedAt": "2026-11-01T23:32:33.345Z",
   "branch": "m1/phase-0",
   "tasks": [
     {
@@ -97,11 +97,24 @@
     },
     {
       "id": 2,
-      "status": "in_progress",
+      "status": "in_review",
       "commits": [
         "7933579"
       ],
-      "reviews": {},
+      "reviews": {
+        "spec": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-02-r1-spec.md",
+          "at": "2026-11-01T23:25:24.963Z"
+        },
+        "security": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-02-r1-security.md",
+          "at": "2026-11-01T23:32:33.345Z"
+        }
+      },
       "gatesUsed": [
         "G0",
         "G1"
