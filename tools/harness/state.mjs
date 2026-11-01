@@ -4,6 +4,7 @@
 //   show | start <task> | commit <task> <hash> | review <task> spec|security|quality pass|fail <report>
 //   block <task> "<text>" | unblock <task> | validate <gate-id> pass|fail|waived <evidence>
 //   done <task> | checkpoint C<n> <report> | render
+// "waived" is accepted only for V-HARNESS and V-CONNECTORS.
 // The root is HARNESS_ROOT if set (tests), otherwise the repository holding this file.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -19,6 +20,8 @@ export const VALIDATION_GATES = [
   'V-HARNESS', 'V-CONNECTORS', 'V-SANDBOX', 'V-HELPERS',
   ...Array.from({ length: 15 }, (_, i) => `A${i + 1}`),
 ];
+// Only these may be waived; security-critical validation gates must pass.
+const WAIVABLE_GATES = ['V-HARNESS', 'V-CONNECTORS'];
 export const CHECKPOINTS = ['C0', 'C1', 'C2', 'C3', 'C4'];
 const REVIEW_KINDS = ['spec', 'security', 'quality'];
 const USAGE = [
@@ -29,7 +32,7 @@ const USAGE = [
   '  review <task> spec|security|quality pass|fail <report-path>',
   '  block <task> "<text>"',
   '  unblock <task>',
-  '  validate <gate-id> pass|fail|waived <evidence-path>',
+  '  validate <gate-id> pass|fail|waived <evidence-path>   (waived only for V-HARNESS and V-CONNECTORS)',
   '  done <task>',
   '  checkpoint C<n> <report-path>',
   '  render',
@@ -298,6 +301,7 @@ function cmdValidate(ctx, root, args, now) {
   const [gate, result, evidence] = args;
   if (!VALIDATION_GATES.includes(gate)) throw usage(`unknown validation gate ${gate ?? '(none)'}`);
   if (!['pass', 'fail', 'waived'].includes(result)) throw usage(`result must be pass, fail or waived, got ${result ?? '(none)'}`);
+  if (result === 'waived' && !WAIVABLE_GATES.includes(gate)) throw usage(`${gate} cannot be waived; waived is only for ${WAIVABLE_GATES.join(' and ')}`);
   existingFile(root, evidence, 'evidence');
   ctx.state.validationGates[gate] = { status: result, evidence, at: now };
   return `${gate}: ${result}`;

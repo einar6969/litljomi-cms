@@ -210,10 +210,23 @@ test('validate records a validation gate with its evidence', withRoot((root) => 
   assert.notEqual(run(['validate', 'A99', 'pass', 'docs/execution/reviews/r.md'], { root }).code, 0);
 }));
 
-test('validate can waive a gate with a decision record, and refuses other results', withRoot((root) => {
+test('validate can waive a gate with evidence, and refuses other results', withRoot((root) => {
   assert.equal(run(['validate', 'V-CONNECTORS', 'waived', 'docs/execution/reviews/r.md'], { root }).code, 0);
   assert.equal(readState(root).validationGates['V-CONNECTORS'].status, 'waived');
   assert.notEqual(run(['validate', 'V-CONNECTORS', 'skipped', 'docs/execution/reviews/r.md'], { root }).code, 0);
+}));
+
+test('validate allows waived only for V-HARNESS and V-CONNECTORS', withRoot((root) => {
+  for (const gate of ['V-HARNESS', 'V-CONNECTORS']) {
+    assert.equal(run(['validate', gate, 'waived', 'docs/execution/reviews/r.md'], { root }).code, 0, gate);
+    assert.equal(readState(root).validationGates[gate].status, 'waived', gate);
+  }
+  for (const gate of ['V-SANDBOX', 'V-HELPERS', 'A1']) {
+    const r = run(['validate', gate, 'waived', 'docs/execution/reviews/r.md'], { root });
+    assert.notEqual(r.code, 0, gate);
+    assert.match(r.stderr, /waived/, gate);
+    assert.equal(readState(root).validationGates[gate].status, 'pending', gate);
+  }
 }));
 
 test('render writes progress.md containing every task', withRoot((root) => {
