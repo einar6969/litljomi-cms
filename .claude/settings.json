@@ -2,7 +2,6 @@
   "permissions": {
     "defaultMode": "acceptEdits",
     "disableBypassPermissionsMode": "disable",
-    "disableAutoMode": "disable",
     "deny": [
       "Bash(sudo *)",
       "Read(/.env)",

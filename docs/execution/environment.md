@@ -90,3 +90,14 @@ Session: controller, local Code tab, session `1851492d-583c-4e53-a3b1-108bbe1dd7
 - **Sandboxed commit:** the R2 commit `f34f4fbc849e1bc79cebcc1f94007e00d20f71bd` ("chore: simplify the execution setup (native permissions and sandbox)") ran sandboxed from a fresh `cms-implementer`, with no error and no prompt. This resolves the earlier blocker "Sandbox denies writes under .git/".
 
 **V-SANDBOX: pass.** Bash writes are limited to the working folders and temp, network is limited to the allowlist, and the sandboxed R2 commit succeeded. Known limitation: the three folders added in user settings are writable from this repository's sessions (see "Known limitations" above).
+
+## Decision 2026-11-01 (later): Auto mode permitted; Task 0 accepted
+
+Einar, in chat on 2026-11-01: "I accept the simplified execution setup and the completed R2–R4 work. Task 0 meets the intended acceptance criteria." and "enable Claude Code Auto mode for Litljómi CMS Hub going forward. I understand that Auto mode can approve tool calls without asking me individually, and that G0–G7 are behavioral approval boundaries rather than technically guaranteed restrictions. I'm comfortable with that trade-off for this development workflow."
+
+This supersedes, on this point only, the "never auto mode" requirement and the `disableAutoMode` setting in "Decision 2026-11-01: simplified execution" above.
+
+- **Changed:** `disableAutoMode` removed from `.claude/settings.json`. `disableBypassPermissionsMode` stays. `defaultMode` stays `acceptEdits`; Einar chooses Auto mode in the app.
+- **Unchanged:** Auto mode is not authorization for any G1–G7 action. Provisioning, pushing, deploying, DNS changes and touching the LABAK repository each need Einar's explicit approval in chat first, recorded in `gates.json`.
+- **Changed with it:** `state.mjs validate … waived` is accepted only for V-HARNESS and V-CONNECTORS (Einar: "Security-critical validation gates must not be waivable.").
+- **Limitation added:** in Auto mode, connector calls and other tool calls may run without a prompt. The known limitation above ("stopped only by permission prompts, which is why auto mode is disabled") no longer holds in Auto mode: there the gates rest on the controller and subagents following them, backed by the Bash sandbox and the network allowlist for shell commands only.
