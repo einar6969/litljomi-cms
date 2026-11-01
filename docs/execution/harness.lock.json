@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "lockedAt": "2026-11-01T20:34:29.636Z",
+  "files": {
+    ".claude/agents/cms-implementer.md": "cf136a2c17cbb794e4e479a5fe8b0da8025cb5dcecd21b4524d4ce60660ff24a",
+    ".claude/agents/cms-quality-reviewer.md": "e59033100b2e31cb6946be79367e1abef624a0c135e90ae37211fd0921af0c53",
+    ".claude/agents/cms-security-reviewer.md": "583a7de3d4615c174b544773921c119ac4d75553bf752d0c882db6eec894ea30",
+    ".claude/agents/cms-spec-reviewer.md": "e32163475fbe6a7e99038139b85a5a8a4dd8ca43676879e0d66604ba397e3692",
+    ".claude/hooks/guard.mjs": "b583336ab892a99187f066d69256c428368dda0f0457b78fa36593f99f6f2b50",
+    ".claude/hooks/session-start.mjs": "449a5bc6489b027606daab23c870fe14d1b5b9fc500d6120bcff05038dc321ab",
+    ".claude/settings.json": "e454cab6e944df66b3f2178a728b4eb3ab8c180de0886a15d567c1c26e6065e6",
+    "docs/execution/gates.json": "f787ffc2f0be704d638b223c22e5f2e010f81c96132504a11e12214cbd3d2eea",
+    "tools/harness/gate.mjs": "6fb3f54dadf0cf0def732ac2648366487cacdd1167f8eacb70f13bb11cb1ed8d",
+    "tools/harness/guard-lib.mjs": "80de746e85c2e22c5f774e118d99170d8f5c55c195eed4111d313701ca309934",
+    "tools/harness/integrity.mjs": "77b252780e6aa6372d2d18c7027d9d4095a53f65addd5698cd5ad9c42b564ffb",
+    "tools/harness/plan-index.json": "8d93737b3ac92990cc4e2ae493c544b9e2f415c7bee8445ca645b588fa0407dd"
+  }
+}

@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-01T20:25:38.340Z",
+  "updatedAt": "2026-11-01T20:38:51.944Z",
   "branch": "m1/phase-0",
   "tasks": [
     {
       "id": 0,
-      "status": "in_progress",
+      "status": "blocked",
       "commits": [
         "e6b59c8faa0afb3dd9d8b23d8679fee66dc7a079"
       ],
@@ -13,7 +13,20 @@
       "gatesUsed": [
         "G0"
       ],
-      "blockers": [],
+      "blockers": [
+        {
+          "text": "V-CONNECTORS failed on 2026-11-01: Claude Docs, built-in browser (Claude_Browser) and Playwright MCP are available in the implementation session. Einar switches them off in the app and opens a new session; the controller re-runs the audit before Steps 9-11.",
+          "at": "2026-11-01T20:38:15.237Z",
+          "previousStatus": "in_progress",
+          "resolvedAt": null
+        },
+        {
+          "text": "Sandbox denies writes under .git/ (git add/commit: index.lock Operation not permitted, 2026-11-01). No commit can run sandboxed; the lock file and audit record are uncommitted. Needs Einar's decision (harness change) before any commit step.",
+          "at": "2026-11-01T20:38:51.944Z",
+          "previousStatus": "blocked",
+          "resolvedAt": null
+        }
+      ],
       "notes": "Steps 1-6 done on 2026-11-01 in the LABAK workspace session (harness not yet active). Next: Step 7 activation by Einar (switch off hosted connectors and browser tools; open a new local session in /Users/einarzoega/litljomi-cms; accept hooks/settings; check /sandbox), then Step 8 (Einar runs `node tools/harness/integrity.mjs --lock` in his own terminal; controller connector audit), Step 9 probes, Step 10 gates, Step 11 reviews, Step 12 Einar's acceptance. Resolved by Einar on 2026-11-01: the harness test command is the native glob `node --test \"tools/harness/__tests__/*.test.mjs\"`; the shim tools/harness/index.js was removed.",
       "startedAt": "2026-11-01T20:25:38.289Z"
     },
@@ -286,9 +299,9 @@
       "at": null
     },
     "V-CONNECTORS": {
-      "status": "pending",
-      "evidence": null,
-      "at": null
+      "status": "fail",
+      "evidence": "docs/execution/environment.md",
+      "at": "2026-11-01T20:38:15.183Z"
     },
     "V-SANDBOX": {
       "status": "pending",
