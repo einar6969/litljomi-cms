@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-01T23:03:07.976Z",
+  "updatedAt": "2026-11-01T23:17:09.947Z",
   "branch": "m1/phase-0",
   "tasks": [
     {
@@ -365,8 +365,8 @@
     },
     "V-SANDBOX": {
       "status": "pass",
-      "evidence": "docs/execution/environment.md",
-      "at": "2026-11-01T21:49:48.935Z"
+      "evidence": "docs/verification/m1-gates.md",
+      "at": "2026-11-01T23:17:09.947Z"
     },
     "V-HELPERS": {
       "status": "pending",
