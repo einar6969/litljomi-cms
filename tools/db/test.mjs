@@ -15,4 +15,8 @@ const result = spawnSync('supabase', ['test', 'db', ...files], {
   stdio: 'inherit',
   env: { ...process.env, SUPABASE_TELEMETRY_DISABLED: '1' },
 });
+if (result.error) {
+  console.error(`db:test: could not run the Supabase CLI (${result.error.message}). Is \`supabase\` installed and on PATH?`);
+  process.exit(1);
+}
 process.exit(result.status ?? 1);

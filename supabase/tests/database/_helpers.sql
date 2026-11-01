@@ -2,6 +2,9 @@
 -- transaction, so everything here is rolled back with it. Never a migration.
 -- UUIDs must agree with tests/integration/src/fixtures.ts.
 
+-- Errors outside a transaction block, so a plain run cannot commit schema tests.
+savepoint tests_helpers;
+
 create schema tests;
 
 create function tests.persona(p_name text) returns uuid
@@ -94,6 +97,7 @@ set search_path = ''
 as $$
 begin
   reset role;
+  perform pg_catalog.set_config('request.jwt.claims', '', true);
 end;
 $$;
 
