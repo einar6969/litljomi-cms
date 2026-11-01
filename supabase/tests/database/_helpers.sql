@@ -2,7 +2,8 @@
 -- transaction, so everything here is rolled back with it. Never a migration.
 -- UUIDs must agree with tests/integration/src/fixtures.ts.
 
--- Errors outside a transaction block, so a plain run cannot commit schema tests.
+-- Guard: SAVEPOINT errors outside a transaction block, so a plain run cannot
+-- commit schema tests. The savepoint is deliberately never released.
 savepoint tests_helpers;
 
 create schema tests;
@@ -61,11 +62,15 @@ language plpgsql
 set search_path = ''
 as $$
 begin
+  if p_user is null then
+    raise exception 'tests.act_as: p_user must not be null';
+  end if;
+  if p_aal is null or p_aal not in ('aal1', 'aal2') then
+    raise exception 'tests.act_as: p_aal must be aal1 or aal2, got %', coalesce(p_aal, '<null>');
+  end if;
   set local role authenticated;
-  perform pg_catalog.set_config(
-    'request.jwt.claims',
-    pg_catalog.json_build_object('sub', p_user, 'role', 'authenticated', 'aal', p_aal)::text,
-    true);
+  perform pg_catalog.set_config('request.jwt.claims',
+    pg_catalog.json_build_object('sub', p_user, 'role', 'authenticated', 'aal', p_aal)::text, true);
 end;
 $$;
 
@@ -102,4 +107,9 @@ end;
 $$;
 
 grant usage on schema tests to anon, authenticated, service_role;
-grant execute on all functions in schema tests to anon, authenticated, service_role;
+-- Not seed(): it is for the owner context only.
+grant execute on function
+  tests.persona(text), tests.tenant(text), tests.act_as(uuid, text),
+  tests.act_as_anon(), tests.act_as_service(), tests.act_as_owner()
+  to anon, authenticated, service_role;
+revoke execute on function tests.seed() from public;
