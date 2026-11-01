@@ -30,7 +30,12 @@
       "note": "Einar in chat, 2026-11-01: \"I approve G1, limited to installing OrbStack as the local Docker-compatible runtime required for Supabase development.\" and \"Before installing anything, check whether a compatible container runtime is already installed. If none is available, I will install OrbStack myself.\" Controller check on 2026-11-01: no docker, orb/orbctl, colima, podman, nerdctl or limactl on PATH; no OrbStack.app, Docker.app or Rancher Desktop.app; no /var/run/docker.sock.",
       "params": {
         "software": "OrbStack",
-        "installedBy": "Einar"
+        "installedBy": "Einar",
+        "installed": {
+          "at": "2026-11-01",
+          "note": "Einar in chat, 2026-11-01: \"OrbStack is now installed, configured and running. I verified it independently in my Mac Terminal using docker version and docker info. Both succeeded.\" Reported: Docker client and server 29.8.2, context orbstack, Compose 5.5.0, ARM64, 7.82 GiB. Controller saw /usr/local/bin/docker, ~/.orbstack/run/docker.sock and /var/run/docker.sock -> that socket.",
+          "sandboxProbe": "Sandboxed docker version: permission denied on unix:///Users/einarzoega/.orbstack/run/docker.sock. Sandboxed TCP connect to 127.0.0.1: EPERM; listen on 127.0.0.1: EPERM. A .claude/settings.json change was proposed to Einar; not applied."
+        }
       }
     },
     "G2": {
