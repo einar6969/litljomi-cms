@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-01T21:54:02.181Z",
+  "updatedAt": "2026-11-01T21:54:51.747Z",
   "branch": "m1/phase-0",
   "tasks": [
     {
@@ -23,6 +23,12 @@
           "round": 1,
           "report": "docs/execution/reviews/task-00-r1-security.md",
           "at": "2026-11-01T21:54:02.181Z"
+        },
+        "quality": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-00-r1-quality.md",
+          "at": "2026-11-01T21:54:51.747Z"
         }
       },
       "gatesUsed": [
