@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-01T22:10:59.013Z",
+  "updatedAt": "2026-11-01T22:15:09.638Z",
   "branch": "m1/phase-0",
   "tasks": [
     {
@@ -60,12 +60,15 @@
     },
     {
       "id": 1,
-      "status": "pending",
+      "status": "in_progress",
       "commits": [],
       "reviews": {},
-      "gatesUsed": [],
+      "gatesUsed": [
+        "G0"
+      ],
       "blockers": [],
-      "notes": ""
+      "notes": "",
+      "startedAt": "2026-11-01T22:15:09.638Z"
     },
     {
       "id": 2,

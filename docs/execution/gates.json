@@ -8,14 +8,42 @@
       "at": "2026-11-01",
       "scope": "Local workspace, limited to the scope defined in the approved plan; Task 0 only",
       "note": "Einar in chat, 2026-11-01: \"I authorize G0 — Local Workspace, limited to the scope defined in the approved plan. Proceed with Task 0 only\"",
+      "params": {},
+      "extensions": [
+        {
+          "at": "2026-11-01",
+          "scope": "Task 1: Monorepo skeleton, boundary checks and CI, under G0 (local only; pnpm install from registry.npmjs.org). The GitHub Actions workflow may be written locally; G2 stays pending.",
+          "note": "Einar in chat, 2026-11-01: \"I authorize Task 1: Monorepo skeleton, boundary checks and CI, under the existing G0 approval.\" and \"The GitHub Actions workflow may be created locally, but G2 remains unauthorized.\""
+        }
+      ]
+    },
+    "G1": {
+      "status": "pending",
       "params": {}
     },
-    "G1": { "status": "pending", "params": {} },
-    "G2": { "status": "pending", "params": {} },
-    "G3": { "status": "pending", "params": {} },
-    "G4": { "status": "pending", "params": {} },
-    "G5": { "status": "pending", "params": {} },
-    "G6": { "status": "pending", "params": {} },
-    "G7": { "status": "pending", "params": {} }
+    "G2": {
+      "status": "pending",
+      "params": {}
+    },
+    "G3": {
+      "status": "pending",
+      "params": {}
+    },
+    "G4": {
+      "status": "pending",
+      "params": {}
+    },
+    "G5": {
+      "status": "pending",
+      "params": {}
+    },
+    "G6": {
+      "status": "pending",
+      "params": {}
+    },
+    "G7": {
+      "status": "pending",
+      "params": {}
+    }
   }
 }
