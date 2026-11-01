@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "docs/execution/state.schema.json",
+  "title": "Litljómi CMS Hub execution state",
+  "description": "Authoritative execution state (plan decision 15). Written only by the controller through tools/harness/state.mjs, which validates against this schema on every read and write. state.mjs implements the subset of JSON Schema used here.",
+  "type": "object",
+  "required": ["schemaVersion", "updatedAt", "branch", "tasks", "validationGates", "checkpoints"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "updatedAt": { "type": "string", "minLength": 1 },
+    "branch": { "type": "string", "minLength": 1 },
+    "tasks": { "type": "array", "minItems": 30, "maxItems": 30, "items": { "$ref": "#/$defs/task" } },
+    "validationGates": {
+      "type": "object",
+      "required": [
+        "V-HARNESS", "V-CONNECTORS", "V-SANDBOX", "V-HELPERS",
+        "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11", "A12", "A13", "A14", "A15"
+      ],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^(V-HARNESS|V-CONNECTORS|V-SANDBOX|V-HELPERS|A([1-9]|1[0-5]))$": { "$ref": "#/$defs/validationGate" }
+      }
+    },
+    "checkpoints": {
+      "type": "object",
+      "required": ["C0", "C1", "C2", "C3", "C4"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^C[0-4]$": { "$ref": "#/$defs/checkpoint" }
+      }
+    }
+  },
+  "$defs": {
+    "timestamp": { "type": ["string", "null"] },
+    "task": {
+      "type": "object",
+      "required": ["id", "status", "commits", "reviews", "gatesUsed", "blockers", "notes"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "integer", "minimum": 0, "maximum": 29 },
+        "status": { "enum": ["pending", "in_progress", "in_review", "done", "blocked"] },
+        "commits": { "type": "array", "items": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" } },
+        "reviews": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "spec": { "$ref": "#/$defs/review" },
+            "security": { "$ref": "#/$defs/review" },
+            "quality": { "$ref": "#/$defs/review" }
+          }
+        },
+        "gatesUsed": { "type": "array", "items": { "type": "string", "pattern": "^G[0-7]$" } },
+        "blockers": { "type": "array", "items": { "$ref": "#/$defs/blocker" } },
+        "notes": { "type": "string" },
+        "startedAt": { "$ref": "#/$defs/timestamp" },
+        "doneAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "review": {
+      "type": "object",
+      "required": ["status", "round", "report", "at"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["pass", "fail"] },
+        "round": { "type": "integer", "minimum": 1 },
+        "report": { "type": "string", "minLength": 1 },
+        "at": { "type": "string", "minLength": 1 }
+      }
+    },
+    "blocker": {
+      "type": "object",
+      "required": ["text", "at", "previousStatus", "resolvedAt"],
+      "additionalProperties": false,
+      "properties": {
+        "text": { "type": "string", "minLength": 1 },
+        "at": { "type": "string", "minLength": 1 },
+        "previousStatus": { "enum": ["pending", "in_progress", "in_review", "done", "blocked"] },
+        "resolvedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "validationGate": {
+      "type": "object",
+      "required": ["status", "evidence", "at"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["pending", "pass", "fail"] },
+        "evidence": { "type": ["string", "null"] },
+        "at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "checkpoint": {
+      "type": "object",
+      "required": ["status", "report", "at", "approvedByEinar"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["pending", "reported"] },
+        "report": { "type": ["string", "null"] },
+        "at": { "$ref": "#/$defs/timestamp" },
+        "approvedByEinar": { "type": "boolean" }
+      }
+    }
+  }
+}

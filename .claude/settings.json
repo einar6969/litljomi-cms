@@ -1,0 +1,109 @@
+{
+  "permissions": {
+    "disableBypassPermissionsMode": "disable",
+    "deny": [
+      "Bash(git push *)",
+      "Bash(git remote *)",
+      "Bash(gh *)",
+      "Bash(vercel *)",
+      "Bash(netlify *)",
+      "Bash(supabase link *)",
+      "Bash(supabase login *)",
+      "Bash(supabase db push *)",
+      "Bash(supabase projects *)",
+      "Bash(supabase orgs *)",
+      "Bash(supabase secrets *)",
+      "Bash(supabase functions deploy *)",
+      "Bash(brew *)",
+      "Bash(sudo *)",
+      "Bash(npx *)",
+      "Bash(pnpm dlx *)",
+      "Bash(npm publish *)",
+      "Bash(pnpm publish *)",
+      "Bash(npm login *)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(ssh *)",
+      "Bash(scp *)",
+      "Bash(rsync *)",
+      "Bash(open *)",
+      "Bash(osascript *)",
+      "Edit(/.claude/**)",
+      "Edit(/.git/**)",
+      "Edit(/docs/execution/gates.json)",
+      "Edit(/docs/execution/harness.lock.json)",
+      "Read(/.env)",
+      "Read(/.env.local)",
+      "Read(/**/.env)",
+      "Read(/**/.env.local)",
+      "mcp__0fe604fe-ed82-4eb7-a43a-34991a4d4f23__*",
+      "mcp__1a59c906-04da-521d-bda7-7f71b9f9e01c__*",
+      "mcp__35b3e7e2-5bdb-4333-a6ff-4932545dab96__*",
+      "mcp__4bae418f-4ec2-45ec-94b6-1c5962a4d491__*",
+      "mcp__622b912c-3d4e-4f24-84fb-f62832063ee0__*",
+      "mcp__6b6ca7cf-c3c1-408b-9857-02ff8e597b84__*",
+      "mcp__e309aff3-5e46-45b2-a31c-43c319a73036__*",
+      "mcp__claude-in-chrome__*",
+      "mcp__Claude_Browser__*",
+      "mcp__playwright__*",
+      "mcp__Claude_Code_iOS_Simulator__*",
+      "mcp__terminal__*",
+      "mcp__scheduled-tasks__*",
+      "mcp__mcp-registry__*",
+      "mcp__visualize__*",
+      "mcp__ccd_session__*",
+      "mcp__ccd_session_mgmt__*",
+      "mcp__ccd_settings__*",
+      "mcp__ccd_connectors__*",
+      "mcp__ccd_directory__*",
+      "mcp__ccd_host__*",
+      "mcp__ccd_pr__*",
+      "mcp__ccd_window__*",
+      "mcp__ccd_sidebar__*",
+      "mcp__ccd_view__*",
+      "Artifact",
+      "ArtifactData",
+      "ArtifactComments",
+      "Workflow",
+      "RemoteTrigger",
+      "CronCreate"
+    ],
+    "allow": [
+      "Bash(node --test *)",
+      "Bash(node tools/harness/state.mjs *)",
+      "Bash(node tools/harness/integrity.mjs)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard.mjs\"", "timeout": 10 }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.mjs\"", "timeout": 10 }
+        ]
+      }
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false,
+    "network": {
+      "allowedDomains": ["registry.npmjs.org"]
+    },
+    "excludedCommands": []
+  }
+}

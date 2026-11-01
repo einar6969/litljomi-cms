@@ -1,0 +1,406 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-11-01T20:21:38.109Z",
+  "branch": "m1/phase-0",
+  "tasks": [
+    {
+      "id": 0,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 1,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 2,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 3,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 4,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 5,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 6,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 7,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 8,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 9,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 10,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 11,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 12,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 13,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 14,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 15,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 16,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 17,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 18,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 19,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 20,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 21,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 26,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 22,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 23,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 24,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 25,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 27,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 28,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    },
+    {
+      "id": 29,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": ""
+    }
+  ],
+  "validationGates": {
+    "V-HARNESS": {
+      "status": "pending",
+      "evidence": null,
+      "at": null
+    },
+    "V-CONNECTORS": {
+      "status": "pending",
+      "evidence": null,
+      "at": null
+    },
+    "V-SANDBOX": {
+      "status": "pending",
+      "evidence": null,
+      "at": null
+    },
+    "V-HELPERS": {
+      "status": "pending",
+      "evidence": null,
+      "at": null
+    },
+    "A1": {
+      "status": "pending",
+      "evidence": null,
+      "at": null
+    },
+    "A2": {
+      "status": "pending",
+      "evidence": null,
+      "at": null
+    },
+    "A3": {
+      "status": "pending",
+      "evidence": null,
+      "at": null
+    },
+    "A4": {
+      "status": "pending",
+      "evidence": null,
+      "at": null
+    },
+    "A5": {
+      "status": "pending",
+      "evidence": null,
+      "at": null
+    },
+    "A6": {
+      "status": "pending",
+      "evidence": null,
+      "at": null
+    },
+    "A7": {
+      "status": "pending",
+      "evidence": null,
+      "at": null
+    },
+    "A8": {
+      "status": "pending",
+      "evidence": null,
+      "at": null
+    },
+    "A9": {
+      "status": "pending",
+      "evidence": null,
+      "at": null
+    },
+    "A10": {
+      "status": "pending",
+      "evidence": null,
+      "at": null
+    },
+    "A11": {
+      "status": "pending",
+      "evidence": null,
+      "at": null
+    },
+    "A12": {
+      "status": "pending",
+      "evidence": null,
+      "at": null
+    },
+    "A13": {
+      "status": "pending",
+      "evidence": null,
+      "at": null
+    },
+    "A14": {
+      "status": "pending",
+      "evidence": null,
+      "at": null
+    },
+    "A15": {
+      "status": "pending",
+      "evidence": null,
+      "at": null
+    }
+  },
+  "checkpoints": {
+    "C0": {
+      "status": "pending",
+      "report": null,
+      "at": null,
+      "approvedByEinar": false
+    },
+    "C1": {
+      "status": "pending",
+      "report": null,
+      "at": null,
+      "approvedByEinar": false
+    },
+    "C2": {
+      "status": "pending",
+      "report": null,
+      "at": null,
+      "approvedByEinar": false
+    },
+    "C3": {
+      "status": "pending",
+      "report": null,
+      "at": null,
+      "approvedByEinar": false
+    },
+    "C4": {
+      "status": "pending",
+      "report": null,
+      "at": null,
+      "approvedByEinar": false
+    }
+  }
+}
