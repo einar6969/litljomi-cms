@@ -1,5 +1,7 @@
 # Harness verification (Task 0, Steps 8–10)
 
+> **Superseded on 2026-11-01.** See "Superseded on 2026-11-01" at the end. The content below is kept as the historical record.
+
 Live probes use local fixtures only (`tools/harness/fixtures/bin/` stubs and the bare repository `tools/harness/fixtures/remote.git`). No probe calls an external service, a hosted connector or a cloud session. Each probe runs once in the main session and once from a fresh `cms-implementer` subagent. Record the result and the matching `docs/execution/guard-log.jsonl` line (with its `agent_type`).
 
 ## Probes
@@ -46,3 +48,12 @@ Passes per P9: the sandbox blocks the write outside the repository and temp. If 
 - Evidence:
 - Einar's decision (if failed):
 - Recorded with `state.mjs validate V-SANDBOX …` on:
+
+## Superseded on 2026-11-01
+
+Einar approved the simplified execution design on 2026-11-01 (`docs/execution/environment.md`, "Decision 2026-11-01: simplified execution"). The probes P1–P11 above were never run and are no longer part of Task 0. Everything above this section is kept unchanged as the historical record, including the failed connector audit and the sandbox observations.
+
+- V-HARNESS: waived (the guard hook was removed).
+- V-CONNECTORS: waived (connector availability no longer fails a gate). The 2026-11-01 result stays recorded above as FAIL.
+- V-SANDBOX: recorded in the session that applies the simplified Task 0, from the reported sandbox configuration and a successful sandboxed `git commit`.
+- `docs/execution/guard-log.jsonl` holds the guard's only logged denial (2026-11-01, `bash.rm-outside-repo`, an `rm` of a scratchpad copy in the controller session), kept as a record.

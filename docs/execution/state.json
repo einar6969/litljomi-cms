@@ -1,13 +1,14 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-01T20:38:51.944Z",
+  "updatedAt": "2026-11-01T21:49:48.960Z",
   "branch": "m1/phase-0",
   "tasks": [
     {
       "id": 0,
-      "status": "blocked",
+      "status": "in_progress",
       "commits": [
-        "e6b59c8faa0afb3dd9d8b23d8679fee66dc7a079"
+        "e6b59c8faa0afb3dd9d8b23d8679fee66dc7a079",
+        "f34f4fbc849e1bc79cebcc1f94007e00d20f71bd"
       ],
       "reviews": {},
       "gatesUsed": [
@@ -18,13 +19,13 @@
           "text": "V-CONNECTORS failed on 2026-11-01: Claude Docs, built-in browser (Claude_Browser) and Playwright MCP are available in the implementation session. Einar switches them off in the app and opens a new session; the controller re-runs the audit before Steps 9-11.",
           "at": "2026-11-01T20:38:15.237Z",
           "previousStatus": "in_progress",
-          "resolvedAt": null
+          "resolvedAt": "2026-11-01T21:49:48.960Z"
         },
         {
           "text": "Sandbox denies writes under .git/ (git add/commit: index.lock Operation not permitted, 2026-11-01). No commit can run sandboxed; the lock file and audit record are uncommitted. Needs Einar's decision (harness change) before any commit step.",
           "at": "2026-11-01T20:38:51.944Z",
           "previousStatus": "blocked",
-          "resolvedAt": null
+          "resolvedAt": "2026-11-01T21:49:48.960Z"
         }
       ],
       "notes": "Steps 1-6 done on 2026-11-01 in the LABAK workspace session (harness not yet active). Next: Step 7 activation by Einar (switch off hosted connectors and browser tools; open a new local session in /Users/einarzoega/litljomi-cms; accept hooks/settings; check /sandbox), then Step 8 (Einar runs `node tools/harness/integrity.mjs --lock` in his own terminal; controller connector audit), Step 9 probes, Step 10 gates, Step 11 reviews, Step 12 Einar's acceptance. Resolved by Einar on 2026-11-01: the harness test command is the native glob `node --test \"tools/harness/__tests__/*.test.mjs\"`; the shim tools/harness/index.js was removed.",
@@ -294,19 +295,19 @@
   ],
   "validationGates": {
     "V-HARNESS": {
-      "status": "pending",
-      "evidence": null,
-      "at": null
+      "status": "waived",
+      "evidence": "docs/execution/environment.md",
+      "at": "2026-11-01T21:49:48.884Z"
     },
     "V-CONNECTORS": {
-      "status": "fail",
+      "status": "waived",
       "evidence": "docs/execution/environment.md",
-      "at": "2026-11-01T20:38:15.183Z"
+      "at": "2026-11-01T21:49:48.909Z"
     },
     "V-SANDBOX": {
-      "status": "pending",
-      "evidence": null,
-      "at": null
+      "status": "pass",
+      "evidence": "docs/execution/environment.md",
+      "at": "2026-11-01T21:49:48.935Z"
     },
     "V-HELPERS": {
       "status": "pending",

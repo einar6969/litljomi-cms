@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "note": "Protected file. Claude never edits it after Task 0 Step 1. Einar records approvals with `node tools/harness/gate.mjs` in his own terminal.",
+  "note": "Record of Einar's gate approvals. The controller writes an entry only after Einar's own explicit approval of that gate in chat, quoting his words and the date. Until 2026-11-01 Einar recorded approvals himself with tools/harness/gate.mjs (removed in the simplified Task 0; see docs/execution/environment.md).",
   "gates": {
     "G0": {
       "status": "approved",

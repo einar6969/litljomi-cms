@@ -21,6 +21,8 @@ Einar may change these; record any change here with the date.
 
 ## Connectors Einar switches off
 
+> **Superseded on 2026-11-01** by "Decision 2026-11-01: simplified execution" below. Connectors may stay connected; kept here as the original record.
+
 For the implementation session, in the desktop app: Supabase, Vercel, Neon, Netlify, Sanity, Zoho Mail, Claude Docs, and both browser tools (Claude in Chrome and the built-in browser). The guard denies every `mcp__*` tool except `mcp__ccd_turn__*` (the app's task list) as a second layer, and `.claude/settings.json` denies the servers observed on 2026-11-01.
 
 ## Connector audit
@@ -57,3 +59,34 @@ Listed from the session's tool list (callable and deferred). None was called. `m
 - `mcp__Claude_Code_iOS_Simulator__` (`control`; deferred: `build`)
 
 **Observation:** every server above except `plugin:vercel:vercel` already has a `mcp__<server>__*` deny entry in `.claude/settings.json`, yet the tools are still listed as available. So the settings deny entries do not stop these tools from being offered in this app session. Whether a call would be refused was not tested, because the audit calls no tool. V-CONNECTORS asks for the tools to be unavailable, so it fails until Einar switches them off in the app.
+
+## Decision 2026-11-01: simplified execution
+
+Einar, in chat on 2026-11-01: "I approve the simplified execution design." His requirements, in summary: use Claude Code's native permission system and sandbox, with Accept-edits mode and never auto or bypass-permissions mode; connectors may stay connected, their availability must not block local development, and it authorizes nothing; no change to his global Claude configuration is a prerequisite; historical records are kept and superseded safeguards are marked as such; the transition is a bounded revision to Task 0; Task 1 waits for his explicit approval.
+
+**Removed** (history kept in git; last present at commit `013a412`): the guard hook and its library (`.claude/hooks/guard.mjs`, `tools/harness/guard-lib.mjs`), the session-start hook, the integrity lock (`tools/harness/integrity.mjs`, `docs/execution/harness.lock.json`), `tools/harness/gate.mjs`, the probe stubs (`tools/harness/fixtures/`), and their tests. The live probes P1–P11 were never run.
+
+**Kept:** gates G0–G7 as approval boundaries, recorded by the controller in `gates.json` with Einar's quoted words; sequential tasks with fresh subagents; the spec, security and quality reviews; `state.mjs`, `state.json`, `progress.md`, reviews and checkpoints; a commit per task.
+
+**Native controls in `.claude/settings.json`:** `defaultMode: acceptEdits`, `disableBypassPermissionsMode` and `disableAutoMode`; the Bash sandbox with network limited to `registry.npmjs.org`; `ask` rules on the commands that reach hosted services (`git push`, `git remote`, `gh`, `vercel`, `netlify`, the hosted `supabase` subcommands, `npm`/`pnpm publish`, `brew`) and on `.claude/**`; `deny` for `sudo` and `.env` reads.
+
+**Validation gates:** V-HARNESS and V-CONNECTORS are `waived` with this section as evidence. The 2026-11-01 failed connector audit above stays as the record of what was found. V-SANDBOX is recorded from the session's reported sandbox configuration and a successful sandboxed commit.
+
+**Known limitations:**
+- The gates are behavioural. Connector calls run outside the sandbox and are stopped only by permission prompts, which is why auto mode is disabled.
+- `ask` rules match command text, so `sh -c` or an absolute path can avoid them. For Bash, the sandbox network allowlist is the backstop.
+- Folders added in user settings (`permissions.additionalDirectories`) widen the sandbox's writable paths in every session. On 2026-11-01 these were `/Users/einarzoega/Litljómi/litljomi.is` and two scratchpads of other sessions. Removing them is Einar's choice and not a prerequisite.
+
+## Sandbox record 2026-11-01 (Task 0, Step R3)
+
+Session: controller, local Code tab, session `1851492d-583c-4e53-a3b1-108bbe1dd703`, the first session after Einar applied R1. The configuration below is what the session reported for its Bash sandbox; no probe command was run.
+
+- **Permission mode:** the session's mode is not readable from inside it. `.claude/settings.json` sets `disableAutoMode` and `disableBypassPermissionsMode`, so it can only be default (Manual), Accept edits or plan mode.
+- **Sandbox:** enabled, OS-level (macOS Seatbelt), applied to each Bash command.
+- **Writable paths:** the working directory (`.`, `/Users/einarzoega/litljomi-cms`), the per-user temp directory (`$TMPDIR` = `/tmp/claude-501`, and `/tmp/claude`, `/private/tmp/claude`), `/dev/stdout`, `/dev/stderr`, `/dev/null`, `/dev/tty`, `/dev/dtracehelper`, `/dev/autofs_nowait`, and Claude Code's own log folders `~/.npm/_logs` and `~/.claude/debug`. From user settings: `/Users/einarzoega/Litljómi/litljomi.is`, `/private/tmp/claude-501/-Users-einarzoega-Downloads-logmenn-granda-6-main/8d92c277-158b-4ffb-a348-f277d16cab58` and `/private/tmp/claude-501/-Users-einarzoega-Litlj-mi-litljomi-is/88930c6e-94e1-4b09-805c-859b131a9d32/scratchpad`.
+- **Denied inside those paths:** among others, this repository's `.claude/settings.json`, `.claude/settings.local.json`, `.claude/hooks` and `.claude/skills`, the user and managed settings files, and most of `~/.claude`. The session's list was truncated ("… and 46 more"), so whether `.claude/agents/` is write-protected for Bash was not confirmed.
+- **Read-denied:** `.env` and `.env.local` in this repository and below it, and some `~/.claude` internals.
+- **Network:** egress through the sandbox's filtering proxy, allowlist `registry.npmjs.org`.
+- **Sandboxed commit:** the R2 commit `f34f4fbc849e1bc79cebcc1f94007e00d20f71bd` ("chore: simplify the execution setup (native permissions and sandbox)") ran sandboxed from a fresh `cms-implementer`, with no error and no prompt. This resolves the earlier blocker "Sandbox denies writes under .git/".
+
+**V-SANDBOX: pass.** Bash writes are limited to the working folders and temp, network is limited to the allowlist, and the sandboxed R2 commit succeeded. Known limitation: the three folders added in user settings are writable from this repository's sessions (see "Known limitations" above).
