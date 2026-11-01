@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-01T22:00:09.701Z",
+  "updatedAt": "2026-11-01T22:04:05.660Z",
   "branch": "m1/phase-0",
   "tasks": [
     {
@@ -10,20 +10,22 @@
         "e6b59c8faa0afb3dd9d8b23d8679fee66dc7a079",
         "f34f4fbc849e1bc79cebcc1f94007e00d20f71bd",
         "f9f70456e4273fd1dcd561cc29847f94434719a9",
-        "a09ff7baf2767a2114f9fe959c1c519038020dec"
+        "a09ff7baf2767a2114f9fe959c1c519038020dec",
+        "6d3b43c6b49251ad1e76894ad74b4880a1d8f02d",
+        "5ea4f9868cd36d464c7d5b7514d075b77573955e"
       ],
       "reviews": {
         "spec": {
           "status": "pass",
-          "round": 1,
-          "report": "docs/execution/reviews/task-00-r1-spec.md",
-          "at": "2026-11-01T21:54:02.153Z"
+          "round": 2,
+          "report": "docs/execution/reviews/task-00-r2-spec.md",
+          "at": "2026-11-01T22:04:05.574Z"
         },
         "security": {
-          "status": "pass",
-          "round": 1,
-          "report": "docs/execution/reviews/task-00-r1-security.md",
-          "at": "2026-11-01T21:54:02.181Z"
+          "status": "fail",
+          "round": 2,
+          "report": "docs/execution/reviews/task-00-r2-security.md",
+          "at": "2026-11-01T22:04:05.598Z"
         },
         "quality": {
           "status": "pass",
