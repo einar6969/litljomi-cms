@@ -9,10 +9,11 @@ const SECRET_MESSAGE = 'SUPABASE_SECRET_KEY may only be read under apps/cms/src/
 
 // Each entry is a path regex (source string) with its message. They feed both the static
 // `no-restricted-imports` patterns and the dynamic `import()` / `require()` selectors.
-const privilegedPaths = [{ regex: '(^|/)privileged(/|$)', message: PRIVILEGED_MESSAGE }];
+// Alias forms covered: `@/`, `~/`, `#` (subpath imports), relative and bare specifiers.
+const privilegedPaths = [{ regex: '(^#?|/)privileged(/|$)', message: PRIVILEGED_MESSAGE }];
 const modulePaths = [
   { regex: '^@litljomi/module-', message: MODULE_MESSAGE },
-  { regex: '^(@|\\.{1,2})/(.*/)?modules/(?!registry(\\.|$))', message: MODULE_MESSAGE },
+  { regex: '^(([@~]|\\.{1,2})/(.*/)?|#)?modules/(?!registry(\\.|$))', message: MODULE_MESSAGE },
 ];
 const appPaths = [{ regex: '(^|/)apps/', message: APPS_MESSAGE }];
 
@@ -33,18 +34,27 @@ const dynamicSyntax = (paths) =>
 
 const KEY = 'SUPABASE_SECRET_KEY';
 const names = (path, value) => [`${path}.name='${value}'`, `${path}.value='${value}'`];
-const secretSyntax = [
-  // process.env.KEY, process['env'].KEY, process.env['KEY'], process['env']['KEY']
-  ...names('object.property', 'env').flatMap((env) =>
-    names('property', KEY).map((key) => `MemberExpression[object.object.name='process'][${env}][${key}]`),
-  ),
-  // const { KEY } = process.env, const { KEY: k } = process['env'], ...
-  ...names('init.property', 'env').flatMap((env) =>
-    names('key', KEY).map(
-      (key) => `VariableDeclarator[init.object.name='process'][${env}] > ObjectPattern > Property[${key}]`,
-    ),
-  ),
-].map((selector) => ({ selector, message: SECRET_MESSAGE }));
+// Reads through process.env: the plan's selector and its equivalent spellings.
+// process.env.KEY, process['env'].KEY, process.env['KEY'], process['env']['KEY']
+const memberReads = names('object.property', 'env').flatMap((env) =>
+  names('property', KEY).map((key) => `MemberExpression[object.object.name='process'][${env}][${key}]`),
+);
+// const { KEY } = process.env, const { KEY: k } = process['env'], ...
+const destructuredReads = names('init.property', 'env').flatMap((env) =>
+  names('key', KEY).map((key) => `VariableDeclarator[init.object.name='process'][${env}] > ObjectPattern > Property[${key}]`),
+);
+// Any other occurrence of the name (aliases of process.env, env schemas, Reflect.get, types, ...).
+// Occurrences inside a read matched above are skipped, so each read is reported once.
+const alreadyReported = [...memberReads.map((s) => `${s} > *`), ...destructuredReads.map((s) => `${s} *`)].join(', ');
+const nameOccurrences = [
+  `Identifier[name='${KEY}']`,
+  `Literal[value='${KEY}']`,
+  `TemplateElement[value.cooked='${KEY}']`,
+].map((selector) => `${selector}:not(${alreadyReported})`);
+const secretSyntax = [...memberReads, ...destructuredReads, ...nameOccurrences].map((selector) => ({
+  selector,
+  message: SECRET_MESSAGE,
+}));
 
 const imports = (...groups) => ({ 'no-restricted-imports': ['error', { patterns: groups.flat() }] });
 const syntax = (...entries) => ({ 'no-restricted-syntax': ['error', ...entries.flat()] });
@@ -62,13 +72,20 @@ export default tseslint.config(
       '**/.turbo/**',
       '.pnpm-store/**',
       'docs/**',
-      '**/__tests__/fixtures/**',
+      'tools/checks/__tests__/fixtures/**',
     ],
   },
+  // No comment in a source file can disable or reconfigure a rule.
+  { linterOptions: { noInlineConfig: true } },
   {
     files: CODE,
     languageOptions: { parser: tseslint.parser, parserOptions: { sourceType: 'module' } },
     rules: { ...imports(privilegedPaths), ...syntax(secretSyntax, privilegedSyntax) },
+  },
+  // This file defines the secret-key rule, so it names the key.
+  {
+    files: ['eslint.config.mjs'],
+    rules: { ...syntax(privilegedSyntax) },
   },
   {
     files: ['apps/**'],
@@ -94,5 +111,9 @@ export default tseslint.config(
     files: ['apps/cms/src/privileged/**'],
     rules: { ...imports(modulePaths), ...syntax(moduleSyntax) },
   },
-  { files: ['tools/cli/**'], rules: { ...imports(), 'no-restricted-syntax': 'off' } },
+  // The secret key is allowed here, but the admin client and other privileged/ code are not.
+  {
+    files: ['tools/cli/**'],
+    rules: { ...imports(privilegedPaths), ...syntax(privilegedSyntax) },
+  },
 );

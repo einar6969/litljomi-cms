@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -97,5 +97,17 @@ describe('check:slugs command line', () => {
     const result = run(fixture('repo-clean'));
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('check:slugs ok');
+  });
+  it('still runs, and exits 1 on a hit, when started through a symlinked path', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'slugs-cli-'));
+    try {
+      const link = join(dir, 'no-tenant-slugs.ts');
+      symlinkSync(join(here, '..', 'no-tenant-slugs.ts'), link);
+      const result = spawnSync(process.execPath, [link, fixture('repo-with-slug')], { encoding: 'utf8' });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(`${join('apps', 'cms', 'src', 'leak.ts')}:2:labak`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

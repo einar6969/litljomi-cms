@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
@@ -92,7 +92,14 @@ export function runCheck(repoRoot: string): { exitCode: number; output: string }
   return { exitCode: 0, output: ['check:slugs ok', ...summary].join('\n') };
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+/** True when this file is the script Node was started with, also when started through a symlink. */
+function isEntryPoint(): boolean {
+  const started = process.argv[1];
+  if (!started || !existsSync(started)) return false;
+  return realpathSync(started) === realpathSync(fileURLToPath(import.meta.url));
+}
+
+if (isEntryPoint()) {
   const repoRoot = process.argv[2]
     ? resolve(process.argv[2])
     : resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');

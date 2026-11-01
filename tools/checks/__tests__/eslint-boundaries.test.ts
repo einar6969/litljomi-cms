@@ -131,6 +131,111 @@ describe('admin client', () => {
   });
 });
 
+// The tests below build their inputs so this file never contains the bare key name as a whole
+// string: the boundary rules forbid that here too.
+describe('secret key name', () => {
+  it.each([
+    [`import { env } from 'node:process'; const k = env.SUPABASE_SECRET_KEY`],
+    [`const e = process.env; const k = e.SUPABASE_SECRET_KEY`],
+    [`const k = globalThis.process.env.SUPABASE_SECRET_KEY`],
+    ['const k = process.env[`SUPABASE_SECRET_KEY`]'],
+    [`const k = Reflect.get(process.env, 'SUPABASE_SECRET_KEY')`],
+    [`type E = { SUPABASE_SECRET_KEY: string }`],
+  ])('forbids %s outside privileged/', async (code) => {
+    expect(await ruleIds('apps/cms/src/editor/x.ts', code)).toEqual([RESTRICTED_SYNTAX]);
+  });
+  it('forbids a central env schema that names the key', async () => {
+    expect(
+      await ruleIds(
+        'apps/cms/src/env.ts',
+        `import { z } from 'zod'; export const env = z.object({ SUPABASE_SECRET_KEY: z.string() }).parse(process.env)`,
+      ),
+    ).toEqual([RESTRICTED_SYNTAX]);
+  });
+  it('reports each access once', async () => {
+    expect(
+      await ruleIds('apps/cms/src/editor/x.ts', `const k = process.env.SUPABASE_SECRET_KEY; const { SUPABASE_SECRET_KEY: j } = process.env`),
+    ).toEqual([RESTRICTED_SYNTAX, RESTRICTED_SYNTAX]);
+  });
+  it('allows other names and strings that merely contain the key', async () => {
+    expect(
+      await ruleIds(
+        'apps/cms/src/editor/x.ts',
+        `const a = process.env.OTHER; const SUPABASE_SECRET_KEY_HINT = 1; const s = 'SUPABASE_SECRET_KEY is set'`,
+      ),
+    ).toEqual([]);
+  });
+  it.each([['apps/cms/src/privileged/env.ts'], ['tools/cli/src/env.ts']])('allows the name in %s', async (path) => {
+    const code =
+      `import { env } from 'node:process'; import { z } from 'zod';` +
+      ` export const e = z.object({ SUPABASE_SECRET_KEY: z.string() }).parse(env);` +
+      ` const k = Reflect.get(env, 'SUPABASE_SECRET_KEY'); const j = globalThis.process.env.SUPABASE_SECRET_KEY`;
+    expect(await ruleIds(path, code)).toEqual([]);
+  });
+  it('exempts only eslint.config.mjs among root files', async () => {
+    const code = `const KEY = 'SUPABASE_` + `SECRET_KEY'`;
+    expect(await ruleIds('eslint.config.mjs', code)).toEqual([]);
+    expect(await ruleIds('vitest.workspace.ts', code)).toEqual([RESTRICTED_SYNTAX]);
+  });
+});
+
+describe('inline configuration', () => {
+  const secretRead = 'const k = process.env.SUPABASE_SECRET_KEY';
+  it.each([
+    ['// eslint-disable-next-line no-restricted-syntax'],
+    ['/* eslint-disable */'],
+    ['/* eslint no-restricted-syntax: off */'],
+  ])('%s does not silence a secret read', async (comment) => {
+    expect(await ruleIds('apps/cms/src/editor/x.ts', `${comment}\n${secretRead}`)).toContain(RESTRICTED_SYNTAX);
+  });
+  it('does not silence a forbidden import', async () => {
+    const code = `// eslint-disable-next-line no-restricted-imports\nimport { c } from '@/privileged/admin-client'`;
+    expect(await ruleIds('apps/cms/src/editor/x.ts', code)).toContain(IMPORT);
+  });
+});
+
+describe('tools/cli', () => {
+  const path = 'tools/cli/src/x.ts';
+  const adminClient = '../../../apps/cms/src/privileged/admin-client';
+  it('forbids importing the admin client statically', async () => {
+    expect(await ruleIds(path, `import { c } from '${adminClient}'`)).toEqual([IMPORT]);
+  });
+  it('forbids importing the admin client dynamically', async () => {
+    expect(await ruleIds(path, `import('${adminClient}')`)).toEqual([RESTRICTED_SYNTAX]);
+    expect(await ruleIds(path, `require('${adminClient}')`)).toEqual([RESTRICTED_SYNTAX]);
+  });
+});
+
+describe('alias forms', () => {
+  it.each([
+    [`import m from '~/modules/labak'`, IMPORT],
+    [`import m from '#modules/labak'`, IMPORT],
+    [`import m from 'modules/labak'`, IMPORT],
+    [`import('~/modules/labak')`, RESTRICTED_SYNTAX],
+    [`require('#modules/labak')`, RESTRICTED_SYNTAX],
+    [`import('modules/labak')`, RESTRICTED_SYNTAX],
+    [`import { c } from '#privileged/admin-client'`, IMPORT],
+    [`import('#privileged/admin-client')`, RESTRICTED_SYNTAX],
+  ])('forbids %s outside its zone', async (code, ruleId) => {
+    expect(await ruleIds('apps/cms/src/editor/x.ts', code)).toEqual([ruleId]);
+  });
+  it('still allows the registry through each module form', async () => {
+    const code = `import a from '~/modules/registry'; import b from '#modules/registry'; import c from 'modules/registry'; import('#modules/registry')`;
+    expect(await ruleIds('apps/cms/src/editor/x.ts', code)).toEqual([]);
+  });
+});
+
+describe('ignores', () => {
+  it('lints __tests__/fixtures folders outside tools/checks', async () => {
+    expect(await ruleIds('apps/cms/src/editor/__tests__/fixtures/x.ts', `const k = process.env.SUPABASE_SECRET_KEY`)).toEqual([
+      RESTRICTED_SYNTAX,
+    ]);
+  });
+  it('still ignores the tools/checks fixtures', async () => {
+    expect(await eslint.isPathIgnored(join(root, 'tools/checks/__tests__/fixtures/core-with-slug/bad.ts'))).toBe(true);
+  });
+});
+
 describe('apps boundary', () => {
   it('forbids packages importing from apps', async () => {
     expect(await ruleIds('packages/sdk/src/x.ts', `import x from '../../../apps/cms/src/x'`)).toContain(IMPORT);
