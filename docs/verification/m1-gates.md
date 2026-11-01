@@ -42,3 +42,13 @@ Original result (Task 0): pass, evidence in `docs/execution/environment.md`.
 With the plan's `[api] schemas = ["api"]`, `supabase start` fails before Task 4 creates `api`: PostgREST logs `schema "api" does not exist` (3F000) and the health check ends `HealthCheckTimeoutError … supabase_rest_… unexpected status 503`. With `schemas = []`, `supabase start` and `supabase db reset` succeed. Task 4's Step 2 expects the stack to run before `api` exists. Reported to Einar for a decision.
 
 Decision (Einar, 2026-11-01: "I approve Option A: temporarily expose no application schemas until Task 4 creates `api`."): Task 2 sets `[api] schemas = []` as a temporary bootstrap value; Task 4 creates `api`, `cms` and `private`, sets `["api"]` in the same commit, and verifies that the API works and that `cms` and `private` stay unexposed. Recorded as implementation-level decision 16 in the plan (sequencing, not architecture).
+
+## V-HELPERS (Task 2, 2026-11-01)
+
+Assumption: `supabase test db` runs files that include a shared helper file with `\ir`. Task 2 Step 4: "V-HELPERS passes if `\ir` resolved. If `supabase test db` also tries to run `_helpers.sql` as a test file and fails, apply the V-HELPERS fallback and record it."
+
+Evidence (controller's own runs on commit 7933579, Supabase CLI 2.121.0, local stack on OrbStack):
+- `\ir _helpers.sql` resolves: `000_harness.test.sql .. ok`, 3 tests (act_as sets `auth.uid()`, switches role to `authenticated`, `act_as_owner` resets role).
+- Plain `supabase test db` (no arguments) also runs `_helpers.sql` as a test file: `_helpers.sql .. No subtests run … Parse errors: No plan found in TAP output … Result: FAIL`. Because the helper file then runs outside a test transaction, schema `tests` is committed and the next plain run fails with `ERROR: schema "tests" already exists` until `pnpm db:reset`.
+
+**Result: pass** (`\ir` resolves), **with the fallback applied**: `pnpm db:test` is `node tools/db/test.mjs`, a tooling-only wrapper that passes only the `*.test.sql` files to `supabase test db` (with `SUPABASE_TELEMETRY_DISABLED=1`). The plan's fallback text describes concatenating the helpers into each test file; that is unnecessary because `\ir` resolves, so the wrapper only filters which files run (controller ruling, Task 2 notes). `pnpm db:reset && pnpm db:test` → `Files=1, Tests=3 … Result: PASS`; a repeated `pnpm db:test` without reset also passes. Limitation: run the database tests through `pnpm db:test`, never as a plain `supabase test db`; CI's `database` job already calls `pnpm db:test`.

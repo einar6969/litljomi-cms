@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-01T23:17:09.947Z",
+  "updatedAt": "2026-11-01T23:24:18.075Z",
   "branch": "m1/phase-0",
   "tasks": [
     {
@@ -98,7 +98,9 @@
     {
       "id": 2,
       "status": "in_progress",
-      "commits": [],
+      "commits": [
+        "7933579"
+      ],
       "reviews": {},
       "gatesUsed": [
         "G0",
@@ -369,9 +371,9 @@
       "at": "2026-11-01T23:17:09.947Z"
     },
     "V-HELPERS": {
-      "status": "pending",
-      "evidence": null,
-      "at": null
+      "status": "pass",
+      "evidence": "docs/verification/m1-gates.md",
+      "at": "2026-11-01T23:24:18.048Z"
     },
     "A1": {
       "status": "pending",
