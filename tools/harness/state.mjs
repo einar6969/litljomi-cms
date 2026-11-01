@@ -2,7 +2,7 @@
 // Execution-state CLI (Task 0). docs/execution/state.json is authoritative; progress.md is generated.
 // The controller is its only user. Commands:
 //   show | start <task> | commit <task> <hash> | review <task> spec|security|quality pass|fail <report>
-//   block <task> "<text>" | unblock <task> | validate <gate-id> pass|fail <evidence>
+//   block <task> "<text>" | unblock <task> | validate <gate-id> pass|fail|waived <evidence>
 //   done <task> | checkpoint C<n> <report> | render
 // The root is HARNESS_ROOT if set (tests), otherwise the repository holding this file.
 import fs from 'node:fs';
@@ -29,7 +29,7 @@ const USAGE = [
   '  review <task> spec|security|quality pass|fail <report-path>',
   '  block <task> "<text>"',
   '  unblock <task>',
-  '  validate <gate-id> pass|fail <evidence-path>',
+  '  validate <gate-id> pass|fail|waived <evidence-path>',
   '  done <task>',
   '  checkpoint C<n> <report-path>',
   '  render',
@@ -297,7 +297,7 @@ function cmdUnblock(ctx, root, args, now) {
 function cmdValidate(ctx, root, args, now) {
   const [gate, result, evidence] = args;
   if (!VALIDATION_GATES.includes(gate)) throw usage(`unknown validation gate ${gate ?? '(none)'}`);
-  if (result !== 'pass' && result !== 'fail') throw usage(`result must be pass or fail, got ${result ?? '(none)'}`);
+  if (!['pass', 'fail', 'waived'].includes(result)) throw usage(`result must be pass, fail or waived, got ${result ?? '(none)'}`);
   existingFile(root, evidence, 'evidence');
   ctx.state.validationGates[gate] = { status: result, evidence, at: now };
   return `${gate}: ${result}`;

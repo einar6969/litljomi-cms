@@ -1,5 +1,5 @@
 [
-  { "id": 0, "title": "Execution harness", "phase": 0, "sensitive": true, "requiredGates": ["G0"], "checkpointAfter": null },
+  { "id": 0, "title": "Execution setup", "phase": 0, "sensitive": true, "requiredGates": ["G0"], "checkpointAfter": null },
   { "id": 1, "title": "Monorepo skeleton, boundary checks and CI", "phase": 0, "sensitive": false, "requiredGates": ["G0"], "checkpointAfter": null },
   { "id": 2, "title": "Local Supabase stack and pgTAP harness", "phase": 0, "sensitive": false, "requiredGates": ["G0", "G1"], "checkpointAfter": null },
   { "id": 3, "title": "Hosted environments runbook (document only)", "phase": 0, "sensitive": false, "requiredGates": ["G0", "G1"], "checkpointAfter": "C0" },

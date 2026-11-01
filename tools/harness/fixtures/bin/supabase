@@ -1,7 +1,0 @@
-#!/bin/sh
-# Harness probe stub (Task 0, Step 9). Only writes a marker file and exits 0.
-# It never contacts anything: if a probe is not blocked, nothing external happens.
-dir="$(cd "$(dirname "$0")/.." && pwd)/out"
-mkdir -p "$dir"
-: > "$dir/supabase.ran"
-exit 0

@@ -89,7 +89,7 @@ test('plan-index lists Tasks 0–29 in execution order with phases, gates and ch
   assert.deepEqual(checkpoints, [[3, 'C0'], [12, 'C1'], [26, 'C2'], [27, 'C3'], [29, 'C4']]);
   const phases = { 0: [0, 1, 2, 3], 1: [4, 5, 6, 7, 8, 9, 10, 11, 12], 2: [13, 14, 15, 16], 3: [17, 18, 19, 20, 21], 4: [22, 23, 24, 25], 5: [26, 27], 6: [28, 29] };
   for (const [phase, ids] of Object.entries(phases)) for (const id of ids) assert.equal(byId[id].phase, Number(phase));
-  assert.equal(byId[0].title, 'Execution harness');
+  assert.equal(byId[0].title, 'Execution setup');
 });
 
 test('the repository state.json validates against state.schema.json', () => {
@@ -208,6 +208,12 @@ test('validate records a validation gate with its evidence', withRoot((root) => 
   assert.equal(run(['validate', 'V-HARNESS', 'pass', 'docs/execution/reviews/r.md'], { root }).code, 0);
   assert.equal(readState(root).validationGates['V-HARNESS'].status, 'pass');
   assert.notEqual(run(['validate', 'A99', 'pass', 'docs/execution/reviews/r.md'], { root }).code, 0);
+}));
+
+test('validate can waive a gate with a decision record, and refuses other results', withRoot((root) => {
+  assert.equal(run(['validate', 'V-CONNECTORS', 'waived', 'docs/execution/reviews/r.md'], { root }).code, 0);
+  assert.equal(readState(root).validationGates['V-CONNECTORS'].status, 'waived');
+  assert.notEqual(run(['validate', 'V-CONNECTORS', 'skipped', 'docs/execution/reviews/r.md'], { root }).code, 0);
 }));
 
 test('render writes progress.md containing every task', withRoot((root) => {

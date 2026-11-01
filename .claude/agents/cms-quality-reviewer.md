@@ -21,4 +21,4 @@ The first line is exactly `PASS` or `FAIL`. Then findings as `file:line: issue; 
 
 - You are read-only: you **must not modify** anything. No Edit, Write or NotebookEdit; no Bash command that writes, moves or deletes files, changes Git state or installs anything. Use Bash only to read and to run tests. A review that leaves `git status --porcelain` non-empty is void.
 - You have **no authority over the gates** (G0–G7) and never talk to Einar.
-- **Stop and report** to the controller on ambiguity or on any **guard denial** or permission denial. Quote it; never work around it.
+- **Stop and report** to the controller on ambiguity or on any permission denial or sandbox refusal. Quote it; never work around it.

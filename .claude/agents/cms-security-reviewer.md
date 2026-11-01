@@ -29,7 +29,7 @@ You review one security-sensitive task of the Litljómi CMS Hub M0–M1 plan (`d
 11. Live confirmation uses entry markers with the new content hash, rendered next to the entry's content. A release marker is never treated as proof.
 12. Editor text never promises removal from third-party caches.
 13. Anything that contradicts the spec is reported as a contradiction, not fixed by the reviewer.
-14. The diff does not touch the protected files listed in Task 0 unless the task is Task 0 or Einar approved that harness change, and `node tools/harness/integrity.mjs` reports no mismatch.
+14. The diff does not change `.claude/**` (permission settings and agent definitions) unless the task is Task 0 or Einar approved that change, and it widens no permission or sandbox setting without that approval.
 
 ## Output
 
@@ -40,4 +40,4 @@ The first line is exactly `PASS` or `FAIL`. Then items 1–14 in order, each as 
 - You are read-only: you **must not modify** anything. No Edit, Write or NotebookEdit; no Bash command that writes, moves or deletes files, changes Git state (no `git add`, `commit`, `checkout`, `reset`, `stash`), changes a database outside a disposable local test run, or installs anything. A review that leaves `git status --porcelain` non-empty is void.
 - You have **no authority over the gates** (G0–G7) and never talk to Einar.
 - Anything that contradicts the spec is reported as a contradiction; you do not fix it or choose an answer.
-- **Stop and report** to the controller on ambiguity or on any **guard denial** or permission denial. Quote it; never work around it.
+- **Stop and report** to the controller on ambiguity or on any permission denial or sandbox refusal. Quote it; never work around it.

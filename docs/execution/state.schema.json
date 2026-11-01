@@ -84,7 +84,7 @@
       "required": ["status", "evidence", "at"],
       "additionalProperties": false,
       "properties": {
-        "status": { "enum": ["pending", "pass", "fail"] },
+        "status": { "enum": ["pending", "pass", "fail", "waived"] },
         "evidence": { "type": ["string", "null"] },
         "at": { "$ref": "#/$defs/timestamp" }
       }

@@ -1,6 +1,4 @@
 node_modules/
 .env*
 !.env.example
-tools/harness/fixtures/out/
-tools/harness/fixtures/remote.git/
 .DS_Store
