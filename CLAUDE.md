@@ -33,7 +33,7 @@ The permission rules, the guard hook (`.claude/hooks/guard.mjs`) and the Bash sa
 
 ## Commands
 
-- `node --test tools/harness`: the harness tests.
+- `node --test "tools/harness/__tests__/*.test.mjs"`: the harness tests (Node's native test glob; quote the pattern).
 - `node tools/harness/state.mjs show`: current execution state and the next task.
 - `node tools/harness/integrity.mjs`: checks the protected files against the lock.
 

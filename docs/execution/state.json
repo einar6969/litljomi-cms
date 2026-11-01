@@ -14,7 +14,7 @@
         "G0"
       ],
       "blockers": [],
-      "notes": "Steps 1-6 done on 2026-11-01 in the LABAK workspace session (harness not yet active). Next: Step 7 activation by Einar (switch off hosted connectors and browser tools; open a new local session in /Users/einarzoega/litljomi-cms; accept hooks/settings; check /sandbox), then Step 8 (Einar runs `node tools/harness/integrity.mjs --lock` in his own terminal; controller connector audit), Step 9 probes, Step 10 gates, Step 11 reviews, Step 12 Einar's acceptance. Open decision for Einar: test command shim tools/harness/index.js vs glob form `node --test \"tools/harness/__tests__/*.test.mjs\"` (both run 187/187).",
+      "notes": "Steps 1-6 done on 2026-11-01 in the LABAK workspace session (harness not yet active). Next: Step 7 activation by Einar (switch off hosted connectors and browser tools; open a new local session in /Users/einarzoega/litljomi-cms; accept hooks/settings; check /sandbox), then Step 8 (Einar runs `node tools/harness/integrity.mjs --lock` in his own terminal; controller connector audit), Step 9 probes, Step 10 gates, Step 11 reviews, Step 12 Einar's acceptance. Resolved by Einar on 2026-11-01: the harness test command is the native glob `node --test \"tools/harness/__tests__/*.test.mjs\"`; the shim tools/harness/index.js was removed.",
       "startedAt": "2026-11-01T20:25:38.289Z"
     },
     {

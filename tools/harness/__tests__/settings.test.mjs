@@ -90,17 +90,6 @@ test('the sandbox is enabled, fails closed and allows only the npm registry', ()
   });
 });
 
-test('the test entry point (tools/harness/index.js) imports every test file', () => {
-  const entry = fs.readFileSync(path.join(REPO, 'tools/harness/index.js'), 'utf8');
-  const listed = JSON.parse(/const files = (\[[^\]]*\])/.exec(entry)[1].replace(/'/g, '"'));
-  const actual = fs
-    .readdirSync(path.join(REPO, 'tools/harness/__tests__'))
-    .filter((f) => f.endsWith('.test.mjs'))
-    .map((f) => f.replace(/\.test\.mjs$/, ''))
-    .sort();
-  assert.deepEqual([...listed].sort(), actual);
-});
-
 function frontmatter(file) {
   const text = fs.readFileSync(path.join(REPO, '.claude/agents', file), 'utf8');
   const m = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(text);

@@ -143,7 +143,7 @@ const deny = [
 const allow = [
   bash('git status'),
   bash('git add -A && git commit -m "x"'),
-  bash('node --test tools/harness'),
+  bash('node --test "tools/harness/__tests__/*.test.mjs"'),
   bash('cat .claude/settings.json'),
   bash('supabase start'),
   bash('supabase test db'),
