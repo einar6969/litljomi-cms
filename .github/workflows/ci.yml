@@ -59,7 +59,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.121.0
       - run: supabase start
       - run: pnpm db:test
       - run: pnpm test:integration

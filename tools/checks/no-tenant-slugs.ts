@@ -1,5 +1,5 @@
-import { existsSync, readdirSync, statSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve, sep } from 'node:path';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
@@ -8,26 +8,38 @@ export type SlugHit = { file: string; line: number; slug: string };
 const SOURCE_FILE = /\.(?:[cm]?[jt]s|[jt]sx)$/;
 const TEST_FILE = /\.test\.[cm]?[jt]sx?$/;
 const SKIPPED_DIRS = new Set(['node_modules', '__tests__', '.next', 'dist', '.turbo']);
-const REGISTRY_SUFFIX = ['apps', 'cms', 'src', 'modules', 'registry.ts'].join(sep);
+const REGISTRY_SUFFIX = sep + ['apps', 'cms', 'src', 'modules', 'registry.ts'].join(sep);
+
+/** Core source: a script file that is neither a test nor the module registry (the one place slugs may appear). */
+function isCoreSourceFile(name: string, fullPath: string): boolean {
+  return SOURCE_FILE.test(name) && !TEST_FILE.test(name) && !fullPath.endsWith(REGISTRY_SUFFIX);
+}
 
 function* walk(dir: string): Generator<string> {
-  for (const name of readdirSync(dir).sort()) {
-    const full = join(dir, name);
-    if (statSync(full).isDirectory()) {
-      if (!SKIPPED_DIRS.has(name)) yield* walk(full);
-    } else if (SOURCE_FILE.test(name) && !TEST_FILE.test(name) && !full.endsWith(sep + REGISTRY_SUFFIX)) {
+  const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+  for (const entry of entries) {
+    if (entry.isSymbolicLink()) continue;
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (!SKIPPED_DIRS.has(entry.name)) yield* walk(full);
+    } else if (isCoreSourceFile(entry.name, full)) {
       yield full;
     }
   }
 }
 
-/** Finds string and no-substitution template literals equal to a tenant slug. */
+/**
+ * Finds string and no-substitution template literals equal to a tenant slug.
+ * Throws when a root does not exist, so a mistyped or moved root cannot pass silently.
+ */
 export function findTenantSlugLiterals(roots: string[], slugs: string[]): SlugHit[] {
+  for (const root of roots) {
+    if (!existsSync(root)) throw new Error(`check:slugs root does not exist: ${root}`);
+  }
   const wanted = new Set(slugs);
   const hits: SlugHit[] = [];
   if (wanted.size === 0) return hits;
   for (const root of roots) {
-    if (!existsSync(root)) continue;
     for (const file of walk(root)) {
       const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
       const visit = (node: ts.Node): void => {
@@ -52,20 +64,39 @@ export function readTenantSlugs(modulesDir: string): string[] {
     .sort();
 }
 
-function main(): number {
-  const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-  const slugs = readTenantSlugs(join(repo, 'modules'));
-  const roots = ['apps/cms/src', 'packages'].map((r) => join(repo, r));
-  const hits = findTenantSlugLiterals(roots, slugs);
-  for (const hit of hits) console.error(`${hit.file}:${hit.line}:${hit.slug}`);
+/** Core roots to scan, relative to the repository root. Roots that do not exist yet are reported, not scanned. */
+const CORE_ROOTS = ['apps/cms/src', 'packages'];
+
+export function runCheck(repoRoot: string): { exitCode: number; output: string } {
+  const modulesDir = join(repoRoot, 'modules');
+  const slugs = readTenantSlugs(modulesDir);
+  const scanned = CORE_ROOTS.filter((r) => existsSync(join(repoRoot, r)));
+  const absent = CORE_ROOTS.filter((r) => !scanned.includes(r));
+  const modulesNote = existsSync(modulesDir) ? '' : ' (modules/ is absent)';
+  const summary = [
+    `roots scanned: ${scanned.length > 0 ? scanned.join(', ') : 'none'}`,
+    `roots absent: ${absent.length > 0 ? absent.join(', ') : 'none'}`,
+    `${slugs.length} tenant slug(s) checked${modulesNote}`,
+  ];
+  const hits = findTenantSlugLiterals(
+    scanned.map((r) => join(repoRoot, r)),
+    slugs,
+  );
   if (hits.length > 0) {
-    console.error(`check:slugs failed: ${hits.length} tenant slug literal(s) in core code`);
-    return 1;
+    const lines = hits.map((hit) => `${relative(repoRoot, hit.file)}:${hit.line}:${hit.slug}`);
+    return {
+      exitCode: 1,
+      output: [...lines, `check:slugs failed: ${hits.length} tenant slug literal(s) in core code`, ...summary].join('\n'),
+    };
   }
-  console.log(`check:slugs ok (${slugs.length} tenant slug(s) checked)`);
-  return 0;
+  return { exitCode: 0, output: ['check:slugs ok', ...summary].join('\n') };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  process.exitCode = main();
+  const repoRoot = process.argv[2]
+    ? resolve(process.argv[2])
+    : resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const { exitCode, output } = runCheck(repoRoot);
+  (exitCode === 0 ? console.log : console.error)(output);
+  process.exitCode = exitCode;
 }
