@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-01T22:10:06.158Z",
+  "updatedAt": "2026-11-01T22:10:59.013Z",
   "branch": "m1/phase-0",
   "tasks": [
     {
       "id": 0,
-      "status": "in_review",
+      "status": "done",
       "commits": [
         "e6b59c8faa0afb3dd9d8b23d8679fee66dc7a079",
         "f34f4fbc849e1bc79cebcc1f94007e00d20f71bd",
@@ -14,7 +14,8 @@
         "6d3b43c6b49251ad1e76894ad74b4880a1d8f02d",
         "5ea4f9868cd36d464c7d5b7514d075b77573955e",
         "4bfafe6c5d6ea1aed4e08c90a5daa1c6515de346",
-        "c4e4d4b86335f8ded5dfb53cd53f759b23634efd"
+        "c4e4d4b86335f8ded5dfb53cd53f759b23634efd",
+        "45b97760810fd5e6871d7d88e7030fc4d0a42c01"
       ],
       "reviews": {
         "spec": {
@@ -31,9 +32,9 @@
         },
         "quality": {
           "status": "pass",
-          "round": 1,
-          "report": "docs/execution/reviews/task-00-r1-quality.md",
-          "at": "2026-11-01T21:54:51.747Z"
+          "round": 2,
+          "report": "docs/execution/reviews/task-00-r2-quality.md",
+          "at": "2026-11-01T22:10:44.838Z"
         }
       },
       "gatesUsed": [
@@ -53,8 +54,9 @@
           "resolvedAt": "2026-11-01T21:49:48.960Z"
         }
       ],
-      "notes": "Steps 1-6 done on 2026-11-01 in the LABAK workspace session (harness not yet active). Next: Step 7 activation by Einar (switch off hosted connectors and browser tools; open a new local session in /Users/einarzoega/litljomi-cms; accept hooks/settings; check /sandbox), then Step 8 (Einar runs `node tools/harness/integrity.mjs --lock` in his own terminal; controller connector audit), Step 9 probes, Step 10 gates, Step 11 reviews, Step 12 Einar's acceptance. Resolved by Einar on 2026-11-01: the harness test command is the native glob `node --test \"tools/harness/__tests__/*.test.mjs\"`; the shim tools/harness/index.js was removed.",
-      "startedAt": "2026-11-01T20:25:38.289Z"
+      "notes": "Revised and simplified on 2026-11-01 (Einar: \"I approve the simplified execution design\"): the custom harness (guard hook, integrity lock, gate.mjs, probes) was replaced by native permissions and the Bash sandbox; Steps 7-12 of the original Task 0 are superseded by Steps R1-R5. R1 by Einar; R2 f34f4fb (sandboxed commit); R3 f9f7045 (V-HARNESS and V-CONNECTORS waived, V-SANDBOX pass). Accepted by Einar on 2026-11-01: \"I accept the simplified execution setup and the completed R2–R4 work. Task 0 meets the intended acceptance criteria.\" In the same message he permitted Auto mode (bypass stays disabled; Auto mode authorizes no G1–G7 action) and asked that waived be limited to V-HARNESS and V-CONNECTORS: a09ff7b, 6d3b43c, with documentation fixes 5ea4f98, 4bfafe6, c4e4d4b, 45b9776 (docs/execution/environment.md, 'Decision 2026-11-01 (later)'). Final reviews: spec round 2 pass, security round 5 pass, quality round 2 pass. Task 1 starts only after Einar explicitly authorizes it. Earlier: the harness test command is the native glob `node --test \"tools/harness/__tests__/*.test.mjs\"`; the shim tools/harness/index.js was removed.",
+      "startedAt": "2026-11-01T20:25:38.289Z",
+      "doneAt": "2026-11-01T22:10:59.013Z"
     },
     {
       "id": 1,
