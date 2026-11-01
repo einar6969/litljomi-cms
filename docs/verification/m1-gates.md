@@ -40,3 +40,5 @@ Original result (Task 0): pass, evidence in `docs/execution/environment.md`.
 ## Plan defect found in pre-flight (Task 2, 2026-11-01)
 
 With the plan's `[api] schemas = ["api"]`, `supabase start` fails before Task 4 creates `api`: PostgREST logs `schema "api" does not exist` (3F000) and the health check ends `HealthCheckTimeoutError … supabase_rest_… unexpected status 503`. With `schemas = []`, `supabase start` and `supabase db reset` succeed. Task 4's Step 2 expects the stack to run before `api` exists. Reported to Einar for a decision.
+
+Decision (Einar, 2026-11-01: "I approve Option A: temporarily expose no application schemas until Task 4 creates `api`."): Task 2 sets `[api] schemas = []` as a temporary bootstrap value; Task 4 creates `api`, `cms` and `private`, sets `["api"]` in the same commit, and verifies that the API works and that `cms` and `private` stay unexposed. Recorded as implementation-level decision 16 in the plan (sequencing, not architecture).
