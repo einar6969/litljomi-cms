@@ -42,4 +42,6 @@ A permission denial, sandbox refusal or unexpected prompt is reported to the con
 - `pnpm check:slugs`: fails if a tenant slug literal appears in core code.
 - `pnpm harness:test`: the execution-state tests, via `node --test`.
 
-Later tasks add the `pnpm db:*` scripts.
+- `pnpm db:start` / `pnpm db:stop`: start or stop the local Supabase stack (needs Docker; OrbStack).
+- `pnpm db:reset`: rebuild the local database from migrations.
+- `pnpm db:test`: the pgTAP suite over `supabase/tests/database/*.test.sql` (`tools/db/test.mjs`).

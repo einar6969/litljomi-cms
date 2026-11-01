@@ -9,7 +9,11 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "check:slugs": "node tools/checks/no-tenant-slugs.ts",
-    "harness:test": "node --test \"tools/harness/__tests__/*.test.mjs\""
+    "harness:test": "node --test \"tools/harness/__tests__/*.test.mjs\"",
+    "db:start": "SUPABASE_TELEMETRY_DISABLED=1 supabase start",
+    "db:stop": "SUPABASE_TELEMETRY_DISABLED=1 supabase stop",
+    "db:reset": "SUPABASE_TELEMETRY_DISABLED=1 supabase db reset",
+    "db:test": "node tools/db/test.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
