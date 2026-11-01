@@ -35,4 +35,11 @@ A permission denial, sandbox refusal or unexpected prompt is reported to the con
 - `node --test "tools/harness/__tests__/*.test.mjs"`: the execution-state tests (Node's native test glob; quote the pattern).
 - `node tools/harness/state.mjs show`: current execution state and the next task.
 
-Task 1 adds the `pnpm` scripts here.
+- `pnpm install`: install dependencies (Node 22, pnpm 11).
+- `pnpm lint`: ESLint, including the boundary rules (core imports no modules, secret key only under `privileged/`).
+- `pnpm typecheck`: TypeScript over the repository checks.
+- `pnpm test`: the Vitest workspace.
+- `pnpm check:slugs`: fails if a tenant slug literal appears in core code.
+- `pnpm harness:test`: the execution-state tests, via `node --test`.
+
+Later tasks add the `pnpm db:*` scripts.

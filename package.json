@@ -1,0 +1,21 @@
+{
+  "name": "litljomi-cms",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@11.1.3",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "check:slugs": "node tools/checks/no-tenant-slugs.ts",
+    "harness:test": "node --test \"tools/harness/__tests__/*.test.mjs\""
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "eslint": "^9",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8",
+    "vitest": "^3.2.7"
+  }
+}
