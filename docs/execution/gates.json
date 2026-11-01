@@ -14,12 +14,24 @@
           "at": "2026-11-01",
           "scope": "Task 1: Monorepo skeleton, boundary checks and CI, under G0 (local only; pnpm install from registry.npmjs.org). The GitHub Actions workflow may be written locally; G2 stays pending.",
           "note": "Einar in chat, 2026-11-01: \"I authorize Task 1: Monorepo skeleton, boundary checks and CI, under the existing G0 approval.\" and \"The GitHub Actions workflow may be created locally, but G2 remains unauthorized.\""
+        },
+        {
+          "at": "2026-11-01",
+          "scope": "Task 2: Local Supabase stack and pgTAP harness, under G0 and G1 (local only). Any sandbox configuration change for Docker/OrbStack is presented to Einar as an exact diff before it is applied; the sandbox is not bypassed.",
+          "note": "Einar in chat, 2026-11-01: \"I also authorize Task 2: local Supabase stack and pgTAP harness, under the existing G0 approval and the newly approved G1.\" and \"If the sandbox requires a configuration change to operate Docker or OrbStack, present the exact proposed change for my approval before applying it. Do not bypass the sandbox.\""
         }
       ]
     },
     "G1": {
-      "status": "pending",
-      "params": {}
+      "status": "approved",
+      "by": "Einar",
+      "at": "2026-11-01",
+      "scope": "Installing OrbStack only, as the local Docker-compatible runtime for Supabase development. Einar installs it himself if no compatible runtime is present. No other system software.",
+      "note": "Einar in chat, 2026-11-01: \"I approve G1, limited to installing OrbStack as the local Docker-compatible runtime required for Supabase development.\" and \"Before installing anything, check whether a compatible container runtime is already installed. If none is available, I will install OrbStack myself.\" Controller check on 2026-11-01: no docker, orb/orbctl, colima, podman, nerdctl or limactl on PATH; no OrbStack.app, Docker.app or Rancher Desktop.app; no /var/run/docker.sock.",
+      "params": {
+        "software": "OrbStack",
+        "installedBy": "Einar"
+      }
     },
     "G2": {
       "status": "pending",
