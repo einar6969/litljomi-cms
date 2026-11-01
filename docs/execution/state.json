@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-01T22:57:20.783Z",
+  "updatedAt": "2026-11-01T22:58:36.389Z",
   "branch": "m1/phase-0",
   "tasks": [
     {
@@ -60,7 +60,7 @@
     },
     {
       "id": 1,
-      "status": "in_review",
+      "status": "done",
       "commits": [
         "f95d874",
         "3c5438f",
@@ -76,9 +76,9 @@
         },
         "quality": {
           "status": "pass",
-          "round": 2,
-          "report": "docs/execution/reviews/task-01-r2-quality.md",
-          "at": "2026-11-01T22:43:48.396Z"
+          "round": 3,
+          "report": "docs/execution/reviews/task-01-r3-quality.md",
+          "at": "2026-11-01T22:58:16.035Z"
         },
         "security": {
           "status": "pass",
@@ -91,8 +91,9 @@
         "G0"
       ],
       "blockers": [],
-      "notes": "",
-      "startedAt": "2026-11-01T22:15:09.638Z"
+      "notes": "Authorized by Einar in chat on 2026-11-01 under G0 (recorded as a G0 extension in gates.json); G2 not authorized: ci.yml written locally, never run. Commits: f95d874 (implementation), 3c5438f (fix 1, quality), d2ca911 (fix 2, security), 6a48046 (fix 3, final minors). Reviews: spec r1-r4 pass; security r1-r3 pass (run although Task 1 is not on the sensitive list, because the fixes changed the secret-key and import boundary rules); quality r1 changes requested, r2-r3 approved. Final local suite on 6a48046: harness 17/17; pnpm lint (eslint -c eslint.config.mjs .), typecheck, check:slugs exit 0; Vitest 111/111; pnpm install --frozen-lockfile ok. Rulings: R1 ESLint ^9 (plan tech stack). R2 TypeScript ~6.0.3 (TS 7 outside typescript-eslint 8 peer range <6.1.0). R3 Vitest ^3.2.7 (plan names vitest.workspace.ts, which Vitest 4+ no longer reads; prints a deprecation notice). R4 secret-key rule exempt only apps/cms/src/privileged/** and tools/cli/**, plus computed and destructured spellings. R5 module imports forbidden in apps/** and packages/** except apps/cms/src/modules/registry.ts. R6 no placeholder packages. R7 lint/typecheck cover tools/checks. R8 CI database job written as planned, fails until Task 2. R9 packageManager pnpm@11.1.3, .nvmrc 22. R10 file scope. Fix rulings: C-F1 check:slugs scans existing roots and states scanned/absent roots and slug count (requiring roots to exist is deferred to Task 17). C-F4 import.meta.env out of scope. C-F9 allowBuilds esbuild:false. C-F11 supabase/setup-cli pinned to 2.121.0; actions on tags, SHA pinning at G2 (github.com unreachable under G0). C-S1 noInlineConfig. C-S2 ban the SUPABASE_SECRET_KEY name outside privileged/ and tools/cli. C-M1 registry exempt only as last segment. C-M3 lint uses -c eslint.config.mjs. Parked and forward items: Task 17: decide forbidding @supabase/supabase-js outside privileged/ (C-S2b); app package-name imports from packages/** (S6); narrow exception for worker/cron route handlers importing privileged/worker/pipeline (S11; plan line 1136 conflicts with the current rule); backslash separators in path regexes (N1); comment wording at eslint.config.mjs:57 and temp-dir cleanup style (Q3-1, Q3-2); require roots once apps/cms/src exists (C-F1). Task 16: module-to-module imports (S6). G2: SHA-pin actions (S12). Accepted lint limits: string concatenation, whole-env leaks, other variable names, template-built or variable import paths, alias-prefix variants needing configured aliases (S8, M2), wider .test.* exclusion (S9). Environment: one sandbox refusal in fix round 2 (diff with process substitution: /dev/fd/11 Operation not permitted); the implementer compared saved files instead, not a workaround. pnpm install ran sandboxed against registry.npmjs.org; .pnpm-store/ is inside the repo and gitignored.",
+      "startedAt": "2026-11-01T22:15:09.638Z",
+      "doneAt": "2026-11-01T22:58:36.389Z"
     },
     {
       "id": 2,
