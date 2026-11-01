@@ -7,18 +7,21 @@ const MODULE_MESSAGE = 'Modules are imported only by apps/cms/src/modules/regist
 const APPS_MESSAGE = 'packages and modules must not import from apps.';
 const SECRET_MESSAGE = 'SUPABASE_SECRET_KEY may only be read under apps/cms/src/privileged/** and tools/cli.';
 
-// Each entry is a path regex (source string) with its message. They feed both the static
+// Each entry is a path regex (source string) with its message, and feeds both the static
 // `no-restricted-imports` patterns and the dynamic `import()` / `require()` selectors.
-// Alias forms covered: `@/`, `~/`, `#` (subpath imports), relative and bare specifiers.
 const privilegedPaths = [{ regex: '(^#?|/)privileged(/|$)', message: PRIVILEGED_MESSAGE }];
+// Alias forms covered: `@/`, `~/`, `#` (subpath imports), relative and bare specifiers.
+// The registry is exempt only when `registry` (optionally with an extension) is the last segment,
+// so `registry.x/../labak`, `registry/..` or any `..` after `modules/` is still forbidden.
 const modulePaths = [
   { regex: '^@litljomi/module-', message: MODULE_MESSAGE },
-  { regex: '^(([@~]|\\.{1,2})/(.*/)?|#)?modules/(?!registry(\\.|$))', message: MODULE_MESSAGE },
+  { regex: '^(([@~]|\\.{1,2})/(.*/)?|#)?modules/(?!registry(\\.[^/]*)?$)', message: MODULE_MESSAGE },
 ];
 const appPaths = [{ regex: '(^|/)apps/', message: APPS_MESSAGE }];
 
-// esquery regex literals cannot contain "/", so it is rewritten as the class [/].
-const esqueryRegex = (regex) => `/${regex.replaceAll('/', '[/]')}/`;
+// esquery regex literals cannot contain "/", so it is rewritten as the escape \x2f, which also
+// works inside a character class such as [^/].
+const esqueryRegex = (regex) => `/${regex.replaceAll('/', '\\x2f')}/`;
 
 // Dynamic forms: import('x'), import(`x`), require('x'), require(`x`).
 const dynamicSyntax = (paths) =>
@@ -44,13 +47,25 @@ const destructuredReads = names('init.property', 'env').flatMap((env) =>
   names('key', KEY).map((key) => `VariableDeclarator[init.object.name='process'][${env}] > ObjectPattern > Property[${key}]`),
 );
 // Any other occurrence of the name (aliases of process.env, env schemas, Reflect.get, types, ...).
-// Occurrences inside a read matched above are skipped, so each read is reported once.
-const alreadyReported = [...memberReads.map((s) => `${s} > *`), ...destructuredReads.map((s) => `${s} *`)].join(', ');
+// Name nodes inside a read matched above are skipped, so that read is reported once: a member
+// read holds the name only as its property (a direct child, hence `> *`); a destructured
+// Property can hold it in its key, its value or a default (any descendant, hence ` *`).
+const alreadyReported = [...memberReads.map((s) => `${s} > *`), ...destructuredReads.map((s) => `${s} *`)];
+// Shorthand syntax holds one written name in two nodes at the same place; only the first is
+// reported: `{ KEY }` and `{ KEY = d }` (key, then value), `import { KEY }` (imported, then
+// local), `export { KEY }` (local, then exported). A renamed form names the key once and is
+// reported once; a name written twice (`{ KEY: KEY }`) is reported twice.
+const secondNameNode = [
+  'Property[shorthand=true] > Identifier.value',
+  'Property[shorthand=true] > AssignmentPattern.value > Identifier.left',
+  `ImportSpecifier[imported.name='${KEY}'] > Identifier.local`,
+  `ExportSpecifier[local.name='${KEY}'] > Identifier.exported`,
+];
 const nameOccurrences = [
   `Identifier[name='${KEY}']`,
   `Literal[value='${KEY}']`,
   `TemplateElement[value.cooked='${KEY}']`,
-].map((selector) => `${selector}:not(${alreadyReported})`);
+].map((selector) => `${selector}:not(${[...alreadyReported, ...secondNameNode].join(', ')})`);
 const secretSyntax = [...memberReads, ...destructuredReads, ...nameOccurrences].map((selector) => ({
   selector,
   message: SECRET_MESSAGE,
@@ -102,6 +117,7 @@ export default tseslint.config(
     files: ['modules/**'],
     rules: { ...imports(privilegedPaths, appPaths), ...syntax(secretSyntax, privilegedSyntax, appSyntax) },
   },
+  // Same rules as the base block: undoes the apps/** module restriction for the registry only.
   {
     files: ['apps/cms/src/modules/registry.ts'],
     rules: { ...imports(privilegedPaths), ...syntax(secretSyntax, privilegedSyntax) },

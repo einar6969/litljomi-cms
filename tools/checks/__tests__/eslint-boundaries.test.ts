@@ -1,3 +1,6 @@
+import { spawnSync } from 'node:child_process';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ESLint } from 'eslint';
@@ -8,7 +11,8 @@ const eslint = new ESLint({ cwd: root });
 
 async function ruleIds(path: string, code: string): Promise<string[]> {
   const [result] = await eslint.lintText(code, { filePath: join(root, path) });
-  return (result?.messages ?? []).map((m) => m.ruleId ?? `fatal:${m.message}`);
+  // Messages without a rule id are parse errors ("fatal:") or ESLint's own notes ("note:").
+  return (result?.messages ?? []).map((m) => m.ruleId ?? `${m.fatal ? 'fatal' : 'note'}:${m.message}`);
 }
 
 const RESTRICTED_SYNTAX = 'no-restricted-syntax';
@@ -16,31 +20,23 @@ const IMPORT = 'no-restricted-imports';
 
 describe('module imports', () => {
   it('forbids importing a module outside the registry', async () => {
-    expect(await ruleIds('apps/cms/src/editor/x.ts', `import m from '@litljomi/module-labak'`)).toContain(IMPORT);
-  });
-  it('forbids a relative path into modules/ from packages', async () => {
-    expect(await ruleIds('packages/sdk/src/x.ts', `import m from '../../../modules/labak/src/index'`)).toContain(IMPORT);
-  });
-  it.each([
-    [`import('@litljomi/module-labak')`],
-    [`require('@litljomi/module-labak')`],
-    ['import(`@litljomi/module-labak`)'],
-    [`import m from '@/modules/labak/x'`],
-    [`import m from './modules/labak/x'`],
-    [`import('@/modules/labak/x')`],
-    [`require('./modules/labak/x')`],
-    [`import('../../modules/labak/x')`],
-  ])('forbids %s outside the registry', async (code) => {
-    const ids = await ruleIds('apps/cms/src/editor/x.ts', code);
-    expect(ids.length).toBeGreaterThan(0);
-    expect(new Set(ids).size).toBe(1);
-    expect([IMPORT, RESTRICTED_SYNTAX]).toContain(ids[0]);
-  });
-  it('reports a static module import under exactly the import rule', async () => {
     expect(await ruleIds('apps/cms/src/editor/x.ts', `import m from '@litljomi/module-labak'`)).toEqual([IMPORT]);
   });
-  it('reports a dynamic module import under exactly the syntax rule', async () => {
-    expect(await ruleIds('apps/cms/src/editor/x.ts', `import('@litljomi/module-labak')`)).toEqual([RESTRICTED_SYNTAX]);
+  it('forbids a relative path into modules/ from packages', async () => {
+    expect(await ruleIds('packages/sdk/src/x.ts', `import m from '../../../modules/labak/src/index'`)).toEqual([IMPORT]);
+  });
+  // Static imports are reported by the import rule, dynamic ones by the syntax rule.
+  it.each([
+    [`import m from '@/modules/labak/x'`, IMPORT],
+    [`import m from './modules/labak/x'`, IMPORT],
+    [`import('@litljomi/module-labak')`, RESTRICTED_SYNTAX],
+    [`require('@litljomi/module-labak')`, RESTRICTED_SYNTAX],
+    ['import(`@litljomi/module-labak`)', RESTRICTED_SYNTAX],
+    [`import('@/modules/labak/x')`, RESTRICTED_SYNTAX],
+    [`require('./modules/labak/x')`, RESTRICTED_SYNTAX],
+    [`import('../../modules/labak/x')`, RESTRICTED_SYNTAX],
+  ])('forbids %s outside the registry', async (code, ruleId) => {
+    expect(await ruleIds('apps/cms/src/editor/x.ts', code)).toEqual([ruleId]);
   });
   it('forbids dynamic module imports from packages', async () => {
     expect(await ruleIds('packages/sdk/src/x.ts', `import('@litljomi/module-labak')`)).toEqual([RESTRICTED_SYNTAX]);
@@ -69,14 +65,46 @@ describe('module imports', () => {
   it('allows core to import the registry', async () => {
     expect(await ruleIds('apps/cms/src/editor/x.ts', `import r from '@/modules/registry'; import s from '../modules/registry'`)).toEqual([]);
   });
+  it('allows the registry with a file extension', async () => {
+    expect(await ruleIds('apps/cms/src/editor/x.ts', `import r from '@/modules/registry.ts'; import('./modules/registry.js')`)).toEqual([]);
+  });
+});
+
+// The registry is exempt only when `registry` (optionally with an extension) is the last segment,
+// so a path that normalizes elsewhere (`registry.x/../labak`) or climbs out with `..` is not.
+describe('registry exception', () => {
+  it.each([
+    [`import m from '@/modules/registry.ts/../labak'`, IMPORT],
+    [`import m from '@/modules/registry./../labak'`, IMPORT],
+    [`import m from '#modules/registry.x/../labak'`, IMPORT],
+    [`import m from '../../../../modules/registry.x/../labak/src'`, IMPORT],
+    [`import('modules/registry.x/../labak')`, RESTRICTED_SYNTAX],
+    [`import m from '@/modules/registry/../labak'`, IMPORT],
+    [`import m from '@/modules/../modules/registry'`, IMPORT],
+    [`require('./modules/registry/..')`, RESTRICTED_SYNTAX],
+  ])('forbids %s in apps', async (code, ruleId) => {
+    expect(await ruleIds('apps/cms/src/editor/x.ts', code)).toEqual([ruleId]);
+  });
+  it.each([
+    [`import m from '../../../modules/registry.x/../labak/src/index'`, IMPORT],
+    [`require('../../../modules/registry.x/../labak/src/index')`, RESTRICTED_SYNTAX],
+  ])('forbids %s in packages', async (code, ruleId) => {
+    expect(await ruleIds('packages/sdk/src/x.ts', code)).toEqual([ruleId]);
+  });
+  it.each([
+    [`import { c } from '@/privileged/../privileged/admin-client'`, IMPORT],
+    [`import('#privileged/x/../admin-client')`, RESTRICTED_SYNTAX],
+  ])('forbids %s outside privileged/ (a `..` after privileged/ is not exempt either)', async (code, ruleId) => {
+    expect(await ruleIds('apps/cms/src/editor/x.ts', code)).toEqual([ruleId]);
+  });
 });
 
 describe('admin client', () => {
   it('forbids the admin client outside privileged/', async () => {
-    expect(await ruleIds('apps/cms/src/editor/x.ts', `import { createAdminClient } from '@/privileged/admin-client'`)).toContain(IMPORT);
+    expect(await ruleIds('apps/cms/src/editor/x.ts', `import { createAdminClient } from '@/privileged/admin-client'`)).toEqual([IMPORT]);
   });
   it('forbids a relative path into privileged/ outside privileged/', async () => {
-    expect(await ruleIds('apps/cms/src/editor/x.ts', `import { c } from '../privileged/admin-client'`)).toContain(IMPORT);
+    expect(await ruleIds('apps/cms/src/editor/x.ts', `import { c } from '../privileged/admin-client'`)).toEqual([IMPORT]);
   });
   it.each([
     [`import('@/privileged/admin-client')`],
@@ -87,6 +115,7 @@ describe('admin client', () => {
   });
   it('forbids the dynamic admin client from packages and modules', async () => {
     expect(await ruleIds('packages/sdk/src/x.ts', `import('@/privileged/admin-client')`)).toEqual([RESTRICTED_SYNTAX]);
+    // Two reports, not a typo: the path matches both the privileged/ selector and the apps/ selector.
     expect(await ruleIds('modules/labak/src/x.ts', `require('../../../apps/cms/src/privileged/admin-client')`)).toEqual([
       RESTRICTED_SYNTAX,
       RESTRICTED_SYNTAX,
@@ -106,17 +135,17 @@ describe('admin client', () => {
     expect(await ruleIds('apps/cms/src/editor/x.ts', code)).toEqual([RESTRICTED_SYNTAX]);
   });
   it('forbids reading SUPABASE_SECRET_KEY outside privileged/', async () => {
-    expect(await ruleIds('apps/cms/src/editor/x.ts', `const k = process.env.SUPABASE_SECRET_KEY`)).toContain(RESTRICTED_SYNTAX);
+    expect(await ruleIds('apps/cms/src/editor/x.ts', `const k = process.env.SUPABASE_SECRET_KEY`)).toEqual([RESTRICTED_SYNTAX]);
   });
   it('forbids the computed spelling', async () => {
-    expect(await ruleIds('apps/cms/src/editor/x.ts', `const k = process.env['SUPABASE_SECRET_KEY']`)).toContain(RESTRICTED_SYNTAX);
+    expect(await ruleIds('apps/cms/src/editor/x.ts', `const k = process.env['SUPABASE_SECRET_KEY']`)).toEqual([RESTRICTED_SYNTAX]);
   });
   it('forbids destructuring', async () => {
-    expect(await ruleIds('apps/cms/src/editor/x.ts', `const { SUPABASE_SECRET_KEY } = process.env`)).toContain(RESTRICTED_SYNTAX);
-    expect(await ruleIds('apps/cms/src/editor/x.ts', `const { SUPABASE_SECRET_KEY: k } = process.env`)).toContain(RESTRICTED_SYNTAX);
+    expect(await ruleIds('apps/cms/src/editor/x.ts', `const { SUPABASE_SECRET_KEY } = process.env`)).toEqual([RESTRICTED_SYNTAX]);
+    expect(await ruleIds('apps/cms/src/editor/x.ts', `const { SUPABASE_SECRET_KEY: k } = process.env`)).toEqual([RESTRICTED_SYNTAX]);
   });
   it('applies outside apps/cms too', async () => {
-    expect(await ruleIds('packages/sdk/src/x.ts', `const k = process.env.SUPABASE_SECRET_KEY`)).toContain(RESTRICTED_SYNTAX);
+    expect(await ruleIds('packages/sdk/src/x.ts', `const k = process.env.SUPABASE_SECRET_KEY`)).toEqual([RESTRICTED_SYNTAX]);
   });
   it('allows both inside privileged/', async () => {
     expect(
@@ -152,6 +181,29 @@ describe('secret key name', () => {
       ),
     ).toEqual([RESTRICTED_SYNTAX]);
   });
+  // Shorthand syntax holds the name in two nodes at the same place; it is still one report.
+  it.each([
+    [`const { env: { SUPABASE_SECRET_KEY } } = process`],
+    [`function f({ SUPABASE_SECRET_KEY } = process.env) {}`],
+    [`const { SUPABASE_SECRET_KEY } = process.env as Record<string, string>`],
+    [`({ SUPABASE_SECRET_KEY } = process.env)`],
+    [`const { SUPABASE_SECRET_KEY = 'x' } = env`],
+    [`const o = { SUPABASE_SECRET_KEY }`],
+    [`import { SUPABASE_SECRET_KEY } from '@/env'`],
+    [`export { SUPABASE_SECRET_KEY } from '@/env'`],
+  ])('reports the shorthand %s exactly once', async (code) => {
+    expect(await ruleIds('apps/cms/src/editor/x.ts', code)).toEqual([RESTRICTED_SYNTAX]);
+  });
+  it.each([
+    [`import { SUPABASE_SECRET_KEY as k } from '@/env'`],
+    [`import { k as SUPABASE_SECRET_KEY } from '@/env'`],
+    [`export { SUPABASE_SECRET_KEY as k } from '@/env'`],
+    [`export { k as SUPABASE_SECRET_KEY } from '@/env'`],
+    [`const { k: SUPABASE_SECRET_KEY } = env`],
+    [`const { SUPABASE_SECRET_KEY: k = 'x' } = env`],
+  ])('still reports the renamed %s', async (code) => {
+    expect(await ruleIds('apps/cms/src/editor/x.ts', code)).toEqual([RESTRICTED_SYNTAX]);
+  });
   it('reports each access once', async () => {
     expect(
       await ruleIds('apps/cms/src/editor/x.ts', `const k = process.env.SUPABASE_SECRET_KEY; const { SUPABASE_SECRET_KEY: j } = process.env`),
@@ -181,16 +233,18 @@ describe('secret key name', () => {
 
 describe('inline configuration', () => {
   const secretRead = 'const k = process.env.SUPABASE_SECRET_KEY';
+  // ESLint notes that the comment has no effect, then reports the violation.
+  const ignoredComment = expect.stringMatching(/^note:.*noInlineConfig/);
   it.each([
     ['// eslint-disable-next-line no-restricted-syntax'],
     ['/* eslint-disable */'],
     ['/* eslint no-restricted-syntax: off */'],
   ])('%s does not silence a secret read', async (comment) => {
-    expect(await ruleIds('apps/cms/src/editor/x.ts', `${comment}\n${secretRead}`)).toContain(RESTRICTED_SYNTAX);
+    expect(await ruleIds('apps/cms/src/editor/x.ts', `${comment}\n${secretRead}`)).toEqual([ignoredComment, RESTRICTED_SYNTAX]);
   });
   it('does not silence a forbidden import', async () => {
     const code = `// eslint-disable-next-line no-restricted-imports\nimport { c } from '@/privileged/admin-client'`;
-    expect(await ruleIds('apps/cms/src/editor/x.ts', code)).toContain(IMPORT);
+    expect(await ruleIds('apps/cms/src/editor/x.ts', code)).toEqual([ignoredComment, IMPORT]);
   });
 });
 
@@ -238,9 +292,52 @@ describe('ignores', () => {
 
 describe('apps boundary', () => {
   it('forbids packages importing from apps', async () => {
-    expect(await ruleIds('packages/sdk/src/x.ts', `import x from '../../../apps/cms/src/x'`)).toContain(IMPORT);
+    expect(await ruleIds('packages/sdk/src/x.ts', `import x from '../../../apps/cms/src/x'`)).toEqual([IMPORT]);
   });
   it('forbids modules importing from apps', async () => {
-    expect(await ruleIds('modules/labak/src/x.ts', `import x from '../../../apps/cms/src/x'`)).toContain(IMPORT);
+    expect(await ruleIds('modules/labak/src/x.ts', `import x from '../../../apps/cms/src/x'`)).toEqual([IMPORT]);
   });
+});
+
+// ESLint 10 (and ESLint 9 with the v10_config_lookup_from_file flag) looks up the config next to
+// each file, so a nested eslint.config.* would replace the root config for its folder. The lint
+// script names the root config, which keeps it in force everywhere.
+describe('lint script', () => {
+  const lintArgs = (): string[] => {
+    const script: string = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).scripts.lint;
+    const [command, ...args] = script.split(/\s+/);
+    expect(command).toBe('eslint');
+    return args;
+  };
+  const eslintBin = join(root, 'node_modules', 'eslint', 'bin', 'eslint.js');
+
+  it('ignores a nested config that turns the boundary rules off', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lint-lookup-'));
+    try {
+      copyFileSync(join(root, 'eslint.config.mjs'), join(dir, 'eslint.config.mjs'));
+      symlinkSync(join(root, 'node_modules'), join(dir, 'node_modules'));
+      mkdirSync(join(dir, 'apps', 'cms', 'src', 'editor'), { recursive: true });
+      writeFileSync(
+        join(dir, 'apps', 'cms', 'eslint.config.mjs'),
+        `export default [{ files: ['**/*.ts'], rules: { 'no-restricted-syntax': 'off', 'no-restricted-imports': 'off' } }];\n`,
+      );
+      writeFileSync(join(dir, 'apps', 'cms', 'src', 'editor', 'x.ts'), 'export const k = process.env.SUPABASE_SECRET_KEY;\n');
+      const lint = (args: string[]) =>
+        spawnSync(process.execPath, [eslintBin, ...args], {
+          cwd: dir,
+          encoding: 'utf8',
+          env: { ...process.env, ESLINT_FLAGS: 'v10_config_lookup_from_file' },
+        });
+
+      // Without the root config named, the nested config wins: the setup really is a bypass.
+      expect(lint(['.']).status).toBe(0);
+
+      const result = lint(lintArgs());
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain(join('apps', 'cms', 'src', 'editor', 'x.ts'));
+      expect(result.stdout).toContain('no-restricted-syntax');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
 });

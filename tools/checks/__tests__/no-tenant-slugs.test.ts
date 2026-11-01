@@ -3,16 +3,28 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { findTenantSlugLiterals, runCheck } from '../no-tenant-slugs.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixture = (name: string) => join(here, 'fixtures', name);
 const SLUGS = ['labak', 'demo'];
+const LEAK_LINE = `${join('apps', 'cms', 'src', 'leak.ts')}:2:labak`;
+
+const tempDirs: string[] = [];
+/** A fresh temp directory, removed after the test. */
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 /** Writes the files into a fresh temp directory and scans it. */
 function scan(files: Record<string, string>) {
-  const dir = mkdtempSync(join(tmpdir(), 'slugs-'));
+  const dir = tempDir('slugs-');
   for (const [path, content] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), content);
@@ -25,7 +37,7 @@ describe('findTenantSlugLiterals', () => {
     const hits = findTenantSlugLiterals([fixture('core-with-slug')], SLUGS);
     expect(hits).toEqual([{ file: expect.stringMatching(/bad\.ts$/), line: 1, slug: 'labak' }]);
   });
-  it('ignores the module registry and identifiers that merely contain the slug', () => {
+  it('reports nothing for a clean core fixture', () => {
     expect(findTenantSlugLiterals([fixture('core-clean')], SLUGS)).toEqual([]);
   });
   it('ignores the module registry', () => {
@@ -57,7 +69,7 @@ describe('findTenantSlugLiterals', () => {
     expect(() => findTenantSlugLiterals([fixture('missing')], [])).toThrow(/does not exist/);
   });
   it('does not follow symlinks', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'slugs-'));
+    const dir = tempDir('slugs-');
     mkdirSync(join(dir, 'real'));
     writeFileSync(join(dir, 'real', 'a.ts'), 'export const a = 1;\n');
     symlinkSync(dir, join(dir, 'real', 'loop'));
@@ -69,7 +81,7 @@ describe('runCheck', () => {
   it('exits 1 and prints file:line:slug for a slug literal in core', () => {
     const { exitCode, output } = runCheck(fixture('repo-with-slug'));
     expect(exitCode).toBe(1);
-    expect(output).toContain(`${join('apps', 'cms', 'src', 'leak.ts')}:2:labak`);
+    expect(output.split('\n')).toContain(LEAK_LINE);
   });
   it('exits 0 and states scanned and absent roots and the slug count', () => {
     const { exitCode, output } = runCheck(fixture('repo-clean'));
@@ -91,7 +103,7 @@ describe('check:slugs command line', () => {
   it('exits 1 with file:line:slug on stderr', () => {
     const result = run(fixture('repo-with-slug'));
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain(`${join('apps', 'cms', 'src', 'leak.ts')}:2:labak`);
+    expect(result.stderr.split('\n')).toContain(LEAK_LINE);
   });
   it('exits 0 on a clean repository', () => {
     const result = run(fixture('repo-clean'));
@@ -99,15 +111,10 @@ describe('check:slugs command line', () => {
     expect(result.stdout).toContain('check:slugs ok');
   });
   it('still runs, and exits 1 on a hit, when started through a symlinked path', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'slugs-cli-'));
-    try {
-      const link = join(dir, 'no-tenant-slugs.ts');
-      symlinkSync(join(here, '..', 'no-tenant-slugs.ts'), link);
-      const result = spawnSync(process.execPath, [link, fixture('repo-with-slug')], { encoding: 'utf8' });
-      expect(result.status).toBe(1);
-      expect(result.stderr).toContain(`${join('apps', 'cms', 'src', 'leak.ts')}:2:labak`);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+    const link = join(tempDir('slugs-cli-'), 'no-tenant-slugs.ts');
+    symlinkSync(join(here, '..', 'no-tenant-slugs.ts'), link);
+    const result = spawnSync(process.execPath, [link, fixture('repo-with-slug')], { encoding: 'utf8' });
+    expect(result.status).toBe(1);
+    expect(result.stderr.split('\n')).toContain(LEAK_LINE);
   });
 });
