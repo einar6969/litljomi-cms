@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T21:35:54.956Z",
+  "updatedAt": "2026-11-02T23:10:57.002Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -1144,21 +1144,94 @@
     },
     {
       "id": 32,
-      "status": "pending",
-      "commits": [],
-      "reviews": {},
-      "gatesUsed": [],
+      "status": "done",
+      "commits": [
+        "8803fb9",
+        "2681fd3",
+        "753f88b",
+        "24cc76e"
+      ],
+      "reviews": {
+        "spec": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-32-r1-spec.md",
+          "at": "2026-11-02T22:43:59.222Z",
+          "atCommits": 3
+        },
+        "security": {
+          "status": "pass",
+          "round": 2,
+          "report": "docs/execution/reviews/task-32-r2-security.md",
+          "at": "2026-11-02T23:01:43.106Z",
+          "atCommits": 4
+        },
+        "quality": {
+          "status": "pass",
+          "round": 2,
+          "report": "docs/execution/reviews/task-32-r2-quality.md",
+          "at": "2026-11-02T23:02:25.260Z",
+          "atCommits": 4
+        }
+      },
+      "gatesUsed": [
+        "G0",
+        "G1"
+      ],
       "blockers": [],
-      "notes": "Added 2026-11-02 (decision 41.1): cross-device sign-in and status tones."
+      "notes": "Added 2026-11-02 (decision 41.1): cross-device sign-in and status tones.",
+      "startedAt": "2026-11-02T22:18:36.304Z",
+      "doneAt": "2026-11-02T23:10:22.048Z"
     },
     {
       "id": 27,
-      "status": "pending",
-      "commits": [],
-      "reviews": {},
-      "gatesUsed": [],
-      "blockers": [],
-      "notes": ""
+      "status": "in_review",
+      "commits": [
+        "10f43bd",
+        "3aa74b2",
+        "c5c478e",
+        "7147edc",
+        "2f8bb63",
+        "9b19560",
+        "81cd795"
+      ],
+      "reviews": {
+        "specQuality": {
+          "status": "pass",
+          "round": 6,
+          "report": "docs/execution/reviews/task-27-r6-spec-quality.md",
+          "at": "2026-11-02T23:10:44.436Z",
+          "atCommits": 7
+        },
+        "security": {
+          "status": "pass",
+          "round": 6,
+          "report": "docs/execution/reviews/task-27-r6-security.md",
+          "at": "2026-11-02T23:10:57.002Z",
+          "atCommits": 7
+        }
+      },
+      "gatesUsed": [
+        "G0",
+        "G1",
+        "G7"
+      ],
+      "blockers": [
+        {
+          "text": "Security review round 3 FAIL with two Majors (preconnect sockets to Google Fonts not caught by route abort; npm update notifier fetching from the registry), both in the planned unsandboxed npm run test:visual run, not in site code. Escalated to Einar under the three-round rule.",
+          "at": "2026-11-02T22:48:21.805Z",
+          "previousStatus": "in_review",
+          "resolvedAt": "2026-11-02T22:56:49.736Z"
+        },
+        {
+          "text": "Combined review round 4 FAIL, one Critical: e2e/visual/playwright.config.ts webServer runs node e2e/serve.ts from e2e/visual (MODULE_NOT_FOUND). One-line cwd fix. Round 5 needs Einar's approval.",
+          "at": "2026-11-02T23:00:41.110Z",
+          "previousStatus": "in_review",
+          "resolvedAt": "2026-11-02T23:02:13.610Z"
+        }
+      ],
+      "notes": "",
+      "startedAt": "2026-11-02T22:19:24.206Z"
     },
     {
       "id": 28,

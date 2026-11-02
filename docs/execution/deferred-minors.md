@@ -149,10 +149,10 @@
 | P4 follow-up | spec r1 | spec §7.4 does not list "Enginn vefur tengdur" (decision 39.3 addition) (`p4-followup-r1-spec.md`) | C3 | open |
 | P4 follow-up | security r1 | Tenant status checked without a `FOR SHARE` lock in `register_asset`/`update_asset` (millisecond race, own tenant, publishes nothing); `media_private_insert_member` lets a suspended tenant's member upload an object `register_asset` then refuses (orphan) (`p4-followup-r1-security.md`) | C3 | open |
 | P4 follow-up | quality r1 | Unclosed "plain" pages and a duplicated finding log in the date e2e; unscoped status locator; SlugField `value` comment; site-less state precedes `notify_attempts`; redundant weakened status assertion (`p4-followup-r1-quality.md`) | C3 | open |
-| 31 | spec-quality r1 | "Tekið af vef" shows the `ok` tone (accent fill) because `status.ts` gives it `ok`; green may read as "live" to an editor (`task-31-r1-spec-quality.md`) | Einar (step-1 screenshot approval) | open |
+| 31 | spec-quality r1 | "Tekið af vef" shows the `ok` tone (accent fill) because `status.ts` gives it `ok`; green may read as "live" to an editor (`task-31-r1-spec-quality.md`) | Einar (step-1 screenshot approval) | cleared 8803fb9 (decision 41.1: neutral tone) |
 | 31 | spec-quality r1 | Entry table becomes `display:block` at phone width (VoiceOver may drop table semantics); Field help/error spans inside the `<label>` become part of the accessible name if `help` is used (`task-31-r1-spec-quality.md`) | Task 31 step 2 / C3 | open |
 | 31 | spec-quality r2 | Notice `max-w-none` overridable by callers; the matcher test uses Next's unstable `next/experimental/testing/server` (`task-31-r2-spec-quality.md`) | C3 | accepted: harmless; a Next upgrade would fail loudly |
-| 31 | spec-quality r3 | Suspended-tenant notice not screenshotted (Major waived by Einar, "Waive the screenshot"); "Enginn vefur tengdur" shows the `error` tone from `status.ts` (red badge for a non-error) | Einar | open (tone); waived (screenshot) |
+| 31 | spec-quality r3 | Suspended-tenant notice not screenshotted (Major waived by Einar, "Waive the screenshot"); "Enginn vefur tengdur" shows the `error` tone from `status.ts` (red badge for a non-error) | Einar | cleared 8803fb9 (tone: warning, decision 41.1); waived (screenshot) |
 | 31 | spec-quality r3 | `not-found.tsx:10` repeats `hover:bg-recessed` and relies on class order for `no-underline`; `ImageField` `busyPicker` duplicates Button's disabled look; `toneOf` and the aria-live branch both test `endsWith('Saved')`; long header comment line in `design.spec.ts`; focal button focus ring not verified (`task-31-r3-spec-quality.md`) | C3 | open |
 | 31 | security r3 | `design.spec.ts:8-9` header says only PNGs are written; the step-2 tests also write drafts, an upload and publishes on the local stack (`task-31-r3-security.md`) | C3 | open |
 
@@ -168,3 +168,10 @@ Parked items from Task 1, recorded in its notes in `state.json` with their IDs; 
 | 1 | C-S2b, S6 (apps), S11: decisions on `@supabase/supabase-js` outside `privileged/`, app package-name imports, the worker/cron route exception | Task 17 | cleared 8577cfb |
 | 1 | S6 (modules): module-to-module imports | Task 16 | cleared 11b7c93 |
 | 1 | S12: SHA-pin the GitHub Actions | G2 | open |
+| 32 | security r1 | Token hash in the GET query string reaches hosting request logs and browser history (single use, 1 h); possible `history.replaceState` to drop it after load (`task-32-r1-security.md`) | C3 | open |
+| 32 | security r1 | Login CSRF / session swap: pressing "Halda áfram" on someone else's link signs in as that link's owner and replaces any session; possible: show the target account, or warn when a session exists (`task-32-r1-security.md`) | C3 | open |
+| 32 | security r1 | `login/actions.ts`: `emailRedirectTo` no longer shapes the link (templates use `{{ .SiteURL }}`); docstring (`task-32-r1-security.md`) | C3 | open |
+| 32 | spec r1 | `login/actions.ts` doc comment: one over-long line (`task-32-r1-spec.md`) | C3 | open |
+| 32 | quality r1 | Seven Minors: substring `REDIRECT /` matches in `confirm/__tests__/actions.test.ts`; `settledLanding` timeouts and constants; `data.session != null`; token-hash regex comment; long comment in `design.spec.ts`; `guardLoopback` note; Mailpit polling (`task-32-r1-quality.md`) | C3 | open |
+| 32 | security r2 | `e2e/support/demo-release.ts:59`: readiness poll without `redirect: 'error'` (`task-32-r2-security.md`) | C3 | open |
+| 32 | quality r2 | `TITLE` duplicated, aliased imports in `publish.spec.ts`, inline poll timeouts in `ensureDemoSite` (`task-32-r2-quality.md`) | C3 | open |
