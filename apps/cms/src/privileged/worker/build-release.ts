@@ -59,7 +59,15 @@ export type BuildResult = {
   bundle?: Bundle;
   /** The tenant's previously delivered bundle (null for the first release), for the live checks. */
   previousBundle?: Bundle | null;
+  /**
+   * Delivered only: every request linked to the release (the snapshot's committed requests, those
+   * of omitted entries included), in request order, so the caller can live-check each (Task 21).
+   */
+  requests?: LinkedRequest[];
 };
+
+/** A committed request linked to a delivered release. */
+export type LinkedRequest = { id: string; entryId: string; action: 'publish' | 'unpublish' };
 
 export type BuildOptions = {
   db?: SupabaseClient;
@@ -90,7 +98,7 @@ type Snapshot = {
   tenant: { id: string; slug: string };
   entries: SnapshotEntry[];
   assets: SnapshotAsset[];
-  requests: Array<{ id: string; entry_id: string; action: string; revision_id: string | null }>;
+  requests: Array<{ id: string; entry_id: string; action: 'publish' | 'unpublish'; revision_id: string | null }>;
 };
 
 /** A failure at a named step of the build; `pointerWritten` is null when it cannot be known. */
@@ -222,7 +230,8 @@ export async function buildRelease(tenantId: string, options: BuildOptions = {})
 
     // Step 10. Left-out entries are visible and alerted ("Withdrawal and failure visibility").
     if (omitted.length > 0) await alert('release.entry_omitted', { tenantId, releaseId, number, omitted });
-    return { status: 'delivered', releaseId, number, omitted, bundle, previousBundle };
+    const requests = snapshot.requests.map((r) => ({ id: r.id, entryId: r.entry_id, action: r.action }));
+    return { status: 'delivered', releaseId, number, omitted, bundle, previousBundle, requests };
   } catch (error) {
     const failure = error instanceof BuildFailure ? error : new BuildFailure(step, error);
     const recorded = {

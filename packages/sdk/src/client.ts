@@ -28,7 +28,10 @@ export function createCmsClient(o: { deliveryBaseUrl: string; tenant: string; fe
     const pointer = (await readJson(`${base}/${o.tenant}/current.json`, { next: { tags: ['cms'], revalidate: 3600 } })) as Pointer;
     if (pointer?.format !== 1) throw new Error(`cms: unsupported pointer format ${String(pointer?.format)}`);
     if (pointer.tenant !== o.tenant) throw new Error('cms: pointer tenant does not match');
+    if (!Number.isSafeInteger(pointer.release) || pointer.release < 1) throw new Error('cms: pointer release is not a release number');
     if (typeof pointer.bundle !== 'string' || !BUNDLE_PATH.test(pointer.bundle)) throw new Error('cms: unexpected bundle path in pointer');
+    // The pointer names exactly its own release's bundle (Task 26 security r1, F4).
+    if (pointer.bundle !== `releases/${pointer.release}.json`) throw new Error('cms: pointer bundle is not its release\'s bundle');
     const bundle = (await readJson(`${base}/${o.tenant}/${pointer.bundle}`, { cache: 'force-cache' })) as Bundle;
     if (bundle?.format !== 1) throw new Error(`cms: unsupported bundle format ${String(bundle?.format)}`);
     if (bundle.tenant !== o.tenant) throw new Error('cms: bundle tenant does not match');

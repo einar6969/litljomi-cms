@@ -1,0 +1,280 @@
+// Worker step 3 against the local stack (plan Task 21, decisions 34 and 35; spec §6.1, §7.3, §7.4).
+// Runs on labak with one fake site (node:http on a fixed port), created idempotently; the tenant's
+// other active sites are deactivated around the tests as owner and restored after. The fake site
+// renders the labak bundle that the delivery bucket's pointer names, reloading it only when a
+// correctly signed webhook arrives, as a site's revalidation would. Earlier labak content is in
+// every build, so assertions are about the entries each test creates.
+import { randomUUID } from 'node:crypto';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { SIGNATURE_HEADER, TIMESTAMP_HEADER, verifyWebhook, type Bundle, type BundleEntry, type Pointer } from '@litljomi/cms-sdk';
+import { editorClient, publicUrl, secretClient } from '../../../../../../tests/integration/src/clients.ts';
+import { env } from '../../../../../../tests/integration/src/env.ts';
+import { TENANT } from '../../../../../../tests/integration/src/fixtures.ts';
+import { closeAll, ownerQuery, withTx } from '../../../../../../tests/integration/src/sql.ts';
+import { buildRelease } from '../build-release';
+import { processAndDeliver, sweep } from '../pipeline';
+import { processPendingRequests } from '../process-request';
+import { entryMarker, html, releaseMeta, startFakeSite, type FakeSite } from './fake-site';
+
+const PORT = 3198;
+const BASE_URL = `http://127.0.0.1:${PORT}`;
+const SECRET = 'pipeline-fake-site-secret';
+const fast = { pollMs: 100, timeoutMs: 15_000 };
+
+let editor: SupabaseClient;
+let site: FakeSite;
+let siteId: string;
+let deactivated: string[] = [];
+/** What the fake site renders: the bundle loaded at start and on each verified webhook. */
+let rendered: Bundle | null = null;
+/** When set, the fake site answers the webhook with this status and does not revalidate. */
+let webhookStatus: number | null = null;
+/** When false, the fake site acknowledges webhooks but never reloads (a stale site). */
+let revalidates = true;
+
+const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0xff, 0xd9]);
+
+async function loadBundle(): Promise<Bundle | null> {
+  const p = await fetch(publicUrl('delivery', 'labak/current.json'), { cache: 'no-store' });
+  if (!p.ok) return null;
+  const pointer = (await p.json()) as Pointer;
+  const b = await fetch(publicUrl('delivery', `labak/${pointer.bundle}`), { cache: 'no-store' });
+  return b.ok ? ((await b.json()) as Bundle) : null;
+}
+
+const news = (): BundleEntry[] => rendered?.entries['news'] ?? [];
+const listing = () => html(releaseMeta(rendered?.release ?? 0), `<ul>${news().map((e) => `<li>${entryMarker(e.id, e.contentHash)}${e.title}</li>`).join('')}</ul>`);
+
+async function startLabakSite(): Promise<FakeSite> {
+  const s = await startFakeSite(PORT);
+  s.handler = async (req) => {
+    if (req.method === 'POST' && req.path === '/api/cms/revalidate') {
+      const ok = verifyWebhook({
+        body: req.body,
+        signature: String(req.headers[SIGNATURE_HEADER] ?? ''),
+        timestamp: Number(req.headers[TIMESTAMP_HEADER]),
+        secrets: [SECRET],
+        nowSeconds: Math.floor(Date.now() / 1000),
+      });
+      if (!ok) return { status: 401, html: '{}' };
+      if (webhookStatus !== null) return { status: webhookStatus, html: '{}' };
+      if (revalidates) rendered = await loadBundle();
+      return { status: 200, html: '{"revalidated":true}' };
+    }
+    if (req.path === '/' || req.path === '/frettir') return { status: 200, html: listing() };
+    const slug = /^\/frettir\/([a-z0-9-]+)$/.exec(req.path)?.[1];
+    const entry = slug ? news().find((e) => e.slug === slug) : undefined;
+    if (entry) return { status: 200, html: html(releaseMeta(rendered!.release), `<article>${entryMarker(entry.id, entry.contentHash)}<h1>${entry.title}</h1></article>`) };
+    return { status: 404, html: html('', '<h1>404</h1>') };
+  };
+  return s;
+}
+
+/** Leftovers of earlier runs: a building release blocks the tenant, and published originals must exist to be copied. */
+async function prepareLabak() {
+  const building = await ownerQuery<{ id: string }>(`select id from cms.releases where tenant_id = $1 and status = 'building'`, [TENANT.labak]);
+  for (const { id } of building) {
+    await withTx('service', (w) => w.query(`select api.worker_finish_release($1, 'failed', null, '{"test":"cleanup"}', null, null)`, [id]));
+  }
+  const originals = await ownerQuery<{ original_path: string }>(
+    `select distinct a.original_path from cms.assets a
+     join cms.revision_refs rr on rr.tenant_id = a.tenant_id and rr.target_asset_id = a.id
+     join cms.entries e on e.tenant_id = rr.tenant_id and e.published_rev_id = rr.revision_id
+     where a.tenant_id = $1 and a.public_path is null and a.archived_at is null and e.archived_at is null`,
+    [TENANT.labak],
+  );
+  for (const { original_path } of originals) {
+    const { error } = await secretClient().storage.from('media-private').upload(original_path, JPEG, { contentType: 'image/jpeg' });
+    if (error && String((error as { statusCode?: unknown }).statusCode) !== '409') throw error;
+  }
+}
+
+beforeAll(async () => {
+  vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', env.apiUrl);
+  vi.stubEnv('SUPABASE_SECRET_KEY', env.secretKey);
+  editor = await editorClient('editor_labak');
+  await prepareLabak();
+
+  const existing = await ownerQuery<{ id: string }>('select id from cms.sites where tenant_id = $1 and base_url = $2', [TENANT.labak, BASE_URL]);
+  if (existing[0]) {
+    siteId = existing[0].id;
+  } else {
+    const { data, error } = await secretClient()
+      .schema('api')
+      .rpc('admin_create_site', {
+        p_tenant_id: TENANT.labak,
+        p_base_url: BASE_URL,
+        p_revalidate_url: `${BASE_URL}/api/cms/revalidate`,
+        p_preview_url: null,
+        p_webhook_secret: SECRET,
+      });
+    if (error) throw new Error(`admin_create_site: ${error.message}`);
+    siteId = data as string;
+  }
+  deactivated = (
+    await ownerQuery<{ id: string }>('update cms.sites set active = false where tenant_id = $1 and active and id <> $2 returning id', [TENANT.labak, siteId])
+  ).map((r) => r.id);
+  await ownerQuery('update cms.sites set active = true where id = $1', [siteId]);
+
+  // Earlier files leave labak requests pending or committed without a release (some of them for
+  // entries a build omits). Each test's release must link only the requests it creates, so they
+  // are processed and released here first (buildRelease alone notifies no site).
+  await processPendingRequests(100);
+  expect((await buildRelease(TENANT.labak)).status).toBe('delivered');
+
+  site = await startLabakSite();
+  rendered = await loadBundle();
+});
+afterAll(async () => {
+  await site?.close();
+  if (deactivated.length > 0) await ownerQuery('update cms.sites set active = true where id = any($1::uuid[])', [deactivated]);
+  vi.unstubAllEnvs();
+  await closeAll();
+});
+
+const rpc = async <T>(fn: string, args: Record<string, unknown>): Promise<T> => {
+  const { data, error } = await editor.schema('api').rpc(fn, args);
+  if (error) throw new Error(`${fn}: ${error.code} ${error.message}`);
+  return data as T;
+};
+
+async function labakAsset(): Promise<string> {
+  const id = randomUUID();
+  const path = `${TENANT.labak}/${id}/mynd.jpg`;
+  const { error } = await editor.storage.from('media-private').upload(path, JPEG, { contentType: 'image/jpeg' });
+  if (error) throw error;
+  await rpc('register_asset', {
+    p_asset_id: id,
+    p_tenant_id: TENANT.labak,
+    p_original_path: path,
+    p_filename: 'mynd.jpg',
+    p_mime: 'image/jpeg',
+    p_bytes: JPEG.length,
+    p_width: 800,
+    p_height: 600,
+    p_sha256: 'c'.repeat(64),
+  });
+  return id;
+}
+
+/** A labak news entry with a draft, and a publish request for it (the fast path not run). */
+async function requested(title: string): Promise<{ entryId: string; slug: string; requestId: string }> {
+  const slug = `t21-${randomUUID().slice(0, 8)}`;
+  const entryId = await rpc<string>('create_entry', { p_tenant_id: TENANT.labak, p_type: 'news', p_slug: slug });
+  const data = {
+    title,
+    date: '2026-11-02',
+    excerpt: 'Inngangur.',
+    image: { _ref: await labakAsset(), _kind: 'asset', alt: 'Brauð' },
+    body: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Meginmál.' }] }] },
+  };
+  const version = await rpc<number>('save_draft', {
+    p_entry_id: entryId,
+    p_expected_version: 1,
+    p_data: data,
+    p_schema_version: 1,
+    p_title: null,
+    p_sort_at: null,
+  });
+  const requestId = await rpc<string>('request_publish', { p_entry_id: entryId, p_expected_draft_version: version });
+  return { entryId, slug, requestId };
+}
+
+type Delivery = { notify_status: string; notify_attempts: number; live_status: string; last_error: unknown; number: number };
+async function deliveryOf(requestId: string): Promise<Delivery & { status: string; release_id: string | null }> {
+  const [row] = await ownerQuery<Delivery & { status: string; release_id: string | null }>(
+    `select pr.status, pr.release_id, r.number, sd.notify_status, sd.notify_attempts, sd.live_status, sd.last_error
+     from cms.publish_requests pr
+     left join cms.releases r on r.id = pr.release_id
+     left join cms.site_deliveries sd on sd.release_id = pr.release_id and sd.site_id = $2
+     where pr.id = $1`,
+    [requestId, siteId],
+  );
+  return row!;
+}
+const webhooks = () => site.requests.filter((r) => r.path === '/api/cms/revalidate');
+
+describe('processAndDeliver', () => {
+  let published: { entryId: string; slug: string; requestId: string };
+
+  it('committed → delivered → notify_status ok → live_status ok against the fake site', async () => {
+    published = await requested('Fljótleiðin');
+    const before = webhooks().length;
+
+    await processAndDeliver(published.requestId, fast);
+
+    const d = await deliveryOf(published.requestId);
+    expect(d).toMatchObject({ status: 'committed', notify_status: 'ok', notify_attempts: 1, live_status: 'ok', last_error: null });
+    expect(d.release_id).not.toBeNull();
+    // The site received a signed webhook for that release and now renders the entry with its hash.
+    const sent = webhooks().slice(before);
+    expect(sent).toHaveLength(1);
+    expect(JSON.parse(sent[0]!.body.toString('utf8'))).toEqual({ tenant: 'labak', release: d.number });
+    const entry = news().find((e) => e.id === published.entryId);
+    expect(entry?.slug).toBe(published.slug);
+    expect(rendered?.release).toBe(d.number);
+    expect(site.hits(`/frettir/${published.slug}`)).toBeGreaterThan(0);
+    expect(site.hits('/frettir')).toBeGreaterThan(0);
+  });
+
+  it('an unpublish is live when the own path is 404 and no listing carries the marker', async () => {
+    const requestId = await rpc<string>('request_unpublish', { p_entry_id: published.entryId });
+    await processAndDeliver(requestId, fast);
+    expect(await deliveryOf(requestId)).toMatchObject({ status: 'committed', notify_status: 'ok', live_status: 'ok' });
+    expect(news().some((e) => e.id === published.entryId)).toBe(false);
+  });
+
+  it('a site that does not revalidate is live not_confirmed, with the entry in last_error', async () => {
+    revalidates = false;
+    try {
+      const r = await requested('Gömul síða');
+      const before = webhooks().length;
+      await processAndDeliver(r.requestId, { pollMs: 100, timeoutMs: 1_500 });
+      const d = await deliveryOf(r.requestId);
+      expect(d).toMatchObject({ notify_status: 'ok', live_status: 'not_confirmed' });
+      expect(d.last_error).toMatchObject({ code: 'live_not_confirmed' });
+      expect(JSON.stringify(d.last_error)).toContain(r.entryId);
+      // The stale site shows no marker for the new entry at all (no stale hash), so only the
+      // notification is sent; the stale-hash resend is proven in live-check.test.ts.
+      expect(webhooks().length - before).toBe(1);
+    } finally {
+      revalidates = true;
+      rendered = await loadBundle();
+    }
+  });
+});
+
+describe('sweep', () => {
+  it('picks up a request whose fast path never ran: commit, release, notify ok, live ok', async () => {
+    const r = await requested('Sópurinn');
+    expect((await deliveryOf(r.requestId)).status).toBe('pending');
+
+    await sweep(fast);
+
+    const d = await deliveryOf(r.requestId);
+    expect(d).toMatchObject({ status: 'committed', notify_status: 'ok', notify_attempts: 1, live_status: 'ok' });
+    expect(d.release_id).not.toBeNull();
+  });
+
+  it('retries a failed notification once per sweep, then confirms live', async () => {
+    const r = await requested('Endurtekning');
+    webhookStatus = 500;
+    try {
+      await processAndDeliver(r.requestId, fast);
+    } finally {
+      webhookStatus = null;
+    }
+    expect(await deliveryOf(r.requestId)).toMatchObject({
+      status: 'committed',
+      notify_status: 'failed',
+      notify_attempts: 1,
+      live_status: 'pending',
+      last_error: { code: 'notify_failed', status: 500 },
+    });
+
+    await sweep(fast);
+
+    expect(await deliveryOf(r.requestId)).toMatchObject({ notify_status: 'ok', notify_attempts: 2, live_status: 'ok', last_error: null });
+  });
+});

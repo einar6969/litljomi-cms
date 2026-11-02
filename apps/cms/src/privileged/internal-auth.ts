@@ -1,15 +1,16 @@
-import { timingSafeEqual } from 'node:crypto';
+import 'server-only';
+import { createHash, timingSafeEqual } from 'node:crypto';
+
+const digest = (s: string) => createHash('sha256').update(s, 'utf8').digest();
 
 /**
- * Compares a presented value with the expected secret in constant time. False, never a throw, when
- * the secret is not configured (unset or empty), when nothing is presented, or when the lengths
- * differ (timingSafeEqual itself throws on a length mismatch).
+ * Compares a presented value with the expected secret in constant time. Both are hashed first
+ * (SHA-256, always 32 bytes), so not even the secret's length is revealed by timing. False, never a
+ * throw, when the secret is not configured (unset or empty) or when nothing is presented.
  */
 function matchesSecret(presented: string | null, expected: string): boolean {
   if (presented === null) return false;
-  const a = Buffer.from(presented, 'utf8');
-  const b = Buffer.from(expected, 'utf8');
-  return a.length === b.length && timingSafeEqual(a, b);
+  return timingSafeEqual(digest(presented), digest(expected));
 }
 
 /** The internal worker trigger: header `x-cms-internal-secret` equals `CMS_INTERNAL_SECRET`. */

@@ -108,7 +108,10 @@ select set_eq($$ select p.proname::text, pg_catalog.pg_get_function_result(p.oid
             ('worker_sites', 'TABLE(id uuid, base_url text, revalidate_url text, webhook_secrets text[])'),
             ('worker_record_delivery', 'void'), ('admin_create_tenant', 'uuid'), ('admin_create_site', 'uuid'),
             ('admin_add_membership', 'void'), ('worker_claim_request', 'cms.publish_requests'),
-            ('worker_record_alert', 'void') $$,
+            ('worker_record_alert', 'void'),
+            -- Task 21 (097_worker_sweep).
+            ('worker_tenants_to_release', 'TABLE(tenant_id uuid)'),
+            ('worker_deliveries_to_retry', 'TABLE(release_id uuid, tenant_id uuid, tenant_slug text, release_number integer, bundle_path text, previous_bundle_path text, site_id uuid, notify_status text, notify_attempts integer, live_status text, requests jsonb)') $$,
   'worker and admin functions: return types, and no others');
 select is((select pg_catalog.pg_get_function_arguments('api.worker_claim_requests(integer)'::regprocedure)),
   'p_limit integer DEFAULT 10', 'worker_claim_requests: p_limit defaults to 10');

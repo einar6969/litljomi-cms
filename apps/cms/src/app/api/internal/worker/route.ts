@@ -13,14 +13,19 @@ const body = z.strictObject({ requestId: canonicalUuid });
 /** The fast path: an editor action posts the new request ID here after `request_publish`. */
 export async function POST(req: Request): Promise<Response> {
   if (!verifyInternalSecret(req)) return new Response(null, { status: 401 });
+  // A refused body is logged without its content, so a misconfigured caller is visible in operations.
+  const badRequest = () => {
+    console.warn('[cms-worker] worker trigger refused: the body is not { requestId: <uuid> }');
+    return new Response(null, { status: 400 });
+  };
   let json: unknown;
   try {
     json = await req.json();
   } catch {
-    return new Response(null, { status: 400 });
+    return badRequest();
   }
   const parsed = body.safeParse(json);
-  if (!parsed.success) return new Response(null, { status: 400 });
+  if (!parsed.success) return badRequest();
   const { requestId } = parsed.data;
   after(async () => {
     try {
