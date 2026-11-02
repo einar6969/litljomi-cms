@@ -98,7 +98,7 @@ select set_eq($$ select p.oid::regprocedure::text,
             case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end, a.privilege_type
      from pg_catalog.pg_proc p, pg_catalog.aclexplode(p.proacl) a
      where p.oid in (select to_regprocedure(sig) from editor_functions) $$,
-  $$ select to_regprocedure(sig)::text, g, 'EXECUTE' from editor_functions, (values ('postgres'), ('authenticated')) as v(g) $$,
+  $$ select to_regprocedure(sig)::text as sig, g, 'EXECUTE' as privilege_type from editor_functions, (values ('postgres'), ('authenticated')) as v(g) $$,
   'editor functions: EXECUTE for postgres (owner) and authenticated only; not PUBLIC, anon or service_role');
 select is_empty($$ select sig from editor_functions
      where has_function_privilege('anon', to_regprocedure(sig), 'execute')
@@ -136,7 +136,7 @@ select set_eq($$ select c.relname::text, case when a.grantee = 0 then 'PUBLIC' e
      from editor_views v join pg_catalog.pg_class c on c.oid = to_regclass('api.' || v.name),
           pg_catalog.aclexplode(c.relacl) a
      where a.grantee <> c.relowner $$,
-  $$ select name, 'authenticated', 'SELECT' from editor_views $$,
+  $$ select name, 'authenticated' as grantee, 'SELECT' as privilege_type from editor_views $$,
   'editor views: SELECT for authenticated only (besides the owner); nothing for PUBLIC, anon or service_role');
 select is_empty($$ select v.name from editor_views v, (values ('anon'), ('service_role')) as r(role)
      where has_table_privilege(r.role, to_regclass('api.' || v.name), 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER') $$,
@@ -565,16 +565,18 @@ select results_eq($$ select id from cms.assets where archived_at = now() order b
   'f802 and f804 archived (f806 was already); f801 and the demo asset are not');
 -- The asset row is locked FOR UPDATE before the check (serialising with the
 -- worker's FOR SHARE locks, §6.2; the concurrent case is in Task 12). Calling
--- it on the already archived f806, outside any subtransaction, takes the lock
--- without updating: the row's xmax becomes this transaction's id.
+-- it on the already archived f806 takes the lock without updating: the row's
+-- xmax becomes the id of this transaction or, when the test runner wraps each
+-- statement in a savepoint, of one of its subtransactions, whose ids are
+-- assigned after the top-level one.
 select is((select xmax::text from cms.assets where id = tests.asset('f806')), '0',
   'f806 is not locked before the call');
 select tests.act_as(tests.persona('editor_labak'));
 select api.archive_asset(tests.asset('f806'));
 select tests.act_as_owner();
-select is((select xmax::text from cms.assets where id = tests.asset('f806')),
-  (pg_catalog.pg_current_xact_id()::text::bigint % 4294967296)::text,
-  'archive_asset locks the asset row even when it changes nothing');
+select ok((select xmax::text::bigint from cms.assets where id = tests.asset('f806'))
+          >= pg_catalog.pg_current_xact_id()::text::bigint % 4294967296,
+  'archive_asset locks the asset row even when it changes nothing (xmax set by this transaction)');
 select ok((select pg_catalog.pg_get_functiondef('api.archive_asset(uuid)'::regprocedure)
            ~ 'from cms\.assets a\s+where a\.id = p_asset_id\s+for update;'),
   'archive_asset selects the asset row FOR UPDATE');

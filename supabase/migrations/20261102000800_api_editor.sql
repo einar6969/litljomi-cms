@@ -323,8 +323,10 @@ grant execute on function
 -- entry_detail and asset_list show exactly the caller's tenants through RLS.
 -- tenants, publish_requests, releases, sites and site_deliveries also carry the
 -- console policies, so my_tenants, publication_status and tenant_sites filter
--- by the caller's own memberships as well: they are the editor's views, and a
--- platform admin at aal2 sees there only the tenants they are a member of.
+-- by the caller's own memberships as well: they are the editor's views and must
+-- never widen to the console rows. A platform admin at aal2 sees there only the
+-- tenants they are a member of (no implicit content access, §4.5); console
+-- reads are a separate surface.
 
 create view api.my_tenants with (security_invoker = true) as
 select t.id, t.slug, t.name, t.status

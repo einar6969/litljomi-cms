@@ -27,10 +27,11 @@ create table cms.audit_log (
 -- whatever the insert named. Otherwise (the worker, the CLI through api.admin_*,
 -- the owner) the trigger that writes the event names the actor: the worker's
 -- recorded requester (for example publish_requests.requested_by), or null for a
--- system event. A system event's action is prefixed 'system.' (decision 12),
--- here in one place, so every event without an actor carries the prefix
--- whichever trigger or worker function wrote it. at is always the database
--- clock.
+-- system event. Decision 12's rule: an event whose final actor_id is null is a
+-- system event, and its action is prefixed 'system.' (unless it already is).
+-- It is applied here, in one place, so every event without an actor carries
+-- the prefix whichever trigger or worker function wrote it, owner-context
+-- writes included. at is always the database clock.
 --
 -- A BEFORE trigger whose name sorts after this one could still change NEW; for
 -- editors the insert policy's WITH CHECK (actor_id = auth.uid()) runs after
