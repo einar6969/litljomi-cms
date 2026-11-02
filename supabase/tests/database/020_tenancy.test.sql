@@ -2,7 +2,7 @@
 -- Tenancy tables and RLS (spec §4.1 rules 3 and 7, §4.3, §4.5; plan Task 5).
 begin;
 \ir _helpers.sql
-select plan(42);
+select plan(47);
 
 select has_table('cms', 'tenants', 'cms.tenants exists');
 select has_table('cms', 'memberships', 'cms.memberships exists');
@@ -27,6 +27,8 @@ select results_eq($$ select slug from cms.tenants order by slug $$, array['demo'
 select results_eq($$ select tenant_id, user_id from cms.memberships order by user_id $$,
   $$ values (tests.tenant('labak'), tests.persona('editor_labak')), (tests.tenant('demo'), tests.persona('editor_demo')) $$,
   'seed leaves exactly the two editor memberships');
+select is_empty($$ select 1 from cms.memberships where user_id = tests.persona('revoked') $$,
+  'seed deletes the revoked persona''s membership');
 select results_eq($$ select user_id from cms.platform_admins $$, array[tests.persona('platform_admin')], 'seed registers the platform admin');
 
 -- editor_labak
@@ -53,7 +55,7 @@ select tests.act_as(tests.persona('revoked'));
 select is_empty($$ select 1 from cms.tenants $$, 'revoked member sees no tenant');
 select is_empty($$ select 1 from cms.memberships $$, 'revoked member sees no membership');
 select tests.act_as_anon();
-select throws_ok($$ select 1 from cms.tenants $$, '42501', null, 'anon cannot read tenants');
+select throws_ok($$ select 1 from cms.tenants $$, '42501', null, 'anon cannot read tenants (no privilege)');
 
 -- platform_admin: console read of tenants needs aal2; no implicit access to memberships
 select tests.act_as(tests.persona('platform_admin'), 'aal1');
@@ -63,6 +65,13 @@ select tests.act_as(tests.persona('platform_admin'), 'aal2');
 select results_eq($$ select count(*)::int from cms.tenants $$, array[2], 'platform admin with aal2 sees all tenants');
 select is_empty($$ select 1 from cms.memberships $$, 'platform admin with aal2 sees no other user''s membership');
 
+-- Non-admins at aal2: the console policy also needs platform_admins membership (§4.5),
+-- so aal2 alone (any user can enrol TOTP) grants no extra tenants.
+select tests.act_as(tests.persona('editor_labak'), 'aal2');
+select results_eq($$ select slug from cms.tenants $$, array['labak'], 'editor with aal2 still sees only own tenant');
+select tests.act_as(tests.persona('outsider'), 'aal2');
+select is_empty($$ select 1 from cms.tenants $$, 'user without membership at aal2 sees no tenant');
+
 -- Tenant slug immutable (§4.1 rule 7), for the owner and for service_role (the CLI's writer).
 select tests.act_as_owner();
 select throws_ok($$ update cms.tenants set slug = 'other' where slug = 'labak' $$, 'P0001', 'slug_locked', 'tenant slug immutable');
@@ -70,6 +79,25 @@ select lives_ok($$ update cms.tenants set name = 'Annað nafn' where slug = 'lab
 select tests.act_as_service();
 select throws_ok($$ update cms.tenants set slug = 'other' where slug = 'labak' $$, 'P0001', 'slug_locked', 'tenant slug immutable for service_role');
 select lives_ok($$ update cms.tenants set status = 'suspended' where slug = 'demo' $$, 'service_role can suspend a tenant');
+
+-- The lock sees the final row, whatever other triggers run: a BEFORE UPDATE
+-- trigger whose name sorts after the lock's cannot change the slug.
+select tests.act_as_owner();
+create function tests.probe_change_slug() returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  new.slug := 'probe';
+  return new;
+end;
+$$;
+create trigger zz_probe_change_slug before update on cms.tenants
+  for each row execute function tests.probe_change_slug();
+select throws_ok($$ update cms.tenants set name = 'Probe' where slug = 'labak' $$,
+  'P0001', 'slug_locked', 'a later BEFORE trigger cannot change a tenant slug');
+drop trigger zz_probe_change_slug on cms.tenants;
+select is((select slug from cms.tenants where id = tests.tenant('labak')), 'labak', 'tenant slug unchanged after the probe');
 
 -- Integrity (decision 2; status values; single role)
 select tests.act_as_owner();

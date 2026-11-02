@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T03:19:14.500Z",
+  "updatedAt": "2026-11-02T04:28:52.002Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -227,30 +227,93 @@
     },
     {
       "id": 5,
-      "status": "pending",
-      "commits": [],
-      "reviews": {},
-      "gatesUsed": [],
+      "status": "done",
+      "commits": [
+        "5ec57b4",
+        "feb8734"
+      ],
+      "reviews": {
+        "spec": {
+          "status": "pass",
+          "round": 2,
+          "report": "docs/execution/reviews/task-05-r2-spec.md",
+          "at": "2026-11-02T03:58:52.035Z",
+          "atCommits": 2
+        },
+        "security": {
+          "status": "pass",
+          "round": 2,
+          "report": "docs/execution/reviews/task-05-r2-security.md",
+          "at": "2026-11-02T04:00:15.795Z",
+          "atCommits": 2
+        },
+        "quality": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-05-r1-quality.md",
+          "at": "2026-11-02T04:01:13.721Z",
+          "atCommits": 2
+        }
+      },
+      "gatesUsed": [
+        "G0",
+        "G1"
+      ],
       "blockers": [],
-      "notes": ""
+      "notes": "Phase 1 Lane A, high tier (Opus). Commits: 5ec57b4 (implementation, clears Task 4 deferred Minors: default-revoke assertion and 010 comments/positive schema-usage checks), feb8734 (round 2: aal2 cases for non-admin personas, proven to fail against a policy without the platform_admins clause; slug trigger on every update). Reviews: spec r1 pass, r2 pass (fix diff); security r1 FAIL (Major: no test caught losing the console policy platform_admins clause), r2 pass (fix diff, mutation verified by the reviewer); quality r1 pass. Deferred: service_role can update tenants.id (C1); trigger-order gap and quality Minors (Task 6); fixture UUID cross-check (Task 12). Controller follow-up 153eda0 (ESLint ignores .worktrees/**, render appends progress-notes.md) reviewed in security r1: no finding. Full local suite on m1/phase-1 after feb8734 and the Task 13 merge (controller): harness 27/27; lint, typecheck, check:slugs exit 0; Vitest 7 files 145 passed; db:reset ok; db:test Files=5 Tests=185 PASS. Process note: two reviewers running pnpm db:test at once collided on pgTAP setup (rerun clean); parallel reviewers are now told not to run it concurrently.",
+      "startedAt": "2026-11-02T03:44:22.286Z",
+      "doneAt": "2026-11-02T04:02:32.387Z"
     },
     {
       "id": 6,
-      "status": "pending",
-      "commits": [],
-      "reviews": {},
-      "gatesUsed": [],
+      "status": "done",
+      "commits": [
+        "bcbc955"
+      ],
+      "reviews": {
+        "spec": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-06-r1-spec.md",
+          "at": "2026-11-02T04:20:36.132Z",
+          "atCommits": 1
+        },
+        "security": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-06-r1-security.md",
+          "at": "2026-11-02T04:24:31.208Z",
+          "atCommits": 1
+        },
+        "quality": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-06-r1-quality.md",
+          "at": "2026-11-02T04:26:09.437Z",
+          "atCommits": 1
+        }
+      },
+      "gatesUsed": [
+        "G0",
+        "G1"
+      ],
       "blockers": [],
-      "notes": ""
+      "notes": "Phase 1 Lane A, high tier (Opus). Commit bcbc955 (entries, drafts, revisions; AFTER-trigger slug locks for tenants and entries, clearing the trigger-order Minor; Task 5 quality Minors cleared; mutation proofs M1-M15). Reviews: spec r1 pass (3 plan-text differences accepted: AFTER triggers, deterministic actor test, extra not null); security r1 pass (3 Minors deferred: drafts_pkey oracle -> Task 10/8, BEFORE-trigger order of version bump and force_actor -> Task 7, first_published_at write-once -> Task 11); quality r1 pass (10 Minors -> Task 7). Full suite on m1/phase-1 after bcbc955 and the Task 14 merge 3810375 (controller): harness 27/27; lint, typecheck, check:slugs exit 0; Vitest 13 files 175; db:reset ok; db:test Files=6 Tests=282 PASS.",
+      "startedAt": "2026-11-02T04:06:25.142Z",
+      "doneAt": "2026-11-02T04:26:09.670Z"
     },
     {
       "id": 7,
-      "status": "pending",
+      "status": "in_progress",
       "commits": [],
       "reviews": {},
-      "gatesUsed": [],
+      "gatesUsed": [
+        "G0",
+        "G1"
+      ],
       "blockers": [],
-      "notes": ""
+      "notes": "",
+      "startedAt": "2026-11-02T04:26:10.172Z"
     },
     {
       "id": 8,
@@ -299,30 +362,105 @@
     },
     {
       "id": 13,
-      "status": "pending",
-      "commits": [],
-      "reviews": {},
-      "gatesUsed": [],
+      "status": "done",
+      "commits": [
+        "a411e47"
+      ],
+      "reviews": {
+        "specQuality": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-13-r1-spec-quality.md",
+          "at": "2026-11-02T03:51:38.797Z",
+          "atCommits": 1
+        }
+      },
+      "gatesUsed": [
+        "G0",
+        "G1"
+      ],
       "blockers": [],
-      "notes": ""
+      "notes": "",
+      "startedAt": "2026-11-02T03:46:07.245Z",
+      "doneAt": "2026-11-02T03:51:59.867Z"
     },
     {
       "id": 14,
-      "status": "pending",
-      "commits": [],
-      "reviews": {},
-      "gatesUsed": [],
-      "blockers": [],
-      "notes": ""
+      "status": "done",
+      "commits": [
+        "8452545",
+        "82d08f5",
+        "e6dbcd8"
+      ],
+      "reviews": {
+        "specQuality": {
+          "status": "pass",
+          "round": 2,
+          "report": "docs/execution/reviews/task-14-r2-spec-quality.md",
+          "at": "2026-11-02T04:11:06.820Z",
+          "atCommits": 3
+        },
+        "security": {
+          "status": "pass",
+          "round": 2,
+          "report": "docs/execution/reviews/task-14-r2-security.md",
+          "at": "2026-11-02T04:14:14.363Z",
+          "atCommits": 3
+        }
+      },
+      "gatesUsed": [
+        "G0",
+        "G1"
+      ],
+      "blockers": [
+        {
+          "text": "Contradiction: spec §3.1 says packages/rich-text may depend on none (React as peer); plan Task 14 (and commit 8452545) adds zod and @tiptap/core, pm, starter-kit, extension-link, extension-image, and sites import the same entry point. Spec wins; waiting for Einar's ruling. Also open: security r1 Major (rel missing on upper-case/odd-scheme external links) and the ordered-list defect.",
+          "at": "2026-11-02T04:03:10.149Z",
+          "previousStatus": "in_review",
+          "resolvedAt": "2026-11-02T04:06:25.002Z"
+        }
+      ],
+      "notes": "Blocked 2026-11-02 on a spec/plan contradiction (§3.1 rich-text deps). Ruled by Einar in chat: \"Amend spec, split entry\" and \"Rule now; continue both\" (decision 23; spec §3.1 revised). Unblocked for fix round 2. Commits: 8452545 (implementation), 82d08f5 (round 2: editor entry point per decision 23, canonical hrefs in rich-text and schema, rel from parsed protocol, ordered lists validate, Minors), e6dbcd8 (round 2: ordered-list start through projection and render; Einar asked that this not be deferred). Reviews: specQuality r1 pass (missed the ordered-list defect), r2 pass; security r1 FAIL (Major: rel missing on upper-case/odd-scheme links; contradiction with spec §3.1 -> decision 23), r2 pass (fix diff, esbuild metafile check). Worktree suite on e6dbcd8: harness 27/27; lint, typecheck, check:slugs exit 0; Vitest 13 files 175 passed. Merge into m1/phase-1 deferred until the Lane A implementer is idle (avoids changing files under it).",
+      "startedAt": "2026-11-02T03:52:35.058Z",
+      "doneAt": "2026-11-02T04:14:42.537Z"
     },
     {
       "id": 15,
-      "status": "pending",
-      "commits": [],
-      "reviews": {},
-      "gatesUsed": [],
-      "blockers": [],
-      "notes": ""
+      "status": "done",
+      "commits": [
+        "e97329c"
+      ],
+      "reviews": {
+        "specQuality": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-15-r1-spec-quality.md",
+          "at": "2026-11-02T04:24:58.797Z",
+          "atCommits": 1
+        },
+        "security": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-15-r1-security.md",
+          "at": "2026-11-02T04:28:21.408Z",
+          "atCommits": 1
+        }
+      },
+      "gatesUsed": [
+        "G0",
+        "G1"
+      ],
+      "blockers": [
+        {
+          "text": "Contradiction: spec §3.1 says packages/schema may depend on Zod only; plan Task 15 has schema consume @litljomi/rich-text (richTextDocSchema, projectRichText). Implementer stopped before writing anything. Waiting for Einar's ruling.",
+          "at": "2026-11-02T04:16:04.735Z",
+          "previousStatus": "in_progress",
+          "resolvedAt": "2026-11-02T04:17:18.495Z"
+        }
+      ],
+      "notes": "Blocked 2026-11-02 before any work on a spec/plan contradiction (§3.1: schema may depend on Zod only; Task 15 consumes rich-text). Einar ruled in chat: \"Allow rich-text main entry\" (decision 24; spec §3.1 revised). Unblocked; the same implementer continues. Commit e97329c (fields image and richText, projection, canonicalJson/contentHash (plan hash verified), codegen; deferred Minors from Tasks 13 and 14 cleared, including resolver-output checks and the depth cap). Lockfile: 3-line workspace link, frozen install verified by the controller. Reviews: specQuality r1 pass ({ entry: null } adaptation ratified per spec §6.2), security r1 pass (5 Minors -> Tasks 16, 19, 20). Worktree suite on e97329c: harness 27/27; lint, typecheck, check:slugs exit 0; Vitest 17 files 223 passed. Merge into m1/phase-1 waits for the Lane A implementer (Task 7) to be idle.",
+      "startedAt": "2026-11-02T04:14:42.592Z",
+      "doneAt": "2026-11-02T04:28:52.002Z"
     },
     {
       "id": 16,
