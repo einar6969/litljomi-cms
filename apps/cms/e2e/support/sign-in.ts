@@ -38,20 +38,40 @@ export async function openLink(page: Page, link: URL): Promise<void> {
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(t.confirm.title);
 }
 
+// How long the URL must stay unchanged, with the landing page's heading shown, to count as settled.
+const SETTLE_MS = 500;
+
 /**
- * Opens `link` on `page`, presses "Halda áfram" and returns where the sign-in landed. A link that
+ * Waits until `page` has left /auth/confirm and settled: its `main` shows a level-1 heading and the
+ * URL stays the same for SETTLE_MS. "Halda áfram" is a server action, so its redirect is followed by
+ * the client router, and a page it lands on may redirect again (the tenant picker at `/` sends an
+ * editor with one tenant on to `/t/<slug>`); the intermediate URL is not the landing.
+ */
+async function settledLanding(page: Page): Promise<URL> {
+  await page.waitForURL((url) => url.origin === CMS_URL && url.pathname !== '/auth/confirm');
+  await expect(async () => {
+    const before = page.url();
+    await expect(page.getByRole('main').getByRole('heading', { level: 1 })).toBeVisible({ timeout: SETTLE_MS });
+    await page.waitForTimeout(SETTLE_MS);
+    expect(page.url()).toBe(before);
+    expect(new URL(before).pathname).not.toBe('/auth/confirm');
+  }).toPass();
+  return new URL(page.url());
+}
+
+/**
+ * Opens `link` on `page`, presses "Halda áfram" and returns where the sign-in settled. A link that
  * fails lands on `/login?error=link`; that is an error here, not a signed-in landing.
  */
 export async function followLink(page: Page, link: URL): Promise<URL> {
   await openLink(page, link);
   await page.getByRole('button', { name: t.confirm.submit }).click();
-  await page.waitForURL((url) => url.origin === CMS_URL && url.pathname !== '/auth/confirm');
-  const landed = new URL(page.url());
+  const landed = await settledLanding(page);
   if (landed.pathname === '/login') throw new Error(`the magic link did not sign in (landed on ${landed.pathname}${landed.search})`);
   return landed;
 }
 
-/** Signs `email` in on `page` through the magic link and returns where the sign-in landed. */
+/** Signs `email` in on `page` through the magic link and returns where the sign-in settled. */
 export async function signIn(page: Page, email: string): Promise<URL> {
   return followLink(page, await requestMagicLink(page, email));
 }
