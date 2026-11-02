@@ -1,0 +1,30 @@
+setup: admin create user -> 200
+PASS [1] magic link sign-in :: 200 probe_method=otp amr=[{"method":"otp","timestamp":1793578319}]
+PASS [1] email one-time code sign-in :: code=found 200 probe_method=otp
+PASS [3] magic-link session refreshes :: 200 probe_method=token_refresh amr=[{"method":"otp","timestamp":1793578319}]
+PASS [3] refreshed session refreshes again (rotation) :: 200
+PASS [3] one-time-code session refreshes :: 200
+PASS [2] editor can still set a password (expected; the hook blocks its use) :: 200
+info: other session refresh after the editor's own password change -> 400 refresh_token_not_found Invalid Refresh Token: Refresh Token Not Found
+PASS [2] password sign-in with the correct password is refused :: 403 unknown Only email sign-in is allowed
+PASS [2] password sign-in with a wrong password is refused :: 400 invalid_credentials Invalid login credentials
+PASS [2] password set through the admin API is refused too :: 403 unknown Only email sign-in is allowed
+PASS [1] magic link still works after a password was set :: 200
+PASS [3] new session refreshes after a password was set :: 200
+PASS [4] TOTP enrolment and verification gives aal2 :: enrol 200, verify 200, aal=aal2, probe_method=totp, amr=[{"method":"otp","timestamp":1793578325},{"method":"totp","timestamp":1793578325}]
+PASS [4] aal2 session refreshes and stays aal2 :: 200 aal=aal2
+PASS [4] new magic-link sign-in is aal1 and steps up to aal2 with TOTP :: sign-in aal=aal1, step-up 200 aal=aal2
+PASS [4] recovery email signs the editor in :: recover 200, verify 200, probe_method=otp, aal=aal1
+PASS [4] recovery session refreshes :: 200
+PASS [5] signup with email and password gives no token :: 422 signup_disabled Signups not allowed for this instance
+PASS [5] anonymous sign-in gives no token :: 422 anonymous_provider_disabled Anonymous sign-ins are disabled
+PASS [5] phone password grant gives no token :: 422 phone_provider_disabled Phone logins are disabled
+PASS [5] id_token grant gives no token :: 400 provider_disabled Provider (issuer "https://accounts.google.com") is not enabled
+PASS [5] pkce grant with forged flow gives no token :: 404 flow_state_not_found invalid flow state, no valid flow state found
+PASS [5] web3 grant gives no token :: 422 web3_provider_disabled Web3 provider is disabled
+PASS [5] password grant via user metadata email casing gives no token :: 403 unknown Only email sign-in is allowed
+PASS [5] SSO gives no token :: 404 saml_provider_disabled SAML 2.0 is disabled
+PASS [5] OAuth provider sign-in is unavailable :: 400
+
+user id: f1740651-67bc-4200-81e1-88efbbcff072
+{"passed":25,"failed":0}

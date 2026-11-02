@@ -1,0 +1,20 @@
+setup create f1-mvyiqpp6@probe.local :: 200
+setup create f2-mvyiqpp6@probe.local :: 200
+F0 session :: 200 probe_method=otp aal=aal1 amr=["otp"]
+F1 set password via own session :: 200
+F1b other session refresh after password set :: 400 refresh_token_not_found Invalid Refresh Token: Refresh Token Not Found
+F1c own session refresh after password set :: 200
+F2 correct vs wrong password (0) :: 403 unknown Only email sign-in is allowed [49ms]  vs  400 invalid_credentials Invalid login credentials [47ms]
+F2 correct vs wrong password (1) :: 403 unknown Only email sign-in is allowed [50ms]  vs  400 invalid_credentials Invalid login credentials [48ms]
+F3 unknown user :: 400 invalid_credentials Invalid login credentials
+F4 user without password :: 400 invalid_credentials Invalid login credentials
+G1 admin create unconfirmed :: 200
+G2 /otp for unconfirmed :: 422 signup_disabled Signups not allowed for this instance
+G3 correct password for unconfirmed user :: 400 email_not_confirmed Email not confirmed
+G4 ban E2 then wrong password :: 200 400 user_banned User is banned
+H1 generate_link signup :: 200 hashed_token present
+H2 verify signup link :: 200 probe_method=otp aal=aal1 amr=["otp"]
+H3 password grant for that user :: 403 unknown Only email sign-in is allowed
+H4 admin generate_link magiclink -> verify :: 200 probe_method=otp aal=aal1 amr=["otp"]
+I1 /reauthenticate :: 200 token-in-body=false
+{"RUN":"mvyiqpp6","E1":"f1-mvyiqpp6@probe.local"}

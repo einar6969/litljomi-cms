@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T00:04:21.687Z",
+  "updatedAt": "2026-11-02T00:47:29.600Z",
   "branch": "m1/phase-0",
   "tasks": [
     {
@@ -102,20 +102,21 @@
         "7933579",
         "20e1748",
         "b814f5e",
-        "81d18b5"
+        "81d18b5",
+        "84b28992642357c5421a94c4db2ddf1f6d20cf1e"
       ],
       "reviews": {
         "spec": {
           "status": "pass",
-          "round": 4,
-          "report": "docs/execution/reviews/task-02-r4-spec.md",
-          "at": "2026-11-02T00:01:36.526Z"
+          "round": 5,
+          "report": "docs/execution/reviews/n1n2-r1-spec.md",
+          "at": "2026-11-02T00:49:05.364Z"
         },
         "security": {
           "status": "pass",
-          "round": 4,
-          "report": "docs/execution/reviews/task-02-r4-security.md",
-          "at": "2026-11-02T00:03:17.748Z"
+          "round": 5,
+          "report": "docs/execution/reviews/n1n2-r1-security.md",
+          "at": "2026-11-02T00:54:15.133Z"
         },
         "quality": {
           "status": "pass",
@@ -135,7 +136,7 @@
     },
     {
       "id": 3,
-      "status": "blocked",
+      "status": "pending",
       "commits": [],
       "reviews": {},
       "gatesUsed": [],
@@ -144,10 +145,10 @@
           "text": "N1 (Task 2 security review r2): password sign-in is reachable once the email provider is on, contradicting spec 4.4 (No passwords in v1). Einar decides the mitigation before the Task 3 runbook fixes hosted auth settings.",
           "at": "2026-11-02T00:04:21.687Z",
           "previousStatus": "pending",
-          "resolvedAt": null
+          "resolvedAt": "2026-11-02T00:47:29.600Z"
         }
       ],
-      "notes": ""
+      "notes": "N1 blocker resolved on 2026-11-02 by decision 18, approved by Einar in chat: \"I approve the hardened Custom Access Token hook as the solution to N1, and I approve correcting the email-confirmation configuration.\" Task 3 must include the decision 18/19 runbook items. Not started: Einar asked to stop before Task 3."
     },
     {
       "id": 4,

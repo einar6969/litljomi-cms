@@ -1,0 +1,61 @@
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+ERROR: failed to copy trust settings of system certificate-25291
+setup create ed1-mvyiq3h0@probe.local :: 200
+setup create ed2-mvyiq3h0@probe.local :: 200
+A1 /otp pkce :: 200
+A2 verify GET redirect :: http://127.0.0.1:3000?code=0261fb7c-ed98-4cc4-a87e-c56ee34bee02
+A3 pkce token (magic link) :: 200 probe_method=magiclink aal=aal1 amr=["magiclink"]
+A4 refresh of pkce magiclink session :: 200 probe_method=token_refresh aal=aal1 amr=["magiclink"]
+B1 /recover pkce :: 200
+B2 pkce token (recovery) :: 200 probe_method=recovery aal=aal1 amr=["recovery"]
+C1 /otp implicit :: 200
+C2 implicit GET verify :: token in fragment probe_method=otp aal=aal1 amr=["otp"]
+D1 /invite :: 200
+D2 accept invite POST /verify :: 200 probe_method=otp aal=aal1 amr=["otp"]
+D3 refresh of invite session :: 200 probe_method=token_refresh aal=aal1 amr=["otp"]
+E0 E2 session :: 200 probe_method=otp aal=aal1 amr=["otp"]
+E1 PUT /user email :: 200
+E2 confirm old address :: 200 200 Confirmation link accepted. Please proceed to confirm link sent to the other email no token
+E3 confirm new address :: 200 probe_method=otp aal=aal1 amr=["otp"] email=ed2new-mvyiq3h0@probe.local
+E4 PUT /user email pkce (back) :: 429 over_email_send_rate_limit For security purposes, you can only request this after 0 seconds.
+file:///private/tmp/claude-501/-Users-einarzoega-litljomi-cms/c760680f-584f-4f56-be1e-1384a6a6d349/scratchpad/n1probe/probes/adversarial.mjs:23
+async function waitMail(to, n = 1) { for (let i = 0; i < 40; i++) { const m = await mails(to); if (m.length >= n) return m; await sleep(250); } throw new Error(`no mail for ${to}`); }
+                                                                                                                                                      ^
+
+Error: no mail for ed2new-mvyiq3h0@probe.local
+    at waitMail (file:///private/tmp/claude-501/-Users-einarzoega-litljomi-cms/c760680f-584f-4f56-be1e-1384a6a6d349/scratchpad/n1probe/probes/adversarial.mjs:23:151)
+    at async file:///private/tmp/claude-501/-Users-einarzoega-litljomi-cms/c760680f-584f-4f56-be1e-1384a6a6d349/scratchpad/n1probe/probes/adversarial.mjs:89:17
+
+Node.js v22.23.1
