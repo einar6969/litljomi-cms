@@ -4,6 +4,7 @@
 |---|---|
 | Status | **Approved** by Einar on 2026-11-01 as the implementation baseline, subject to validating the assumptions in §11 and the security boundaries during development. Not yet implemented |
 | Date | 2026-11-01 |
+| Revisions | 2026-11-02 (Einar): passwordless sign-in is enforced by an Auth hook, and email changes need confirmation from both addresses (§4.2, §4.4, §4.5, §11.2; plan decisions 18 and 19) |
 | Owner | Einar Zoega, Litljómi ehf. |
 | Audience | Einar, and any future implementation session (human or Claude Code) |
 | Location | Written in the LABAK workspace (`project/`). Moves to `docs/architecture.md` in the CMS monorepo at milestone M0 and is maintained there |
@@ -182,7 +183,7 @@ Not available in v1: custom pages, custom lifecycle hooks, custom database table
 |---|---|---|
 | `api` | Yes (the only exposed schema besides Supabase's own) | `SECURITY INVOKER` functions and `security_invoker` views only |
 | `cms` | **No** | All platform tables |
-| `private` | No | Trigger functions and internal helpers |
+| `private` | No | Trigger functions, internal helpers and the Auth hook (§4.4) |
 
 **v1 contains no `SECURITY DEFINER` functions.** Supabase's guidance is never to create one in an exposed schema; with invoker-only functions and the RLS patterns below, none are needed. Adding one later requires an explicit architecture decision, placement outside exposed schemas, a pinned `search_path = ''`, and catalog-test coverage.
 
@@ -228,6 +229,8 @@ Column lists are the v1 minimum; implementation may add timestamps and indexes.
 
 - **Supabase Auth**, one user pool, editors and platform admins alike.
 - Editors sign in at `cms.litljomi.is` by **email magic link / one-time code**. No passwords in v1.
+- **Passwordless is enforced, not only unused.** Supabase Auth allows password sign-in whenever the email provider is on, with no separate switch on the Pro plan. A Custom Access Token hook, `private.passwordless_access_token(jsonb)`, issues tokens only for the email methods (`magiclink`, `otp`, `invite`, `recovery`, `email_change`), TOTP step-up and refresh; a refresh or step-up is allowed only if every method in the session's `amr` is one of these, and anything else is refused (fail closed). A user can still set a password, but it never signs anyone in. The hook is part of the Auth configuration, so it must be enabled on every hosted project and verified there (§11.2).
+- **Email changes need confirmation from both the old and the new address** (`enable_confirmations` and `double_confirm_changes` on), so a stolen session cannot move an account to another mailbox.
 - **Custom SMTP is required** (Supabase's built-in sender is rate-limited to a few emails per hour and unsuitable for production). Email templates in Icelandic, Litljómi-branded. No per-tenant email branding in v1.
 - Platform admins must enrol **TOTP MFA**; console access requires `aal2`.
 - Editors are invited by the provisioning CLI (§9.2). Self sign-up is disabled.
@@ -270,6 +273,8 @@ Column lists are the v1 minimum; implementation may add timestamps and indexes.
 | everything else | none |
 
 `anon` has no privileges on `cms`. `service_role` is granted what the worker and CLI need, **except** `UPDATE`/`DELETE` on `revisions` and `audit_log`. Operations that must remove history (tenant offboarding, §8.3) run as an owner-run SQL procedure through a direct migration connection, never through the API. `EXECUTE` is revoked from `PUBLIC` globally (default privileges, not per schema) and granted per function.
+
+**Auth hook grant.** `supabase_auth_admin` (Supabase's Auth role) has `USAGE` on `private` and `EXECUTE` on `private.passwordless_access_token(jsonb)`, and nothing else in `api`, `cms` or `private`. `EXECUTE` on the hook is revoked from `PUBLIC`, `anon` and `authenticated`. The hook is `SECURITY INVOKER` with `search_path = ''` and reads no tables (§4.4).
 
 ### 4.6 Functions in `api`
 
@@ -651,6 +656,7 @@ Scheduled publishing · approval workflows and multiple roles · multiple locale
 |---|---|
 | Rich text and media are the most expensive components to build and maintain | Narrow node set; Tiptap core; images only; no per-use cropping |
 | One shared Supabase project: an RLS or grant mistake can expose other tenants | Catalog tests, persona matrix, no definer functions, composite FKs; tenant connection resolver and per-tenant exports allow moving a tenant to its own project |
+| Passwordless sign-in depends on Auth configuration: the hook can be switched off, passwords can still be set, and the password endpoint shows whether a guessed password is correct | The hook is enabled by the hosted runbook and verified on every hosted project (a password sign-in returns 403; no session records `password`); all sessions are signed out when it is first enabled; the editor offers email sign-in only |
 | The secret key is a master key for all tenants | Held only by the CMS server environment and the CLI; import rule; rotatable; sites never hold it |
 | One deployment updates all tenants at once, including regressions | Staging first; fixture tenants; full test suite gates deploys; feature flags per tenant where useful |
 | Single maintainer | This document, runbooks, tests as specification |
