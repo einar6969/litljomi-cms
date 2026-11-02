@@ -1,6 +1,6 @@
 -- supabase/tests/database/040_refs.test.sql
 -- Reference extraction (spec §4.1 rule 3, §4.3 "References inside JSON", §4.5,
--- §8.5 integrity, §11.1 A13; plan Task 7, decisions 3, 25, 26, 27 and 28).
+-- §8.5 integrity, §11.1 A13; plan Task 7, decisions 3, 25, 26, 27, 28 and 29).
 --
 -- Personas and tenants come from tests.seed() (_helpers.sql): editor_labak and
 -- editor_demo are members of labak and demo; outsider, revoked and
@@ -31,7 +31,7 @@
 -- revisions d106 to d109, d10b and d10c (d10a is refused).
 begin;
 \ir _helpers.sql
-select plan(163);
+select plan(187);
 
 -- {"_ref": <id>, "_kind": <kind>}, the reference shape of §4.3.
 create function tests.ref(p_id uuid, p_kind text) returns jsonb
@@ -180,24 +180,26 @@ select bag_eq($$ select ref from private.extract_refs(
 
 -- Edge cases in one document: the document itself is a reference; a reference
 -- nested inside another's usage properties; arrays of arrays; the same target
--- at two locations; keys that need quoting; an object with _kind but no _ref.
+-- at two locations; keys with '-' and '_' (every key matches
+-- ^[A-Za-z0-9_-]{1,64}$, decision 29, so none needs escaping); an object with
+-- _kind but no _ref.
 create table tests.edge_doc (doc jsonb);
 insert into tests.edge_doc values (
   '{"_ref":"00000000-0000-4000-8000-00000000c101","_kind":"entry",
     "meta":{"_ref":"00000000-0000-4000-8000-00000000f001","_kind":"asset",
             "credit":{"_ref":"00000000-0000-4000-8000-00000000c102","_kind":"entry"}},
     "grid":[[{"_ref":"00000000-0000-4000-8000-00000000c101","_kind":"entry"}],[],[1,"x",null,true]],
-    "we\"ird key":{"_ref":"00000000-0000-4000-8000-00000000f002","_kind":"asset"},
-    "þýðing":[{"x":{"_ref":"00000000-0000-4000-8000-00000000c102","_kind":"entry"}}],
+    "we-ird_Key9":{"_ref":"00000000-0000-4000-8000-00000000f002","_kind":"asset"},
+    "thyding":[{"x":{"_ref":"00000000-0000-4000-8000-00000000c102","_kind":"entry"}}],
     "notref":{"_kind":"entry"}}');
 select results_eq($$ select path, ref from private.extract_refs((select doc from tests.edge_doc)) order by 1 $$,
   $$ values ('$', tests.entry('c101')),
             ('$."grid"[0][0]', tests.entry('c101')),
             ('$."meta"', '00000000-0000-4000-8000-00000000f001'::uuid),
             ('$."meta"."credit"', tests.entry('c102')),
-            ('$."we\"ird key"', '00000000-0000-4000-8000-00000000f002'::uuid),
-            ('$."þýðing"[0]."x"', tests.entry('c102')) $$,
-  'edge cases: root, nested inside a reference, arrays of arrays, duplicates, quoted keys');
+            ('$."thyding"[0]."x"', tests.entry('c102')),
+            ('$."we-ird_Key9"', '00000000-0000-4000-8000-00000000f002'::uuid) $$,
+  'edge cases: root, nested inside a reference, arrays of arrays, duplicates, keys with - and _');
 select bag_eq($$ select ref from private.extract_refs((select doc from tests.edge_doc)) $$,
   $$ select (r #>> '{}')::uuid from jsonb_path_query((select doc from tests.edge_doc), 'strict $.**._ref') as r $$,
   'the walk finds exactly the refs jsonb_path_query(strict $.**._ref) finds (edge cases)');
@@ -496,40 +498,42 @@ select throws_ok($$ insert into cms.revisions (tenant_id, entry_id, draft_versio
 select cmp_ok(clock_timestamp() - current_setting('tests.t0')::timestamptz, '<', interval '1 second',
   'the 10,000-level revision is rejected in under a second');
 
--- Key-length and reference-count limits (§4.3, decision 28). An object key of
--- 64 characters (characters, not bytes) is allowed and 65 fails with 54000,
--- wherever the key is; 1,000 references are allowed and 1,001 fail with 54000.
--- A reference is an object with a _ref key, as strict $.**._ref counts them.
--- Both are checked before the walk, so they come before 22P02 and
--- invalid_reference.
+-- Key and reference-count limits (§4.3, decisions 28 and 29). Every object key
+-- must match ^[A-Za-z0-9_-]{1,64}$, wherever it is: a key of 64 such characters
+-- is allowed, 65 fail with 54000 (decision 29 replaces decision 28's
+-- 64-character rule, so any other character fails too; see "Object-key
+-- pattern" below). 1,000 references are allowed and 1,001 fail with 54000. A
+-- reference is an object with a _ref key, as strict $.**._ref counts them. Both
+-- are checked before the walk, so they come before 22P02 and invalid_reference.
 select tests.act_as_owner();
 select results_eq($$ select path, ref from private.extract_refs(jsonb_build_object(repeat('k', 64), tests.ref(tests.entry('c101'), 'entry'))) $$,
   $$ values ('$."' || repeat('k', 64) || '"', tests.entry('c101')) $$, 'a 64-character key is allowed');
 select throws_ok($$ select * from private.extract_refs(jsonb_build_object(repeat('k', 65), 1)) $$,
-  '54000', 'object key longer than 64 characters', 'a 65-character key at the top level is rejected with 54000');
+  '54000', 'object key does not match ^[A-Za-z0-9_-]{1,64}$', 'a 65-character key at the top level is rejected with 54000');
 select throws_ok($$ select * from private.extract_refs(jsonb_build_object(
     'a', jsonb_build_object(repeat('k', 65), 1), 'r', tests.ref(tests.entry('c101'), 'entry'))) $$,
-  '54000', 'object key longer than 64 characters', 'a 65-character key in a nested object is rejected');
+  '54000', 'object key does not match ^[A-Za-z0-9_-]{1,64}$', 'a 65-character key in a nested object is rejected');
 select throws_ok($$ select * from private.extract_refs(jsonb_build_object(
     'list', jsonb_build_array(1, jsonb_build_object(repeat('k', 65), true)))) $$,
-  '54000', 'object key longer than 64 characters', 'a 65-character key in an array element''s object is rejected');
+  '54000', 'object key does not match ^[A-Za-z0-9_-]{1,64}$', 'a 65-character key in an array element''s object is rejected');
 select throws_ok($$ select * from private.extract_refs(jsonb_build_object(
     'x', tests.ref(tests.entry('c101'), 'entry') || jsonb_build_object(repeat('k', 65), 'y'))) $$,
-  '54000', 'object key longer than 64 characters', 'a 65-character key on a reference object is rejected');
+  '54000', 'object key does not match ^[A-Za-z0-9_-]{1,64}$', 'a 65-character key on a reference object is rejected');
 select throws_ok($$ select * from private.extract_refs(jsonb_build_object('x', tests.ref(tests.entry('c101'), 'entry'),
     'y', jsonb_build_object('z', jsonb_build_array(jsonb_build_object(repeat('k', 65), null))))) $$,
-  '54000', 'object key longer than 64 characters', 'a 65-character key in a reference-free subtree is rejected');
-select results_eq($$ select path, ref from private.extract_refs(jsonb_build_object(repeat('þ', 64), tests.ref(tests.entry('c101'), 'entry'))) $$,
-  $$ values ('$."' || repeat('þ', 64) || '"', tests.entry('c101')) $$,
-  'a key of 64 multi-byte characters (128 bytes) is allowed');
+  '54000', 'object key does not match ^[A-Za-z0-9_-]{1,64}$', 'a 65-character key in a reference-free subtree is rejected');
+-- Decision 28 allowed these (it counted characters of the key itself);
+-- decision 29 refuses them: keys are ASCII letters, digits, '_' and '-' only.
+select throws_ok($$ select * from private.extract_refs(jsonb_build_object(repeat('þ', 64), tests.ref(tests.entry('c101'), 'entry'))) $$,
+  '54000', 'object key does not match ^[A-Za-z0-9_-]{1,64}$',
+  'a key of 64 multi-byte characters is rejected (decision 29; allowed under decision 28)');
 select throws_ok($$ select * from private.extract_refs(jsonb_build_object(repeat('þ', 65), 1)) $$,
-  '54000', 'object key longer than 64 characters', 'a key of 65 multi-byte characters is rejected');
--- Characters of the key itself, not of its escaped JSON text: '"' is \" and a
--- newline \n.
-select is_empty($$ select * from private.extract_refs(jsonb_build_object(repeat('k', 62) || '"' || E'\n', 1)) $$,
-  'a 64-character key with characters escaped in JSON text is allowed');
+  '54000', 'object key does not match ^[A-Za-z0-9_-]{1,64}$', 'a key of 65 multi-byte characters is rejected');
+select throws_ok($$ select * from private.extract_refs(jsonb_build_object(repeat('k', 62) || '"' || E'\n', 1)) $$,
+  '54000', 'object key does not match ^[A-Za-z0-9_-]{1,64}$',
+  'a 64-character key with characters escaped in JSON text is rejected (decision 29; allowed under decision 28)');
 select throws_ok($$ select * from private.extract_refs(jsonb_build_object(repeat('k', 63) || '"' || E'\n', 1)) $$,
-  '54000', 'object key longer than 64 characters', 'a 65-character key with escaped characters is rejected');
+  '54000', 'object key does not match ^[A-Za-z0-9_-]{1,64}$', 'a 65-character key with escaped characters is rejected');
 -- Long string values are not keys, even when they look like one.
 select results_eq($$ select path from private.extract_refs(jsonb_build_object('a', repeat('v', 100) || '": ',
     'b', repeat('v', 100000), 'c', tests.ref(tests.entry('c101'), 'entry'))) $$,
@@ -553,7 +557,101 @@ select throws_ok($$ select * from private.extract_refs(
   '54000', 'more than 1000 references', 'the reference limit is checked before references are validated');
 select throws_ok($$ select * from private.extract_refs(jsonb_build_object(
     'x', '{"_ref": "nope", "_kind": "page"}'::jsonb || jsonb_build_object(repeat('k', 65), 1))) $$,
-  '54000', 'object key longer than 64 characters', 'the key limit is checked before references are validated');
+  '54000', 'object key does not match ^[A-Za-z0-9_-]{1,64}$', 'the key limit is checked before references are validated');
+
+-- Object-key pattern (§4.3, decision 29): every object key in the document,
+-- wherever it is, matches ^[A-Za-z0-9_-]{1,64}$, else 54000. Keys come from
+-- schema field names and the fixed rich-text format, so no stored path contains
+-- an escaped character. Checked after the nesting limit and before the
+-- reference count, the walk and the _ref/_kind checks.
+create table tests.bad_keys (label text primary key, k text);
+insert into tests.bad_keys values
+  ('64 control characters', repeat(chr(1), 64)),
+  ('the empty key', ''),
+  ('a space', 'a b'),
+  ('a dot', 'a.b'),
+  ('a double quote', 'a"b'),
+  ('a backslash', 'a\b'),
+  ('a dollar sign', 'a$'),
+  ('a bracket', 'a[0'),
+  ('þ', 'þ'),
+  ('é', 'é'),
+  ('an emoji', 'a' || chr(128512)),
+  ('65 characters of a', repeat('a', 65));
+-- Each key at the top level, nested, in an array element's object, on a
+-- reference object and in a reference-free subtree beside a reference: every
+-- one of the 60 documents is refused with 54000 and the rule's message.
+create function tests.key_refusal(p_doc jsonb) returns text
+language plpgsql
+set search_path = ''
+as $$
+begin
+  perform pg_catalog.count(*) from private.extract_refs(p_doc);
+  return 'accepted';
+exception when others then
+  return sqlstate || ' ' || sqlerrm;
+end;
+$$;
+create table tests.bad_key_docs as
+  select b.label, w.place, w.doc
+  from tests.bad_keys b
+  cross join lateral (values
+    ('top level', jsonb_build_object(b.k, 1)),
+    ('nested', jsonb_build_object('a', jsonb_build_object('b', jsonb_build_object(b.k, 1)))),
+    ('array element', jsonb_build_object('list', jsonb_build_array(1, jsonb_build_object(b.k, true)))),
+    ('reference object', jsonb_build_object('x', tests.ref(tests.entry('c101'), 'entry') || jsonb_build_object(b.k, 'y'))),
+    ('reference-free subtree', jsonb_build_object('x', tests.ref(tests.entry('c101'), 'entry'),
+       'y', jsonb_build_object('z', jsonb_build_array(jsonb_build_object(b.k, null))))))
+    as w (place, doc);
+select is((select count(*)::int from tests.bad_key_docs where tests.key_refusal(doc) = '54000 object key does not match ^[A-Za-z0-9_-]{1,64}$'),
+  60, 'keys outside ^[A-Za-z0-9_-]{1,64}$ are refused with 54000 wherever they are (12 keys at 5 places)');
+select is_empty($$ select label, place, tests.key_refusal(doc) from tests.bad_key_docs
+    where tests.key_refusal(doc) is distinct from '54000 object key does not match ^[A-Za-z0-9_-]{1,64}$' $$,
+  'no refused-key document is accepted or fails another way (lists any that do)');
+-- Each refused key on its own, at the top level (named in the test output).
+select throws_ok($$ select * from private.extract_refs(jsonb_build_object(repeat(chr(1), 64), 1)) $$,
+  '54000', 'object key does not match ^[A-Za-z0-9_-]{1,64}$', 'a key of 64 control characters is refused');
+select throws_ok($$ select * from private.extract_refs('{"": 1}') $$,
+  '54000', 'object key does not match ^[A-Za-z0-9_-]{1,64}$', 'the empty key is refused');
+select throws_ok($$ select * from private.extract_refs('{"a b": 1}') $$,
+  '54000', 'object key does not match ^[A-Za-z0-9_-]{1,64}$', 'a key with a space is refused');
+select throws_ok($$ select * from private.extract_refs('{"a.b": 1}') $$,
+  '54000', 'object key does not match ^[A-Za-z0-9_-]{1,64}$', 'a key with a dot is refused');
+select throws_ok($$ select * from private.extract_refs('{"a\"b": 1}') $$,
+  '54000', 'object key does not match ^[A-Za-z0-9_-]{1,64}$', 'a key with a double quote is refused');
+select throws_ok($$ select * from private.extract_refs('{"a\\b": 1}') $$,
+  '54000', 'object key does not match ^[A-Za-z0-9_-]{1,64}$', 'a key with a backslash is refused');
+select throws_ok($$ select * from private.extract_refs('{"a$": 1}') $$,
+  '54000', 'object key does not match ^[A-Za-z0-9_-]{1,64}$', 'a key with a dollar sign is refused');
+select throws_ok($$ select * from private.extract_refs('{"a[0": 1}') $$,
+  '54000', 'object key does not match ^[A-Za-z0-9_-]{1,64}$', 'a key with a bracket is refused');
+select throws_ok($$ select * from private.extract_refs('{"þ": 1}') $$,
+  '54000', 'object key does not match ^[A-Za-z0-9_-]{1,64}$', 'the key þ is refused');
+select throws_ok($$ select * from private.extract_refs('{"é": 1}') $$,
+  '54000', 'object key does not match ^[A-Za-z0-9_-]{1,64}$', 'the key é is refused');
+select throws_ok($$ select * from private.extract_refs(jsonb_build_object('a' || chr(128512), 1)) $$,
+  '54000', 'object key does not match ^[A-Za-z0-9_-]{1,64}$', 'a key with an emoji is refused');
+select throws_ok($$ select * from private.extract_refs(jsonb_build_object(repeat('a', 65), 1)) $$,
+  '54000', 'object key does not match ^[A-Za-z0-9_-]{1,64}$', 'a key of 65 characters of a is refused');
+-- Accepted: 64 characters of [A-Za-z0-9_-], _ref, _kind, a-b, A_9.
+select results_eq($$ select path, ref from private.extract_refs(jsonb_build_object(
+    repeat('Az9_-', 12) || 'Az09', jsonb_build_object('a-b', jsonb_build_object('A_9', tests.ref(tests.entry('c101'), 'entry'))))) $$,
+  $$ values ('$."' || repeat('Az9_-', 12) || 'Az09' || '"."a-b"."A_9"', tests.entry('c101')) $$,
+  'keys of 64 characters of [A-Za-z0-9_-], a-b, A_9, _ref and _kind are accepted');
+select is(char_length(repeat('Az9_-', 12) || 'Az09'), 64, 'the accepted long key is 64 characters');
+-- Order: the nesting limit first, then the key pattern, then the reference
+-- count, then the walk's _ref and _kind checks.
+select throws_ok($$ select * from private.extract_refs(tests.nest(128, '{"a b": 1}')) $$,
+  '54000', 'document nested deeper than 128 levels', 'the nesting limit is checked before the key pattern');
+select throws_ok($$ select * from private.extract_refs(jsonb_build_object('list', tests.refs(1001), 'a b', 1)) $$,
+  '54000', 'object key does not match ^[A-Za-z0-9_-]{1,64}$', 'the key pattern is checked before the reference count');
+select throws_ok($$ select * from private.extract_refs(jsonb_build_object(
+    'x', '{"_ref": "nope", "_kind": "page"}'::jsonb || jsonb_build_object(chr(1), 1))) $$,
+  '54000', 'object key does not match ^[A-Za-z0-9_-]{1,64}$', 'the key pattern is checked before _ref and _kind are validated');
+-- Strings that are values, not keys, may hold anything.
+select results_eq($$ select path from private.extract_refs(jsonb_build_object('a', 'þ é "x": \ $ [0] ' || chr(1),
+    'b', jsonb_build_array('a b', ''), 'c', tests.ref(tests.entry('c101'), 'entry'))) $$,
+  $$ values ('$."c"') $$, 'string values with any characters are allowed');
 
 insert into cms.entries (id, tenant_id, type, created_by) values
   (tests.entry('c109'), tests.tenant('labak'), 'news', tests.persona('editor_labak')),
@@ -569,13 +667,13 @@ select is((select count(*)::int from cms.draft_refs where entry_id = tests.entry
   'the 1,000 references are in draft_refs');
 select throws_ok($$ update cms.drafts set data = jsonb_build_object(repeat('k', 65), tests.refs(1))
   where entry_id = tests.entry('c109') $$,
-  '54000', 'object key longer than 64 characters', 'editor cannot save a draft with a 65-character key');
+  '54000', 'object key does not match ^[A-Za-z0-9_-]{1,64}$', 'editor cannot save a draft with a 65-character key');
 select throws_ok($$ update cms.drafts set data = jsonb_build_object('list', tests.refs(1001))
   where entry_id = tests.entry('c109') $$,
   '54000', 'more than 1000 references', 'editor cannot save a draft with 1,001 references');
 select throws_ok($$ insert into cms.drafts (entry_id, tenant_id, schema_version, data)
   values (tests.entry('c110'), tests.tenant('labak'), 1, jsonb_build_object(repeat('k', 65), 1)) $$,
-  '54000', 'object key longer than 64 characters', 'editor cannot insert a draft with a 65-character key');
+  '54000', 'object key does not match ^[A-Za-z0-9_-]{1,64}$', 'editor cannot insert a draft with a 65-character key');
 select throws_ok($$ insert into cms.drafts (entry_id, tenant_id, schema_version, data)
   values (tests.entry('c110'), tests.tenant('labak'), 1, jsonb_build_object('list', tests.refs(1001))) $$,
   '54000', 'more than 1000 references', 'editor cannot insert a draft with 1,001 references');
@@ -593,7 +691,7 @@ select is((select count(*)::int from cms.revision_refs where revision_id = tests
 select throws_ok($$ insert into cms.revisions (tenant_id, entry_id, draft_version, schema_version, data, requested_by)
   values (tests.tenant('labak'), tests.entry('c109'), 2, 1,
           jsonb_build_object(repeat('k', 65), tests.refs(1)), tests.persona('editor_labak')) $$,
-  '54000', 'object key longer than 64 characters', 'service_role cannot append a revision with a 65-character key');
+  '54000', 'object key does not match ^[A-Za-z0-9_-]{1,64}$', 'service_role cannot append a revision with a 65-character key');
 select throws_ok($$ insert into cms.revisions (tenant_id, entry_id, draft_version, schema_version, data, requested_by)
   values (tests.tenant('labak'), tests.entry('c109'), 2, 1,
           jsonb_build_object('list', tests.refs(1001)), tests.persona('editor_labak')) $$,
@@ -629,11 +727,49 @@ select results_eq($$ select probe, state from tests.costs order by probe $$,
 select is_empty($$ select probe from tests.costs where temp_bytes >= 1024 * 1024 or elapsed >= interval '1 second' $$,
   'the long-key probes write under 1 MB of temp files and finish in under a second');
 
+-- The control-character probe (Task 7 round 3 security review, decision 29):
+-- 126 levels of objects, each with one key of 64 x chr(1), over an array of
+-- 1,000 references; 128 levels deep, 1,000 references, 117,140 bytes as text.
+-- Every key was within decision 28's 64 characters, but a path stores each key
+-- escaped (chr(1) is \u0001, 6 characters), so every path was about 49 KB and
+-- the result 48.8 MB of temp files (48,807,936 bytes in 0.53 s, as a draft save
+-- and as a revision). The key pattern now refuses it before the walk: no temp
+-- files, in milliseconds.
+create function tests.control_keys() returns jsonb
+language sql
+set search_path = ''
+as $$ select (pg_catalog.repeat('{' || pg_catalog.to_jsonb(pg_catalog.repeat(pg_catalog.chr(1), 64))::text || ':', 126)
+              || tests.refs(1000)::text || pg_catalog.repeat('}', 126))::jsonb $$;
+grant execute on function tests.control_keys() to authenticated, service_role;
+select ok(octet_length(tests.control_keys()::text) = 117140
+    and jsonb_path_exists(tests.control_keys(), 'strict $.**{127} ? (@.type() == "object")')
+    and not jsonb_path_exists(tests.control_keys(), 'strict $.**{128} ? (@.type() == "object" || @.type() == "array")')
+    and (select count(*) = 1000 from jsonb_path_query(tests.control_keys(), 'strict $.**._ref')),
+  'the control-character probe is 117,140 bytes, 128 levels deep, with 1,000 references');
+select tests.act_as(tests.persona('editor_labak'));
+insert into tests.costs select 'draft control-character keys', * from tests.cost($$ update cms.drafts
+  set data = tests.control_keys() where entry_id = tests.entry('c109') $$);
+select tests.act_as_service();
+insert into tests.costs select 'revision control-character keys', * from tests.cost($$ insert into cms.revisions
+  (tenant_id, entry_id, draft_version, schema_version, data, requested_by)
+  values (tests.tenant('labak'), tests.entry('c109'), 2, 1, tests.control_keys(), tests.persona('editor_labak')) $$);
+select tests.act_as_owner();
+select results_eq($$ select probe, state from tests.costs where probe like '% control-character keys' order by probe $$,
+  $$ values ('draft control-character keys', '54000'), ('revision control-character keys', '54000') $$,
+  'the control-character probe is refused with 54000, as a draft save and as a revision');
+select is_empty($$ select probe from tests.costs where probe like '% control-character keys'
+    and (temp_bytes <> 0 or elapsed >= interval '1 second') $$,
+  'the control-character probe writes no temp files and is refused in under a second');
+select is((select count(*)::int from cms.draft_refs where entry_id = tests.entry('c109')), 1000,
+  'the refused control-character probe leaves draft_refs alone');
+
 -- A document at every limit at once, just under 1 MB: 126 levels of objects
 -- with 64-character keys, an array at level 127 and 1,000 reference objects at
 -- level 128, each with a 64-character usage key holding 880 characters. Every
 -- path is about 8.5 KB, so the result is about 8.5 MB of paths: the largest
--- result decision 28 allows. It is accepted, as a draft save and as a revision.
+-- result decisions 28 and 29 allow (no key is escaped, decision 29; the
+-- documented worst case is about 10 MB of temp files per statement). It is
+-- accepted, as a draft save and as a revision.
 -- The only temp file is that result, spilled past work_mem (4 MB): locally
 -- 8,486,912 bytes in about 0.18 s (26.6 MB in 0.27 s when the walk carried each
 -- node's path), so the bounds are 10 MB and 1 s. The keys repeat, so the paths
@@ -753,8 +889,8 @@ select results_eq($$ select s.shape, e.depth,
             ('md5 chains', 65, true, 1000, true), ('md5 deep chains', 41, true, 370, true) $$,
   'the adversarial shapes are within the limits: depth, references and size');
 select is_empty($$ select 1 from tests.shapes s,
-    lateral (select regexp_matches(s.doc::text, '"((?:[^"\\]|\\.)*)":', 'g')) as m (a) where char_length(m.a[1]) > 64 $$,
-  'the adversarial shapes have no key longer than 64 characters');
+    lateral (select regexp_matches(s.doc::text, '"((?:[^"\\]|\\.)*)":', 'g')) as m (a) where m.a[1] !~ '^[A-Za-z0-9_-]{1,64}$' $$,
+  'the adversarial shapes'' keys all match ^[A-Za-z0-9_-]{1,64}$');
 
 -- Each shape: the editor saves it as c109's draft, and draft_refs then holds
 -- exactly the references strict $.**._ref finds, each at a path that evaluates

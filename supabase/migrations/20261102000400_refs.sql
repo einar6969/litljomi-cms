@@ -1,5 +1,5 @@
 -- Reference extraction (spec §4.1 rules 3 and 5, §4.3 "References inside JSON",
--- §4.5; plan Task 7, decisions 3, 25, 26, 27 and 28).
+-- §4.5; plan Task 7, decisions 3, 25, 26, 27, 28 and 29).
 --
 -- Every reference in a document, at any depth, is an object
 -- { "_ref": "<uuid>", "_kind": "entry" | "asset", ... }. Triggers extract them
@@ -60,11 +60,14 @@ create table cms.revision_refs (
 -- for both. (A CHECK constraint would report 23514, not 54000, and would run the
 -- same check a second time.)
 --
--- Key-length and reference-count limits (§4.3, decision 28): a document with an
--- object key longer than 64 characters (characters, not bytes, of the key itself,
--- not of its escaped JSON text) or with more than 1,000 references raises 54000,
--- after the nesting check and before anything is walked or validated. A
--- reference is an object with a _ref key, what strict $.**._ref matches.
+-- Key and reference-count limits (§4.3, decisions 28 and 29): a document with an
+-- object key that does not match ^[A-Za-z0-9_-]{1,64}$ (the empty key included)
+-- or with more than 1,000 references raises 54000, after the nesting check and
+-- before anything is walked or validated; the key pattern is checked before the
+-- reference count. A reference is an object with a _ref key, what strict
+-- $.**._ref matches. Keys come from schema field names and the fixed rich-text
+-- format, so no stored path contains an escaped character, and a path step is at
+-- most 68 characters (."key" with a 64-character key).
 --
 -- The walk (decisions 27 and 28) takes one level of the document per
 -- statement, so at most 128 statements, and enters only containers with a
@@ -83,10 +86,12 @@ create table cms.revision_refs (
 -- their rows on one at a time instead of storing them in a tuplestore. The
 -- state of the walk is in memory, at most about the size of the document in
 -- its jsonb form. The one temp file is the result itself: at most 1,000 paths
--- of at most about 8.6 KB, which spill once they pass work_mem (4 MB).
--- Measured locally on documents inside all three limits (040_refs.test.sql,
--- "Cost regressions" and "Adversarial shapes"): at most about 8.5 MB of temp
--- files, for 1,000 paths of 8.4 KB, and at most about 0.5 s per draft save.
+-- of at most about 8.6 KB (127 steps of at most 68 characters), which spill once
+-- they pass work_mem (4 MB). That is the documented worst case: about 10 MB of
+-- temp files per statement (decision 29). Measured locally on documents inside
+-- all three limits (040_refs.test.sql, "Cost regressions" and "Adversarial
+-- shapes"): at most about 8.5 MB of temp files, for 1,000 paths of 8.4 KB, and at
+-- most about 0.5 s per draft save.
 create function private.extract_refs(p_data jsonb)
 returns table (path text, ref uuid, kind text)
 language plpgsql
@@ -129,27 +134,31 @@ begin
   if pg_catalog.jsonb_path_exists(v_doc, 'strict $.**{128} ? (@.type() == "object" || @.type() == "array")') then
     raise exception 'document nested deeper than 128 levels' using errcode = '54000';
   end if;
-  -- Key length. jsonpath cannot read an object's keys without .keyvalue(),
-  -- which copies every value it pairs with a key, so on nested objects it copies
-  -- each subtree once per level above it. Instead one left-to-right regular
-  -- expression scan of the document's JSON text matches each string in turn: a
-  -- match starts at an opening quote and ends at the first unescaped quote, and
-  -- between strings the text has no quotes, so every match is exactly one string
-  -- of the document, and a string directly followed by ':' is an object key
-  -- (jsonb's text output writes "key": value). One pass over the text, linear in
-  -- the document. A key's escaped text is never shorter than the key, so only
-  -- matches over 64 characters are decoded and measured. regexp_matches is
-  -- called in the select list, so its rows reach the filter one at a time and
-  -- exists stops at the first long key; in FROM, every row would first be stored
-  -- in a tuplestore, which spills to temp files on a large document.
+  -- Key pattern (decision 29). jsonpath cannot read an object's keys without
+  -- .keyvalue(), which copies every value it pairs with a key, so on nested
+  -- objects it copies each subtree once per level above it. Instead one
+  -- left-to-right regular expression scan of the document's JSON text matches
+  -- each string in turn: a match starts at an opening quote and ends at the
+  -- first unescaped quote, and between strings the text has no quotes, so every
+  -- match is exactly one string of the document, and a string directly followed
+  -- by ':' is an object key (jsonb's text output writes "key": value). The scan
+  -- is one pass over the text, each character consumed once by the match it
+  -- belongs to or skipped between matches, so it is linear in the document. Each
+  -- key's text is then tested against the anchored pattern, linear in the key,
+  -- so all the tests together are linear in the document too. The text tested
+  -- is the key as escaped in JSON, not the key itself, and that is exact: any
+  -- escape sequence starts with '\', which the pattern does not allow, so an
+  -- escaped key never matches, and a key with nothing escaped is its own text.
+  -- regexp_matches is called in the select list, so its rows reach the filter
+  -- one at a time and exists stops at the first refused key; in FROM, every row
+  -- would first be stored in a tuplestore, which spills to temp files on a
+  -- large document.
   if exists (
     select 1
     from (select pg_catalog.regexp_matches(v_doc::text, '"((?:[^"\\]|\\.)*)"(:?)', 'g')) as m (a)
-    where case when m.a[2] = ':' and pg_catalog.char_length(m.a[1]) > 64
-               then pg_catalog.char_length(('"' || m.a[1] || '"')::jsonb #>> '{}') > 64
-               else false end
+    where m.a[2] = ':' and m.a[1] !~ '^[A-Za-z0-9_-]{1,64}$'
   ) then
-    raise exception 'object key longer than 64 characters' using errcode = '54000';
+    raise exception 'object key does not match ^[A-Za-z0-9_-]{1,64}$' using errcode = '54000';
   end if;
   -- Reference count. strict $.**._ref visits each node once (strict, so arrays
   -- are not unwrapped a second time); .type() turns each match into a short
