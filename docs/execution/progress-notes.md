@@ -20,6 +20,14 @@
 - Before the merges, `m1/phase-1` was merged into `m1/lane-b` (`ec7f204`) so the worktree carried decisions 23–24.
 - After the last merge: harness 27/27; lint, typecheck and check:slugs (2 slugs) exit 0; Vitest 25 files, 327 tests; `pnpm db:reset && pnpm db:test` Files=7, Tests=406, PASS. Lane B (Tasks 13–16, 18) is complete.
 
+### Handoff after C1 approval (2026-11-02, second controller session)
+
+- **C1 approved** by Einar on 2026-11-02 (recorded in `state.json`, commit `f918d59`); `main` was fast-forwarded to `m1/phase-1` at that commit (local only). Later commits on `m1/phase-1` are the C1 follow-ups below; `main` stays where it is until the next checkpoint.
+- **Decision 32** records Einar's C1 rulings: worker statement timeout per statement on the worker's own connection in Task 19 (row moved to Task 19); spec §4.2 (Vault outside the no-definer rule) and §6.2 step 5 (refs checked from the copied data) amended; Auth-user deletion keeps failing closed and offboarding removes memberships first; links with credentials rejected (`feb827c`); plan wording updated in one change (`e0fc0b6`, `10dbbb5`) with one combined review (pass).
+- **Deferred Minors:** the four stale "Task 15" rows were cleared by `e97329c`; every C1 row was triaged once: cheap fixes in `7caffe3` (cleanup), the rest accepted with a one-line reason. Reviews of the cleanup: security r1 pass, combined spec-and-quality r1 pass (`docs/execution/reviews/c1-*`). Suite after the cleanup (implementer, confirmed by the security reviewer): harness 32/32; lint, typecheck, slugs clean; Vitest 25 files 342; pgTAP 13 files 1252; integration 6 files 67.
+- **Two questions for Einar** (rows with owner "Einar" in `deferred-minors.md`): narrow `service_role` UPDATE on `cms.tenants` to `(name, status)`?; lock the tenant `FOR SHARE` and the membership `FOR KEY SHARE` in the worker commit (needs a one-column UPDATE grant on `cms.memberships`, like decision 31)?
+- Einar removes the three worktrees himself. The next phase (Task 17 onward) starts in a fresh controller session.
+
 ### Handoff at checkpoint C1 (2026-11-02, second controller session)
 
 - Phase 1 and Lane B are complete: Tasks 4–16 and 18 are done and merged into `m1/phase-1` (head `e0482f2` before the C1 commit). C1 is reported in `docs/execution/checkpoints/C1.md` and recorded with `state.mjs checkpoint C1`; **waiting for Einar's go-ahead**. Task 17 is not started.
