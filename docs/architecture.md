@@ -549,7 +549,7 @@ Secrets are rotatable: the SDK accepts two webhook secrets during rotation.
 - **Cron:** Vercel Cron every minute for the worker sweeper (requires Vercel Pro); nightly export job.
 - **Backups:** Supabase daily backups (Pro), plus a **nightly per-tenant export** (all drafts, revisions, assets metadata and media files) to storage outside the Supabase account. The export target provider is decided at M4.
 - **Restore:** a single tenant is restored from its export into staging, verified, then into production with the CLI. Whole-project restore uses Supabase backups.
-- **Monitoring and alerts:** worker failures and exhausted retries email the platform admin. The console shows per-tenant request, release and delivery status.
+- **Monitoring and alerts:** worker failures and exhausted retries alert the platform admin (in M1 through the audit log and the server log; by email from M3). The console shows per-tenant request, release and delivery status.
 - **Incidents:** suspend a tenant (`status = suspended` stops publishing); revoke an editor (delete membership; immediate); roll back an entry (restore an older revision and publish); remove content urgently (unpublish; it leaves public storage within about an hour of the release, §7.2); rotate secrets.
 - **Upgrades:** dependency updates monthly; database migrations applied to staging first, with the full test suite, then production.
 - **Expected platform cost** (indicative): Supabase Pro organisation with a production and a staging project, roughly $35 a month; Vercel Pro per seat; SMTP and export storage on low tiers.
