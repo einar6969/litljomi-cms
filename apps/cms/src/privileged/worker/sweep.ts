@@ -1,6 +1,9 @@
-// The per-minute sweep (spec §6.1, §6.3, §7.4, §8.4; plan Task 21, decisions 34.2 and 35): picks up
-// whatever the fast path missed, deciding everything from the database.
+// The per-minute sweep (spec §6.1, §6.3, §7.1, §7.4, §8.4; plan Tasks 21 and 30, decisions 34.2,
+// 35, 36.2 and 37.1): picks up whatever the fast path missed, deciding everything from the database.
 //
+//   0. Building releases older than STALE_RELEASE_SECONDS (a worker killed mid-build) are failed,
+//      one alert each (api.worker_fail_stale_releases), so they no longer block their tenant's
+//      builds; their requests are in no release, so step 2 builds them in this same sweep.
 //   1. Pending requests (and validating ones whose claim is older than 5 minutes) are processed.
 //   2. Every active tenant with committed requests in no release gets a release built, delivered
 //      and confirmed on its sites (api.worker_tenants_to_release).
@@ -12,22 +15,41 @@
 // A failing step does not stop the next one; the sweep throws at the end if any step failed, so
 // the cron route reports it.
 import type { Bundle } from '@litljomi/cms-sdk';
-import { getModule } from '@/modules/registry';
 import type { SupabaseClient } from '../../lib/supabase/types';
 import { createAdminClient } from '../admin-client';
+import { alert } from './alerts';
 import { supabaseReleaseStorage } from './build-release';
-import {
-  MAX_NOTIFY_ATTEMPTS,
-  confirmSite,
-  deliverTenant,
-  liveTargets,
-  mediaPrefix,
-  type DeliveredRelease,
-  type DeliveryOptions,
-  type WorkerSite,
-} from './deliver';
+import { MAX_NOTIFY_ATTEMPTS, confirmRelease, deliverTenant, type DeliveredRelease, type DeliveryOptions } from './deliver';
 import { processPendingRequests } from './process-request';
 import { callRpc } from './rpc';
+
+/**
+ * A building release older than this is failed by the sweep: the worker's maxDuration (300 s) plus
+ * a 120 s margin (decision 37.1). The database function holds the same number.
+ */
+export const STALE_RELEASE_SECONDS = 420;
+
+/** A row of api.worker_fail_stale_releases: a release the sweep failed. */
+export type StaleRelease = { release_id: string; tenant_id: string; number: number; created_at: string };
+
+/**
+ * Fails every building release older than STALE_RELEASE_SECONDS and alerts once per release
+ * (`release.stale_failed`). The database records the failure (`stale_building`) and audits it;
+ * a worker still running that build is refused when it finishes.
+ */
+export async function failStaleReleases(db: SupabaseClient): Promise<StaleRelease[]> {
+  const failed = (await callRpc<StaleRelease[] | null>(db, 'worker_fail_stale_releases', {})) ?? [];
+  for (const r of failed) {
+    await alert('release.stale_failed', {
+      tenantId: r.tenant_id,
+      releaseId: r.release_id,
+      number: r.number,
+      createdAt: r.created_at,
+      maxAgeSeconds: STALE_RELEASE_SECONDS,
+    });
+  }
+  return failed;
+}
 
 /** A row of api.worker_deliveries_to_retry. */
 type RetryRow = {
@@ -51,6 +73,9 @@ export async function runSweep(options: DeliveryOptions = {}): Promise<void> {
     console.error(`[cms-worker] sweep: ${step} failed`, error);
     errors.push(error);
   };
+
+  // 0. Stale building releases, before anything is built.
+  await failStaleReleases(db).catch(failed('failing stale releases'));
 
   // 1. Requests the fast path never processed (or left validating).
   await processPendingRequests().catch(failed('processing pending requests'));
@@ -113,17 +138,6 @@ async function retryRelease(db: SupabaseClient, rows: RetryRow[], options: Deliv
     previousBundle: first.previous_bundle_path ? await read(first.previous_bundle_path, null) : null,
     requests: first.requests.map((r) => ({ id: r.id, entryId: r.entry_id, action: r.action })),
   };
-  const module = getModule(release.tenantSlug);
-  if (!module) throw new Error(`no module for tenant ${release.tenantSlug}`);
-  const targets = liveTargets(module, release, mediaPrefix());
-  const sites = new Map(
-    ((await callRpc<WorkerSite[] | null>(db, 'worker_sites', { p_tenant_id: release.tenantId })) ?? []).map((s) => [s.id, s]),
-  );
-  await Promise.all(
-    rows.map(async (row) => {
-      const site = sites.get(row.site_id);
-      // Deactivated since the list was read: nothing to retry.
-      if (site) await confirmSite(db, release, site, targets, options, row.notify_attempts);
-    }),
-  );
+  // Only the sites listed for retry, with their attempts so far (one deactivated since is skipped).
+  await confirmRelease(db, release, options, new Map(rows.map((row) => [row.site_id, row.notify_attempts])));
 }

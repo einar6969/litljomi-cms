@@ -10,6 +10,8 @@ type Reply = { data?: unknown; error?: { code: string; message: string } };
 
 const calls: Call[] = [];
 let handlers: Record<string, (args: Record<string, unknown>) => Reply> = {};
+/** Storage objects the fake client's `exists` finds, as `bucket/path`. */
+const stored = new Set<string>();
 const fakeClient = {
   rpc: vi.fn(async (fn: string, args: Record<string, unknown>) => {
     calls.push({ fn, args });
@@ -18,6 +20,14 @@ const fakeClient = {
     const reply = handler(args);
     return { data: reply.data ?? null, error: reply.error ?? null };
   }),
+  storage: {
+    from: (bucket: string) => ({
+      exists: async (path: string) => {
+        calls.push({ fn: 'storage.exists', args: { bucket, path } });
+        return stored.has(`${bucket}/${path}`) ? { data: true, error: null } : { data: false, error: { message: 'Object not found', status: 404 } };
+      },
+    }),
+  },
 };
 vi.mock('../../admin-client', () => ({ createAdminClient: () => fakeClient }));
 
@@ -114,6 +124,7 @@ const dbError = (code: string, message: string): Reply => ({ error: { code, mess
 
 beforeEach(() => {
   calls.length = 0;
+  stored.clear();
   vi.spyOn(console, 'error').mockImplementation(() => {});
   vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://example.supabase.co');
 });
@@ -409,5 +420,137 @@ describe('processPendingRequests', () => {
 
     expect(await processPendingRequests()).toEqual([]);
     expect(called('worker_claim_requests')).toEqual([{ fn: 'worker_claim_requests', args: { p_limit: 10 } }]);
+  });
+});
+
+// Task 30 (decision 36.4): before committing a publish, the private original of every asset the
+// draft references without a public path must exist in media-private.
+describe('processRequestById: private originals', () => {
+  const TENANT_ID = '00000000-0000-4000-8000-00000000a001';
+  const A1 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
+  const A2 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2';
+  const A3 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3';
+  const A4 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4';
+  const A5 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa5';
+  const assetRef = (id: string, o: Record<string, unknown> = {}) => ({
+    path: `$."x${id.slice(-1)}"`,
+    kind: 'asset',
+    id,
+    published: false,
+    archived: false,
+    filename: 'a.jpg',
+    mime: 'image/jpeg',
+    width: 800,
+    height: 600,
+    focal_x: null,
+    focal_y: null,
+    default_alt: null,
+    public_path: null,
+    ...o,
+  });
+  // A1, A2: not public yet (checked); A3: public already; A4: archived; A5: not in the tenant
+  // (all null: the commit refuses it as an invalid reference).
+  const refs = [
+    assetRef(A1),
+    assetRef(A2, { filename: 'b.png' }),
+    assetRef(A3, { published: true, public_path: `prufa/${A3}/a.jpg` }),
+    assetRef(A4, { archived: true }),
+    { path: '$."x5"', kind: 'asset', id: A5, published: false, archived: false, filename: null, mime: null, width: null, height: null, focal_x: null, focal_y: null, default_alt: null, public_path: null },
+  ];
+  const readWithRefs = () => {
+    const r = read();
+    return { ...r, request: { ...r.request, tenant_id: TENANT_ID }, tenant: { ...r.tenant, id: TENANT_ID }, refs };
+  };
+  const exists = (...present: string[]) => {
+    const asked: string[] = [];
+    return {
+      asked,
+      originalExists: async (path: string) => {
+        asked.push(path);
+        return present.includes(path);
+      },
+    };
+  };
+
+  beforeEach(() => {
+    handlers = {
+      worker_claim_request: () => ({ data: claimed() }),
+      worker_read_request: () => ({ data: readWithRefs() }),
+      worker_reject_request: () => ({}),
+      worker_record_alert: () => ({}),
+      worker_commit_publish: () => ({ data: 'committed' }),
+    };
+  });
+
+  it('a missing original fails the request with asset_missing and an alert, and never commits', async () => {
+    const check = exists(`${TENANT_ID}/${A2}/b.png`);
+
+    const outcome = await processRequestById('r1', { originalExists: check.originalExists });
+
+    const error = { code: 'asset_missing', assetIds: [A1] };
+    expect(outcome).toMatchObject({ status: 'failed_validation', errors: error });
+    // Only the assets that are not public yet, not archived and in the tenant are looked up.
+    expect(check.asked).toEqual([`${TENANT_ID}/${A1}/a.jpg`, `${TENANT_ID}/${A2}/b.png`]);
+    expect(called('worker_reject_request')).toEqual([
+      { fn: 'worker_reject_request', args: { p_request_id: 'r1', p_status: 'failed_validation', p_error: error } },
+    ]);
+    expect(called('worker_commit_publish')).toEqual([]);
+    expect(called('worker_record_alert')).toEqual([
+      {
+        fn: 'worker_record_alert',
+        args: {
+          p_tenant_id: TENANT_ID,
+          p_event: 'publish_request.asset_missing',
+          p_details: { tenantId: TENANT_ID, requestId: 'r1', entryId: 'e1', assetIds: [A1] },
+        },
+      },
+    ]);
+  });
+
+  it('lists every missing original', async () => {
+    const outcome = await processRequestById('r1', { originalExists: exists().originalExists });
+    expect(outcome).toMatchObject({ status: 'failed_validation', errors: { code: 'asset_missing', assetIds: [A1, A2] } });
+  });
+
+  it('commits when every original is there', async () => {
+    const check = exists(`${TENANT_ID}/${A1}/a.jpg`, `${TENANT_ID}/${A2}/b.png`);
+    expect(await processRequestById('r1', { originalExists: check.originalExists })).toMatchObject({ status: 'committed' });
+    expect(called('worker_reject_request')).toEqual([]);
+    expect(called('worker_record_alert')).toEqual([]);
+  });
+
+  it('by default looks the originals up in media-private through the admin client', async () => {
+    stored.add(`media-private/${TENANT_ID}/${A1}/a.jpg`);
+
+    const outcome = await processRequestById('r1');
+
+    expect(outcome).toMatchObject({ status: 'failed_validation', errors: { code: 'asset_missing', assetIds: [A2] } });
+    expect(called('storage.exists').map((c) => c.args)).toEqual([
+      { bucket: 'media-private', path: `${TENANT_ID}/${A1}/a.jpg` },
+      { bucket: 'media-private', path: `${TENANT_ID}/${A2}/b.png` },
+    ]);
+  });
+
+  it('a lookup that fails is an unexpected error (retried by the re-claim), not a missing file', async () => {
+    const originalExists = async () => {
+      throw new Error('storage unavailable');
+    };
+    await expect(processRequestById('r1', { originalExists })).rejects.toThrow('storage unavailable');
+    expect(called('worker_reject_request')).toEqual([]);
+    expect(called('worker_commit_publish')).toEqual([]);
+  });
+
+  it('a request whose draft moved on is not checked (the commit records superseded)', async () => {
+    handlers.worker_read_request = () => ({ data: { ...readWithRefs(), draft: { ...readWithRefs().draft, version: 3 } } });
+    handlers.worker_commit_publish = () => ({ data: 'superseded' });
+    const check = exists();
+    expect((await processRequestById('r1', { originalExists: check.originalExists })).status).toBe('superseded');
+    expect(check.asked).toEqual([]);
+  });
+
+  it('processPendingRequests passes the lookup on', async () => {
+    handlers.worker_claim_requests = () => ({ data: [claimed()] });
+    const outcomes = await processPendingRequests(1, { originalExists: exists().originalExists });
+    expect(outcomes.map((o) => o.status)).toEqual(['failed_validation']);
   });
 });

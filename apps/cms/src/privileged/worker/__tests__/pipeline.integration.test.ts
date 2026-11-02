@@ -16,6 +16,7 @@ import { buildRelease } from '../build-release';
 import { processAndDeliver, sweep } from '../pipeline';
 import { processPendingRequests } from '../process-request';
 import { entryMarker, html, releaseMeta, startFakeSite, type FakeSite } from './fake-site';
+import { prepareLabak } from './labak-setup';
 
 const PORT = 3198;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
@@ -69,25 +70,6 @@ async function startLabakSite(): Promise<FakeSite> {
     return { status: 404, html: html('', '<h1>404</h1>') };
   };
   return s;
-}
-
-/** Leftovers of earlier runs: a building release blocks the tenant, and published originals must exist to be copied. */
-async function prepareLabak() {
-  const building = await ownerQuery<{ id: string }>(`select id from cms.releases where tenant_id = $1 and status = 'building'`, [TENANT.labak]);
-  for (const { id } of building) {
-    await withTx('service', (w) => w.query(`select api.worker_finish_release($1, 'failed', null, '{"test":"cleanup"}', null, null)`, [id]));
-  }
-  const originals = await ownerQuery<{ original_path: string }>(
-    `select distinct a.original_path from cms.assets a
-     join cms.revision_refs rr on rr.tenant_id = a.tenant_id and rr.target_asset_id = a.id
-     join cms.entries e on e.tenant_id = rr.tenant_id and e.published_rev_id = rr.revision_id
-     where a.tenant_id = $1 and a.public_path is null and a.archived_at is null and e.archived_at is null`,
-    [TENANT.labak],
-  );
-  for (const { original_path } of originals) {
-    const { error } = await secretClient().storage.from('media-private').upload(original_path, JPEG, { contentType: 'image/jpeg' });
-    if (error && String((error as { statusCode?: unknown }).statusCode) !== '409') throw error;
-  }
 }
 
 beforeAll(async () => {
@@ -276,5 +258,21 @@ describe('sweep', () => {
     await sweep(fast);
 
     expect(await deliveryOf(r.requestId)).toMatchObject({ notify_status: 'ok', notify_attempts: 2, live_status: 'ok', last_error: null });
+  });
+
+  // Plan Task 30 (decision 36.2): a worker killed mid-build no longer blocks the tenant.
+  it('fails a stale building release first, then builds the tenant in the same sweep (n+1), notified and live', async () => {
+    const stale = await withTx('service', async (w) => (await w.query('select r.id, r.number from api.worker_begin_release($1) as r', [TENANT.labak])).rows[0] as { id: string; number: number });
+    await ownerQuery(`update cms.releases set created_at = now() - interval '421 seconds' where id = $1`, [stale.id]);
+    const r = await requested('Eftir stöðvun');
+
+    await sweep(fast);
+
+    const [row] = await ownerQuery<{ status: string; error: unknown }>('select status, error from cms.releases where id = $1', [stale.id]);
+    expect(row).toEqual({ status: 'failed', error: { code: 'stale_building', maxAgeSeconds: 420 } });
+    const alerts = await ownerQuery('select 1 from cms.audit_log where action = $1 and details ->> $2 = $3', ['system.alert.release.stale_failed', 'releaseId', stale.id]);
+    expect(alerts).toHaveLength(1);
+    const d = await deliveryOf(r.requestId);
+    expect(d).toMatchObject({ status: 'committed', number: stale.number + 1, notify_status: 'ok', live_status: 'ok' });
   });
 });

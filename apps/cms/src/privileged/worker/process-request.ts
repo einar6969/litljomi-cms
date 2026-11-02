@@ -3,13 +3,21 @@
 // nothing but the database: it reads the request, the draft and the references' targets in one
 // statement (api.worker_read_request), and the commit copies the data from cms.drafts itself,
 // re-checking the version, schema version, tenant, membership and references (§6.2).
+//
+// Before committing a publish, the private original of every asset the draft references that is not
+// public yet must exist in media-private (plan Task 30, decision 36.4): the release build copies it
+// then, and a missing one would fail every build of the tenant. If one is missing the request fails
+// validation (`asset_missing`) with an alert and is never committed, so an entry already live stays
+// at its published revision.
 import { ProjectionError, projectEntry, type ContentType, type ProjectionContext } from '@litljomi/cms-schema';
 import { getModule, getType } from '@/modules/registry';
+import { supabaseUrl } from '../../lib/supabase/env';
 import type { SupabaseClient } from '../../lib/supabase/types';
 import { createAdminClient } from '../admin-client';
 import { alert } from './alerts';
 import { contextFromRead, publicMediaUrl, type ReadRef } from './projection-context';
 import { callRpc, isApiError } from './rpc';
+import { privateMediaPath } from './storage-paths';
 
 export type RequestStatus = 'committed' | 'failed_validation' | 'superseded' | 'rejected' | 'failed' | 'skipped';
 
@@ -32,6 +40,14 @@ export type RequestOutcome = {
 
 /** An unexpected error leaves a request validating; the claim after 5 minutes retries it, up to this many attempts (§6.3). */
 export const MAX_ATTEMPTS = 5;
+
+export type ProcessOptions = {
+  /**
+   * Whether an object exists in media-private (a path `{tenant_id}/{asset_id}/{filename}`); throws
+   * when it cannot tell. Defaults to the admin client's Storage API.
+   */
+  originalExists?: (path: string) => Promise<boolean>;
+};
 
 type ClaimedRow = {
   id: string | null;
@@ -64,14 +80,14 @@ type Result = { status: CommitStatus; errors?: unknown };
  * is thrown, leaving the request validating for the re-claim; at the limit the request is failed
  * and an alert raised.
  */
-export async function processRequestById(requestId: string): Promise<RequestOutcome> {
+export async function processRequestById(requestId: string, options: ProcessOptions = {}): Promise<RequestOutcome> {
   const db = createAdminClient();
   const row = await callRpc<ClaimedRow | null>(db, 'worker_claim_request', { p_request_id: requestId });
   if (row?.id == null) {
     const read = await callRpc<WorkerRead>(db, 'worker_read_request', { p_request_id: requestId });
     return { ...outcomeOf(read), status: 'skipped' };
   }
-  return processClaimed(db, row as ClaimedRequest);
+  return processClaimed(db, row as ClaimedRequest, originalLookup(db, options));
 }
 
 /**
@@ -79,13 +95,14 @@ export async function processRequestById(requestId: string): Promise<RequestOutc
  * processes them one after another. A request that hits an unexpected error is logged and left
  * validating for the re-claim; it has no outcome here, and the others still run.
  */
-export async function processPendingRequests(limit = 10): Promise<RequestOutcome[]> {
+export async function processPendingRequests(limit = 10, options: ProcessOptions = {}): Promise<RequestOutcome[]> {
   const db = createAdminClient();
   const rows = (await callRpc<ClaimedRequest[] | null>(db, 'worker_claim_requests', { p_limit: limit })) ?? [];
   const outcomes: RequestOutcome[] = [];
+  const originalExists = originalLookup(db, options);
   for (const row of rows) {
     try {
-      outcomes.push(await processClaimed(db, row));
+      outcomes.push(await processClaimed(db, row, originalExists));
     } catch (error) {
       // failUnexpected logged the cause; this line records that the sweep moved on without it.
       console.error(`[cms-worker] request ${row.id} has no outcome in this sweep; it stays validating for the re-claim`, error);
@@ -93,6 +110,20 @@ export async function processPendingRequests(limit = 10): Promise<RequestOutcome
   }
   return outcomes;
 }
+
+type OriginalExists = (path: string) => Promise<boolean>;
+
+/** The lookup of private originals: the given one, or media-private through the admin client. */
+function originalLookup(db: SupabaseClient, options: ProcessOptions): OriginalExists {
+  if (options.originalExists) return options.originalExists;
+  return async (path) => {
+    // storage-js answers false for 400 and 404 (with the error) and throws on anything else.
+    const { data } = await db.storage.from(MEDIA_PRIVATE).exists(path);
+    return data;
+  };
+}
+
+const MEDIA_PRIVATE = 'media-private';
 
 function outcomeOf(read: WorkerRead): Omit<RequestOutcome, 'status'> {
   return {
@@ -105,14 +136,14 @@ function outcomeOf(read: WorkerRead): Omit<RequestOutcome, 'status'> {
   };
 }
 
-async function processClaimed(db: SupabaseClient, row: ClaimedRequest): Promise<RequestOutcome> {
+async function processClaimed(db: SupabaseClient, row: ClaimedRequest, originalExists: OriginalExists): Promise<RequestOutcome> {
   let read: WorkerRead | null = null;
   try {
     read = await callRpc<WorkerRead>(db, 'worker_read_request', { p_request_id: row.id });
     const result: Result =
       row.action === 'unpublish'
         ? { status: await callRpc<CommitStatus>(db, 'worker_commit_unpublish', { p_request_id: row.id }) }
-        : await publish(db, read);
+        : await publish(db, read, originalExists);
     if (result.status !== 'committed' && result.errors === undefined) await addRecordedErrors(db, row.id, result);
     return { ...outcomeOf(read), ...result };
   } catch (error) {
@@ -167,8 +198,8 @@ async function failUnexpected(db: SupabaseClient, row: ClaimedRequest, read: Wor
   return { ...base, status: 'failed', errors: failure };
 }
 
-/** Validates and projects a publish request's draft, then commits it (§6.1, §6.2). */
-async function publish(db: SupabaseClient, read: WorkerRead): Promise<Result> {
+/** Validates and projects a publish request's draft, checks its private originals, then commits it (§6.1, §6.2). */
+async function publish(db: SupabaseClient, read: WorkerRead, originalExists: OriginalExists): Promise<Result> {
   const { request, entry, tenant, draft } = read;
   const commit = (validatedVersion: number | null, title: string | null, sortAt: string | null) =>
     callRpc<CommitStatus>(db, 'worker_commit_publish', {
@@ -203,13 +234,46 @@ async function publish(db: SupabaseClient, read: WorkerRead): Promise<Result> {
   if (module.site[type.name] && entry.slug === null) return reject({ code: 'slug_required' });
 
   // Project exactly as the release build would (§6.2), so committed content is deliverable.
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
-  const ctx = contextFromRead(read.refs, module, (path) => publicMediaUrl(supabaseUrl, path));
+  const base = supabaseUrl();
+  const ctx = contextFromRead(read.refs, module, (path) => publicMediaUrl(base, path));
   const unprojectable = project(type, draft.data, ctx);
   if (unprojectable) return reject(unprojectable);
 
+  // Decision 36.4: the originals the release build will copy must exist, or the request fails here.
+  const missing = await missingOriginals(read, originalExists);
+  if (missing.length > 0) {
+    const result = await reject({ code: 'asset_missing', assetIds: missing });
+    await alert('publish_request.asset_missing', { tenantId: tenant.id, requestId: request.id, entryId: entry.id, assetIds: missing });
+    return result;
+  }
+
   const { title, sortAt } = type.queryColumns(draft.data);
   return { status: await commit(draft.version, title, sortAt) };
+}
+
+/**
+ * The ids of the referenced assets that are not public yet, not archived and in the request's
+ * tenant (the read gives a filename only then; the commit refuses the others as invalid
+ * references) whose private original is not in media-private, in reference order. The path is the
+ * one api.register_asset requires; an asset whose path cannot be built cannot have an original
+ * there, so it counts as missing.
+ */
+async function missingOriginals(read: WorkerRead, originalExists: OriginalExists): Promise<string[]> {
+  const missing: string[] = [];
+  const seen = new Set<string>();
+  for (const r of read.refs) {
+    if (r.kind !== 'asset' || r.archived || r.public_path !== null || r.filename === null || seen.has(r.id)) continue;
+    seen.add(r.id);
+    let path: string;
+    try {
+      path = privateMediaPath(read.tenant.id, r.id, r.filename);
+    } catch {
+      missing.push(r.id);
+      continue;
+    }
+    if (!(await originalExists(path))) missing.push(r.id);
+  }
+  return missing;
 }
 
 type Failure = Record<string, unknown> | null;

@@ -7,6 +7,15 @@
 // alerted, and resolves to null for every other entry. The switch is atomic: the bundle is written
 // and read back, then the pointer is written and read back; any failure up to and including that
 // read-back marks the release failed, and the pointer never names a bundle that was not verified.
+//
+// The pointer only ever moves forward (§7.1; plan Task 30, decision 37.1). Before writing it the
+// worker (c) reads the current pointer and refuses if it names this release or a newer one, (b)
+// asks the database whether this release is still building and refuses if it is not or if a
+// delivered release has a number at or above this one, and (a) refuses once POINTER_DEADLINE_MS
+// have passed since the release began, well before the sweep fails it as stale (420 s). A refusal
+// fails the build with an alert. If the finish is refused or fails after the pointer was written,
+// the pointer is left as it is (never written back to an older release) and an alert is raised;
+// the requests stay unlinked, so the next build delivers a newer release.
 import {
   ProjectionError,
   entryContentHash,
@@ -16,11 +25,12 @@ import {
 } from '@litljomi/cms-schema';
 import type { Bundle, BundleEntry, Pointer } from '@litljomi/cms-sdk';
 import { getModule } from '@/modules/registry';
+import { supabaseUrl } from '../../lib/supabase/env';
 import type { SupabaseClient } from '../../lib/supabase/types';
 import { createAdminClient } from '../admin-client';
 import { alert } from './alerts';
 import { buildProjectionContext, publicMediaUrl, type ContextAsset, type ContextEntry } from './projection-context';
-import { callRpc } from './rpc';
+import { callRpc, isApiError } from './rpc';
 import {
   deliveryBundlePath,
   deliveryPointerPath,
@@ -33,6 +43,14 @@ import {
 export const BUNDLE_CACHE_CONTROL = 'public, max-age=31536000, immutable';
 /** §7.2. */
 export const POINTER_CACHE_CONTROL = 'public, max-age=30';
+/**
+ * No pointer is written once this long has passed since `worker_begin_release` succeeded (decision
+ * 37.1 (a)): 270 s of the worker's 300 s maxDuration, so a build that runs late fails instead of
+ * moving the pointer after the sweep may have failed its release (at 420 s).
+ */
+export const POINTER_DEADLINE_MS = 270_000;
+/** Omitted entries past this many are stored with their error code only (Task 20 quality r1, Minor 6). */
+export const MAX_STORED_OMISSION_DETAILS = 50;
 
 const DELIVERY = 'delivery';
 const MEDIA_PRIVATE = 'media-private';
@@ -75,6 +93,8 @@ export type BuildOptions = {
   /** The public URL of a `media-public` path; defaults to the Supabase project's public object URL. */
   mediaUrl?: (publicPath: string) => string;
   now?: () => Date;
+  /** A monotonic clock in milliseconds, for the pointer deadline; defaults to `performance.now`. */
+  clock?: () => number;
 };
 
 type ReleaseRow = { id: string | null; tenant_id: string | null; number: number | null; status: string | null; bundle_path?: string | null };
@@ -101,15 +121,25 @@ type Snapshot = {
   requests: Array<{ id: string; entry_id: string; action: 'publish' | 'unpublish'; revision_id: string | null }>;
 };
 
-/** A failure at a named step of the build; `pointerWritten` is null when it cannot be known. */
+/**
+ * A failure at a named step of the build. `code` is what releases.error records: `build_failed`,
+ * `pointer_refused` (a forward-only check refused the pointer write) or `finish_refused` (the
+ * release was no longer building when the worker finished it, for example failed as stale).
+ */
 class BuildFailure extends Error {
   constructor(
     readonly step: string,
     readonly cause: unknown,
+    readonly code: 'build_failed' | 'pointer_refused' | 'finish_refused' = 'build_failed',
   ) {
     super(`${step}: ${cause instanceof Error ? cause.message : String(cause)}`);
   }
 }
+
+/** A forward-only check refused the pointer write (decision 37.1). */
+const refused = (step: string, reason: string) => new BuildFailure(step, new Error(reason), 'pointer_refused');
+
+type PointerCheck = { building: boolean; latest_delivered: number | null };
 
 /**
  * Builds and delivers the tenant's next release (§7.1). Returns `busy` when the tenant already has
@@ -119,13 +149,15 @@ class BuildFailure extends Error {
 export async function buildRelease(tenantId: string, options: BuildOptions = {}): Promise<BuildResult> {
   const db = options.db ?? createAdminClient();
   const storage = options.storage ?? supabaseReleaseStorage(db);
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
-  const mediaUrl = options.mediaUrl ?? ((path: string) => publicMediaUrl(supabaseUrl, path));
+  // Read before beginning: an unset project URL throws here, never resolving every image to null.
+  const mediaUrl = options.mediaUrl ?? mediaUrlOf(supabaseUrl());
   const now = options.now ?? (() => new Date());
+  const clock = options.clock ?? (() => performance.now());
 
   // Step 1. A row of nulls when another build is running (decision 35).
   const begun = await callRpc<ReleaseRow | null>(db, 'worker_begin_release', { p_tenant_id: tenantId });
   if (begun?.id == null || begun.number == null) return { status: 'busy', omitted: [] };
+  const begunAt = clock();
   const releaseId = begun.id;
   const number = begun.number;
 
@@ -163,8 +195,7 @@ export async function buildRelease(tenantId: string, options: BuildOptions = {})
     if (!module) throw new BuildFailure('module', new Error(`no module for tenant ${slug}`));
 
     // Step 3. Project; leave out what fails (two passes or more, until no omission remains).
-    step = 'project';
-    const projected = projectAll(snapshot, module, tenantId, mediaUrl);
+    const projected = await at('project', async () => projectAll(snapshot, module, tenantId, mediaUrl));
     omitted = projected.omitted;
     const generatedAt = now().toISOString();
     const bundle: Bundle = { format: 1, tenant: slug, release: number, generatedAt, entries: projected.entries };
@@ -190,74 +221,136 @@ export async function buildRelease(tenantId: string, options: BuildOptions = {})
       if (!sameBytes(await storage.download(DELIVERY, bundlePath), bundleBytes)) throw new Error('the bundle read back differs');
     });
 
-    // Steps 7–8. Write the pointer, read it back, check the release.
+    // The pointer only moves forward (decision 37.1): (c), then (b), then (a), closest to the write.
     const pointer: Pointer = { format: 1, tenant: slug, release: number, bundle: pointerBundlePath(number), generatedAt };
     const pointerPath = deliveryPointerPath(slug);
     const readPointer = async () => parseJson<Pointer>(await storage.download(DELIVERY, pointerPath));
-    step = 'pointer_upload';
-    try {
-      await storage.upload(DELIVERY, pointerPath, new TextEncoder().encode(JSON.stringify(pointer)), {
-        cacheControl: POINTER_CACHE_CONTROL,
-        contentType: 'application/json',
-        upsert: true,
+    await at('pointer_current', async () => {
+      // A tenant with no delivered release may have no pointer yet; otherwise it must be readable.
+      const current = await readPointer().catch((error: unknown) => {
+        if (previous?.id == null) return null;
+        throw error;
       });
-      pointerWritten = true;
-    } catch (error) {
-      // The upload may have failed after the object was stored: look before saying it was not.
-      pointerWritten = await readPointer().then(
-        (p) => p.release === number,
-        () => null,
-      );
-      throw new BuildFailure('pointer_upload', error);
+      if (current === null) return;
+      if (current.format !== 1 || current.tenant !== slug || !Number.isSafeInteger(current.release)) {
+        throw refused('pointer_current', 'the current pointer is not a pointer of this tenant');
+      }
+      if (current.release >= number) throw refused('pointer_current', `the current pointer already names release ${current.release}`);
+    });
+    await at('pointer_check', async () => {
+      const [state] = (await callRpc<PointerCheck[] | null>(db, 'worker_pointer_check', { p_release_id: releaseId })) ?? [];
+      if (!state) throw new Error('worker_pointer_check returned no row');
+      if (!state.building) throw refused('pointer_check', 'the release is no longer building');
+      if (state.latest_delivered !== null && state.latest_delivered >= number) {
+        throw refused('pointer_check', `release ${state.latest_delivered} is already delivered`);
+      }
+    });
+    const elapsed = clock() - begunAt;
+    if (elapsed >= POINTER_DEADLINE_MS) {
+      throw refused('pointer_deadline', `${Math.round(elapsed)} ms since the release began (limit ${POINTER_DEADLINE_MS} ms)`);
     }
+
+    // Steps 7–8. Write the pointer, read it back, check the release.
+    await at('pointer_upload', async () => {
+      const upload = await writePointer(storage, pointerPath, pointer, readPointer);
+      pointerWritten = upload.written;
+      if (!upload.ok) throw upload.error;
+    });
     await at('pointer_verify', async () => {
       const p = await readPointer();
       if (p.release !== number || p.bundle !== pointer.bundle) throw new Error(`the pointer reads back release ${String(p.release)}`);
     });
 
     // Step 9. Delivered: every request of the snapshot is linked; omissions are the release's error.
-    const error = omitted.length > 0 ? { omitted } : null;
+    // forbidden: the release is no longer building (the sweep failed it as stale); it stays failed.
+    const stored = storedOmissions(omitted);
     await at('finish', () =>
       callRpc(db, 'worker_finish_release', {
         p_release_id: releaseId,
         p_status: 'delivered',
         p_bundle_path: bundlePath,
-        p_error: error,
+        p_error: stored.length > 0 ? { omitted: stored } : null,
         p_request_ids: snapshot.requests.map((r) => r.id),
         p_public_assets: publicAssets,
+      }).catch((error: unknown) => {
+        throw isApiError(error, 'forbidden') ? new BuildFailure('finish', error, 'finish_refused') : error;
       }),
     );
 
     // Step 10. Left-out entries are visible and alerted ("Withdrawal and failure visibility").
-    if (omitted.length > 0) await alert('release.entry_omitted', { tenantId, releaseId, number, omitted });
+    if (omitted.length > 0) await alert('release.entry_omitted', { tenantId, releaseId, number, omitted: stored });
     const requests = snapshot.requests.map((r) => ({ id: r.id, entryId: r.entry_id, action: r.action }));
     return { status: 'delivered', releaseId, number, omitted, bundle, previousBundle, requests };
   } catch (error) {
     const failure = error instanceof BuildFailure ? error : new BuildFailure(step, error);
+    const stored = storedOmissions(omitted);
     const recorded = {
-      code: 'build_failed',
+      code: failure.code,
       step: failure.step,
       message: failure.message,
       pointerWritten,
-      ...(omitted.length > 0 ? { omitted } : {}),
+      ...(stored.length > 0 ? { omitted: stored } : {}),
     };
-    try {
-      // A failed release links no requests and no assets: they wait for the next build.
-      await callRpc(db, 'worker_finish_release', {
-        p_release_id: releaseId,
-        p_status: 'failed',
-        p_bundle_path: null,
-        p_error: recorded,
-        p_request_ids: null,
-        p_public_assets: null,
-      });
-    } catch (finishError) {
-      console.error(`[cms-worker] release ${releaseId} could not be marked failed`, finishError);
+    // A refused finish means the release is no longer building: finishing it again would be
+    // refused too, and its recorded error (stale_building) stays. A pointer already written is left
+    // as it is (decision 37.1 (d)): never written back to an older release.
+    if (failure.code !== 'finish_refused') {
+      try {
+        // A failed release links no requests and no assets: they wait for the next build.
+        await callRpc(db, 'worker_finish_release', {
+          p_release_id: releaseId,
+          p_status: 'failed',
+          p_bundle_path: null,
+          p_error: recorded,
+          p_request_ids: null,
+          p_public_assets: null,
+        });
+      } catch (finishError) {
+        console.error(`[cms-worker] release ${releaseId} could not be marked failed`, finishError);
+      }
     }
-    await alert('release.failed', { tenantId, releaseId, number, step: failure.step, message: failure.message, pointerWritten });
+    const event = failure.code === 'finish_refused' ? 'release.finish_refused' : 'release.failed';
+    await alert(event, { tenantId, releaseId, number, code: failure.code, step: failure.step, message: failure.message, pointerWritten });
     return { status: 'failed', releaseId, number, omitted, previousBundle };
   }
 }
+
+/** The project's public media URL of a `media-public` path. */
+const mediaUrlOf = (base: string) => (path: string) => publicMediaUrl(base, path);
+
+/**
+ * Writes the pointer. `written` is whether it was: when the upload fails, a read-back decides (the
+ * upload may have failed after the object was stored): true when the pointer names this release,
+ * false when it names another, null when it cannot be read.
+ */
+async function writePointer(
+  storage: ReleaseStorage,
+  path: string,
+  pointer: Pointer,
+  readPointer: () => Promise<Pointer>,
+): Promise<{ ok: true; written: true } | { ok: false; written: boolean | null; error: unknown }> {
+  try {
+    await storage.upload(DELIVERY, path, new TextEncoder().encode(JSON.stringify(pointer)), {
+      cacheControl: POINTER_CACHE_CONTROL,
+      contentType: 'application/json',
+      upsert: true,
+    });
+    return { ok: true, written: true };
+  } catch (error) {
+    const written = await readPointer().then(
+      (p) => p.release === pointer.release,
+      () => null,
+    );
+    return { ok: false, written, error };
+  }
+}
+
+/** The omitted entries as stored and alerted: every entry, with the details of the first ones only. */
+function storedOmissions(omitted: OmittedEntry[]): OmittedEntry[] {
+  return omitted.map((o, i) => (i < MAX_STORED_OMISSION_DETAILS ? o : { ...o, error: { code: codeOf(o.error) } }));
+}
+
+const codeOf = (error: unknown): unknown => (error !== null && typeof error === 'object' && 'code' in error ? error.code : 'unknown');
 
 type Projected = {
   entries: Record<string, BundleEntry[]>;
@@ -279,7 +372,10 @@ function projectAll(snapshot: Snapshot, module: ModuleManifest, tenantId: string
   const assetsById = new Map(snapshot.assets.map((a) => [a.id, a]));
   const validAsset = (a: SnapshotAsset): boolean => {
     try {
-      return a.original_path === privateMediaPath(tenantId, a.id, a.filename) && publicMediaPath(slug, a.id, a.filename) !== '';
+      if (a.original_path !== privateMediaPath(tenantId, a.id, a.filename)) return false;
+      // Builds the public path only for its validation (slug, asset id, filename): it throws if invalid.
+      publicMediaPath(slug, a.id, a.filename);
+      return true;
     } catch {
       return false;
     }
@@ -296,7 +392,10 @@ function projectAll(snapshot: Snapshot, module: ModuleManifest, tenantId: string
       // M1 has no upcast transforms (§5.3): another schema version cannot be projected.
       errors.set(e.entry_id, { code: 'schema_version', revisionSchemaVersion: e.schema_version, currentSchemaVersion: type.version });
     } else {
-      const bad = e.refs.find((r) => r.kind === 'asset' && assetsById.has(r.id) && !assetsById.get(r.id)!.archived && !validAsset(assetsById.get(r.id)!));
+      const bad = e.refs.find((r) => {
+        const a = r.kind === 'asset' ? assetsById.get(r.id) : undefined;
+        return a !== undefined && !a.archived && !validAsset(a);
+      });
       if (bad) errors.set(e.entry_id, { code: 'asset_path_invalid', assetId: bad.id });
     }
   }
@@ -307,7 +406,7 @@ function projectAll(snapshot: Snapshot, module: ModuleManifest, tenantId: string
     const ctx = buildProjectionContext({
       module,
       entries: included.map(
-        (e): ContextEntry => ({ id: e.entry_id, type: e.type, slug: e.slug, title: e.title, sortAt: e.sort_at === null ? null : iso(e.sort_at) }),
+        (e): ContextEntry => ({ id: e.entry_id, type: e.type, slug: e.slug, title: e.title, sortAt: isoOrNull(e.sort_at) }),
       ),
       assets: contextAssets,
       mediaUrl,
@@ -352,7 +451,7 @@ function bundleEntry(e: SnapshotEntry, type: ContentType, ctx: ReturnType<typeof
     revisionId: e.revision_id,
     slug: e.slug,
     title: e.title,
-    sortAt: e.sort_at === null ? null : iso(e.sort_at),
+    sortAt: isoOrNull(e.sort_at),
     firstPublishedAt: iso(e.first_published_at),
     lastPublishedAt: iso(e.last_published_at),
     schemaVersion: e.schema_version,
@@ -379,6 +478,11 @@ function iso(s: string): string {
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) throw new Error(`not a timestamp: ${s}`);
   return d.toISOString();
+}
+
+/** A nullable database timestamp (sort_at) as an ISO string or null. */
+function isoOrNull(s: string | null): string | null {
+  return s === null ? null : iso(s);
 }
 
 function parseJson<T>(bytes: Uint8Array): T {
