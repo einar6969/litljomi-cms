@@ -13,3 +13,9 @@
 ### Interface note for Task 16 and the sites (Task 15, 2026-11-02)
 
 - A `link` field that references an entry projects to `{ entry: EntrySummary | null }`; `{ entry: null }` means the referenced entry is not published (spec §6.2). External links project to `{ href }` with a canonical URL. The plan's Task 15 test text (`related: EntrySummary | null`) assumed a bare reference field, which the slice does not have; the controller ratified the adaptation (`task-15-r1-spec-quality.md`).
+
+### Lane B merges 3 and 4 (Tasks 15, 16 and 18, 2026-11-02)
+
+- Tasks 15 (`e97329c`) and 16 (`11b7c93`) were merged as `324ec13`, after Lane A's Task 7 implementer had committed (`0f7ca02`). Task 18 (`5313a5b`, `41515f0`) was merged as `2ade8f2`. Both merges were clean; `pnpm install --frozen-lockfile` was clean each time. The lockfile changes were reviewed in the tasks themselves: Task 16 pruned a stale optional `happy-dom` branch (no `package.json` ever named it); Task 18 added `next@16.4.3` and its tree as the SDK's peer, with no install or build scripts.
+- Before the merges, `m1/phase-1` was merged into `m1/lane-b` (`ec7f204`) so the worktree carried decisions 23–24.
+- After the last merge: harness 27/27; lint, typecheck and check:slugs (2 slugs) exit 0; Vitest 25 files, 327 tests; `pnpm db:reset && pnpm db:test` Files=7, Tests=406, PASS. Lane B (Tasks 13–16, 18) is complete.

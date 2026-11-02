@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T04:52:59.314Z",
+  "updatedAt": "2026-11-02T05:03:18.772Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -304,11 +304,26 @@
     },
     {
       "id": 7,
-      "status": "in_progress",
+      "status": "in_review",
       "commits": [
         "0f7ca02"
       ],
-      "reviews": {},
+      "reviews": {
+        "spec": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-07-r1-spec.md",
+          "at": "2026-11-02T04:55:22.287Z",
+          "atCommits": 1
+        },
+        "security": {
+          "status": "fail",
+          "round": 1,
+          "report": "docs/execution/reviews/task-07-r1-security.md",
+          "at": "2026-11-02T05:01:11.172Z",
+          "atCommits": 1
+        }
+      },
       "gatesUsed": [
         "G0",
         "G1"
@@ -325,9 +340,15 @@
           "at": "2026-11-02T04:34:26.370Z",
           "previousStatus": "in_progress",
           "resolvedAt": "2026-11-02T04:37:03.159Z"
+        },
+        {
+          "text": "Security r1 Major: extract_refs recursive walk is quadratic in nesting depth (an editor's ~930 KB deeply nested draft wrote 3 GB of temp files in 8 s; unbounded for service_role). The likely fix includes a nesting-depth cap, which goes beyond spec §4.3 'at any depth'. Waiting for Einar.",
+          "at": "2026-11-02T05:01:11.254Z",
+          "previousStatus": "in_review",
+          "resolvedAt": "2026-11-02T05:03:18.772Z"
         }
       ],
-      "notes": "Blocked 2026-11-02 before any edit: plan interface could not work as written (jsonb_path_query returns no locations). Einar ruled in chat: \"Recursive walk + cross-check\", \"AFTER on every update\", \"Canonical UUID strings only\" and \"Make sure packages/schema’s refSchema also requires the canonical lowercase 8-4-4-4-12 form, so all three layers reject the same references.\" (decision 25; spec §4.3 revised). Unblocked; the same implementer continues. Second stop (before any edit): refs triggers cannot call private.extract_refs as the invoking role (no USAGE on private). Einar ruled in chat: \"Grant usage + one function\" (decision 26; spec §4.5 revised). Unblocked again; the same implementer continues.",
+      "notes": "Blocked 2026-11-02 before any edit: plan interface could not work as written (jsonb_path_query returns no locations). Einar ruled in chat: \"Recursive walk + cross-check\", \"AFTER on every update\", \"Canonical UUID strings only\" and \"Make sure packages/schema’s refSchema also requires the canonical lowercase 8-4-4-4-12 form, so all three layers reject the same references.\" (decision 25; spec §4.3 revised). Unblocked; the same implementer continues. Second stop (before any edit): refs triggers cannot call private.extract_refs as the invoking role (no USAGE on private). Einar ruled in chat: \"Grant usage + one function\" (decision 26; spec §4.5 revised). Unblocked again; the same implementer continues. Commit 0f7ca02 (implementation; A13 pass recorded in docs/verification/m1-gates.md; Task 6 Minors cleared). Reviews: spec r1 pass; security r1 FAIL (Major: extract_refs walk quadratic in nesting depth, temp-file exhaustion). Einar approved \"Cap at 128 + lean walk\" (decision 27; spec §4.3 revised) and asked to stop after Task 7 completes: Tasks 8-12 continue in a fresh controller session; do not start Task 8.",
       "startedAt": "2026-11-02T04:26:10.172Z"
     },
     {
