@@ -31,14 +31,14 @@
   "sandbox": {
     "enabled": true,
     "failIfUnavailable": true,
+    "excludedCommands": ["pnpm --filter cms e2e *"],
     "network": {
       "allowedDomains": ["registry.npmjs.org"],
       "allowUnixSockets": [
         "/Users/einarzoega/.orbstack/run/docker.sock",
         "/var/run/docker.sock"
       ],
-      "allowLocalBinding": true,
-      "allowMachLookup": ["org.chromium.Chromium.MachPortRendezvousServer.*"]
+      "allowLocalBinding": true
     }
   }
 }
