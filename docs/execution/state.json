@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T20:55:24.262Z",
+  "updatedAt": "2026-11-02T21:35:54.956Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -1110,16 +1110,37 @@
     },
     {
       "id": 31,
-      "status": "in_progress",
-      "commits": [],
-      "reviews": {},
+      "status": "done",
+      "commits": [
+        "3a3eada",
+        "4bd7eb4",
+        "602195e",
+        "f664a22"
+      ],
+      "reviews": {
+        "specQuality": {
+          "status": "pass",
+          "round": 4,
+          "report": "docs/execution/reviews/task-31-r3-spec-quality-waiver.md",
+          "at": "2026-11-02T21:29:03.924Z",
+          "atCommits": 4
+        },
+        "security": {
+          "status": "pass",
+          "round": 3,
+          "report": "docs/execution/reviews/task-31-r3-security.md",
+          "at": "2026-11-02T21:26:45.712Z",
+          "atCommits": 4
+        }
+      },
       "gatesUsed": [
         "G0",
         "G1"
       ],
       "blockers": [],
       "notes": "Added 2026-11-02 (decision 40): editor design.",
-      "startedAt": "2026-11-02T20:55:24.262Z"
+      "startedAt": "2026-11-02T20:55:24.262Z",
+      "doneAt": "2026-11-02T21:35:54.956Z"
     },
     {
       "id": 27,
