@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T07:08:19.795Z",
+  "updatedAt": "2026-11-02T07:18:40.974Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -417,6 +417,45 @@
     },
     {
       "id": 9,
+      "status": "done",
+      "commits": [
+        "84746b6",
+        "354d0d3"
+      ],
+      "reviews": {
+        "spec": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-09-r1-spec.md",
+          "at": "2026-11-02T07:15:14.301Z",
+          "atCommits": 2
+        },
+        "security": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-09-r1-security.md",
+          "at": "2026-11-02T07:16:50.560Z",
+          "atCommits": 2
+        },
+        "quality": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-09-r1-quality.md",
+          "at": "2026-11-02T07:17:48.710Z",
+          "atCommits": 2
+        }
+      },
+      "gatesUsed": [
+        "G0",
+        "G1"
+      ],
+      "blockers": [],
+      "notes": "Implemented in .worktrees/lane-a-alt (m1/lane-a-alt) from Task 8's head under the two-direction overlap rule: WIP 84746b6 (written without the database), final 354d0d3. Controller accepted: service_role grants per table for Task 11's functions (publish_requests SELECT + UPDATE on status, claimed_at, attempts, error, revision_id, release_id; releases SELECT, INSERT, UPDATE on status, bundle_path, delivered_at, error; sites SELECT, INSERT; site_deliveries SELECT, INSERT, UPDATE on notify/live columns; no DELETE); two extra composite FKs on publish_requests (to revisions and releases); not-null timestamps; an extra index. Reviews r1: spec pass (no findings), security pass (no findings), quality pass (6 Minors). Merged into m1/phase-1 as ba28bbd (--no-ff, clean). Full suite by the controller after the merge: harness 30/30; lint, typecheck, check:slugs (2 slugs) exit 0; Vitest 25 files, 327 tests; pnpm db:reset && pnpm db:test Files=9, Tests=803, PASS.",
+      "startedAt": "2026-11-02T07:03:49.256Z",
+      "doneAt": "2026-11-02T07:18:40.974Z"
+    },
+    {
+      "id": 10,
       "status": "in_progress",
       "commits": [],
       "reviews": {},
@@ -426,16 +465,7 @@
       ],
       "blockers": [],
       "notes": "",
-      "startedAt": "2026-11-02T07:03:49.256Z"
-    },
-    {
-      "id": 10,
-      "status": "pending",
-      "commits": [],
-      "reviews": {},
-      "gatesUsed": [],
-      "blockers": [],
-      "notes": ""
+      "startedAt": "2026-11-02T07:15:14.329Z"
     },
     {
       "id": 11,
