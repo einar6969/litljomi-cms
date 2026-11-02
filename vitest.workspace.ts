@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineWorkspace } from 'vitest/config';
 
 export default defineWorkspace([
@@ -37,6 +38,16 @@ export default defineWorkspace([
     test: {
       name: 'sdk',
       include: ['packages/sdk/src/__tests__/**/*.test.{ts,tsx}'],
+    },
+  },
+  {
+    // Unit tests of the CMS app. Tests against the local stack are named *.integration.test.ts and
+    // run only through `pnpm test:integration` (apps/cms/vitest.integration.config.ts).
+    resolve: { alias: { '@': fileURLToPath(new URL('./apps/cms/src', import.meta.url)) } },
+    test: {
+      name: 'cms',
+      include: ['apps/cms/src/**/__tests__/**/*.test.{ts,tsx}'],
+      exclude: ['**/*.integration.test.ts', '**/node_modules/**'],
     },
   },
 ]);

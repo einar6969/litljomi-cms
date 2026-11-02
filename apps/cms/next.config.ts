@@ -1,0 +1,8 @@
+import type { NextConfig } from 'next';
+
+const nextConfig: NextConfig = {
+  // Workspace packages are TypeScript source; Next.js compiles them with the app.
+  transpilePackages: ['@litljomi/cms-schema', '@litljomi/rich-text', '@litljomi/module-labak', '@litljomi/module-demo'],
+};
+
+export default nextConfig;

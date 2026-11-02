@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ESLint } from 'eslint';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const eslint = new ESLint({ cwd: root });
@@ -17,6 +17,17 @@ async function ruleIds(path: string, code: string): Promise<string[]> {
 
 const RESTRICTED_SYNTAX = 'no-restricted-syntax';
 const IMPORT = 'no-restricted-imports';
+
+const tempDirs: string[] = [];
+/** A fresh temp directory, removed after the test. */
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 describe('module imports', () => {
   it('forbids importing a module outside the registry', async () => {
@@ -312,33 +323,29 @@ describe('lint script', () => {
   const eslintBin = join(root, 'node_modules', 'eslint', 'bin', 'eslint.js');
 
   it('ignores a nested config that turns the boundary rules off', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'lint-lookup-'));
-    try {
-      copyFileSync(join(root, 'eslint.config.mjs'), join(dir, 'eslint.config.mjs'));
-      symlinkSync(join(root, 'node_modules'), join(dir, 'node_modules'));
-      mkdirSync(join(dir, 'apps', 'cms', 'src', 'editor'), { recursive: true });
-      writeFileSync(
-        join(dir, 'apps', 'cms', 'eslint.config.mjs'),
-        `export default [{ files: ['**/*.ts'], rules: { 'no-restricted-syntax': 'off', 'no-restricted-imports': 'off' } }];\n`,
-      );
-      writeFileSync(join(dir, 'apps', 'cms', 'src', 'editor', 'x.ts'), 'export const k = process.env.SUPABASE_SECRET_KEY;\n');
-      const lint = (args: string[]) =>
-        spawnSync(process.execPath, [eslintBin, ...args], {
-          cwd: dir,
-          encoding: 'utf8',
-          env: { ...process.env, ESLINT_FLAGS: 'v10_config_lookup_from_file' },
-        });
+    const dir = tempDir('lint-lookup-');
+    copyFileSync(join(root, 'eslint.config.mjs'), join(dir, 'eslint.config.mjs'));
+    symlinkSync(join(root, 'node_modules'), join(dir, 'node_modules'));
+    mkdirSync(join(dir, 'apps', 'cms', 'src', 'editor'), { recursive: true });
+    writeFileSync(
+      join(dir, 'apps', 'cms', 'eslint.config.mjs'),
+      `export default [{ files: ['**/*.ts'], rules: { 'no-restricted-syntax': 'off', 'no-restricted-imports': 'off' } }];\n`,
+    );
+    writeFileSync(join(dir, 'apps', 'cms', 'src', 'editor', 'x.ts'), 'export const k = process.env.SUPABASE_SECRET_KEY;\n');
+    const lint = (args: string[]) =>
+      spawnSync(process.execPath, [eslintBin, ...args], {
+        cwd: dir,
+        encoding: 'utf8',
+        env: { ...process.env, ESLINT_FLAGS: 'v10_config_lookup_from_file' },
+      });
 
-      // Without the root config named, the nested config wins: the setup really is a bypass.
-      expect(lint(['.']).status).toBe(0);
+    // Without the root config named, the nested config wins: the setup really is a bypass.
+    expect(lint(['.']).status).toBe(0);
 
-      const result = lint(lintArgs());
-      expect(result.status).toBe(1);
-      expect(result.stdout).toContain(join('apps', 'cms', 'src', 'editor', 'x.ts'));
-      expect(result.stdout).toContain('no-restricted-syntax');
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+    const result = lint(lintArgs());
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(join('apps', 'cms', 'src', 'editor', 'x.ts'));
+    expect(result.stdout).toContain('no-restricted-syntax');
   }, 30_000);
 });
 
@@ -347,6 +354,10 @@ describe('rich-text editor entry', () => {
     [`import { x } from '@litljomi/rich-text/editor'`, IMPORT],
     [`import { x } from '@litljomi/rich-text/editor/extra'`, IMPORT],
     [`import { x } from '../../rich-text/src/tiptap'`, IMPORT],
+    [`import { x } from '../../rich-text/src/./tiptap'`, IMPORT],
+    [`import { x } from '../../rich-text/./src/tiptap.ts'`, IMPORT],
+    [`import { x } from '../../rich-text/src/../src/tiptap'`, IMPORT],
+    [`import { x } from '..\\\\..\\\\rich-text\\\\src\\\\tiptap'`, IMPORT],
     [`import('@litljomi/rich-text/editor')`, RESTRICTED_SYNTAX],
     [`require('@litljomi/rich-text/editor')`, RESTRICTED_SYNTAX],
     ['import(`@litljomi/rich-text/editor`)', RESTRICTED_SYNTAX],
@@ -357,9 +368,16 @@ describe('rich-text editor entry', () => {
   it('allows the CMS app to import the editor entry', async () => {
     expect(await ruleIds('apps/cms/src/editor/x.ts', `import { x } from '@litljomi/rich-text/editor'; import('@litljomi/rich-text/editor')`)).toEqual([]);
   });
-  it('allows the main entry from packages and modules', async () => {
+  it('allows the main entry from packages', async () => {
     expect(await ruleIds('packages/schema/src/x.ts', `import { x } from '@litljomi/rich-text'`)).toEqual([]);
-    expect(await ruleIds('modules/labak/src/x.ts', `import { x } from '@litljomi/rich-text'`)).toEqual([]);
+  });
+  // Spec §3.1: a module depends only on the schema package and core extension-point types.
+  it.each([
+    [`import { x } from '@litljomi/rich-text'`, IMPORT],
+    [`import { x } from '../../../packages/rich-text/src/index'`, IMPORT],
+    [`import('@litljomi/rich-text')`, RESTRICTED_SYNTAX],
+  ])('forbids %s in modules', async (code, ruleId) => {
+    expect(await ruleIds('modules/labak/src/x.ts', code)).toEqual([ruleId]);
   });
   it('lets the rich-text package import its own files', async () => {
     expect(await ruleIds('packages/rich-text/src/x.ts', `import { x } from './tiptap.ts'; import { y } from '../tiptap'`)).toEqual([]);
@@ -382,5 +400,219 @@ describe('module-to-module imports', () => {
     expect(
       await ruleIds('modules/labak/src/x.ts', `import { x } from '@litljomi/cms-schema'; import { y } from './y.ts'; import f from '../fixtures/news.json'`),
     ).toEqual([]);
+  });
+});
+
+// Decision 35: the worker and cron route handlers may import the pipeline entry from privileged/
+// (and internal-auth, their secret check), and nothing else from it; the secret-key and module
+// rules still apply to them.
+describe('worker and cron route exception', () => {
+  const ROUTES = ['apps/cms/src/app/api/internal/worker/route.ts', 'apps/cms/src/app/api/cron/sweep/route.ts'];
+  const pipelineImports = [
+    `import { sweep } from '@/privileged/worker/pipeline'`,
+    `import { sweep } from '@/privileged/worker/pipeline.ts'`,
+    `import { sweep } from '../../../../privileged/worker/pipeline'`,
+    `import('@/privileged/worker/pipeline')`,
+    `import { verifyCronSecret } from '@/privileged/internal-auth'`,
+    `import { verifyCronSecret } from '../../../../privileged/internal-auth.ts'`,
+  ];
+  it.each(ROUTES)('lets %s import the pipeline entry', async (path) => {
+    expect(await ruleIds(path, pipelineImports.join('; '))).toEqual([]);
+  });
+  it.each(ROUTES.flatMap((path) => [
+    [path, `import { createAdminClient } from '@/privileged/admin-client'`, IMPORT],
+    [path, `import { x } from '@/privileged/worker/process-request'`, IMPORT],
+    [path, `import { x } from '@/privileged/worker/pipeline/../../admin-client'`, IMPORT],
+    [path, `import { x } from '@/privileged/worker/pipeline.ts/../../admin-client'`, IMPORT],
+    [path, `import { x } from '@/privileged/./worker/pipeline'`, IMPORT],
+    [path, `import { x } from '@/privileged\\\\worker\\\\pipeline'`, IMPORT],
+    [path, `import { x } from '@/privileged\\\\worker/pipeline'`, IMPORT],
+    [path, `import { x } from '@/privileged/worker'`, IMPORT],
+    [path, `import { x } from '@/privileged/internal-auth/../admin-client'`, IMPORT],
+    [path, `import { x } from '@/privileged/worker/internal-auth'`, IMPORT],
+    [path, `import('@/privileged/admin-client')`, RESTRICTED_SYNTAX],
+    [path, `require('../../../../privileged/admin-client')`, RESTRICTED_SYNTAX],
+  ]))('still forbids, in %s, %s', async (path, code, ruleId) => {
+    expect(await ruleIds(path, code)).toEqual([ruleId]);
+  });
+  it.each(ROUTES)('keeps the secret-key and module rules in %s', async (path) => {
+    expect(await ruleIds(path, `const k = process.env.SUPABASE_SECRET_KEY`)).toEqual([RESTRICTED_SYNTAX]);
+    expect(await ruleIds(path, `import m from '@litljomi/module-labak'`)).toEqual([IMPORT]);
+    expect(await ruleIds(path, `import('@/modules/labak/x')`)).toEqual([RESTRICTED_SYNTAX]);
+  });
+  // The exception is the two exact files: siblings, other routes and other extensions are not covered.
+  it.each([
+    'apps/cms/src/app/api/internal/worker/handler.ts',
+    'apps/cms/src/app/api/internal/worker/route.tsx',
+    'apps/cms/src/app/api/internal/worker/x/route.ts',
+    'apps/cms/src/app/api/internal/other/route.ts',
+    'apps/cms/src/app/api/cron/route.ts',
+    'apps/cms/src/app/api/cron/sweep/route.js',
+    'apps/cms/src/app/api/cron/sweep/__tests__/route.ts',
+    'apps/cms/src/app/(editor)/route.ts',
+    'apps/cms/src/app/route.ts',
+    'apps/demo-site/src/app/api/cron/sweep/route.ts',
+  ])('does not cover %s', async (path) => {
+    expect(await ruleIds(path, `import { sweep } from '@/privileged/worker/pipeline'`)).toEqual([IMPORT]);
+  });
+  it('applies the exception to exactly the two route files', async () => {
+    const config = (path: string) => eslint.calculateConfigForFile(join(root, path));
+    const rule = async (path: string) => JSON.stringify((await config(path)).rules['no-restricted-imports']);
+    const exempt = await rule(ROUTES[0]!);
+    expect(await rule(ROUTES[1]!)).toBe(exempt);
+    expect(await rule('apps/cms/src/app/api/internal/worker/x.ts')).not.toBe(exempt);
+  });
+});
+
+describe('admin client from editor routes', () => {
+  it.each([
+    'apps/cms/src/app/(editor)/t/[tenant]/actions.ts',
+    'apps/cms/src/app/(editor)/t/[tenant]/[type]/page.tsx',
+    'apps/cms/src/app/(editor)/layout.tsx',
+  ])('forbids importing admin-client from %s', async (path) => {
+    expect(await ruleIds(path, `import { createAdminClient } from '@/privileged/admin-client'`)).toEqual([IMPORT]);
+    expect(await ruleIds(path, `import { createAdminClient } from '../../../../privileged/admin-client'`)).toEqual([IMPORT]);
+    expect(await ruleIds(path, `import('@/privileged/admin-client')`)).toEqual([RESTRICTED_SYNTAX]);
+  });
+});
+
+// Decision C-S2b (Task 17): in apps/cms, Supabase clients are created only in src/lib/supabase
+// (publishable key) and src/privileged (secret key). Other code takes a client from those files.
+describe('Supabase client libraries', () => {
+  const code = [
+    `import { createClient } from '@supabase/supabase-js'`,
+    `import type { SupabaseClient } from '@supabase/supabase-js'`,
+    `import { createServerClient } from '@supabase/ssr'`,
+    `import { x } from '@supabase/supabase-js/dist/module'`,
+  ];
+  it.each(code)('forbids %s in apps/cms outside lib/supabase and privileged/', async (line) => {
+    expect(await ruleIds('apps/cms/src/app/(editor)/t/[tenant]/actions.ts', line)).toEqual([IMPORT]);
+    expect(await ruleIds('apps/cms/src/editor/x.ts', line)).toEqual([IMPORT]);
+  });
+  it('forbids the dynamic form', async () => {
+    expect(await ruleIds('apps/cms/src/editor/x.ts', `import('@supabase/supabase-js')`)).toEqual([RESTRICTED_SYNTAX]);
+  });
+  it.each(['apps/cms/src/lib/supabase/server.ts', 'apps/cms/src/lib/supabase/browser.ts', 'apps/cms/src/privileged/admin-client.ts'])(
+    'allows them in %s',
+    async (path) => {
+      expect(await ruleIds(path, code.join('; '))).toEqual([]);
+    },
+  );
+  it('keeps the secret key out of lib/supabase', async () => {
+    expect(await ruleIds('apps/cms/src/lib/supabase/server.ts', `const k = process.env.SUPABASE_SECRET_KEY`)).toEqual([RESTRICTED_SYNTAX]);
+    expect(await ruleIds('apps/cms/src/lib/supabase/server.ts', `import { c } from '@/privileged/admin-client'`)).toEqual([IMPORT]);
+  });
+  it.each(['packages/sdk/src/x.ts', 'modules/labak/src/x.ts'])('forbids them in %s', async (path) => {
+    expect(await ruleIds(path, `import { createClient } from '@supabase/supabase-js'`)).toEqual([IMPORT]);
+    expect(await ruleIds(path, `require('@supabase/ssr')`)).toEqual([RESTRICTED_SYNTAX]);
+  });
+});
+
+// tests/integration holds the local secret key at run time (secretClient()), so app code reaches
+// it only from test files.
+describe('integration-test helpers', () => {
+  it.each([
+    `import { secretClient } from '../../../../tests/integration/src/clients'`,
+    `import { secretClient } from '@litljomi/integration-tests/src/clients'`,
+  ])('forbids %s in app source', async (line) => {
+    expect(await ruleIds('apps/cms/src/privileged/worker/x.ts', line)).toEqual([IMPORT]);
+    expect(await ruleIds('apps/cms/src/editor/x.ts', line)).toEqual([IMPORT]);
+  });
+  it('allows them in app test files', async () => {
+    const line = `import { secretClient } from '../../../../../tests/integration/src/clients'`;
+    expect(await ruleIds('apps/cms/src/privileged/worker/__tests__/x.integration.test.ts', line)).toEqual([]);
+  });
+});
+
+// S6: packages and modules must not reach an app through its workspace package name either.
+describe('app package names', () => {
+  it.each([
+    [`import x from 'cms'`, IMPORT],
+    [`import x from 'cms/src/privileged/admin-client'`, IMPORT],
+    [`import x from 'demo-site/src/x'`, IMPORT],
+    [`import('cms')`, RESTRICTED_SYNTAX],
+  ])('forbids %s in packages and modules', async (code, ruleId) => {
+    expect(await ruleIds('packages/sdk/src/x.ts', code)).toContain(ruleId);
+    expect(await ruleIds('modules/labak/src/x.ts', code)).toContain(ruleId);
+  });
+  it('allows packages whose names merely start with an app name', async () => {
+    expect(await ruleIds('packages/sdk/src/x.ts', `import x from 'cmsx'; import y from 'demo-sites'`)).toEqual([]);
+  });
+});
+
+// Task 14 review: only the editor entry (packages/rich-text/src/tiptap.ts) and its tests load Tiptap.
+describe('Tiptap and ProseMirror imports', () => {
+  it.each([
+    [`import { Editor } from '@tiptap/core'`, IMPORT],
+    [`import { EditorState } from '@tiptap/pm/state'`, IMPORT],
+    [`import { Schema } from 'prosemirror-model'`, IMPORT],
+    [`import('@tiptap/core')`, RESTRICTED_SYNTAX],
+    [`require('prosemirror-state')`, RESTRICTED_SYNTAX],
+  ])('forbids %s in packages outside the editor entry', async (code, ruleId) => {
+    expect(await ruleIds('packages/rich-text/src/index.ts', code)).toEqual([ruleId]);
+    expect(await ruleIds('packages/rich-text/src/renderer.tsx', code)).toEqual([ruleId]);
+    expect(await ruleIds('packages/schema/src/x.ts', code)).toEqual([ruleId]);
+    expect(await ruleIds('packages/sdk/src/x.ts', code)).toEqual([ruleId]);
+  });
+  it('forbids them in modules', async () => {
+    expect(await ruleIds('modules/labak/src/x.ts', `import { Editor } from '@tiptap/core'`)).toEqual([IMPORT]);
+  });
+  it('allows them in the editor entry and its tests', async () => {
+    const code = `import { Editor } from '@tiptap/core'; import StarterKit from '@tiptap/starter-kit'; import { Schema } from 'prosemirror-model'`;
+    expect(await ruleIds('packages/rich-text/src/tiptap.ts', code)).toEqual([]);
+    expect(await ruleIds('packages/rich-text/src/__tests__/tiptap.test.ts', code)).toEqual([]);
+  });
+  it('keeps the other package rules in the editor entry', async () => {
+    expect(await ruleIds('packages/rich-text/src/tiptap.ts', `const k = process.env.SUPABASE_SECRET_KEY`)).toEqual([RESTRICTED_SYNTAX]);
+    expect(await ruleIds('packages/rich-text/src/tiptap.ts', `import m from '@litljomi/module-labak'`)).toEqual([IMPORT]);
+    expect(await ruleIds('packages/rich-text/src/tiptap.ts', `import x from '../../../apps/cms/src/x'`)).toEqual([IMPORT]);
+  });
+  it('allows the CMS app to use Tiptap', async () => {
+    expect(await ruleIds('apps/cms/src/editor/x.ts', `import { Editor } from '@tiptap/core'`)).toEqual([]);
+  });
+});
+
+// N1: a backslash counts as a path separator in every boundary path rule.
+describe('backslash separators', () => {
+  it.each([
+    ['apps/cms/src/editor/x.ts', `import { c } from '../privileged\\\\admin-client'`, IMPORT],
+    ['apps/cms/src/editor/x.ts', `import('@/privileged\\\\admin-client')`, RESTRICTED_SYNTAX],
+    ['apps/cms/src/editor/x.ts', `import m from '@/modules\\\\labak'`, IMPORT],
+    ['apps/cms/src/editor/x.ts', `import m from '@/modules/registry.x\\\\..\\\\labak'`, IMPORT],
+    ['apps/cms/src/editor/x.ts', `import('./modules/registry.x\\\\..\\\\labak')`, RESTRICTED_SYNTAX],
+    ['apps/cms/src/editor/x.ts', `import m from '..\\\\modules\\\\registry.x\\\\..\\\\labak'`, IMPORT],
+    ['packages/sdk/src/x.ts', `import x from '..\\\\..\\\\..\\\\apps\\\\cms/src/x'`, IMPORT],
+    ['modules/labak/src/x.ts', `import m from '..\\\\..\\\\demo\\\\src\\\\index'`, IMPORT],
+  ])('in %s, forbids %s', async (path, code, ruleId) => {
+    expect(await ruleIds(path, code)).toEqual([ruleId]);
+  });
+  it('still allows the registry', async () => {
+    expect(await ruleIds('apps/cms/src/editor/x.ts', `import r from '..\\\\modules\\\\registry'`)).toEqual([]);
+  });
+});
+
+// Task 16 review: a module reaching a sibling module by a relative path. The rule matches the
+// names of the folders under modules/ as path segments of a relative specifier.
+describe('module-to-module relative imports', () => {
+  it.each([
+    [`import m from '../../demo/src/index'`, IMPORT],
+    [`import m from '../../demo'`, IMPORT],
+    [`import('../../demo/src/index.ts')`, RESTRICTED_SYNTAX],
+    [`export * from '../../demo/src/index'`, IMPORT],
+    [`import '../../demo/fixtures/event.json'`, IMPORT],
+    [`import m from '../../labak/../demo/src/index'`, IMPORT],
+  ])('forbids %s from modules/labak', async (code, ruleId) => {
+    expect(await ruleIds('modules/labak/src/x.ts', code)).toEqual([ruleId]);
+  });
+  it('forbids the reverse direction too', async () => {
+    expect(await ruleIds('modules/demo/src/x.ts', `import m from '../../labak/src/index'`)).toEqual([IMPORT]);
+  });
+  it('allows a module its own files by relative path, including through its own folder name', async () => {
+    expect(await ruleIds('modules/labak/src/a/x.ts', `import a from '../b'; import f from '../../fixtures/news.json'; import i from '../../../labak/src/index'`)).toEqual([]);
+  });
+  // Documented limit: a specifier that reaches a sibling without naming it (an absolute path, a
+  // path built at run time, or `..` past the modules folder and back through a link) is not caught.
+  it('does not catch an absolute path to a sibling module (documented limit)', async () => {
+    expect(await ruleIds('modules/labak/src/x.ts', `import m from '/repo/modules-copy/x'`)).toEqual([]);
   });
 });

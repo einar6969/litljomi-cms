@@ -83,12 +83,26 @@ describe('runCheck', () => {
     expect(exitCode).toBe(1);
     expect(output.split('\n')).toContain(LEAK_LINE);
   });
-  it('exits 0 and states scanned and absent roots and the slug count', () => {
+  it('exits 0 and states the scanned roots and the slug count', () => {
     const { exitCode, output } = runCheck(fixture('repo-clean'));
     expect(exitCode).toBe(0);
-    expect(output).toContain('roots scanned: apps/cms/src');
-    expect(output).toContain('roots absent: packages');
+    expect(output).toContain('roots scanned: apps/cms/src, packages');
     expect(output).toContain('1 tenant slug(s) checked');
+  });
+  // C-F1: apps/cms/src exists, so a missing root means a moved or mistyped root, not "not built yet".
+  it.each([
+    ['apps/cms/src', { 'packages/x.ts': 'export const a = 1;\n' }],
+    ['packages', { 'apps/cms/src/x.ts': 'export const a = 1;\n' }],
+    ['apps/cms/src, packages', {}],
+  ])('exits 1 and names the missing root(s) when %s is absent', (missing, files) => {
+    const dir = tempDir('slugs-repo-');
+    for (const [path, content] of Object.entries({ 'modules/labak/package.json': '{}\n', ...files })) {
+      mkdirSync(dirname(join(dir, path)), { recursive: true });
+      writeFileSync(join(dir, path), content);
+    }
+    const { exitCode, output } = runCheck(dir);
+    expect(exitCode).toBe(1);
+    expect(output).toContain(`check:slugs failed: core root(s) missing: ${missing}`);
   });
   it('states that modules/ is absent and zero slugs were checked', () => {
     const { exitCode, output } = runCheck(fixture('core-clean'));

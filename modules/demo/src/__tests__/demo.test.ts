@@ -34,4 +34,10 @@ describe('demo module', () => {
     ]);
     expect(s.checks(e, release(false), release(true)).map((c) => c.expect)).toEqual(['absent', 'absent']);
   });
+  it('refuses to build a path for an entry without a slug', () => {
+    const s = demo.site.event!;
+    const noSlug: SiteEntry = { ...e, slug: null };
+    expect(() => s.path(noSlug)).toThrow(/has no slug/);
+    expect(() => s.checks(noSlug, release(true), null)).toThrow(/has no slug/);
+  });
 });

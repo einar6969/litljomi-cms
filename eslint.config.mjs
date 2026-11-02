@@ -1,32 +1,95 @@
+import { existsSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import tseslint from 'typescript-eslint';
 
 const CODE = ['**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'];
 
 const PRIVILEGED_MESSAGE = 'The admin client may only be imported under apps/cms/src/privileged/**.';
+const PIPELINE_ONLY_MESSAGE =
+  'The worker and cron routes may import only privileged/worker/pipeline and privileged/internal-auth from privileged/.';
 const MODULE_MESSAGE = 'Modules are imported only by apps/cms/src/modules/registry.ts.';
 const APPS_MESSAGE = 'packages and modules must not import from apps.';
 const SECRET_MESSAGE = 'SUPABASE_SECRET_KEY may only be read under apps/cms/src/privileged/** and tools/cli.';
 
+// A path separator in an import specifier: `/`, or `\`, which Node and TypeScript also resolve (N1).
+const SEP = '[/\\\\]';
+const NOT_SEP = '[^/\\\\]';
+
 // Each entry is a path regex (source string) with its message, and feeds both the static
 // `no-restricted-imports` patterns and the dynamic `import()` / `require()` selectors.
-const privilegedPaths = [{ regex: '(^#?|/)privileged(/|$)', message: PRIVILEGED_MESSAGE }];
+const privilegedPaths = [{ regex: `(^#?|${SEP})privileged(${SEP}|$)`, message: PRIVILEGED_MESSAGE }];
+// Decision 35: the worker and cron route handlers may import their job from
+// `privileged/worker/pipeline` and their secret check from `privileged/internal-auth` (optionally
+// `.ts`), written with `/` and as the last segments. Anything else under privileged/ (the admin
+// client above all), including a path that continues after either, is still forbidden.
+const privilegedExceptPipelinePaths = [
+  { regex: `(^#?|${SEP})privileged($|\\\\|/(?!(worker/pipeline|internal-auth)(\\.ts)?$))`, message: PIPELINE_ONLY_MESSAGE },
+];
 // Alias forms covered: `@/`, `~/`, `#` (subpath imports), relative and bare specifiers.
 // The registry is exempt only when `registry` (optionally with an extension) is the last segment,
 // so `registry.x/../labak`, `registry/..` or any `..` after `modules/` is still forbidden.
 const modulePaths = [
   { regex: '^@litljomi/module-', message: MODULE_MESSAGE },
-  { regex: '^(([@~]|\\.{1,2})/(.*/)?|#)?modules/(?!registry(\\.[^/]*)?$)', message: MODULE_MESSAGE },
+  { regex: `^(([@~]|\\.{1,2})${SEP}(.*${SEP})?|#)?modules${SEP}(?!registry(\\.${NOT_SEP}*)?$)`, message: MODULE_MESSAGE },
 ];
-// Only the CMS app may import the Tiptap editor entry (decision 23).
+// Only the CMS app may import the Tiptap editor entry (decision 23). A deep path is matched by its
+// `rich-text` and last `tiptap` segments, so `./` or `..` segments between them do not hide it.
 const EDITOR_MESSAGE = 'The rich-text editor entry (@litljomi/rich-text/editor) may only be imported by apps/cms.';
-const editorPaths = [{ regex: '^@litljomi/rich-text/editor(/|$)|(^|/)rich-text/src/tiptap(\\.[^/]*)?$', message: EDITOR_MESSAGE }];
+const editorPaths = [
+  {
+    regex: `^@litljomi/rich-text${SEP}(\\.${SEP})*editor(${SEP}|$)|(^|${SEP})rich-text${SEP}(.*${SEP})?tiptap(\\.${NOT_SEP}*)?$`,
+    message: EDITOR_MESSAGE,
+  },
+];
+// Only the editor entry loads Tiptap and ProseMirror (Task 14 review), so sites never do.
+const TIPTAP_MESSAGE = 'Tiptap and ProseMirror may only be imported by packages/rich-text/src/tiptap.ts (and apps/cms).';
+const tiptapPaths = [{ regex: `^@tiptap(${SEP}|$)|^prosemirror-`, message: TIPTAP_MESSAGE }];
+// Spec §3.1: a module depends only on the schema package and core extension-point types; this also
+// covers the editor entry.
+const RICH_TEXT_MESSAGE = 'A module must not import @litljomi/rich-text; use @litljomi/cms-schema.';
+const richTextPaths = [{ regex: `^@litljomi/rich-text(${SEP}|$)|(^|${SEP})rich-text(${SEP}|$)`, message: RICH_TEXT_MESSAGE }];
 // A module reaches other code only through @litljomi/cms-schema, never another module (spec §3.1).
+// Limits: the rule reads specifiers, not resolved paths. It catches the package names, any path with
+// a `modules` segment (so a module's own `./modules/x` folder is forbidden too) and, per module
+// below, a relative path with a sibling module's folder name as a segment (a folder of that name
+// inside the module is forbidden too). It does not catch a path that reaches a sibling without
+// naming it: an absolute path, one built at run time, or one through a link with another name.
 const MODULE_TO_MODULE_MESSAGE = 'A module must not import another module.';
 const otherModulePaths = [
   { regex: '^@litljomi/module-', message: MODULE_TO_MODULE_MESSAGE },
-  { regex: '(^|/)modules/', message: MODULE_TO_MODULE_MESSAGE },
+  { regex: `(^|${SEP})modules${SEP}`, message: MODULE_TO_MODULE_MESSAGE },
 ];
-const appPaths = [{ regex: '(^|/)apps/', message: APPS_MESSAGE }];
+const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const siblingModulePaths = (siblings) => [
+  {
+    regex: `^\\.{1,2}${SEP}(?!(.*${SEP})?modules${SEP})(.*${SEP})?(${siblings.map(escapeRegex).join('|')})(${SEP}|$)`,
+    message: MODULE_TO_MODULE_MESSAGE,
+  },
+];
+// The module folders (tenant slugs), read here so that no slug is written in this file.
+const modulesDir = fileURLToPath(new URL('./modules', import.meta.url));
+const moduleNames = existsSync(modulesDir)
+  ? readdirSync(modulesDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules')
+      .map((entry) => entry.name)
+  : [];
+// Apps by folder and by workspace package name (S6). The names are the apps' package.json names.
+const appPaths = [
+  { regex: `(^|${SEP})apps${SEP}`, message: APPS_MESSAGE },
+  { regex: `^(cms|demo-site)(${SEP}|$)`, message: APPS_MESSAGE },
+];
+// C-S2b: in apps/cms, Supabase clients are created only in src/lib/supabase (the editor clients,
+// publishable key) and src/privileged (the admin client, secret key); other app code receives a
+// client from those files. Packages, modules and sites never use Supabase (spec §8.1).
+const SUPABASE_MESSAGE = 'Supabase libraries may only be imported under apps/cms/src/lib/supabase/** and apps/cms/src/privileged/**.';
+const supabasePaths = [{ regex: `^@supabase(${SEP}|$)`, message: SUPABASE_MESSAGE }];
+// Task 12 note (row 91): tests/integration holds the local stack's secret key at run time
+// (secretClient(), read from `supabase status`), under no variable name the secret-key rule could
+// match. App code may therefore reach those helpers only from test files.
+const INTEGRATION_MESSAGE = 'tests/integration helpers may only be imported by test files.';
+const integrationTestPaths = [
+  { regex: `(^|${SEP})tests${SEP}integration(${SEP}|$)|^@litljomi/integration-tests(${SEP}|$)`, message: INTEGRATION_MESSAGE },
+];
 
 // esquery regex literals cannot contain "/", so it is rewritten as the escape \x2f, which also
 // works inside a character class such as [^/].
@@ -63,7 +126,8 @@ const alreadyReported = [...memberReads.map((s) => `${s} > *`), ...destructuredR
 // Shorthand syntax holds one written name in two nodes at the same place; only the first is
 // reported: `{ KEY }` and `{ KEY = d }` (key, then value), `import { KEY }` (imported, then
 // local), `export { KEY }` (local, then exported). A renamed form names the key once and is
-// reported once; a name written twice (`{ KEY: KEY }`) is reported twice.
+// reported once. A name written twice in an object pattern or literal (`{ KEY: KEY }`) is reported
+// twice; `import { KEY as KEY }` and `export { KEY as KEY }` are reported once.
 const secondNameNode = [
   'Property[shorthand=true] > Identifier.value',
   'Property[shorthand=true] > AssignmentPattern.value > Identifier.left',
@@ -83,11 +147,33 @@ const secretSyntax = [...memberReads, ...destructuredReads, ...nameOccurrences].
 const imports = (...groups) => ({ 'no-restricted-imports': ['error', { patterns: groups.flat() }] });
 const syntax = (...entries) => ({ 'no-restricted-syntax': ['error', ...entries.flat()] });
 
-const privilegedSyntax = dynamicSyntax(privilegedPaths);
-const moduleSyntax = dynamicSyntax(modulePaths);
-const appSyntax = dynamicSyntax(appPaths);
-const editorSyntax = dynamicSyntax(editorPaths);
-const otherModuleSyntax = dynamicSyntax(otherModulePaths);
+// One boundary: its static import patterns and its dynamic-form selectors. A later config block
+// replaces a rule's options entirely, so every block lists all the boundaries that apply to it.
+const boundary = (paths) => ({ paths, selectors: dynamicSyntax(paths) });
+const secret = { paths: [], selectors: secretSyntax };
+const privileged = boundary(privilegedPaths);
+const privilegedExceptPipeline = boundary(privilegedExceptPipelinePaths);
+const modules = boundary(modulePaths);
+const apps = boundary(appPaths);
+const editor = boundary(editorPaths);
+const tiptap = boundary(tiptapPaths);
+const richText = boundary(richTextPaths);
+const otherModules = boundary(otherModulePaths);
+const supabase = boundary(supabasePaths);
+const integrationTests = boundary(integrationTestPaths);
+const rulesOf = (...boundaries) => ({
+  ...imports(...boundaries.map((b) => b.paths)),
+  ...syntax(...boundaries.map((b) => b.selectors)),
+});
+
+// An apps/ zone: its source files may not import the integration-test helpers, its test files may.
+const appZone = (dir, ...boundaries) => [
+  { files: [`${dir}/**`], rules: rulesOf(...boundaries, integrationTests) },
+  { files: [`${dir}/**/__tests__/**`, `${dir}/**/*.test.{ts,tsx}`], rules: rulesOf(...boundaries) },
+];
+
+const packageBoundaries = [secret, privileged, modules, apps, editor, supabase];
+const moduleBoundaries = [secret, privileged, apps, richText, otherModules, tiptap, supabase];
 
 export default tseslint.config(
   {
@@ -108,44 +194,55 @@ export default tseslint.config(
   {
     files: CODE,
     languageOptions: { parser: tseslint.parser, parserOptions: { sourceType: 'module' } },
-    rules: { ...imports(privilegedPaths), ...syntax(secretSyntax, privilegedSyntax) },
+    rules: rulesOf(secret, privileged),
   },
   // This file defines the secret-key rule, so it names the key.
   {
     files: ['eslint.config.mjs'],
-    rules: { ...syntax(privilegedSyntax) },
+    rules: rulesOf(privileged),
   },
+  ...appZone('apps', secret, privileged, modules, supabase),
+  // The editor clients (publishable key): Supabase libraries are allowed, the secret key is not.
+  ...appZone('apps/cms/src/lib/supabase', secret, privileged, modules),
+  // The secret key, the admin client and Supabase libraries are allowed here; module imports are not.
+  ...appZone('apps/cms/src/privileged', modules),
+  // The registry is the one app file that imports modules.
   {
-    files: ['apps/**'],
-    rules: { ...imports(privilegedPaths, modulePaths), ...syntax(secretSyntax, privilegedSyntax, moduleSyntax) },
+    files: ['apps/cms/src/modules/registry.ts'],
+    rules: rulesOf(secret, privileged, supabase, integrationTests),
+  },
+  // Decision 35: exactly these two route handlers may import the pipeline entry (and the secret
+  // check) from privileged/.
+  // Every other rule of apps/** still applies to them.
+  {
+    files: ['apps/cms/src/app/api/internal/worker/route.ts', 'apps/cms/src/app/api/cron/sweep/route.ts'],
+    rules: rulesOf(secret, privilegedExceptPipeline, modules, supabase, integrationTests),
   },
   {
     files: ['packages/**'],
-    rules: {
-      ...imports(privilegedPaths, modulePaths, appPaths, editorPaths),
-      ...syntax(secretSyntax, privilegedSyntax, moduleSyntax, appSyntax, editorSyntax),
-    },
+    rules: rulesOf(...packageBoundaries, tiptap),
+  },
+  // The editor entry and its tests are the only package code that loads Tiptap.
+  {
+    files: ['packages/rich-text/src/tiptap.ts', 'packages/rich-text/src/__tests__/**'],
+    rules: rulesOf(...packageBoundaries),
   },
   {
     files: ['modules/**'],
-    rules: {
-      ...imports(privilegedPaths, appPaths, editorPaths, otherModulePaths),
-      ...syntax(secretSyntax, privilegedSyntax, appSyntax, editorSyntax, otherModuleSyntax),
-    },
+    rules: rulesOf(...moduleBoundaries),
   },
-  // Same rules as the base block: undoes the apps/** module restriction for the registry only.
-  {
-    files: ['apps/cms/src/modules/registry.ts'],
-    rules: { ...imports(privilegedPaths), ...syntax(secretSyntax, privilegedSyntax) },
-  },
-  // The secret key is allowed here, but module imports (static and dynamic) are not.
-  {
-    files: ['apps/cms/src/privileged/**'],
-    rules: { ...imports(modulePaths), ...syntax(moduleSyntax) },
-  },
+  // Per module: a relative path naming a sibling module's folder (a path through `modules/` is
+  // already reported by otherModulePaths, so it is skipped here to report it once).
+  ...moduleNames.map((name) => {
+    const siblings = moduleNames.filter((other) => other !== name);
+    return {
+      files: [`modules/${name}/**`],
+      rules: rulesOf(...moduleBoundaries, ...(siblings.length > 0 ? [boundary(siblingModulePaths(siblings))] : [])),
+    };
+  }),
   // The secret key is allowed here, but the admin client and other privileged/ code are not.
   {
     files: ['tools/cli/**'],
-    rules: { ...imports(privilegedPaths), ...syntax(privilegedSyntax) },
+    rules: rulesOf(privileged),
   },
 );
