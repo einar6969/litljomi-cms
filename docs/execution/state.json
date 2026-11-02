@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T04:37:03.159Z",
+  "updatedAt": "2026-11-02T04:40:13.494Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -477,10 +477,39 @@
     },
     {
       "id": 16,
-      "status": "in_progress",
+      "status": "done",
       "commits": [
         "11b7c93"
       ],
+      "reviews": {
+        "specQuality": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-16-r1-spec-quality.md",
+          "at": "2026-11-02T04:37:21.891Z",
+          "atCommits": 1
+        },
+        "security": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-16-r1-security.md",
+          "at": "2026-11-02T04:39:50.586Z",
+          "atCommits": 1
+        }
+      },
+      "gatesUsed": [
+        "G0",
+        "G1"
+      ],
+      "blockers": [],
+      "notes": "Phase 1 Lane B, low tier (Sonnet). Commit 11b7c93: newsType, defineModule and module interfaces, modules labak (HOME_LATEST_COUNT 6, verified per plan without opening the LABAK repo) and demo; deferred Minors from Tasks 1 (S6), 13, 15 cleared; decision 25 canonical UUID refs added by the controller in mid-task (schema refSchema, image _ref, rich-text). Lockfile: two module importers plus pruning of a stale optional happy-dom branch (verified by controller and security review). Reviews: specQuality r1 pass; security r1 pass (controller-added; Minors -> Tasks 17, 18). Test-first: module work failed first (40); decision-25 upper-case case would fail on the old z.guid(). Worktree suite on 11b7c93: harness 27/27; lint, typecheck exit 0; check:slugs ok (2 slugs); Vitest 21 files 301 passed. Merge into m1/phase-1 together with Task 15 when Lane A (Task 7) is idle.",
+      "startedAt": "2026-11-02T04:28:59.900Z",
+      "doneAt": "2026-11-02T04:40:13.439Z"
+    },
+    {
+      "id": 18,
+      "status": "in_progress",
+      "commits": [],
       "reviews": {},
       "gatesUsed": [
         "G0",
@@ -488,16 +517,7 @@
       ],
       "blockers": [],
       "notes": "",
-      "startedAt": "2026-11-02T04:28:59.900Z"
-    },
-    {
-      "id": 18,
-      "status": "pending",
-      "commits": [],
-      "reviews": {},
-      "gatesUsed": [],
-      "blockers": [],
-      "notes": ""
+      "startedAt": "2026-11-02T04:40:13.494Z"
     },
     {
       "id": 17,
