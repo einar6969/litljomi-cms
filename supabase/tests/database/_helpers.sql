@@ -38,7 +38,9 @@ begin
 end;
 $$;
 
--- Stub until Task 5: inserts the five users only.
+-- The fixed test identities (plan, "Fixed test identities"): five users, tenants
+-- labak and demo, one editor membership each, revoked's membership in labak
+-- deleted after seeding, platform_admin in cms.platform_admins only. Owner context.
 create function tests.seed() returns void
 language plpgsql
 set search_path = ''
@@ -54,6 +56,18 @@ begin
     ('revoked', 'revoked@test.local'),
     ('platform_admin', 'admin@test.local')
   ) as v(n, e);
+
+  insert into cms.tenants (id, slug, name) values
+    (tests.tenant('labak'), 'labak', 'Landssamband bakarameistara'),
+    (tests.tenant('demo'), 'demo', 'Demo');
+
+  insert into cms.memberships (tenant_id, user_id) values
+    (tests.tenant('labak'), tests.persona('editor_labak')),
+    (tests.tenant('demo'), tests.persona('editor_demo')),
+    (tests.tenant('labak'), tests.persona('revoked'));
+  delete from cms.memberships where user_id = tests.persona('revoked');
+
+  insert into cms.platform_admins (user_id) values (tests.persona('platform_admin'));
 end;
 $$;
 
