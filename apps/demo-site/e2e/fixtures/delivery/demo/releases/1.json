@@ -1,0 +1,76 @@
+{
+  "format": 1,
+  "tenant": "demo",
+  "release": 1,
+  "generatedAt": "2026-11-02T09:00:00.000Z",
+  "entries": {
+    "event": [
+      {
+        "id": "11111111-1111-4111-8111-111111111111",
+        "revisionId": "00000000-0000-4000-8000-000000000001",
+        "contentHash": "657625bb3986d64900d430d125a43519d3b3c692b63d0079bc525c823270a574",
+        "slug": "x",
+        "title": "Opið hús",
+        "sortAt": "2026-12-01",
+        "firstPublishedAt": "2026-11-02T09:00:00.000Z",
+        "lastPublishedAt": "2026-11-02T09:00:00.000Z",
+        "schemaVersion": 1,
+        "data": {
+          "title": "Opið hús",
+          "startDate": "2026-12-01",
+          "endDate": "2026-12-02",
+          "location": "Reykjavík",
+          "description": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Allir velkomnir."
+                  }
+                ]
+              }
+            ]
+          },
+          "registration": {
+            "href": "https://example.is/skraning"
+          }
+        }
+      },
+      {
+        "id": "22222222-2222-4222-8222-222222222222",
+        "revisionId": "00000000-0000-4000-8000-000000000002",
+        "contentHash": "e137597a7a04b61c351e0741cb54bce5df6698ba28ffdaae2e66b47224da53f0",
+        "slug": "jolamarkadur",
+        "title": "Jólamarkaður",
+        "sortAt": "2026-12-15",
+        "firstPublishedAt": "2026-11-02T09:00:00.000Z",
+        "lastPublishedAt": "2026-11-02T09:00:00.000Z",
+        "schemaVersion": 1,
+        "data": {
+          "title": "Jólamarkaður",
+          "startDate": "2026-12-15",
+          "endDate": null,
+          "location": "Hafnarfjörður",
+          "description": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Handverk og heitt súkkulaði."
+                  }
+                ]
+              }
+            ]
+          },
+          "registration": null
+        }
+      }
+    ]
+  }
+}

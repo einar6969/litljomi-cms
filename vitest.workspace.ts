@@ -50,4 +50,16 @@ export default defineWorkspace([
       exclude: ['**/*.integration.test.ts', '**/node_modules/**'],
     },
   },
+  {
+    test: {
+      name: 'cli',
+      include: ['tools/cli/src/__tests__/**/*.test.ts'],
+    },
+  },
+  {
+    test: {
+      name: 'demo-site',
+      include: ['apps/demo-site/e2e/fixtures.test.ts'],
+    },
+  },
 ]);

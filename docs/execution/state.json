@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T08:37:01.997Z",
+  "updatedAt": "2026-11-02T09:55:53.098Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -739,12 +739,16 @@
     },
     {
       "id": 17,
-      "status": "pending",
+      "status": "in_progress",
       "commits": [],
       "reviews": {},
-      "gatesUsed": [],
+      "gatesUsed": [
+        "G0",
+        "G1"
+      ],
       "blockers": [],
-      "notes": ""
+      "notes": "",
+      "startedAt": "2026-11-02T09:44:14.778Z"
     },
     {
       "id": 19,
@@ -766,12 +770,34 @@
     },
     {
       "id": 26,
-      "status": "pending",
-      "commits": [],
-      "reviews": {},
-      "gatesUsed": [],
+      "status": "done",
+      "commits": [
+        "67a8da4"
+      ],
+      "reviews": {
+        "security": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-26-r1-security.md",
+          "at": "2026-11-02T09:53:56.049Z",
+          "atCommits": 1
+        },
+        "specQuality": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-26-r1-spec-quality.md",
+          "at": "2026-11-02T09:53:56.074Z",
+          "atCommits": 1
+        }
+      },
+      "gatesUsed": [
+        "G0",
+        "G1"
+      ],
       "blockers": [],
-      "notes": ""
+      "notes": "Phase 3 Lane B, medium tier (Sonnet implementer; security Opus + combined Sonnet). Implemented in .worktrees/lane-b from 51681c9: commit 67a8da4 (demo-site against a fixture bundle served by node:http; Vitest HTTP tests via pnpm --filter demo-site test:e2e, decision 34.6; tools/cli `@litljomi/cli` gen-types, decision 35; cleared the Task 18 SDK security Minor 10a-10c and the client cross-checks). Lockfile: two workspace importers only, no new packages. Reviews r1: security pass (4 Minors: fixture hash formula -> Task 20; unbounded revalidate body, site lint block, pointer.release type -> Task 21), specQuality pass (Minors -> C2). Merged into m1/phase-1 as d305a93 (--no-ff, clean); pnpm install --frozen-lockfile clean. Full suite by the controller after the merge: harness 32/32; lint, typecheck, check:slugs (2 slugs) exit 0; Vitest 27 files 355 tests; demo-site test:e2e 6/6; db:reset ok, db:test Files=13 Tests=1252 PASS; test:integration 6 files 67 tests.",
+      "startedAt": "2026-11-02T09:44:14.825Z",
+      "doneAt": "2026-11-02T09:55:53.098Z"
     },
     {
       "id": 21,
