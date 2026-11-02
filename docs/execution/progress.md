@@ -71,7 +71,7 @@ None.
 
 | Checkpoint | After task | Status | Report | Approved by Einar |
 |---|---|---|---|---|
-| C0 | 3 | reported | docs/execution/checkpoints/C0.md | no |
+| C0 | 3 | reported | docs/execution/checkpoints/C0.md | yes |
 | C1 | 12 | pending | — | no |
 | C2 | 26 | pending | — | no |
 | C3 | 27 | pending | — | no |

@@ -97,7 +97,9 @@
         "status": { "enum": ["pending", "reported"] },
         "report": { "type": ["string", "null"] },
         "at": { "$ref": "#/$defs/timestamp" },
-        "approvedByEinar": { "type": "boolean" }
+        "approvedByEinar": { "type": "boolean" },
+        "approvedAt": { "$ref": "#/$defs/timestamp" },
+        "approval": { "type": "string", "minLength": 1 }
       }
     }
   }

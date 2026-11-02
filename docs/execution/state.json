@@ -520,7 +520,9 @@
       "status": "reported",
       "report": "docs/execution/checkpoints/C0.md",
       "at": "2026-11-02T02:35:36.725Z",
-      "approvedByEinar": false
+      "approvedByEinar": true,
+      "approvedAt": "2026-11-02",
+      "approval": "Einar in chat, 2026-11-02: \"Record my C0 approval and create the local main branch.\""
     },
     "C1": {
       "status": "pending",
