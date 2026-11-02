@@ -55,6 +55,7 @@ test.describe('sign-in page', () => {
     await shoot(page, 'login');
     // The invalid-link alert, as it shows after a failed sign-in link.
     await page.goto('/login?error=link');
+    await expect(page.getByRole('main').getByRole('alert')).toHaveText(t.login.linkInvalid);
     await shoot(page, 'login-link-invalid');
     // The magic link's confirm page (Task 32): one "Halda áfram" button. A made-up hash, never pressed.
     await page.goto(`/auth/confirm?token_hash=${'0'.repeat(56)}&type=email`);

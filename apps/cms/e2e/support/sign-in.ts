@@ -10,7 +10,7 @@ export async function requestLink(page: Page, email: string): Promise<void> {
   await page.goto('/login');
   await page.getByLabel(t.login.emailLabel).fill(email);
   await page.getByRole('button', { name: t.login.submit }).click();
-  await expect(page.getByRole('status')).toHaveText(t.login.sent);
+  await expect(page.getByRole('main').getByRole('status')).toHaveText(t.login.sent);
 }
 
 // Auth answers a repeat request for one address within `[auth.email] max_frequency` (1 s in

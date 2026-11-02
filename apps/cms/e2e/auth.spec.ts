@@ -47,7 +47,8 @@ test.describe('without a session', () => {
       await openLink(thirdPage, link);
       await thirdPage.getByRole('button', { name: t.confirm.submit }).click();
       await expect(thirdPage).toHaveURL(`${CMS_URL}/login?error=link`);
-      await expect(thirdPage.getByRole('alert')).toHaveText(t.login.linkInvalid);
+      // Scoped to `main`: after the client-side redirect, Next.js's route announcer is also an alert.
+      await expect(thirdPage.getByRole('main').getByRole('alert')).toHaveText(t.login.linkInvalid);
     } finally {
       await third.close();
     }
