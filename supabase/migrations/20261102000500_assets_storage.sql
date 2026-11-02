@@ -120,11 +120,13 @@ insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_typ
 -- delivery, nor for anon: only the worker (service_role, which bypasses RLS)
 -- writes there, and public reads come from the buckets' public flag.
 --
--- The first folder is compared with the tenant id's canonical text form rather
--- than cast to uuid: the same membership rule, but a folder name that is not a
--- UUID (media-public's {tenant_slug}/... objects, or a malformed upload) can
--- never make the cast raise while the policy is evaluated, and the prefix must
--- be exactly the form assets.original_path requires.
+-- The first folder is compared with the tenant id's canonical text form
+-- (m.tenant_id::text) instead of being cast with ::uuid as the plan writes it.
+-- It is the same membership rule, but a ::uuid cast inside a policy could raise
+-- 22P02 on a folder name that is not a UUID, such as media-public's
+-- {tenant_slug}/... objects in another bucket or a malformed upload, and make
+-- an editor's read of storage.objects fail. The text form never raises, and the
+-- prefix must be exactly the lowercase form assets.original_path requires.
 -- Keep the membership predicate identical in both policies.
 create policy media_private_select_member on storage.objects
   for select to authenticated

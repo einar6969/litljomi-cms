@@ -22,7 +22,7 @@
 -- uploads <labak>/f203/a.jpg to media-private.
 begin;
 \ir _helpers.sql
-select plan(113);
+select plan(114);
 
 -- Asset UUIDs: 'f' followed by three hex digits, like tests.entry().
 create function tests.asset(p_key text) returns uuid
@@ -61,7 +61,9 @@ select fk_ok('cms', 'draft_refs', array['tenant_id', 'target_asset_id'], 'cms', 
   'draft_refs (tenant_id, target_asset_id) references assets (tenant_id, id)');
 select fk_ok('cms', 'revision_refs', array['tenant_id', 'target_asset_id'], 'cms', 'assets', array['tenant_id', 'id'],
   'revision_refs (tenant_id, target_asset_id) references assets (tenant_id, id)');
-select results_eq($$ select conname::text, confdeltype::text from pg_catalog.pg_constraint
+-- conname is a name (collation "C"); in the default collation it compares
+-- with the expected text values.
+select results_eq($$ select conname::text collate "default", confdeltype::text from pg_catalog.pg_constraint
      where confrelid = 'cms.assets'::regclass and conrelid in ('cms.draft_refs'::regclass, 'cms.revision_refs'::regclass)
      order by 1 $$,
   $$ values ('draft_refs_tenant_id_target_asset_id_fkey', 'a'), ('revision_refs_tenant_id_target_asset_id_fkey', 'r') $$,
@@ -411,9 +413,17 @@ select throws_ok($$ insert into storage.objects (bucket_id, name)
   values ('delivery', tests.tenant('labak') || '/current.json') $$,
   '42501', null, 'editor cannot write to delivery, even under its tenant id');
 -- No update or delete policy: the editor's update and delete match no row.
+-- Storage's own statement trigger (storage.protect_delete) refuses any direct
+-- DELETE unless storage.allow_delete_query is 'true', which the Storage API
+-- sets for its own deletes; with it set, RLS is what refuses the editor.
 select lives_ok($$ update storage.objects set name = tests.tenant('labak') || '/' || tests.asset('f203') || '/b.jpg' $$,
   'editor''s update of storage objects runs');
-select lives_ok($$ delete from storage.objects $$, 'editor''s delete of storage objects runs');
+select throws_ok($$ delete from storage.objects $$, '42501',
+  'Direct deletion from storage tables is not allowed. Use the Storage API instead.',
+  'a direct delete is refused by Storage''s protect_delete trigger');
+select set_config('storage.allow_delete_query', 'true', true);
+select lives_ok($$ delete from storage.objects $$, 'editor''s delete of storage objects runs, as the Storage API''s would');
+select set_config('storage.allow_delete_query', 'false', true);
 -- The demo editor cannot see the labak upload.
 select tests.act_as(tests.persona('editor_demo'));
 select results_eq($$ select name from storage.objects $$,
@@ -437,8 +447,8 @@ select throws_ok($$ insert into storage.objects (bucket_id, name) values ('deliv
   '42501', null, 'anon cannot write to delivery');
 select tests.act_as_owner();
 select results_eq($$ select bucket_id::text, name from storage.objects order by 1, 2 $$,
-  $$ values ('media-private', tests.tenant('demo') || '/' || tests.asset('f202') || '/b.png'),
-            ('media-private', tests.tenant('labak') || '/' || tests.asset('f203') || '/a.jpg'),
+  $$ values ('media-private', tests.tenant('labak') || '/' || tests.asset('f203') || '/a.jpg'),
+            ('media-private', tests.tenant('demo') || '/' || tests.asset('f202') || '/b.png'),
             ('media-public', 'labak/' || tests.asset('f201') || '/a.jpg') $$,
   'storage holds exactly the fixtures and the editor''s upload: no update, delete or refused write took effect');
 
