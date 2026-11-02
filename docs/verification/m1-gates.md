@@ -88,6 +88,8 @@ Malformed and canonical cases (decision 25), tests 30–48:
 Mutation check: each mutation was applied inside the test's transaction and rolled back.
 - A walk that skips arrays fails tests 22–26.
 - A cast-only `_ref` check (no pattern) fails the upper-case, braced and unhyphenated cases.
+
+**Re-run at Task 7 completion (2026-11-02, commit `f3eab7a`).** After the fixes for decisions 27–29 (128-level depth limit, lean walk that builds paths only for references, object keys `^[A-Za-z0-9_-]{1,64}$`, at most 1,000 references, all checked in linear time before the walk with 54000), the A13 assertions above are unchanged and still pass, now alongside regression tests bounding temp files and run time (about 10 MB of temp space per statement in the worst case inside the limits). The controller ran `pnpm db:reset && pnpm db:test` on PostgreSQL 17.11: `Files=7, Tests=496 … Result: PASS` (`040_refs.test.sql`: 187 tests). Reviews: spec r1–r4 pass; security r1–r3 fail, r4 and r5 pass; quality r1 fail, r2 pass (`docs/execution/reviews/task-07-*`).
 - A newline-sensitive pattern (`(?n)`) still rejects a trailing newline, because the `uuid` cast also rejects it. Checked directly: the plain anchored `~` gives `false` for a trailing newline, `(?n)` gives `true`, and the cast raises 22P02.
 
 **Result: pass.**
