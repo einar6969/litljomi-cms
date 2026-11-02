@@ -3,7 +3,7 @@
 -- that need tables.
 begin;
 \ir _helpers.sql
-select plan(27);
+select plan(31);
 
 select has_schema('api');
 select has_schema('cms');
@@ -45,6 +45,45 @@ select is_empty($$ select p.proname from pg_proc p join pg_namespace n on n.oid 
 -- nothing in api is executable by anon (hence PUBLIC)
 select is_empty($$ select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'api' and has_function_privilege('anon', p.oid, 'execute') $$, 'anon executes nothing in api');
+
+-- The same rules for every function postgres owns, in any schema (§4.2 "no
+-- SECURITY DEFINER anywhere"; Task 4 security r1, Minor 2). Supabase's
+-- per-schema default ACLs still grant EXECUTE to anon, authenticated and
+-- service_role on functions created in public and storage, so a function
+-- created there by a migration would be reachable at once. Excluded:
+-- extension members (pg_depend deptype 'e'), whose definitions come from the
+-- extension's own scripts, not from our migrations (pgTAP, installed by the
+-- test runner as postgres, is one). Functions owned by Supabase's roles
+-- (supabase_admin, supabase_auth_admin, supabase_storage_admin, ...) are not
+-- ours and are not checked.
+create function tests.postgres_functions() returns setof oid
+language sql
+set search_path = ''
+as $$
+  select p.oid from pg_catalog.pg_proc p
+  where p.proowner = 'postgres'::regrole
+    and not exists (select 1 from pg_catalog.pg_depend d
+      where d.classid = 'pg_catalog.pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e')
+$$;
+select is_empty($$ select p.oid::regprocedure::text from pg_proc p
+  where p.oid in (select tests.postgres_functions()) and p.prosecdef $$,
+  'no security definer function owned by postgres, in any schema');
+select is_empty($$ select p.oid::regprocedure::text from pg_proc p
+  where p.oid in (select tests.postgres_functions())
+    and not coalesce(p.proconfig @> array['search_path=""'], false) $$,
+  'every function owned by postgres, in any schema, pins search_path to ''''');
+-- Our functions live in api, cms and private only (tests is this suite's own
+-- schema, rolled back with it), never in public, storage or another schema
+-- whose default ACLs grant EXECUTE to the API roles.
+select is_empty($$ select p.oid::regprocedure::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where p.oid in (select tests.postgres_functions()) and n.nspname not in ('api', 'cms', 'private', 'tests') $$,
+  'postgres owns no function outside api, cms, private (and the test schema)');
+-- anon executes none of them (the test helpers in tests are granted to anon on
+-- purpose and are excluded).
+select is_empty($$ select p.oid::regprocedure::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where p.oid in (select tests.postgres_functions()) and n.nspname <> 'tests'
+    and has_function_privilege('anon', p.oid, 'execute') $$,
+  'anon executes no function owned by postgres');
 
 -- Tables (§8.5): every cms table has RLS enabled; anon has no privilege on cms.
 select is_empty($$ select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
@@ -98,8 +137,8 @@ select is_empty($$ select c.relname from pg_class c join pg_namespace n on n.oid
 -- checks above cannot pass because a table is missing.
 select set_eq($$ select c.relname::text from pg_class c join pg_namespace n on n.oid = c.relnamespace
   where n.nspname = 'cms' and c.relkind in ('r', 'p') and c.relname = any (tests.tenant_tables()) $$,
-  array['memberships', 'entries', 'drafts', 'revisions', 'draft_refs', 'revision_refs'],
-  'tenant tables created so far: memberships, entries, drafts, revisions, draft_refs, revision_refs');
+  array['memberships', 'entries', 'drafts', 'revisions', 'draft_refs', 'revision_refs', 'assets'],
+  'tenant tables created so far: memberships, entries, drafts, revisions, draft_refs, revision_refs, assets');
 -- Every foreign key between two tenant tables (§4.1 rule 3, the §4.3 list) pairs
 -- tenant_id with tenant_id, so a cross-tenant reference cannot exist.
 select is_empty($$ select c.conname from pg_constraint c
