@@ -28,14 +28,15 @@
 --            c921  demo, draft v1
 --            c925  published d925, then archived
 --            c926  published d926 {image ->f903}
+--            c927  draft {rel ->c925}
 --   release  e931 labak 1 delivered; e932 labak 2 failed
 --   site     e941 labak (a webhook_secret_ref with no Vault secret)
---   requests e901–e905 for the claim tests; e906–e933 below, each described
+--   requests e901–e905 for the claim tests; e906–e934 below, each described
 --            where it is used.
 -- Assertions depend on earlier ones, in file order.
 begin;
 \ir _helpers.sql
-select plan(156);
+select plan(161);
 
 create function tests.asset(p_key text) returns uuid
 language plpgsql
@@ -109,14 +110,18 @@ select is_empty($$ select 1 from pg_catalog.pg_proc p
      where p.oid = 'api.worker_commit_publish(uuid,integer,integer,text,timestamp with time zone)'::regprocedure
        and 'jsonb'::regtype = any (p.proargtypes::oid[]) $$,
   'worker_commit_publish takes no jsonb parameter: the committed data never comes from the caller');
--- Locking clauses (§6.2 step 1, plan Task 11); their effect is tested here
--- through xmax and concurrently in Task 12.
+-- Locking clauses (§6.2 step 1, plan Task 11). This regex is only a backstop
+-- (it would also match a comment); the real test of skip locked is Task 12's
+-- concurrent claim. The commit's lock modes are tested below with pgrowlocks.
 select ok((select prosrc ~* 'for update skip locked' from pg_catalog.pg_proc
            where oid = 'api.worker_claim_requests(integer)'::regprocedure),
   'worker_claim_requests claims with for update skip locked');
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (owner context).
+-- pgrowlocks reads row lock modes for the commit's lock assertions; created in
+-- this transaction, it is rolled back with it.
+create extension pgrowlocks with schema extensions;
 select tests.seed();
 insert into cms.assets (id, tenant_id, original_path, filename, mime, bytes, width, height, sha256, created_by, archived_at)
 select tests.asset(k), tests.tenant(t), tests.tenant(t)::text || '/' || tests.asset(k)::text || '/' || f, f, m,
@@ -132,7 +137,8 @@ from (values ('c901', 'labak', null), ('c902', 'labak', null), ('c905', 'demo', 
              ('c907', 'labak', 'tilvisun'), ('c908', 'labak', null), ('c910', 'labak', 'nakvaem'),
              ('c911', 'labak', null), ('c912', 'labak', null), ('c913', 'labak', 'eldri'), ('c914', 'labak', null),
              ('c917', 'labak', null), ('c918', 'labak', null), ('c919', 'labak', null), ('c920', 'labak', null),
-             ('c921', 'demo', null), ('c925', 'labak', 'safnad'), ('c926', 'labak', 'mynd')) as v(k, t, s);
+             ('c921', 'demo', null), ('c925', 'labak', 'safnad'), ('c926', 'labak', 'mynd'),
+             ('c927', 'labak', null)) as v(k, t, s);
 insert into cms.drafts (entry_id, tenant_id, schema_version, data, updated_by)
 select tests.entry(k), tests.tenant(t), 1, d, tests.persona('editor_' || t)
 from (values
@@ -149,7 +155,8 @@ from (values
   ('c919', 'labak', jsonb_build_object('image', tests.ref(tests.asset('f902'), 'asset'))),
   ('c920', 'labak', jsonb_build_object('self', tests.ref(tests.entry('c920'), 'entry'))),
   ('c921', 'demo', '{}'), ('c925', 'labak', '{}'),
-  ('c926', 'labak', jsonb_build_object('image', tests.ref(tests.asset('f903'), 'asset')))) as v(k, t, d);
+  ('c926', 'labak', jsonb_build_object('image', tests.ref(tests.asset('f903'), 'asset'))),
+  ('c927', 'labak', jsonb_build_object('rel', tests.ref(tests.entry('c925'), 'entry')))) as v(k, t, d);
 -- c910 at version 3 with the data that will be committed.
 update cms.drafts set data = '{"title": "v2"}' where entry_id = tests.entry('c910');
 update cms.drafts set data = jsonb_build_object(
@@ -242,8 +249,8 @@ select is((select count(*)::int from cms.audit_log where target_id = tests.pub('
 --   e918 c918 v1; e919 c919 v1; e920 c920 v1
 --   e921 demo c921 v1; e922 demo c921 unpublish
 --   e923 c907 unpublish; e924 c913 unpublish by revoked
---   e925 c908 v1 pending; e927 and e928 c908 v1
---   e933 demo c921 committed (no release)
+--   e925 c908 v1 pending; e927 and e928 c908 v1; e929 c927 v1
+--   e933 demo c921 committed (no release); e934 demo c921 unpublish
 insert into cms.publish_requests (id, tenant_id, entry_id, action, draft_version, requested_by, status, claimed_at, attempts)
 select tests.pub(r), tests.tenant(t), tests.entry(e), a, v, tests.persona(p), s,
        case when s = 'pending' then null else now() end, case when s = 'pending' then 0 else 1 end
@@ -267,7 +274,9 @@ from (values
   ('e925', 'labak', 'c908', 'publish', 1, 'editor_labak', 'pending'),
   ('e927', 'labak', 'c908', 'publish', 1, 'editor_labak', 'validating'),
   ('e928', 'labak', 'c908', 'publish', 1, 'editor_labak', 'validating'),
-  ('e933', 'demo', 'c921', 'publish', 1, 'editor_demo', 'committed')) as x(r, t, e, a, v, p, s);
+  ('e929', 'labak', 'c927', 'publish', 1, 'editor_labak', 'validating'),
+  ('e933', 'demo', 'c921', 'publish', 1, 'editor_demo', 'committed'),
+  ('e934', 'demo', 'c921', 'unpublish', null, 'editor_demo', 'validating')) as x(r, t, e, a, v, p, s);
 
 -- ---------------------------------------------------------------------------
 -- worker_read_request: one statement, {request, entry, draft, refs}.
@@ -320,19 +329,29 @@ select is((select row(e.published_rev_id, e.published_draft_version, e.first_pub
            from cms.entries e where e.id = tests.entry('c910')),
   (select row(r.revision_id, 3, now(), now())::text from cms.publish_requests r where r.id = tests.pub('e910')),
   'the pointer moves to the revision; first and last published are set');
--- Row locks taken by the commit (§6.2 step 1, plan Task 11): a row locked in
--- this transaction carries its id in xmax. The draft (FOR UPDATE) and the
--- referenced asset f901 (FOR SHARE) were not written since they were last
--- locked by anything else.
-select ok((select xmax::text <> '0' from cms.drafts where entry_id = tests.entry('c910')),
-  'the commit locked c910''s draft');
-select ok((select xmax::text <> '0' from cms.assets where id = tests.asset('f901')),
-  'the commit locked the referenced asset f901');
-select ok((select xmax::text <> '0' from cms.entries where id = tests.entry('c907')),
-  'the commit locked the referenced entry c907');
-select ok((select xmax::text = '0' from cms.assets where id = tests.asset('f905')),
-  'an asset the draft does not reference is not locked');
+-- Row locks taken by the commit (§6.2 steps 1 and 5, plan Task 11), read with
+-- pgrowlocks (owner context; created inside this transaction, so it is rolled
+-- back with it). xmax alone cannot tell lock modes apart: the revision_refs
+-- foreign keys take FOR KEY SHARE on the referenced entries and assets, so a
+-- referenced row is locked whether or not step 5's FOR SHARE loop runs. The
+-- mode can: this transaction's FOR SHARE outranks the foreign key's FOR KEY
+-- SHARE (and the draft_refs foreign keys' from the fixtures), so "For Share"
+-- appears only if the loop ran. The draft's FOR UPDATE is the strongest mode.
+-- Task 12's concurrent test (an unpublish of a referenced entry waits for the
+-- commit) proves the same locks across sessions.
 select tests.act_as_owner();
+select is((select l.modes from cms.drafts d join extensions.pgrowlocks('cms.drafts') l on l.locked_row = d.ctid
+           where d.entry_id = tests.entry('c910')),
+  array['For Update'], 'the commit locked c910''s draft FOR UPDATE');
+select is((select l.modes from cms.assets a join extensions.pgrowlocks('cms.assets') l on l.locked_row = a.ctid
+           where a.id = tests.asset('f901')),
+  array['For Share'], 'the commit locked the referenced asset f901 FOR SHARE, not only the foreign key''s FOR KEY SHARE');
+select is((select l.modes from cms.entries e join extensions.pgrowlocks('cms.entries') l on l.locked_row = e.ctid
+           where e.id = tests.entry('c907')),
+  array['For Share'], 'the commit locked the referenced entry c907 FOR SHARE, not only the foreign key''s FOR KEY SHARE');
+select is_empty($$ select 1 from cms.assets a join extensions.pgrowlocks('cms.assets') l on l.locked_row = a.ctid
+                   where a.id = tests.asset('f905') $$,
+  'an asset the draft does not reference is not locked');
 select is((select count(*)::int from cms.audit_log where target_id = tests.pub('e910')
            and action = 'publish_request.committed' and actor_id = tests.persona('editor_labak')), 1,
   'the commit is audited with the requester as actor');
@@ -394,6 +413,12 @@ select is(api.worker_commit_publish(tests.pub('e919'), 1, 1, 'T', null), 'failed
 select is((select error -> 'refs' from cms.publish_requests where id = tests.pub('e919')),
   jsonb_build_array(jsonb_build_object('path', '$."image"', 'kind', 'asset', 'id', tests.asset('f902'), 'reason', 'archived')),
   'the archived asset is named');
+select is(api.worker_commit_publish(tests.pub('e929'), 1, 1, 'T', null), 'failed_validation',
+  'a reference to a published but archived entry fails validation');
+select is((select error from cms.publish_requests where id = tests.pub('e929')),
+  jsonb_build_object('code', 'invalid_reference', 'refs', jsonb_build_array(jsonb_build_object(
+    'path', '$."rel"', 'kind', 'entry', 'id', tests.entry('c925'), 'reason', 'archived'))),
+  'the archived entry is named with reason archived');
 select is(api.worker_commit_publish(tests.pub('e920'), 1, 1, 'T', null), 'committed',
   'a reference to the entry itself is allowed before its first publication');
 
@@ -441,6 +466,17 @@ select ok(exists (select 1 from cms.revision_refs rr join cms.entries e on e.pub
 select is(api.worker_commit_unpublish(tests.pub('e924')), 'rejected', 'an unpublish by a revoked member is rejected');
 select isnt((select published_rev_id from cms.entries where id = tests.entry('c913')), null,
   'the rejected unpublish leaves the entry published');
+-- Unpublishing an entry that is not published (demo c921, never published;
+-- demo, so labak's release requests below are unchanged) commits and changes
+-- nothing else.
+select is(api.worker_commit_unpublish(tests.pub('e934')), 'committed',
+  'unpublishing an entry that is not published is committed');
+select is((select row(e.published_rev_id, e.published_draft_version, e.first_published_at, e.last_published_at)::text
+           from cms.entries e where e.id = tests.entry('c921')),
+  row(null::uuid, null::int, null::timestamptz, null::timestamptz)::text,
+  'the entry is unchanged: no pointer, never published');
+select is((select row(status, revision_id, error)::text from cms.publish_requests where id = tests.pub('e934')),
+  row('committed', null::uuid, null::jsonb)::text, 'the no-op unpublish request is committed without a revision');
 
 -- first_published_at is write-once (Task 6 security r1): the slug stays locked.
 select throws_ok($$ update cms.entries set first_published_at = null where id = tests.entry('c907') $$,
@@ -460,11 +496,13 @@ select throws_ok($$ select api.set_slug(tests.entry('c907'), 'annad') $$, 'P0001
 select tests.act_as_service();
 select throws_ok($$ insert into cms.revisions (tenant_id, entry_id, draft_version, schema_version, data, requested_by)
   values (tests.tenant('labak'), tests.entry('c908'), 1, 1, '[]', tests.persona('editor_labak')) $$,
-  '23514', null, 'revision data must be a JSON object');
+  '23514', 'new row for relation "revisions" violates check constraint "revisions_data_check"',
+  'revision data must be a JSON object');
 select throws_ok($$ insert into cms.revisions (tenant_id, entry_id, draft_version, schema_version, data, requested_by)
   values (tests.tenant('labak'), tests.entry('c908'), 1, 1, jsonb_build_object('x', repeat('a', 1048576)),
           tests.persona('editor_labak')) $$,
-  '23514', null, 'revision data must be at most 1 MB');
+  '23514', 'new row for relation "revisions" violates check constraint "revisions_data_check"',
+  'revision data must be at most 1 MB');
 
 -- ---------------------------------------------------------------------------
 -- worker_reject_request (§6.3).
@@ -501,7 +539,7 @@ select is((select row(r.tenant_id, r.number, r.status, r.bundle_path, r.delivere
   row(tests.tenant('labak'), 3, 'building', null::text, null::timestamptz)::text,
   'the release is number max + 1 (3), building');
 select is((select r.id from api.worker_begin_release(tests.tenant('labak')) as r), null,
-  'second concurrent build refused');
+  'second build while one is building');
 select is((select count(*)::int from cms.releases where tenant_id = tests.tenant('labak') and status = 'building'), 1,
   'one building release for labak');
 select throws_ok($$ select api.worker_begin_release(gen_random_uuid()) $$, 'P0001', 'not_found',

@@ -35,9 +35,10 @@
 
 -- first_published_at locks the slug (§4.3, entries_lock_slug). Once set it
 -- never changes, for any writer: unpublish leaves it alone (§6.2), and nobody
--- can clear it to unlock the slug. An AFTER UPDATE row trigger on every UPDATE,
--- like the slug locks: it sees the final row whatever BEFORE triggers did. The
--- WHEN clause only avoids calling the function; the function re-checks.
+-- can clear it to unlock the slug. An AFTER UPDATE row trigger, like the slug
+-- locks, that fires on every UPDATE that changes a set first_published_at (its
+-- WHEN clause): it sees the final row whatever BEFORE triggers did. The WHEN
+-- clause only avoids calling the function; the function re-checks.
 create function private.entries_lock_first_published_at()
 returns trigger
 language plpgsql
@@ -183,6 +184,21 @@ $$;
 --   8. Sets the request committed with its revision_id. The audit event
 --      (publish_request.<status>, actor: the requester) is written by the
 --      publish_requests trigger, for every outcome.
+--
+-- The error object recorded on the request (publish_requests.error), by code:
+--   superseded         {code: 'superseded', requested_version, validated_version,
+--                       draft_version}                      status superseded
+--   schema_version     {code: 'schema_version', validated_schema_version,
+--                       draft_schema_version}               status failed_validation
+--   tenant_inactive    {code: 'tenant_inactive'}            status rejected
+--   forbidden          {code: 'forbidden'} (requester no longer a member)
+--                                                           status rejected
+--   invalid_reference  {code: 'invalid_reference', refs: [{path, kind, id,
+--                       reason: not_found | archived | unpublished}]}
+--                                                           status failed_validation
+-- committed clears error. worker_commit_unpublish records the same
+-- tenant_inactive and forbidden objects. worker_reject_request stores the
+-- worker's own payload, which has no fixed shape.
 create function api.worker_commit_publish(p_request_id uuid, p_validated_draft_version int,
                                           p_validated_schema_version int, p_title text, p_sort_at timestamptz)
 returns text
@@ -245,7 +261,7 @@ begin
     return 'failed_validation';
   end if;
 
-  -- Step 4.
+  -- Step 4. The same re-check as in worker_commit_unpublish: keep identical.
   select t.status into v_tenant_status from cms.tenants t where t.id = v_request.tenant_id;
   if v_tenant_status is distinct from 'active' then
     update cms.publish_requests r
@@ -359,6 +375,7 @@ begin
   where e.tenant_id = v_request.tenant_id and e.id = v_request.entry_id
   for update;
 
+  -- The same re-check as worker_commit_publish's step 4: keep identical.
   select t.status into v_tenant_status from cms.tenants t where t.id = v_request.tenant_id;
   if v_tenant_status is distinct from 'active' then
     update cms.publish_requests r
@@ -390,7 +407,9 @@ $$;
 -- Ends a validating request the worker could not commit (§6.3):
 -- failed_validation (strict validation or projection failed, with field
 -- errors) or failed (an unexpected error). Any other status raises 22023; a
--- request that is not validating raises forbidden.
+-- request that is not validating raises forbidden. p_error is the caller's
+-- payload, stored as given in publish_requests.error; it has no fixed shape
+-- (unlike the commit's coded error objects).
 create function api.worker_reject_request(p_request_id uuid, p_status text, p_error jsonb)
 returns void
 language plpgsql
