@@ -67,6 +67,10 @@
 | 3 | security r6, Minors 1–2 | `staging.md:226` whole-string `REF` check; `staging.md:737` "less likely to be swapped" wording (`task-03-r6-security.md`) | Task 28 | open |
 | 3 | spec r4, Minor 2 | `vercel link` implies Einar's Vercel login, outside the repository (`task-03-r4-spec.md`) | Task 28 | open |
 
+| 7 | quality r1 (not taken) and r2; security r5 | `040_refs.test.sql`: shared probe helper for the long-key, control-character and at-limits probes; redundant per-key `throws_ok` cases next to the table-driven check; the `char_length` = 64 literal check; the 10,000-level and 15,000-reference probes assert only the 5 s bound, add `temp_bytes < 1 MB`; a `current_setting('work_mem')` precondition for the positive control; `20261102000400_refs.sql`: alias `c` used for two subqueries (security-relevant body; rename only with a security re-review) (`task-07-r1-quality.md`, `task-07-r2-quality.md`, `task-07-r5-security.md`) | C1 | open |
+| Lane A overlap | spec-quality r1 | `state.test.mjs:213-233`: the Lane A busy assertions cannot isolate the busy rule (the dependency check also refuses); use a fixture with two independent Lane A tasks; header comment line 8 still says "every task in dependsOn done"; refusal text "not done or in review"; no assertion documents starting 9 with 7 and 8 both in_review (the controller never does this: one worktree) (`lane-a-overlap-r1-spec-quality.md`) | C1 | open |
+| 7 | implementer note (round 4) | `packages/schema` `FIELD_KEY` (`/^[A-Za-z][A-Za-z0-9_]*$/`) has no 64-character cap, so a schema field key longer than 64 characters passes TypeScript and is refused by the database with 54000 (decision 29) | C1 | open |
+
 ## Carried from Phase 0 before ratings existed
 
 Parked items from Task 1, recorded in its notes in `state.json` with their IDs; listed here so this file is the single list.
