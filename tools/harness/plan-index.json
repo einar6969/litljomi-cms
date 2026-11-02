@@ -22,10 +22,11 @@
   { "id": 20, "title": "Worker step 2: release build", "phase": 3, "sensitive": true, "tier": "high", "lane": "A", "dependsOn": [19], "requiredGates": ["G0", "G1"], "checkpointAfter": null },
   { "id": 26, "title": "Demo fixture site", "phase": 5, "sensitive": true, "tier": "medium", "lane": "B", "dependsOn": [16, 18], "requiredGates": ["G0", "G1"], "checkpointAfter": null },
   { "id": 21, "title": "Worker step 3: notify, live check, sweep", "phase": 3, "sensitive": true, "tier": "high", "lane": "A", "dependsOn": [20, 26], "requiredGates": ["G0", "G1"], "checkpointAfter": "C2" },
+  { "id": 30, "title": "Worker recovery: stale releases and missing private files", "phase": 4, "sensitive": true, "tier": "high", "lane": "B", "dependsOn": [21], "requiredGates": ["G0", "G1"], "checkpointAfter": null },
   { "id": 22, "title": "Sign-in, tenant routing and Icelandic shell", "phase": 4, "sensitive": true, "tier": "high", "lane": "A", "dependsOn": [21, 26], "requiredGates": ["G0", "G1"], "checkpointAfter": null },
   { "id": 23, "title": "Entry list, new entry, generated form, autosave", "phase": 4, "sensitive": false, "tier": "low", "lane": "A", "dependsOn": [22], "requiredGates": ["G0", "G1"], "checkpointAfter": null },
   { "id": 24, "title": "Image upload and rich-text field", "phase": 4, "sensitive": true, "tier": "high", "lane": "A", "dependsOn": [23], "requiredGates": ["G0", "G1"], "checkpointAfter": null },
-  { "id": 25, "title": "Publish, unpublish and status display", "phase": 4, "sensitive": true, "tier": "high", "lane": "A", "dependsOn": [24], "requiredGates": ["G0", "G1"], "checkpointAfter": null },
+  { "id": 25, "title": "Publish, unpublish and status display", "phase": 4, "sensitive": true, "tier": "high", "lane": "A", "dependsOn": [24, 30], "requiredGates": ["G0", "G1"], "checkpointAfter": null },
   { "id": 27, "title": "LABAK slice integration on branch `hub-integration`", "phase": 5, "sensitive": true, "tier": "medium", "lane": "A", "dependsOn": [25], "requiredGates": ["G0", "G1", "G7"], "checkpointAfter": "C3" },
   { "id": 28, "title": "Provision staging and deploy", "phase": 6, "sensitive": true, "tier": "high", "lane": "A", "dependsOn": [27], "requiredGates": ["G0", "G1", "G2", "G3", "G4", "G5", "G6"], "checkpointAfter": null },
   { "id": 29, "title": "M1 acceptance on staging", "phase": 6, "sensitive": false, "tier": "medium", "lane": "A", "dependsOn": [28], "requiredGates": ["G0", "G1", "G2", "G3", "G4", "G5", "G6"], "checkpointAfter": "C4" }
