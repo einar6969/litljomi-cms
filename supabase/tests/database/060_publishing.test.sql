@@ -248,8 +248,9 @@ select is_empty($$ select tablename, policyname from pg_catalog.pg_policies
        and (coalesce(qual, '') like '%platform_admins%' or coalesce(with_check, '') like '%platform_admins%') $$,
   'no platform-admin clause on content tables or memberships');
 
-select triggers_are('cms', 'publish_requests', array['publish_requests_force_actor', 'publish_requests_check_actor'],
-  'publish_requests triggers: force_actor and check_actor on requested_by (decision 11)');
+select triggers_are('cms', 'publish_requests', array['publish_requests_force_actor', 'publish_requests_check_actor',
+    'publish_requests_audit_insert', 'publish_requests_audit_update'],
+  'publish_requests triggers: force_actor and check_actor on requested_by (decision 11), and the audit triggers (Task 10)');
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (owner context: auth.uid() is null, so requested_by keeps the given value).

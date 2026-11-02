@@ -3,7 +3,7 @@
 -- that need tables.
 begin;
 \ir _helpers.sql
-select plan(31);
+select plan(36);
 
 select has_schema('api');
 select has_schema('cms');
@@ -32,9 +32,9 @@ select ok(exists (select 1 from pg_default_acl d
   where d.defaclrole = 'postgres'::regrole and d.defaclnamespace = 0 and d.defaclobjtype = 'f'
     and not exists (select 1 from aclexplode(d.defaclacl) a where a.grantee = 0)),
   'global default privileges revoke EXECUTE on functions from PUBLIC');
--- The SECURITY DEFINER and search_path checks below already cover functions
--- (the Auth hook and the trigger functions in private). The anon-execute check
--- on api is vacuous until api holds functions (Task 10).
+-- The SECURITY DEFINER and search_path checks below cover every function in
+-- these schemas: the Auth hook, the trigger functions in private and the api
+-- functions (Task 10 on).
 -- no SECURITY DEFINER anywhere in our schemas
 select is_empty($$ select p.oid from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname in ('api','cms','private') and p.prosecdef $$, 'no security definer functions');
@@ -45,6 +45,30 @@ select is_empty($$ select p.proname from pg_proc p join pg_namespace n on n.oid 
 -- nothing in api is executable by anon (hence PUBLIC)
 select is_empty($$ select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'api' and has_function_privilege('anon', p.oid, 'execute') $$, 'anon executes nothing in api');
+-- ... and the check above is not vacuous.
+select ok(exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'api'),
+  'api holds functions (so the anon check is not vacuous)');
+-- No api function carries a PUBLIC grant, and none has a null ACL (a null ACL
+-- means the built-in default, which includes EXECUTE for PUBLIC).
+select is_empty($$ select p.oid::regprocedure::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'api'
+    and (p.proacl is null or exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0)) $$,
+  'no api function is executable by PUBLIC');
+
+-- Relations in api (§4.2): security_invoker views only, nothing for anon or PUBLIC.
+select is_empty($$ select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'api' and c.relkind <> 'v' $$, 'api holds no relation but views');
+select is_empty($$ select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'api' and c.relkind = 'v'
+    and not coalesce(c.reloptions @> array['security_invoker=true'], false) $$,
+  'every api view is security_invoker');
+select is_empty($$ select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'api'
+    and (has_table_privilege('anon', c.oid, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
+         or has_any_column_privilege('anon', c.oid, 'SELECT, INSERT, UPDATE, REFERENCES')
+         or c.relacl is null
+         or exists (select 1 from aclexplode(c.relacl) a where a.grantee = 0)) $$,
+  'anon and PUBLIC have no privilege on any api relation');
 
 -- The same rules for every function postgres owns, in any schema (§4.2 "no
 -- SECURITY DEFINER anywhere"; Task 4 security r1, Minor 2). Supabase's
@@ -153,14 +177,14 @@ select is_empty($$ select c.conname from pg_constraint c
       join pg_attribute da on da.attrelid = c.confrelid and da.attnum = k.dst_att
       where sa.attname = 'tenant_id' and da.attname = 'tenant_id') $$,
   'every foreign key between tenant tables is composite with tenant_id');
--- History is append-only (§4.3, §4.5): no UPDATE or DELETE on revisions for
--- anon, authenticated or service_role. The values list is there so Task 10 can
--- add cms.audit_log to it.
+-- History is append-only (§4.3, §4.5): no UPDATE (table or column), DELETE or
+-- TRUNCATE on revisions and audit_log for anon, authenticated or service_role.
 select is_empty($$ select r.rolname, t.tbl from pg_roles r
-  cross join (values ('cms.revisions')) as t(tbl)
+  cross join (values ('cms.revisions'), ('cms.audit_log')) as t(tbl)
   where r.rolname in ('anon', 'authenticated', 'service_role')
-    and has_table_privilege(r.rolname, t.tbl, 'UPDATE, DELETE') $$,
-  'no UPDATE or DELETE on revisions for anon, authenticated or service_role');
+    and (has_table_privilege(r.rolname, t.tbl, 'UPDATE, DELETE, TRUNCATE')
+         or has_any_column_privilege(r.rolname, t.tbl, 'UPDATE')) $$,
+  'no UPDATE, DELETE or TRUNCATE on revisions or audit_log for anon, authenticated or service_role');
 
 select * from finish();
 rollback;
