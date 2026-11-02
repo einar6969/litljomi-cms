@@ -113,3 +113,32 @@ the secret is in no cms.sites column
 - Security review r1 (`docs/execution/reviews/task-11-r1-security.md`): the secret appears in no `cms` column, audit row or raise message; `worker_sites` returns it to `service_role` only. The reviewer notes that `vault.create_secret` is Supabase-owned SECURITY DEFINER code; whether §4.2's wording should say so is open for Einar (deferred-minors, Task 11).
 
 Result: **A9 pass.**
+
+## A1, A2, A3, A4, A5 and A14 (Task 12, 2026-11-02)
+
+Assumptions (spec §11.1, plan "Validation gates"): A1 `cms` unreachable for `anon` and `authenticated` through REST and GraphQL; A2 invoker `api` functions write `cms` under RLS and column grants, including trigger writes; A3 `worker_*` callable with the secret key, refused for `authenticated`; A4 Storage RLS on `media-private` by tenant prefix, editors refused on `media-public` and `delivery`; A5 server-side copy `media-private` → `media-public`; A14 pgTAP impersonation matches PostgREST.
+
+Scope: proven against the **local** stack (Supabase CLI, PostgreSQL 17.11, GoTrue v2.197.0, Storage API v1.82.1). Spec §11.1 and Task 29 re-run A1–A4 against staging; `tests/integration/src/env.ts` refuses non-loopback hosts until Task 29 changes it under its gate.
+
+Evidence: `tests/integration/src/*.test.ts` (commit `5b336e0`, merged into `m1/phase-1` as `46398ef`). The controller ran, in the main checkout after the merge: `pnpm db:reset && pnpm db:test` → `Files=13, Tests=1246 … Result: PASS`; `pnpm test:integration` → `Test Files 6 passed (6)`, `Tests 67 passed (67)`:
+
+```
+✓ src/auth-passwordless.test.ts (6 tests)
+✓ src/http-boundary.test.ts (31 tests)
+✓ src/concurrency.test.ts (5 tests)
+✓ src/impersonation-parity.test.ts (13 tests)
+✓ src/storage-boundary.test.ts (8 tests)
+✓ src/fixtures.test.ts (4 tests)
+```
+
+Per gate (test names from the implementer's verbose run, confirmed by the security review r1, which re-ran the suite: `docs/execution/reviews/task-12-r1-security.md`):
+- **A1 pass** (`http-boundary.test.ts`): `cms`, `private` and `public` refused (PGRST106) for anon, an editor and the secret key, tables and rpc; raw `Accept-Profile`/`Content-Profile: cms` → 406 PGRST106; GraphQL not ok for an editor or anon (406 PGRST106, `pg_graphql` dropped, decision 1).
+- **A2 pass** (`http-boundary.test.ts`): `create_entry` and `save_draft` over REST give version 2 and one `draft_refs` row written by trigger; actor triggers record the caller; views show the caller's tenant only; another tenant's editor, an outsider and a revoked member get `not_found` and nothing changes; a reference to another tenant's asset fails the write; anon gets 42501.
+- **A3 pass** (`http-boundary.test.ts`): all 11 `worker_*` and 3 `admin_*` functions give 42501 for anon and all five personas; the secret key reaches the worker functions (and `worker_sites` reads Vault); the secret key gets 42501 on editor functions.
+- **A4 pass** (`storage-boundary.test.ts`): editors upload only under their own tenant prefix in `media-private`; other personas and anon cannot read, list, sign or upload; no overwrite, move or delete of an original; non-image types refused; editors and anon cannot write `media-public` or `delivery`. The security reviewer confirmed each refusal is the RLS 403 "new row violates row-level security policy".
+- **A5 pass** (`storage-boundary.test.ts`): the secret client copies `media-private` → `media-public`; the public URL returns 200 with identical bytes; the original stays non-public; a secret-key write to `delivery` is publicly readable.
+- **A14 pass** (`impersonation-parity.test.ts`): 12 cases (plus a count check), each run over REST and through `pgAs` (dedicated connection, `begin`, `set_config('role')` and `set_config('request.jwt.claims')` as PostgREST does), REST equal to the expected outcome and SQL equal to REST: own-tenant create (ok); other-tenant create, outsider create, revoked save, cross-tenant publish request (`not_found`); asset outside its path (`forbidden`); editor calls a worker function, anon calls an editor function, anon reads an editor view (42501); secret key reads sites through Vault; editor lists own entries; platform admin without membership sees no tenants. No difference between the paths. Known limit (deferred Minor): no `aal2` case, and impersonated claims are `{sub, role, aal}` only.
+- **Concurrency** (`concurrency.test.ts`, exactness consideration 1): save_draft waits for an in-flight commit and the revision holds the validated data; a commit holding a referenced entry makes a concurrent unpublish wait; unpublish first makes the commit end `failed_validation`; a save between `worker_read_request` and the commit gives `superseded`; two `worker_begin_release` calls give one row and one null. Each wait is proven by `expectBlocked` (`pg_stat_activity.wait_event_type = 'Lock'`).
+- **Decisions 18, 19, 21 and 22 over HTTP** (`auth-passwordless.test.ts`): passwords never sign in (403 from the hook, which Auth runs as `supabase_auth_admin`); email changes need both addresses, also over PKCE; TOTP step-up and refresh; no token for sign-up, anonymous, phone, id_token, web3, forged PKCE, SSO or OAuth.
+
+Result: **A1, A2, A3, A4, A5 and A14 pass** (local stack).

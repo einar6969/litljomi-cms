@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T08:24:44.898Z",
+  "updatedAt": "2026-11-02T08:35:46.978Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -535,19 +535,42 @@
     },
     {
       "id": 12,
-      "status": "in_progress",
+      "status": "done",
       "commits": [
         "313b05b",
         "5b336e0"
       ],
-      "reviews": {},
+      "reviews": {
+        "spec": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-12-r1-spec.md",
+          "at": "2026-11-02T08:26:33.838Z",
+          "atCommits": 2
+        },
+        "security": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-12-r1-security.md",
+          "at": "2026-11-02T08:31:01.515Z",
+          "atCommits": 2
+        },
+        "quality": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-12-r1-quality.md",
+          "at": "2026-11-02T08:33:02.498Z",
+          "atCommits": 2
+        }
+      },
       "gatesUsed": [
         "G0",
         "G1"
       ],
       "blockers": [],
-      "notes": "",
-      "startedAt": "2026-11-02T07:59:55.885Z"
+      "notes": "Implemented in .worktrees/lane-a-next from Task 11's head (with m1/phase-1 merged, b9cfb72; Task 11's quality fix merged as fbcee42): WIP 313b05b (written without the stack), final 5b336e0. New dev dependencies in tests/integration only (@supabase/supabase-js 2.118.0, pg 8.23.1, @types/pg 8.23.1; lockfile additive, +209 lines; reviewed by security r1: integrity hashes, no install scripts). Controller accepted: fixed-UUID tenants seeded as owner (plan wording assumed admin_create_tenant could take ids), secretClient() against the local stack, extra helpers. Cleared Task 4 quality r1 Minors 1-5 (012) and Task 5 quality r1 Minor 5 (fixtures cross-check). Findings for Einar at C1: deleting an Auth user who still has a membership fails closed (500); null claims return {claims: null} (kept). Reviews r1: spec pass (3 Minors), security pass (A1-A5 and A14 really proven locally; Minors), quality pass (Minors). Merged into m1/phase-1 as 46398ef (--no-ff, clean); pnpm install --frozen-lockfile clean. Full suite by the controller after the merge: harness 30/30; lint, typecheck, check:slugs (2 slugs) exit 0; Vitest 25 files, 327 tests; pnpm db:reset && pnpm db:test Files=13, Tests=1246, PASS; pnpm test:integration 6 files, 67 tests passed. A1-A5 and A14 recorded in docs/verification/m1-gates.md and validated.",
+      "startedAt": "2026-11-02T07:59:55.885Z",
+      "doneAt": "2026-11-02T08:35:46.978Z"
     },
     {
       "id": 13,
@@ -845,29 +868,29 @@
       "at": "2026-11-01T23:24:18.048Z"
     },
     "A1": {
-      "status": "pending",
-      "evidence": null,
-      "at": null
+      "status": "pass",
+      "evidence": "docs/verification/m1-gates.md",
+      "at": "2026-11-02T08:35:46.768Z"
     },
     "A2": {
-      "status": "pending",
-      "evidence": null,
-      "at": null
+      "status": "pass",
+      "evidence": "docs/verification/m1-gates.md",
+      "at": "2026-11-02T08:35:46.794Z"
     },
     "A3": {
-      "status": "pending",
-      "evidence": null,
-      "at": null
+      "status": "pass",
+      "evidence": "docs/verification/m1-gates.md",
+      "at": "2026-11-02T08:35:46.820Z"
     },
     "A4": {
-      "status": "pending",
-      "evidence": null,
-      "at": null
+      "status": "pass",
+      "evidence": "docs/verification/m1-gates.md",
+      "at": "2026-11-02T08:35:46.849Z"
     },
     "A5": {
-      "status": "pending",
-      "evidence": null,
-      "at": null
+      "status": "pass",
+      "evidence": "docs/verification/m1-gates.md",
+      "at": "2026-11-02T08:35:46.875Z"
     },
     "A6": {
       "status": "pending",
@@ -910,9 +933,9 @@
       "at": "2026-11-02T06:54:08.046Z"
     },
     "A14": {
-      "status": "pending",
-      "evidence": null,
-      "at": null
+      "status": "pass",
+      "evidence": "docs/verification/m1-gates.md",
+      "at": "2026-11-02T08:35:46.901Z"
     },
     "A15": {
       "status": "pending",
