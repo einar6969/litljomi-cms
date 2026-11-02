@@ -13,6 +13,12 @@ export const is = {
     sent: 'Ef netfangið er skráð færðu tölvupóst',
     linkInvalid: 'Innskráningarhlekkurinn er ógildur eða útrunninn. Biddu um nýjan.',
   },
+  // The magic link's landing page (decision 41.1): only its button signs in.
+  confirm: {
+    title: 'Ljúka innskráningu',
+    intro: 'Smelltu á hnappinn til að skrá þig inn í Litljómi vefumsjón.',
+    submit: 'Halda áfram',
+  },
   tenants: {
     title: 'Vefirnir þínir',
     none: 'Þú hefur ekki aðgang að neinum vef.',

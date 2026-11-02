@@ -1,7 +1,7 @@
-// Pure routing rules of sign-in, shared by the proxy and the auth callback.
+// Pure routing rules of sign-in, shared by the proxy and the magic link's confirm action.
 
-/** The paths reachable without a session: the sign-in page and the magic-link callback. */
-const PUBLIC_PATHS = new Set(['/login', '/auth/callback']);
+/** The paths reachable without a session: the sign-in page and the magic link's confirm page. */
+const PUBLIC_PATHS = new Set(['/login', '/auth/confirm']);
 
 export const isPublicPath = (pathname: string): boolean => PUBLIC_PATHS.has(pathname);
 

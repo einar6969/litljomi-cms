@@ -7,8 +7,8 @@ import { supabasePublicEnv } from './env';
  * Refreshes the editor's session on every request the proxy sees: Supabase Auth verifies the
  * session (`getUser`), and refreshed tokens are written to both the request (for the page that
  * renders next) and the response. Without a session, every path but the sign-in page and the
- * callback is redirected to `/login`. A convenience, not the boundary (§4.5): pages check the
- * session again and the database checks every call.
+ * magic link's confirm page is redirected to `/login`. A convenience, not the boundary (§4.5):
+ * pages check the session again and the database checks every call.
  */
 export async function updateSession(request: NextRequest): Promise<NextResponse> {
   const { url, publishableKey } = supabasePublicEnv();

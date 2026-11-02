@@ -32,13 +32,14 @@ export async function waitForNewMessage(email: string, seen: Set<string>, timeou
 }
 
 /**
- * The emailed Supabase verify link, which must point at the local Supabase API. It relies on the
- * mail template keeping exactly one `href` that contains `/auth/v1/verify` (Supabase's default
- * magic-link template does); a template change that adds or renames links must update this.
+ * The emailed sign-in link: the CMS's own `/auth/confirm` page with the token hash (the
+ * magic_link template, decision 41.1), which must be on the local CMS. It relies on the mail
+ * template keeping exactly one `href` to `/auth/confirm`; a template change that adds or renames
+ * links must update this.
  */
 export function magicLinkOf(message: Message): URL {
   const hrefs = [...message.HTML.matchAll(/href="([^"]+)"/g)].map((m) => m[1]!.replaceAll('&amp;', '&'));
-  const link = hrefs.find((href) => href.includes('/auth/v1/verify'));
-  if (!link) throw new Error(`no magic link in the mail "${message.Subject}"`);
-  return requireLoopback(link);
+  const links = hrefs.filter((href) => URL.canParse(href) && new URL(href).pathname === '/auth/confirm');
+  if (links.length !== 1) throw new Error(`expected one /auth/confirm link in the mail "${message.Subject}", found ${links.length}`);
+  return requireLoopback(links[0]!);
 }

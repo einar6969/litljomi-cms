@@ -11,8 +11,8 @@
 // address.
 import { afterAll, describe, expect, it } from 'vitest';
 import {
-  adminAuth, auth, brief, claims, clearMail, deleteThrowawayUsers, followVerify, generateLinkSession, newUser,
-  pkce, sleep, tokenHashOf, totp, verifyLink, waitMail, requestEmail,
+  adminAuth, auth, brief, claims, clearMail, confirmLink, deleteThrowawayUsers, followVerify, generateLinkSession, newUser,
+  pkce, sleep, tokenHashOf, totp, verifyLink, verifyUrlFor, waitMail, requestEmail,
 } from './auth-api.ts';
 import { closeAll, ownerQuery } from './sql.ts';
 
@@ -34,19 +34,23 @@ describe('decision 18: only email methods issue tokens', () => {
     expect(link.status, brief(link)).toBe(200);
     expect(methods(link.json.access_token)).toEqual(['otp']);
 
-    // Implicit, GET /verify from the emailed link: tokens in the redirect fragment.
+    // The emailed link goes to the CMS (decision 41.1; auth-confirm.test.ts); its token hash also
+    // works on Supabase's own GET /verify, which these redirect flows exercise.
+    const emailedVerifyLink = async () => verifyUrlFor(confirmLink((await waitMail(user.email))[0]!).searchParams.get('token_hash')!, 'magiclink');
+
+    // Implicit, GET /verify with the emailed token hash: tokens in the redirect fragment.
     await clearMail();
     await requestEmail('/otp', { email: user.email, create_user: false });
-    const location = await followVerify(verifyLink((await waitMail(user.email))[0]!));
+    const location = await followVerify(await emailedVerifyLink());
     const fragment = new URLSearchParams(location?.split('#')[1] ?? '');
     expect(fragment.get('access_token'), location ?? 'no redirect').toBeTruthy();
     expect(claims(fragment.get('access_token')!).sub).toBe(user.id);
 
-    // PKCE: the emailed link redirects with a code, exchanged with the verifier.
+    // PKCE: GET /verify with the emailed token hash redirects with a code, exchanged with the verifier.
     await clearMail();
     const p = pkce();
     await requestEmail('/otp', { email: user.email, create_user: false, code_challenge: p.challenge, code_challenge_method: 's256' });
-    const pkceLocation = await followVerify(verifyLink((await waitMail(user.email))[0]!));
+    const pkceLocation = await followVerify(await emailedVerifyLink());
     const code = new URL(pkceLocation!).searchParams.get('code');
     expect(code, pkceLocation ?? 'no redirect').toBeTruthy();
     const exchanged = await auth('/token?grant_type=pkce', { body: { auth_code: code, code_verifier: p.verifier } });

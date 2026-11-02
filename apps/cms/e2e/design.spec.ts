@@ -2,7 +2,8 @@
 // gitignored apps/cms/e2e-screenshots/. Step 1 (`step1-*.png`): the sign-in page, the entry list and
 // the edit form in each publish state that can be reached on the local stack. Step 2 (`step2-*.png`):
 // the tenant picker (as a user with no tenant), the tenant home, not found, the image field, the
-// conflict and signed-out notices, and "Enginn vefur tengdur". The suspended-tenant notice and a
+// conflict and signed-out notices, "Enginn vefur tengdur", and the magic link's confirm page (Task 32,
+// which also asserts the status tones: "Tekið af vef" neutral, "Enginn vefur tengdur" a warning). The suspended-tenant notice and a
 // picker with several tenants cannot be reached: the e2e support has no database access (a tenant's
 // status is changed only by the owner/CLI) and no seeded user belongs to two tenants. Each screen at 375 px must not
 // scroll sideways. Run as `pnpm --filter cms e2e design`. Every request is to a loopback address
@@ -52,9 +53,15 @@ test.describe('sign-in page', () => {
     expect(faces.length).toBeGreaterThan(0);
     expect(faces.every((s) => s === 'loaded'), `font faces: ${faces.join(',')}`).toBe(true);
     await shoot(page, 'login');
-    // The invalid-link alert, as it shows after a failed callback.
+    // The invalid-link alert, as it shows after a failed sign-in link.
     await page.goto('/login?error=link');
+    await expect(page.getByRole('main').getByRole('alert')).toHaveText(t.login.linkInvalid);
     await shoot(page, 'login-link-invalid');
+    // The magic link's confirm page (Task 32): one "Halda áfram" button. A made-up hash, never pressed.
+    await page.goto(`/auth/confirm?token_hash=${'0'.repeat(56)}&type=email`);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(t.confirm.title);
+    await expect(page.getByRole('button', { name: t.confirm.submit })).toBeVisible();
+    await shoot(page, 'auth-confirm', 'step2');
   });
 });
 
@@ -88,10 +95,14 @@ test.describe('demo editor (event)', () => {
     await page.unrouteAll({ behavior: 'ignoreErrors' });
 
     await expect(state(page)).toHaveText(t.publish.live, CONFIRMED);
+    await expect(state(page)).toHaveAttribute('data-tone', 'ok');
     await shoot(page, 'form-live');
 
     await page.getByRole('button', { name: t.publish.unpublish }).click();
     await expect(state(page)).toHaveText(t.publish.removed, CONFIRMED);
+    // Task 32: a final neutral tone, without the pending tone's pulsing dot.
+    await expect(state(page)).toHaveAttribute('data-tone', 'neutral');
+    await expect(state(page).locator('[class*="animate-pulse"]')).toHaveCount(0);
     await shoot(page, 'form-removed');
 
     // The entry list, with rows from this and earlier runs.
@@ -191,6 +202,10 @@ test.describe('labak editor, remaining screens', () => {
     await expect(page.getByTestId('slug-notice')).toHaveText(t.editor.slug.saved);
     await page.getByRole('button', { name: t.publish.publish }).click();
     await expect(state(page)).toHaveText(t.publish.noSite, CONFIRMED);
+    // Task 32: the warning tone, #b45309 with white text.
+    await expect(state(page)).toHaveAttribute('data-tone', 'warning');
+    await expect(state(page)).toHaveCSS('background-color', 'rgb(180, 83, 9)');
+    await expect(state(page)).toHaveCSS('color', 'rgb(255, 255, 255)');
     await shoot2(page, 'publish-no-site');
   });
 });
