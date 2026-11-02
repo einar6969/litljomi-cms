@@ -1,14 +1,19 @@
-// Task 31 (editor design), step 1: screenshots of the sign-in page, the entry list and the edit
-// form in each publish state that can be reached on the local stack, at 375, 768 and 1440 px wide
-// (full page), saved to the gitignored apps/cms/e2e-screenshots/. Each screen at 375 px must not
+// Task 31 (editor design): screenshots at 375, 768 and 1440 px wide (full page), saved to the
+// gitignored apps/cms/e2e-screenshots/. Step 1 (`step1-*.png`): the sign-in page, the entry list and
+// the edit form in each publish state that can be reached on the local stack. Step 2 (`step2-*.png`):
+// the tenant picker (as a user with no tenant), the tenant home, not found, the image field, the
+// conflict and signed-out notices, and "Enginn vefur tengdur". The suspended-tenant notice and a
+// picker with several tenants cannot be reached: the e2e support has no database access (a tenant's
+// status is changed only by the owner/CLI) and no seeded user belongs to two tenants. Each screen at 375 px must not
 // scroll sideways. Run as `pnpm --filter cms e2e design`. Every request is to a loopback address
 // (support/test.ts aborts the rest); the only thing written is the PNG files.
 import { randomBytes } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { t } from '../src/i18n/is';
 import { createEvent, createNews } from './support/editor';
+import { signIn } from './support/sign-in';
 import { sessionState } from './support/session';
 import { expect, test } from './support/test';
 
@@ -16,10 +21,11 @@ const SHOTS = join(import.meta.dirname, '..', 'e2e-screenshots');
 const WIDTHS = [375, 768, 1440] as const;
 const SAVED = { timeout: 10_000 };
 const CONFIRMED = { timeout: 150_000 };
+const JPEG = readFileSync(join(import.meta.dirname, 'fixtures', 'rugbraud.jpg'));
 const state = (page: Page) => page.getByTestId('publish-state');
 
-/** Saves `step1-<name>-<width>.png` (full page) at each width; at 375 px the page must not scroll sideways. */
-async function shoot(page: Page, name: string): Promise<void> {
+/** Saves `<step>-<name>-<width>.png` (full page) at each width; at 375 px the page must not scroll sideways. */
+async function shoot(page: Page, name: string, step: 'step1' | 'step2' = 'step1'): Promise<void> {
   mkdirSync(SHOTS, { recursive: true });
   for (const width of WIDTHS) {
     await page.setViewportSize({ width, height: 900 });
@@ -30,7 +36,7 @@ async function shoot(page: Page, name: string): Promise<void> {
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       expect(overflow, `${name} scrolls sideways at 375 px`).toBeLessThanOrEqual(0);
     }
-    await page.screenshot({ path: join(SHOTS, `step1-${name}-${width}.png`), fullPage: true });
+    await page.screenshot({ path: join(SHOTS, `${step}-${name}-${width}.png`), fullPage: true });
   }
 }
 
@@ -113,5 +119,89 @@ test.describe('labak editor (news, rich text)', () => {
     await page.keyboard.type('Við bökum nú súrdeigsbrauð alla daga vikunnar.');
     await expect(page.getByRole('status')).toHaveText(t.editor.saved, SAVED);
     await shoot(page, 'form-richtext');
+  });
+});
+
+// Step 2: the screens step 1 did not style.
+const TITLE = 'Titill';
+const shoot2 = (page: Page, name: string) => shoot(page, name, 'step2');
+
+test.describe('labak editor, remaining screens', () => {
+  test.use({ storageState: sessionState('editor_labak') });
+
+  test('tenant home and not found', async ({ page }) => {
+    await page.goto('/t/labak');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('LABAK');
+    await shoot2(page, 'tenant-home');
+    await page.goto('/t/finnst-ekki');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(t.notFound.title);
+    await shoot2(page, 'not-found');
+  });
+
+  test('conflict and signed-out notices', async ({ page, context }) => {
+    await createNews(page);
+    await page.getByLabel(TITLE).fill('Fyrsti flipi');
+    await expect(page.getByRole('status')).toHaveText(t.editor.saved, SAVED);
+
+    const second = await context.newPage();
+    await second.goto(page.url());
+    await second.getByLabel(TITLE).fill('Annar flipi');
+    await expect(second.getByRole('status')).toHaveText(t.editor.saved, SAVED);
+    await second.close();
+
+    await page.getByLabel(TITLE).fill('Fyrsti flipi, meira');
+    await expect(page.getByRole('alert').filter({ hasText: t.editor.conflict })).toBeVisible(SAVED);
+    await shoot2(page, 'notice-conflict');
+
+    // A fresh entry for the signed-out notice: the session ends while the editor is typing.
+    await createNews(page);
+    await page.getByLabel(TITLE).fill('Fyrir útskráningu');
+    await expect(page.getByRole('status')).toHaveText(t.editor.saved, SAVED);
+    await context.clearCookies();
+    await page.getByLabel(TITLE).fill('Eftir útskráningu');
+    await expect(page.getByRole('alert').filter({ hasText: t.editor.signedOut })).toBeVisible(SAVED);
+    await shoot2(page, 'notice-signed-out');
+  });
+
+  test('image field, then "Enginn vefur tengdur" (labak has no site)', async ({ page }) => {
+    test.setTimeout(10 * 60_000);
+    await createNews(page);
+    await page.getByLabel(TITLE).fill('Nýtt brauð í bakaríinu');
+    await page.getByLabel('Dagsetning').fill('2026-11-14');
+    await expect(page.getByRole('status')).toHaveText(t.editor.saved, SAVED);
+
+    // A file of the wrong type: the field's error notice (checked in the browser, before any upload).
+    await page.locator('#field-image').setInputFiles({ name: 'texti.txt', mimeType: 'text/plain', buffer: Buffer.from('ekki mynd') });
+    await expect(page.getByTestId('field-image-notice')).toHaveText(t.editor.image.type);
+    await shoot2(page, 'image-field-error');
+
+    // A real image: the preview, the alt text and the buttons.
+    await page.locator('#field-image').setInputFiles({ name: 'Rúgbrauð.jpg', mimeType: 'image/jpeg', buffer: JPEG });
+    const preview = page.getByTestId('field-image-preview');
+    await expect(preview).toBeVisible(SAVED);
+    await expect.poll(() => preview.evaluate((img: HTMLImageElement) => (img.complete ? img.naturalWidth : 0)), SAVED).toBeGreaterThan(0);
+    await page.locator('#field-image-alt').fill('Rúgbrauð á borði');
+    await expect(page.getByRole('status')).toHaveText(t.editor.saved, SAVED);
+    await shoot2(page, 'image-field');
+
+    // Publish in a tenant with no active site: nothing can confirm it, so it ends at "Enginn vefur tengdur".
+    await page.getByLabel(t.editor.slug.label).fill(`honnun-${randomBytes(5).toString('hex')}`);
+    await page.getByRole('button', { name: t.editor.slug.save }).click();
+    await expect(page.getByTestId('slug-notice')).toHaveText(t.editor.slug.saved);
+    await page.getByRole('button', { name: t.publish.publish }).click();
+    await expect(state(page)).toHaveText(t.publish.noSite, CONFIRMED);
+    await shoot2(page, 'publish-no-site');
+  });
+});
+
+test.describe('a user with no tenant', () => {
+  test('tenant picker', async ({ page }) => {
+    // The seeded outsider belongs to no tenant, so the picker shows its empty state (a user with
+    // exactly one tenant is redirected past it, and no seeded user has two).
+    await signIn(page, 'outsider@test.local');
+    await page.goto('/');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(t.tenants.title);
+    await expect(page.getByText(t.tenants.none)).toBeVisible();
+    await shoot2(page, 'tenant-picker');
   });
 });

@@ -1,9 +1,10 @@
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { t } from '@/i18n/is';
 import { requireUserId } from '@/lib/auth/session';
 import { createEditorClient } from '@/lib/supabase/server';
 import { listMyTenants } from '@/lib/tenant';
+import { LinkCard, LinkCardList } from '@/ui/LinkCard';
+import { Notice } from '@/ui/Notice';
 
 // The tenant picker: the editor's tenants from api.my_tenants. With exactly one, go straight to it.
 export default async function TenantPicker() {
@@ -15,15 +16,15 @@ export default async function TenantPicker() {
     <main>
       <h1>{t.tenants.title}</h1>
       {tenants.length === 0 ? (
-        <p>{t.tenants.none}</p>
+        <Notice className="mt-6">{t.tenants.none}</Notice>
       ) : (
-        <ul>
+        <LinkCardList>
           {tenants.map((tenant) => (
-            <li key={tenant.id}>
-              <Link href={`/t/${encodeURIComponent(tenant.slug)}`}>{tenant.name}</Link>
-            </li>
+            <LinkCard key={tenant.id} href={`/t/${encodeURIComponent(tenant.slug)}`}>
+              {tenant.name}
+            </LinkCard>
           ))}
-        </ul>
+        </LinkCardList>
       )}
     </main>
   );

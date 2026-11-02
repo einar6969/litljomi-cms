@@ -1,8 +1,8 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { t } from '@/i18n/is';
 import { getModule } from '@/modules/registry';
 import { currentTenant, isActive } from '@/lib/tenant';
+import { LinkCard, LinkCardList } from '@/ui/LinkCard';
 
 type Props = { params: Promise<{ tenant: string }> };
 
@@ -18,15 +18,15 @@ export default async function TenantHome({ params }: Props) {
     <main>
       <h1>{tenant.name}</h1>
       {structure.length > 0 ? (
-        <section>
-          <h2>{t.tenant.contentTypes}</h2>
-          <ul>
+        <section className="mt-8">
+          <h2 className="text-xs font-semibold uppercase leading-4 tracking-wider text-muted">{t.tenant.contentTypes}</h2>
+          <LinkCardList>
             {structure.map((item) => (
-              <li key={item.type}>
-                <Link href={`/t/${encodeURIComponent(tenant.slug)}/${encodeURIComponent(item.type)}`}>{item.label}</Link>
-              </li>
+              <LinkCard key={item.type} href={`/t/${encodeURIComponent(tenant.slug)}/${encodeURIComponent(item.type)}`}>
+                {item.label}
+              </LinkCard>
             ))}
-          </ul>
+          </LinkCardList>
         </section>
       ) : null}
     </main>

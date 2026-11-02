@@ -4,6 +4,7 @@ import { t } from '@/i18n/is';
 import { requireUserId } from '@/lib/auth/session';
 import { createEditorClient } from '@/lib/supabase/server';
 import { currentTenant, isActive } from '@/lib/tenant';
+import { Notice } from '@/ui/Notice';
 
 type Props = { children: ReactNode; params: Promise<{ tenant: string }> };
 
@@ -19,8 +20,10 @@ export default async function TenantLayout({ children, params }: Props) {
   if (!isActive(tenant)) {
     return (
       <main>
-        <h1>{t.tenant.inactive}</h1>
-        <p>{t.tenant.inactiveBody}</p>
+        <Notice as="div" tone="warning" className="flex flex-col gap-2">
+          <h1>{t.tenant.inactive}</h1>
+          <p>{t.tenant.inactiveBody}</p>
+        </Notice>
       </main>
     );
   }

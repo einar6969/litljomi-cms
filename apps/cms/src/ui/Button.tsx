@@ -14,7 +14,10 @@ const VARIANTS: Record<ButtonVariant, string> = {
 
 type Props = ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant };
 
+/** The classes of a button, for a control that is not a `<button>` (a link or a file picker). */
+export const buttonClasses = (variant: ButtonVariant = 'secondary'): string => `${BASE} ${VARIANTS[variant]}`;
+
 /** The editor's button. `type` defaults to "button"; a submit button says so. */
 export function Button({ variant = 'secondary', type = 'button', className = '', ...props }: Props) {
-  return <button type={type} className={`${BASE} ${VARIANTS[variant]} ${className}`} {...props} />;
+  return <button type={type} className={`${buttonClasses(variant)} ${className}`} {...props} />;
 }
