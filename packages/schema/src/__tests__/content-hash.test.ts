@@ -39,4 +39,29 @@ describe('canonicalJson and contentHash', () => {
     expect(h('https://m.test/1.png')).toBe(h('https://m.test/1.png'));
     expect(h('https://m.test/1.png')).not.toBe(h('https://m.test/2.png'));
   });
+  // Documented in canonicalJson: only plain objects (prototype Object.prototype or null) are
+  // hashed, so the hash covers exactly what JSON delivers to a site.
+  it.each([
+    ['Date', new Date(0)],
+    ['Map', new Map([['a', 1]])],
+    ['Set', new Set([1])],
+    ['boxed string', new String('x')],
+    ['boxed number', new Number(1)],
+    ['class instance', new (class Foo { a = 1 })()],
+  ])('rejects a non-plain object (%s), also when nested', (_name, value) => {
+    expect(() => canonicalJson(value)).toThrow(/plain object/);
+    expect(() => canonicalJson({ a: [value] })).toThrow(/plain object/);
+  });
+  it('accepts objects without a prototype', () => {
+    const o = Object.create(null) as Record<string, unknown>;
+    o.b = 1;
+    o.a = 2;
+    expect(canonicalJson(o)).toBe('{"a":2,"b":1}');
+  });
+  it('treats sparse-array holes as null, as JSON.stringify does', () => {
+    const sparse = [1, , 3];
+    expect(canonicalJson(sparse)).toBe('[1,null,3]');
+    expect(canonicalJson(sparse)).toBe(JSON.stringify(sparse));
+    expect(canonicalJson(new Array(2))).toBe('[null,null]');
+  });
 });

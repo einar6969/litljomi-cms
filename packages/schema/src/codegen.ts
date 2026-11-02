@@ -36,7 +36,10 @@ export interface EntrySummary {
  * the target is not published).
  */
 export function generateDeliveryTypes(types: ContentType[]): string {
+  const seen = new Set<string>();
   const blocks = types.map((t) => {
+    if (seen.has(t.name)) throw new Error(`generateDeliveryTypes: duplicate type name "${t.name}"`);
+    seen.add(t.name);
     if (!TYPE_NAME.test(t.name)) throw new Error(`generateDeliveryTypes: type name "${t.name}" is not a lower-case kebab name`);
     const lines = Object.entries<AnyFieldKind>(t.fields).map(([key, field]) => {
       const prop = IDENTIFIER.test(key) ? key : JSON.stringify(key);

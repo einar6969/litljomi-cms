@@ -19,3 +19,12 @@ export { link, type LinkOptions, type LinkValue, type LinkProjected, type LinkFi
 export { image, type ImageOptions, type ImageValue } from './fields/image.ts';
 export { richText, type RichTextOptions } from './fields/rich-text.ts';
 export { slugify } from './slugify.ts';
+export { newsType } from './library/news.ts';
+export {
+  defineModule,
+  type LiveCheck,
+  type ModuleManifest,
+  type ReleaseView,
+  type SiteEntry,
+  type SiteIntegration,
+} from './module.ts';

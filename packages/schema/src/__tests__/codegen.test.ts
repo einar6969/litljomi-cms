@@ -39,4 +39,7 @@ describe('generateDeliveryTypes', () => {
     const bad = defineType({ ...t, name: 'a b', fields: { title: text({ label: 'T' }) }, preview: { title: 'title' }, orderBy: 'title' });
     expect(() => generateDeliveryTypes([bad])).toThrow();
   });
+  it('rejects duplicate type names', () => {
+    expect(() => generateDeliveryTypes([t, t])).toThrow(/duplicate type name "news"/);
+  });
 });

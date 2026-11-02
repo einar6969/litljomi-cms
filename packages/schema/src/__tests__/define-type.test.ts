@@ -100,3 +100,19 @@ describe('type metadata', () => {
     expect(withMedia.draftValidator().safeParse({ when: null }).success).toBe(true);
   });
 });
+
+describe('defineType field keys', () => {
+  const build = (fields: Record<string, ReturnType<typeof text>>) =>
+    defineType({ name: 'k', version: 1, label: 'K', fields, preview: { title: 'title' }, orderBy: 'title' });
+  const ok = { title: text({ label: 'T' }) };
+
+  it.each(['__proto__', 'constructor', 'prototype', 'toString', 'hasOwnProperty'])('rejects the reserved key %s', (key) => {
+    expect(() => build(Object.defineProperty({ ...ok }, key, { value: text({ label: 'X' }), enumerable: true }))).toThrow(/field key/);
+  });
+  it.each(['', '1a', 'a b', 'a-b', 'a.b', '_a', 'a$', 'é', 'a\n'])('rejects the non-identifier key %j', (key) => {
+    expect(() => build({ ...ok, [key]: text({ label: 'X' }) })).toThrow(/field key/);
+  });
+  it.each(['title', 'secondaryImage', 'a1', 'snake_case', 'A'])('accepts the key %s', (key) => {
+    expect(() => build({ ...ok, [key]: text({ label: 'X' }) })).not.toThrow();
+  });
+});

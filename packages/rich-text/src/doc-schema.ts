@@ -53,8 +53,15 @@ export function isSafeHref(s: string): boolean {
 
 const canonicalHref = (s: string) => new URL(s).href;
 
+/**
+ * A reference id: the canonical lowercase hyphenated UUID (8-4-4-4-12), nothing else, so every
+ * layer (database, packages/schema, packages/rich-text) rejects the same references (decision 25).
+ * Upper case, braces, unhyphenated forms and non-strings are rejected.
+ */
+export const canonicalUuid = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+
 const ref = <K extends 'entry' | 'asset'>(kind: K) =>
-  z.strictObject({ _ref: z.guid(), _kind: z.literal(kind) });
+  z.strictObject({ _ref: canonicalUuid, _kind: z.literal(kind) });
 
 // Tiptap's JSON carries unset attributes as `undefined`; they vanish when serialised.
 const unset = z.undefined().optional();

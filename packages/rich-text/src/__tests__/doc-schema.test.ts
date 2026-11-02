@@ -103,3 +103,21 @@ describe('nesting depth cap', () => {
     expect(richTextDocSchema.safeParse(doc(node)).success).toBe(false);
   });
 });
+
+describe('canonical lowercase UUID references (decision 25)', () => {
+  const GOOD = 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d';
+  const withRef = (v: unknown) =>
+    doc({ type: 'image', attrs: { asset: { _ref: v, _kind: 'asset' }, alt: 'a' } }, p('e', [{ type: 'link', attrs: { entry: { _ref: v, _kind: 'entry' } } }]));
+  it('accepts the lowercase hyphenated form', () => {
+    expect(richTextDocSchema.safeParse(withRef(GOOD)).success).toBe(true);
+  });
+  it.each([
+    ['upper case', GOOD.toUpperCase()],
+    ['braces', `{${GOOD}}`],
+    ['unhyphenated', GOOD.replaceAll('-', '')],
+    ['null', null],
+  ])('rejects %s', (_n, v) => {
+    expect(richTextDocSchema.safeParse(withRef(v)).success).toBe(false);
+    expect(richTextDocSchema.safeParse(doc({ type: 'image', attrs: { asset: { _ref: v, _kind: 'asset' }, alt: 'a' } })).success).toBe(false);
+  });
+});

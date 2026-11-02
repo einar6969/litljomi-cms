@@ -2,8 +2,11 @@ import { createHash } from 'node:crypto';
 
 /**
  * Canonical JSON: object keys sorted by UTF-16 code unit at every depth, `undefined` object
- * values dropped, array order kept (an `undefined` element becomes null, as in JSON), no
- * whitespace. Throws for values JSON cannot represent (NaN, Infinity, bigint, functions, symbols).
+ * values dropped, array order kept (an `undefined` element and a sparse-array hole both become
+ * null, exactly as `JSON.stringify` does), no whitespace. Throws for values JSON cannot represent
+ * (NaN, Infinity, bigint, functions, symbols) and for objects that are not plain (prototype other
+ * than `Object.prototype` or null: Date, Map, Set, boxed primitives, class instances), because
+ * serialising those would silently differ from what a site receives.
  */
 export function canonicalJson(v: unknown): string {
   if (v === null) return 'null';
@@ -15,7 +18,10 @@ export function canonicalJson(v: unknown): string {
       if (!Number.isFinite(v)) throw new Error('canonicalJson: non-finite number');
       return JSON.stringify(v);
     case 'object': {
-      if (Array.isArray(v)) return `[${v.map((x) => (x === undefined ? 'null' : canonicalJson(x))).join(',')}]`;
+      // Array.from visits holes as `undefined` (map would skip them and leave an empty slot).
+      if (Array.isArray(v)) return `[${Array.from(v, (x) => (x === undefined ? 'null' : canonicalJson(x))).join(',')}]`;
+      const proto: unknown = Object.getPrototypeOf(v);
+      if (proto !== Object.prototype && proto !== null) throw new Error('canonicalJson: not a plain object');
       const entries = Object.entries(v as Record<string, unknown>)
         .filter(([, x]) => x !== undefined)
         .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
