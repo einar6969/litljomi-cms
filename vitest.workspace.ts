@@ -39,4 +39,16 @@ export default defineWorkspace([
       include: ['packages/sdk/src/__tests__/**/*.test.{ts,tsx}'],
     },
   },
+  {
+    test: {
+      name: 'cli',
+      include: ['tools/cli/src/__tests__/**/*.test.ts'],
+    },
+  },
+  {
+    test: {
+      name: 'demo-site',
+      include: ['apps/demo-site/e2e/fixtures.test.ts'],
+    },
+  },
 ]);

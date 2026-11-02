@@ -1,0 +1,26 @@
+{
+  "name": "demo-site",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "gen:types": "pnpm --filter @litljomi/cli cli gen-types --module demo --out ../../apps/demo-site/src/types/cms.ts",
+    "fixtures:gen": "vite-node e2e/fixtures/generate.ts",
+    "build": "next build",
+    "start": "next start -p 3101",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts"
+  },
+  "dependencies": {
+    "@litljomi/cms-sdk": "workspace:*",
+    "@litljomi/rich-text": "workspace:*",
+    "next": "^16.4.3",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@litljomi/cms-schema": "workspace:*",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "vite-node": "^3.2.4"
+  }
+}

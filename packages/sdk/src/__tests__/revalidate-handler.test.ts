@@ -61,4 +61,52 @@ describe('createRevalidateHandler', () => {
     expect(text).not.toContain(sig);
     expect(text).not.toContain('s1');
   });
+
+  it('verifies the raw bytes, not the decoded text (a BOM prefix or invalid UTF-8 is rejected)', async () => {
+    const { revalidate, handler } = setup();
+    const signed = signWebhook(body, 's1', NOW);
+    const headers = { 'x-cms-timestamp': String(NOW), 'x-cms-signature': signed };
+    const bom = new Uint8Array([0xef, 0xbb, 0xbf, ...new TextEncoder().encode(body)]);
+    expect((await handler(new Request('https://s/x', { method: 'POST', body: bom, headers }))).status).toBe(401);
+    // Signed over the replacement character; sent as an invalid byte that decodes to U+FFFD.
+    const badText = '\uFFFD';
+    const badHeaders = { 'x-cms-timestamp': String(NOW), 'x-cms-signature': signWebhook(badText, 's1', NOW) };
+    const invalid = new Uint8Array([0xff]);
+    expect((await handler(new Request('https://s/x', { method: 'POST', body: invalid, headers: badHeaders }))).status).toBe(401);
+    // The same bytes signed as bytes are accepted.
+    const okHeaders = { 'x-cms-timestamp': String(NOW), 'x-cms-signature': signWebhook(invalid, 's1', NOW) };
+    expect((await handler(new Request('https://s/x', { method: 'POST', body: invalid, headers: okHeaders }))).status).toBe(200);
+    expect(revalidate).toHaveBeenCalledTimes(1);
+  });
+  it('rejects a stale timestamp or a malformed signature without reading the body or the secrets', async () => {
+    const secrets = vi.fn(() => ['s1']);
+    const handler = createRevalidateHandler({ secrets, revalidate: vi.fn(), now: () => NOW * 1000 });
+    for (const r of [req({ ts: NOW - 301 }), req({ sig: 'zz' }), req({ sig: null })]) {
+      const text = vi.spyOn(r, 'text');
+      const buffer = vi.spyOn(r, 'arrayBuffer');
+      expect((await handler(r)).status).toBe(401);
+      expect(text).not.toHaveBeenCalled();
+      expect(buffer).not.toHaveBeenCalled();
+      expect(r.bodyUsed).toBe(false);
+    }
+    expect(secrets).not.toHaveBeenCalled();
+  });
+  it('answers a controlled 500 when secrets() throws, without detail', async () => {
+    const revalidate = vi.fn();
+    const handler = createRevalidateHandler({
+      secrets: () => { throw new Error('env CMS_WEBHOOK_SECRETS missing'); },
+      revalidate,
+      now: () => NOW * 1000,
+    });
+    const res = await handler(req());
+    expect(res.status).toBe(500);
+    const text = await res.text();
+    expect(JSON.parse(text)).toEqual({ revalidated: false });
+    expect(text).not.toContain('CMS_WEBHOOK_SECRETS');
+    expect(revalidate).not.toHaveBeenCalled();
+  });
+  it('answers 401 when secrets() returns nothing usable', async () => {
+    const { handler } = setup([]);
+    expect((await handler(req())).status).toBe(401);
+  });
 });
