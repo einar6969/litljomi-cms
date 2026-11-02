@@ -1,6 +1,8 @@
 import type { AnyFieldKind, ContentType } from './define-type.ts';
 
 const TYPE_NAME = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
+// Field keys are already identifiers (FIELD_KEY in define-type.ts); the quoted fallback below only
+// keeps the output valid if that rule is ever widened.
 const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
 const pascal = (name: string) =>

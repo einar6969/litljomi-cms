@@ -64,22 +64,20 @@ export function readTenantSlugs(modulesDir: string): string[] {
     .sort();
 }
 
-/** Core roots to scan, relative to the repository root. Roots that do not exist yet are reported, not scanned. */
+/** Core roots to scan, relative to the repository root. Each must exist (C-F1): a missing root fails the check. */
 const CORE_ROOTS = ['apps/cms/src', 'packages'];
 
 export function runCheck(repoRoot: string): { exitCode: number; output: string } {
   const modulesDir = join(repoRoot, 'modules');
   const slugs = readTenantSlugs(modulesDir);
-  const scanned = CORE_ROOTS.filter((r) => existsSync(join(repoRoot, r)));
-  const absent = CORE_ROOTS.filter((r) => !scanned.includes(r));
+  const missing = CORE_ROOTS.filter((r) => !existsSync(join(repoRoot, r)));
+  if (missing.length > 0) {
+    return { exitCode: 1, output: `check:slugs failed: core root(s) missing: ${missing.join(', ')}` };
+  }
   const modulesNote = existsSync(modulesDir) ? '' : ' (modules/ is absent)';
-  const summary = [
-    `roots scanned: ${scanned.length > 0 ? scanned.join(', ') : 'none'}`,
-    `roots absent: ${absent.length > 0 ? absent.join(', ') : 'none'}`,
-    `${slugs.length} tenant slug(s) checked${modulesNote}`,
-  ];
+  const summary = [`roots scanned: ${CORE_ROOTS.join(', ')}`, `${slugs.length} tenant slug(s) checked${modulesNote}`];
   const hits = findTenantSlugLiterals(
-    scanned.map((r) => join(repoRoot, r)),
+    CORE_ROOTS.map((r) => join(repoRoot, r)),
     slugs,
   );
   if (hits.length > 0) {

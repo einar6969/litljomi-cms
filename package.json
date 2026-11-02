@@ -8,10 +8,10 @@
   },
   "scripts": {
     "lint": "eslint -c eslint.config.mjs .",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p apps/cms/tsconfig.json",
     "test": "vitest run",
     "check:slugs": "node tools/checks/no-tenant-slugs.ts",
-    "test:integration": "pnpm --filter @litljomi/integration-tests test",
+    "test:integration": "pnpm --filter @litljomi/integration-tests test && pnpm --filter cms test:integration",
     "harness:test": "node --test \"tools/harness/__tests__/*.test.mjs\"",
     "db:start": "SUPABASE_TELEMETRY_DISABLED=1 supabase start",
     "db:stop": "SUPABASE_TELEMETRY_DISABLED=1 supabase stop",

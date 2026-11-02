@@ -9,4 +9,4 @@ coverage/
 *.tsbuildinfo
 .pnpm-store/
 .worktrees/
-apps/*/next-env.d.ts
+next-env.d.ts
