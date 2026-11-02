@@ -59,6 +59,7 @@ export const isFinal = (state: DisplayState): boolean => state.tone !== 'pending
  * - every active site's live_status ok → "Birt á vef ✓" (publish) or "Tekið af vef" (unpublish);
  * - left out of the release, or a site's notification attempts exhausted → "Birting á vef mistókst";
  * - every site settled, one not confirmed → "Ekki staðfest á vef";
+ * - delivered in a tenant with no active site → "Enginn vefur tengdur", final (decision 39.3);
  * - the request's own failures: failed_validation, superseded, rejected, failed.
  *
  * A tenant with no active site never reaches a confirmed state: there is nothing to prove it on.
@@ -90,15 +91,17 @@ function deliveryState(row: PublicationStatusRow): DisplayState {
   // §7.1: an entry left out of a release is never live. An unpublish has nothing to leave out.
   if (row.action === 'publish' && row.omitted) return deliveryFailed;
   const sites = row.site_count;
-  if (sites > 0 && row.sites_live_ok === sites) {
+  // Decision 39.3: nothing will ever confirm it, so the panel stops polling. Never a success.
+  if (sites === 0) return { label: t.publish.noSite, tone: 'error' };
+  if (row.sites_live_ok === sites) {
     return row.action === 'publish' ? { label: t.publish.live, tone: 'ok' } : { label: t.publish.removed, tone: 'ok', detail: t.publish.removedDetail };
   }
   // §7.4, decision 36.1: the sweep stops retrying at the limit and alerts.
   if (row.notify_attempts >= MAX_NOTIFY_ATTEMPTS) return deliveryFailed;
-  if (sites > 0 && row.sites_live_ok + row.sites_not_confirmed === sites) {
+  if (row.sites_live_ok + row.sites_not_confirmed === sites) {
     return { label: t.publish.notConfirmed, tone: 'error', detail: t.publish.notConfirmedDetail };
   }
-  if (sites > 0 && row.sites_notified === sites) return { label: t.publish.revalidated, tone: 'pending' };
+  if (row.sites_notified === sites) return { label: t.publish.revalidated, tone: 'pending' };
   return inProgress;
 }
 

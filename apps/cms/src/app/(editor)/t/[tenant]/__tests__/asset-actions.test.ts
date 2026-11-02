@@ -159,6 +159,9 @@ describe('registerAssetAction', () => {
     state.object = { data: blobOf(jpeg), error: null };
     state.rpc.register_asset = { error: { code: 'P0001', message: 'forbidden' } };
     await expect(registerAssetAction(SLUG, ASSET, PATH, FILE)).resolves.toEqual({ ok: false, code: 'error' });
+    // Decision 39.3: the tenant suspended between the action's check and the call.
+    state.rpc.register_asset = { error: { code: 'P0001', message: 'tenant_inactive' } };
+    await expect(registerAssetAction(SLUG, ASSET, PATH, FILE)).resolves.toEqual({ ok: false, code: 'error' });
     state.rpc.register_asset = { error: { code: '23505', message: 'duplicate key value violates unique constraint "assets_pkey"' } };
     await expect(registerAssetAction(SLUG, ASSET, PATH, FILE)).resolves.toEqual({ ok: false, code: 'error' });
     state.rpc.register_asset = { error: { code: 'PGRST303', message: 'JWT expired' }, status: 401 };
@@ -236,6 +239,9 @@ describe('updateAssetAction', () => {
     expect(state.calls).toEqual([]);
     state.tables.my_tenants = { data: { id: TENANT_ID, slug: SLUG, name: 'T', status: 'active' } };
     state.rpc.update_asset = { error: { code: 'P0001', message: 'not_found' } };
+    await expect(updateAssetAction(ASSET, 0.5, 0.5, null)).resolves.toEqual({ ok: false, code: 'error' });
+    // Decision 39.3: the tenant suspended between the action's check and the call.
+    state.rpc.update_asset = { error: { code: 'P0001', message: 'tenant_inactive' } };
     await expect(updateAssetAction(ASSET, 0.5, 0.5, null)).resolves.toEqual({ ok: false, code: 'error' });
   });
 });

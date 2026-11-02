@@ -33,12 +33,15 @@ const noticeOf = (code: 'invalid' | 'slug_taken' | 'slug_locked' | 'auth' | 'err
 // `slugify` is the Icelandic transliteration of decision 2 (þ→th, ð→d, æ→ae, ö→o, ...).
 export function SlugField({ entryId, initialSlug, title, locked, setSlug }: Props) {
   const [saved, setSaved] = useState(initialSlug);
-  // Until the editor types here, the field follows the title's suggestion.
+  // What the editor typed here, if anything; otherwise the saved slug.
   const [typed, setTyped] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [busy, setBusy] = useState(false);
   const suggestion = slugify(title);
-  const value = typed ?? saved ?? suggestion;
+  // The title's suggestion is the placeholder, never the value, so typing into the field cannot
+  // append to it (decision 39.3). An empty field saves the suggestion.
+  const shown = typed ?? saved ?? '';
+  const value = shown !== '' ? shown : suggestion;
 
   const submit = async () => {
     setBusy(true);
@@ -65,7 +68,8 @@ export function SlugField({ entryId, initialSlug, title, locked, setSlug }: Prop
         <input
           id="slug"
           name="slug"
-          value={value}
+          value={shown}
+          placeholder={suggestion}
           disabled={locked}
           onChange={(e) => {
             setTyped(e.target.value);

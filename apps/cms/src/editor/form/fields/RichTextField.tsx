@@ -42,7 +42,9 @@ function RichTextEditor({ id, label, initial, onChange }: EditorProps) {
     content: (initial ?? undefined) as Record<string, unknown> | undefined,
     // Rendered on the server too; the editor mounts in the browser.
     immediatelyRender: false,
-    editorProps: { attributes: { id, role: 'textbox', 'aria-multiline': 'true', 'aria-labelledby': labelId } },
+    // The field label is the accessible name (decision 39.3): aria-labelledby for browsers, and the
+    // same text as aria-label for tools that read only the element's own attributes.
+    editorProps: { attributes: { id, role: 'textbox', 'aria-multiline': 'true', 'aria-labelledby': labelId, 'aria-label': label } },
     onUpdate: ({ editor: current }) => {
       if (current.isEmpty) {
         setInvalid(false);
