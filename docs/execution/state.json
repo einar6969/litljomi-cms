@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T06:54:08.074Z",
+  "updatedAt": "2026-11-02T07:08:19.795Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -378,6 +378,45 @@
     },
     {
       "id": 8,
+      "status": "done",
+      "commits": [
+        "a9276b1",
+        "318da7d"
+      ],
+      "reviews": {
+        "spec": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-08-r1-spec.md",
+          "at": "2026-11-02T07:02:24.197Z",
+          "atCommits": 2
+        },
+        "security": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-08-r1-security.md",
+          "at": "2026-11-02T07:05:53.955Z",
+          "atCommits": 2
+        },
+        "quality": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-08-r1-quality.md",
+          "at": "2026-11-02T07:07:25.131Z",
+          "atCommits": 2
+        }
+      },
+      "gatesUsed": [
+        "G0",
+        "G1"
+      ],
+      "blockers": [],
+      "notes": "Implemented in .worktrees/lane-a-next (m1/lane-a-next) under the Lane A overlap rule while Task 7 was in review: WIP a9276b1 (written without the database), merge of m1/phase-1 6443810, final 318da7d. Controller accepted: storage policies compare the folder name as text (same membership rule; a ::uuid cast in a policy could raise on non-UUID folder names in other buckets); media-private upload limits (20 MB; jpeg, png, webp; spec §5.6). Asset-ID existence oracle (23505 on assets_pkey) accepted by Einar as decision 30. Reviews r1: spec pass, security pass (3 Minors), quality pass (7 Minors). Cleared the Task 4 security r1 Minor 2 (catalog checks over every postgres-owned function). Merged into m1/phase-1 as a7011d9 (--no-ff, clean). Full suite by the controller after the merge: harness 30/30; lint, typecheck, check:slugs (2 slugs) exit 0; Vitest 25 files, 327 tests; pnpm db:reset && pnpm db:test Files=8, Tests=614, PASS.",
+      "startedAt": "2026-11-02T06:48:57.460Z",
+      "doneAt": "2026-11-02T07:08:19.795Z"
+    },
+    {
+      "id": 9,
       "status": "in_progress",
       "commits": [],
       "reviews": {},
@@ -387,16 +426,7 @@
       ],
       "blockers": [],
       "notes": "",
-      "startedAt": "2026-11-02T06:48:57.460Z"
-    },
-    {
-      "id": 9,
-      "status": "pending",
-      "commits": [],
-      "reviews": {},
-      "gatesUsed": [],
-      "blockers": [],
-      "notes": ""
+      "startedAt": "2026-11-02T07:03:49.256Z"
     },
     {
       "id": 10,
