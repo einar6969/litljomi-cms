@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T08:35:46.978Z",
+  "updatedAt": "2026-11-02T08:37:01.997Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -908,9 +908,9 @@
       "at": null
     },
     "A9": {
-      "status": "pending",
-      "evidence": null,
-      "at": null
+      "status": "pass",
+      "evidence": "docs/verification/m1-gates.md",
+      "at": "2026-11-02T08:35:59.117Z"
     },
     "A10": {
       "status": "pending",
@@ -953,9 +953,9 @@
       "approval": "Einar in chat, 2026-11-02: \"Record my C0 approval and create the local main branch.\""
     },
     "C1": {
-      "status": "pending",
-      "report": null,
-      "at": null,
+      "status": "reported",
+      "report": "docs/execution/checkpoints/C1.md",
+      "at": "2026-11-02T08:37:01.997Z",
       "approvedByEinar": false
     },
     "C2": {

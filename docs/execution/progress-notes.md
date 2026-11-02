@@ -20,13 +20,10 @@
 - Before the merges, `m1/phase-1` was merged into `m1/lane-b` (`ec7f204`) so the worktree carried decisions 23–24.
 - After the last merge: harness 27/27; lint, typecheck and check:slugs (2 slugs) exit 0; Vitest 25 files, 327 tests; `pnpm db:reset && pnpm db:test` Files=7, Tests=406, PASS. Lane B (Tasks 13–16, 18) is complete.
 
-### Handoff to the next controller session (2026-11-02)
+### Handoff at checkpoint C1 (2026-11-02, second controller session)
 
-Einar asked this session to stop after Task 7 and continue Tasks 8–12 in a fresh controller session. State at handoff:
-- Lane B is complete and merged (Tasks 13–16, 18). Lane A: Tasks 4–6 done. **Task 7 is blocked** (see its blocker and notes in `state.json`):
-  - fix `a730140` implements decision 27;
-  - long keys under the 128-level cap can still produce multi-GB temp files, which needs Einar's ruling on a key- or path-length limit or another bound;
-  - the round 2 spec and security reviews (fix diff `0f7ca02..a730140`) and the quality review have not run;
-  - A13 is recorded in `docs/verification/m1-gates.md` but not yet with `state.mjs validate`.
-- `.worktrees/lane-b` still exists (branch `m1/lane-b` at `41515f0`, fully merged). It can be removed with `git worktree remove .worktrees/lane-b` (from Einar's terminal if the sandbox refuses) once nobody needs it.
-- Open deferred Minors and their owners are in `docs/execution/deferred-minors.md`. The C1 items include Einar's decision on credentials in hrefs and the plan wording updates.
+- Phase 1 and Lane B are complete: Tasks 4–16 and 18 are done and merged into `m1/phase-1` (head `e0482f2` before the C1 commit). C1 is reported in `docs/execution/checkpoints/C1.md` and recorded with `state.mjs checkpoint C1`; **waiting for Einar's go-ahead**. Task 17 is not started.
+- Validation gates passed: A1–A5, A9, A13, A14 (A1–A4 on the local stack; Task 29 re-runs them on staging).
+- New decisions 28–31, the resource-exhaustion threat model, and the overlapping Lane A rule (two worktrees, both now reset to `m1/phase-1`) are in the plan and `gates.json`.
+- Open questions for Einar are in C1's "Unresolved issues" (statement timeout, §4.2 Vault wording, §6.2 step 5 wording, Auth-user deletion with memberships, credentials in hrefs, plan wording). Four deferred-Minor rows name Task 15 as owner but are still open; review them against Task 15's commits before Phase 3.
+- `pnpm db:test` needs a fresh `pnpm db:reset` after `pnpm test:integration` (shared personas).
