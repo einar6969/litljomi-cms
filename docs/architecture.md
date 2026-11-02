@@ -4,7 +4,7 @@
 |---|---|
 | Status | **Approved** by Einar on 2026-11-01 as the implementation baseline, subject to validating the assumptions in §11 and the security boundaries during development. Not yet implemented |
 | Date | 2026-11-01 |
-| Revisions | 2026-11-02 (Einar): passwordless sign-in is enforced by an Auth hook, and email changes need confirmation from both addresses (§4.2, §4.4, §4.5, §11.2; plan decisions 18 and 19); 2026-11-02 (Einar): `packages/rich-text` may depend on Zod and the MIT Tiptap core packages, with the editor configuration on a separate entry point that sites do not import (§3.1; plan decision 23); 2026-11-02 (Einar): `packages/schema` may also depend on `@litljomi/rich-text`'s main entry point, never its editor entry (§3.1; plan decision 24) |
+| Revisions | 2026-11-02 (Einar): passwordless sign-in is enforced by an Auth hook, and email changes need confirmation from both addresses (§4.2, §4.4, §4.5, §11.2; plan decisions 18 and 19); 2026-11-02 (Einar): `packages/rich-text` may depend on Zod and the MIT Tiptap core packages, with the editor configuration on a separate entry point that sites do not import (§3.1; plan decision 23); 2026-11-02 (Einar): `packages/schema` may also depend on `@litljomi/rich-text`'s main entry point, never its editor entry (§3.1; plan decision 24); 2026-11-02 (Einar): references are extracted by a recursive walk with jsonpath locations, cross-checked against `strict $.**._ref`, and `_ref` must be a canonical lowercase UUID in every layer (§4.3; plan decision 25) |
 | Owner | Einar Zoega, Litljómi ehf. |
 | Audience | Einar, and any future implementation session (human or Claude Code) |
 | Location | Written in the LABAK workspace (`project/`). Moves to `docs/architecture.md` in the CMS monorepo at milestone M0 and is maintained there |
@@ -212,7 +212,7 @@ Column lists are the v1 minimum; implementation may add timestamps and indexes.
 
 **Tenant tables** (the definitive list for rule 3 and the catalog tests): `memberships`, `entries`, `drafts`, `revisions`, `draft_refs`, `revision_refs`, `assets`, `publish_requests`, `releases`, `sites`, `site_deliveries`. Not tenant tables: `tenants`, `platform_admins`, and `audit_log` (which carries a nullable `tenant_id` and has its own policies).
 
-**References inside JSON.** Every reference in a document, at any depth, has the fixed shape `{ "_ref": "<uuid>", "_kind": "entry" | "asset", ... }` plus usage properties (e.g. `alt`). A trigger extracts all of them with a recursive JSON path into `draft_refs` or `revision_refs`. A malformed `_ref` (not a UUID) or a target outside the tenant fails the write.
+**References inside JSON.** Every reference in a document, at any depth, has the fixed shape `{ "_ref": "<uuid>", "_kind": "entry" | "asset", ... }` plus usage properties (e.g. `alt`). A trigger extracts all of them with a recursive walk of the document into `draft_refs` or `revision_refs`, recording each one's location as a jsonpath (for example `$."body"."content"[0]."attrs"."entry"`); tests cross-check that the walk finds exactly what the recursive JSON path `strict $.**._ref` finds. A malformed `_ref` (not a canonical lowercase UUID, `8-4-4-4-12`) or a target outside the tenant fails the write; the schema and rich-text validators require the same canonical form.
 
 **Status is derived, never stored on the entry:**
 

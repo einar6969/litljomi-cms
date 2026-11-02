@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T04:28:59.900Z",
+  "updatedAt": "2026-11-02T04:31:28.439Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -311,8 +311,15 @@
         "G0",
         "G1"
       ],
-      "blockers": [],
-      "notes": "",
+      "blockers": [
+        {
+          "text": "Plan interface cannot work as written: private.extract_refs must return path, but jsonb_path_query('strict $.**._ref') returns no locations (PG 17). Spec §4.3 and A13 say 'recursive JSON path'. Implementer stopped before any edit. Waiting for Einar's ruling on the extraction mechanism and path format.",
+          "at": "2026-11-02T04:29:57.266Z",
+          "previousStatus": "in_progress",
+          "resolvedAt": "2026-11-02T04:31:28.439Z"
+        }
+      ],
+      "notes": "Blocked 2026-11-02 before any edit: plan interface could not work as written (jsonb_path_query returns no locations). Einar ruled in chat: \"Recursive walk + cross-check\", \"AFTER on every update\", \"Canonical UUID strings only\" and \"Make sure packages/schema’s refSchema also requires the canonical lowercase 8-4-4-4-12 form, so all three layers reject the same references.\" (decision 25; spec §4.3 revised). Unblocked; the same implementer continues.",
       "startedAt": "2026-11-02T04:26:10.172Z"
     },
     {
