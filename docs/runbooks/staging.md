@@ -22,7 +22,7 @@ This runbook sets up the M1 staging environment: the GitHub repository, the host
 
 **The LABAK repository and Vercel (G6 and G7).** Creating `labak-hub-staging` (G6.1) connects the LABAK repository to Vercel. That installs the Vercel GitHub integration on the LABAK repository (or adds the repository to an existing installation), after which Vercel can build any branch, including `main`, and post deployment statuses and comments there. This goes beyond creating and pushing `hub-integration`, so it needs **Einar's explicit approval at G6 and at G7**, named as such, before the project is connected; the controller records both. When approved, builds are limited to `hub-integration` (G6.1) and every deployment other than the production domain stays protected (G6.3).
 
-**The existing Vercel project and `hub-integration` (G7 and G6).** The existing project `landssamband-bakarameistara` may already be connected to the LABAK repository through the Vercel GitHub integration. If it is, a push of `hub-integration` could build a preview deployment inside that project, with its environment variables, and post statuses on the branch: that would touch the existing project, which is off-limits. So **before the first push of `hub-integration`** (at Task 27 under G7, or in G2.5), Einar checks the existing project's Git connection (G6.0); if it would build that branch, the push does not happen: stop and report. The controller raises this check when it requests G7 at Task 27 and again at G6.
+**The existing Vercel project and `hub-integration` (G7 and G6).** The existing project `landssamband-bakarameistara` may already be connected to the LABAK repository through the Vercel GitHub integration. If it is, a push of `hub-integration` could build a preview deployment inside that project, with its environment variables, and post statuses on the branch: that would touch the existing project, which is off-limits. So **before the first push of `hub-integration`** (at Task 27 under G7, or in G2.5), Einar checks the existing project's Git connection (G6.0); if it has any Git connection to the LABAK repository, the push does not happen: stop and report. The controller raises this check when it requests G7 at Task 27 and again at G6.
 
 ## 2. Prerequisites
 
@@ -41,7 +41,7 @@ Task 28 follows this order. Each step lists what it depends on.
 
 | Order | Step | Gate | Depends on |
 |---|---|---|---|
-| 0 | G6.0: the existing Vercel project `landssamband-bakarameistara` would not build `hub-integration`; **before the first push of `hub-integration`** (at Task 27 if G7 includes the push, otherwise before G2.5 pushes it) | G7 (raised with the G7 request), repeated under G6 | none |
+| 0 | G6.0: the existing Vercel project `landssamband-bakarameistara` has no Git connection to the LABAK repository; **before the first push of `hub-integration`** (at Task 27 if G7 includes the push, otherwise before G2.5 pushes it) | G7 (raised with the G7 request), repeated under G6 | none |
 | 1 | G2.1–G2.3: private repository, push `main`, CI green | G2 | P1 |
 | 2 | G2.4: pin GitHub Actions to commit SHAs | G2 | G2.1 |
 | 3 | G2.5: publish `@litljomi/cms-sdk` and `@litljomi/rich-text` 0.1.0; update `hub-integration` dependencies | G2 (and G7 for the LABAK branch) | G2.3, P3, G6.0 (before any push of `hub-integration`) |
@@ -161,7 +161,7 @@ Applied on the hosted project by hand (G3.4, G3.6, G3.7). Local equivalents are 
 
 `$PK` below is `$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `$URL` is `$NEXT_PUBLIC_SUPABASE_URL`, both public values that Einar gives the executor (section 1). `GET $URL/auth/v1/settings -H "apikey: $PK"` returns public settings only.
 
-**URL check.** Before any request in this section or in G3.3, the executor checks that `$URL` is a hosted project URL and is the staging project's, and prints the target host (a local-stack URL such as `http://127.0.0.1:54321` is refused; `<project-ref>` is the reference recorded at G3.1):
+**URL check.** Before any request in this section or in G3.3, the executor checks that `$URL` is a hosted project URL and is the staging project's, and prints the target host (a local-stack URL such as `http://127.0.0.1:54321` is refused; `<project-ref>` is the reference Einar reads from his Supabase dashboard or his own records; the value recorded at G3.1 in `docs/verification/m1-report.md` is for the record only, never the source of the check):
 
 ```sh
 if [ "$URL" = 'https://<project-ref>.supabase.co' ] && printf '%s\n' "$URL" | grep -Eqx 'https://[a-z0-9]{20}\.supabase\.co'
@@ -279,12 +279,12 @@ The hook `private.passwordless_access_token(event jsonb) returns jsonb` (Task 4)
 | H5 | SQL editor, **while the test account still exists**, with the id part 1 printed | Executor | **0** `password` rows on the project; for the test account, **0** `password` rows and **at least 1** row in all (its H4 session, so the check is not vacuous) |
 | H6 | Part 2 script deletes the test account (the Auth admin API cannot clear a password, so the account is never reused); then the SQL check | Einar (deletion), executor (SQL) | Deletion HTTP **200**; the account is gone (both counts below **0**) |
 
-**Keeping secrets off command lines.** A command line is visible to every user of the machine (`ps`) and to process auditing; a pipe is not. So in both scripts curl reads its headers, URL and body as a configuration on standard input (`curl --config -`), written by `printf`, a shell builtin, so its arguments never become a program's command line; request bodies are built by `jq` from values it reads on standard input; responses stay in shell variables. The values read from `.env.local` stay in the script's own shell variables and are never exported, so no process's environment holds them either. The secret key, the generated password, the token hash and the refresh token therefore never appear on any command line, and nothing is written to a file (pipes only: no temporary files and no here-documents). Never run the scripts with `bash -x` or `set -x`. They print only the target host, HTTP codes (or a curl error number), `true`/`false` results, `redirect_to` and the test account's id (not a secret).
+**Keeping secrets off command lines.** A command line is visible to every user of the machine (`ps`) and to process auditing; a pipe is not. So in both scripts curl reads its headers, URL and body as a configuration on standard input (`curl -q --config -`; `-q` first, so `~/.curlrc` is not read), written by `printf`, a shell builtin, so its arguments never become a program's command line; request bodies are built by `jq` from values it reads on standard input; responses stay in shell variables. The values read from `.env.local` stay in the script's own shell variables and are never exported, so no process's environment holds them either. The secret key, the generated password, the token hash and the refresh token therefore never appear on any command line, and nothing is written to a file (pipes only: no temporary files and no here-documents). Never run the scripts with `bash -x` or `set -x`. They print only the target host, HTTP codes (or a curl error number), `true`/`false` results, `redirect_to` and the test account's id (not a secret).
 
 **Reading `.env.local` without executing it.** The scripts never source `.env.local` (`. ./.env.local` runs every line as shell code in a shell that holds the secret key, and a later duplicate line silently wins, which could send the key to another host). Each script reads only the names it needs, line by line, and refuses to send anything when:
 - a name is assigned zero times or more than once, or not on a plain `NAME=value` line (an `export NAME=…` line or spaces around `=` count as assignments and are refused; comment lines are ignored);
 - a value contains characters that cannot occur in it: `NEXT_PUBLIC_SUPABASE_URL` must be exactly `https://`, 20 lowercase letters or digits (the project reference) and `.supabase.co`, with nothing before or after; the keys may contain only letters, digits, `.`, `_` and `-` (this also keeps quotes, spaces, `$`, `%`, `\` and a stray carriage return out of the curl configuration);
-- the URL is not the staging project's: Einar passes the project reference recorded at G3.1 as `EXPECT_REF`, and the URL must be `https://$EXPECT_REF.supabase.co`.
+- the URL is not the staging project's: Einar passes the project reference as `EXPECT_REF`, taken from his Supabase dashboard (or his own records), never from a repository file (the value recorded at G3.1 in `docs/verification/m1-report.md` is for the record only), and the URL must be `https://$EXPECT_REF.supabase.co`.
 
 A refusal prints a `FAILED:` line naming the variable, never its value. Before its first request, each script prints the target host (`target: <project-ref>.supabase.co`). A local-stack URL (for example `http://127.0.0.1:54321`, as `.env.local` holds for local work) is refused, so the checks can never run against, or delete an account on, the local stack by mistake; for these runs `.env.local` holds the staging values (how Einar keeps the local and staging values apart is his choice; confirm at execution time). **Confirm at execution time** that the staging project's reference has 20 characters and that the publishable and secret keys contain only the characters above. If the hosted URL or a key has another shape, stop and report; do not loosen the check.
 
@@ -331,7 +331,7 @@ env_value() {
 
 REF="${EXPECT_REF:-}"
 if ! [[ $REF =~ $REF_RE ]]; then
-  echo "FAILED: set EXPECT_REF to the staging project's reference (G3.1); nothing was sent"; exit 1
+  echo "FAILED: set EXPECT_REF to the staging project's reference (from your Supabase dashboard); nothing was sent"; exit 1
 fi
 URL="$(env_value NEXT_PUBLIC_SUPABASE_URL "$URL_RE")"
 PK="$(env_value NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY "$KEY_RE")"
@@ -361,7 +361,7 @@ call() {
       printf 'header = "Content-Type: application/json"\nrequest = "%s"\nurl = "%s%s"\n' "$2" "$URL" "$3"
       printf 'silent\nshow-error\nwrite-out = "\\n%%{http_code}"\n'
       if [ -n "${4:-}" ]; then printf '%s\n' "$4"; fi
-    } | curl --config -
+    } | curl -q --config -
   )" || rc=$?
   if [ "$rc" -ne 0 ]; then CODE="curl error $rc"; BODY=''; return 0; fi
   CODE="${resp##*$'\n'}"
@@ -480,7 +480,7 @@ case "$USER_ID" in
 esac
 REF="${EXPECT_REF:-}"
 if ! [[ $REF =~ $REF_RE ]]; then
-  echo "FAILED: set EXPECT_REF to the staging project's reference (G3.1); nothing was sent"; exit 1
+  echo "FAILED: set EXPECT_REF to the staging project's reference (from your Supabase dashboard); nothing was sent"; exit 1
 fi
 URL="$(env_value NEXT_PUBLIC_SUPABASE_URL "$URL_RE")"
 SK="$(env_value SUPABASE_SECRET_KEY "$KEY_RE")"
@@ -495,7 +495,7 @@ CODE="$(
     printf 'header = "apikey: %s"\nheader = "Authorization: Bearer %s"\n' "$SK" "$SK"
     printf 'request = "DELETE"\nurl = "%s/auth/v1/admin/users/%s"\n' "$URL" "$USER_ID"
     printf 'silent\nshow-error\noutput = "/dev/null"\nwrite-out = "%%{http_code}"\n'
-  } | curl --config -
+  } | curl -q --config -
 )" || CODE="curl error $?"
 unset SK
 if [ "$CODE" = 200 ]; then echo "H6 delete: $CODE (ok)"; exit 0; fi
@@ -580,11 +580,11 @@ All records are in the **litljomi.is** zone only. **`labak.is` DNS is off-limits
 
 ## 10. Vercel projects, domains, deployment protection and cron (G6)
 
-### G6.0 The existing project `landssamband-bakarameistara` must not build `hub-integration` (G7 and G6)
+### G6.0 The existing project `landssamband-bakarameistara` must not be connected to the LABAK repository (G7 and G6)
 - **Owner:** Einar, in his own Vercel dashboard, **read only** (the existing project is off-limits: nothing in it is changed, by anyone, under this runbook). The controller raises this check with the G7 request at Task 27 and again at G6, and records the result (no secrets).
 - **When:** **before the first push of `hub-integration`** to GitHub, whether that push is at Task 27 (if G7 includes it) or in G2.5; and again just before G6.1 connects the LABAK repository to `labak-hub-staging`. Nothing is pushed to `hub-integration` until this check has passed and been recorded.
-- **Settings:** none; nothing is changed. Einar reads, in the existing project's Settings → Git (confirm the menu path at execution time): whether a Git repository is connected, and which. If it is the LABAK repository: the production branch, and whether anything keeps a push of another branch from being built (an Ignored Build Step, or a setting that turns off builds or preview deployments for branches other than the production branch). By default Vercel builds a preview deployment for every branch pushed to a connected repository (confirm at execution time).
-- **Verify:** passes when the existing project has no Git connection, is connected to a different repository, or is connected to the LABAK repository with a setting that skips every branch except its production branch (so `hub-integration` would not be built). Otherwise, or if Einar cannot tell, **stop and report**: `hub-integration` is not pushed, and the existing project is not changed; Einar decides what happens. After the first push, Einar checks the existing project's Deployments list: it shows no deployment of `hub-integration`. If one appears, stop and report; Einar decides about it (the executor never deletes or changes anything in the existing project).
+- **Settings:** none; nothing is changed. Einar reads, in the existing project's Settings → Git (confirm the menu path at execution time): whether a Git repository is connected, and which. Any connection to the LABAK repository fails the check: an Ignored Build Step or disabled builds is not enough, because Vercel may still record a skipped deployment and post a commit status on the branch. By default Vercel builds a preview deployment for every branch pushed to a connected repository (confirm at execution time).
+- **Verify:** passes only when the existing project has no Git connection or is connected to a different repository. If it has **any** Git connection to the LABAK repository (whatever its build settings), or if Einar cannot tell, **stop and report**: `hub-integration` is not pushed, and the existing project is not changed; Einar decides what happens. As a second line of defence, after the first push Einar checks the existing project's Deployments list: it shows no deployment of `hub-integration`. If one appears, stop and report; Einar decides about it (the executor never deletes or changes anything in the existing project).
 
 ### G6.1 Projects and plan
 - **Owner:** Einar (team plan); executor creates and configures the projects after G6.
@@ -734,7 +734,7 @@ The full list is decision 18's (plan, "Implementation-level decisions") and deci
 | Steps that need the secret key or another secret value are Einar's (section 1), including the section 7.2 scripts and every `cms provision` command | Einar confirms | G3 |
 | Task 29's acceptance spec uses "the staging secret key from the local environment only"; agents cannot read `.env.local`, so that part must be run by Einar in his own terminal, the same way as section 7.2 (section 14) | Controller raises the Task 29 wording with Einar | Before Task 29 |
 | Connecting the LABAK repository to Vercel for `labak-hub-staging` installs the Vercel GitHub integration on it (deployment statuses and comments; builds limited to `hub-integration`, G6.1); needs Einar's explicit approval at G6 and at G7 | Einar | G6, G7 |
-| When G7 is requested at Task 27, the controller raises with Einar both the Vercel connection above (Task 28 connects the LABAK repository to `labak-hub-staging`, approval at G6 and G7) and the G6.0 check that the existing project `landssamband-bakarameistara` would not build `hub-integration`, which runs before the first push of that branch (the matching note is in the plan's Task 27) | Controller raises with Einar | G7 request at Task 27; again at G6 |
+| When G7 is requested at Task 27, the controller raises with Einar both the Vercel connection above (Task 28 connects the LABAK repository to `labak-hub-staging`, approval at G6 and G7) and the G6.0 check that the existing project `landssamband-bakarameistara` has no Git connection to the LABAK repository, which runs before the first push of that branch (the matching note is in the plan's Task 27) | Controller raises with Einar | G7 request at Task 27; again at G6 |
 | A `deny` rule for agent Edit and Write of `.env` and `.env.local`: the project settings deny only Read of them, and the repository root is writable for agents, so an agent could change `.env.local` (for example add a second `NEXT_PUBLIC_SUPABASE_URL`). The section 7.2 scripts refuse a duplicate name, a malformed value and another project's URL, but other tools that read the file may not; adding the rule is a `.claude/**` change for Einar to approve | Controller raises with Einar | Before G3 (before staging values go into `.env.local`) |
 | `ask` rules for risky hosted Supabase commands (`supabase config push`, `supabase db reset --linked`, `supabase migration repair`): today the project settings have no `ask` rule for them, so G3.2's "do not use `supabase config push`" is behavioural only; adding the rules is a `.claude/**` change for Einar to approve | Controller raises with Einar | Before G3 |
 | The email rate limit value (proposed 100 per hour) | Einar confirms | G3 |
