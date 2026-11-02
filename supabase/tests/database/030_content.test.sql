@@ -38,7 +38,7 @@ select table_privs_are('cms', 'entries', 'authenticated', array['SELECT'], 'auth
 select table_privs_are('cms', 'drafts', 'authenticated', array['SELECT'], 'authenticated: table-level select only on drafts');
 select table_privs_are('cms', 'revisions', 'authenticated', array['SELECT'], 'authenticated: select only on revisions');
 select table_privs_are('cms', 'entries', 'service_role', array['SELECT'], 'service_role: table-level select only on entries');
-select table_privs_are('cms', 'drafts', 'service_role', array['SELECT'], 'service_role: select only on drafts');
+select table_privs_are('cms', 'drafts', 'service_role', array['SELECT'], 'service_role: table-level select only on drafts (no insert, delete, truncate)');
 select table_privs_are('cms', 'revisions', 'service_role', array['SELECT', 'INSERT'], 'service_role: select, insert on revisions');
 select table_privs_are('cms', 'entries', 'anon', array[]::text[], 'anon: nothing on entries');
 select table_privs_are('cms', 'drafts', 'anon', array[]::text[], 'anon: nothing on drafts');
@@ -61,8 +61,11 @@ select set_eq($$ select * from tests.column_privs('service_role', 'cms.entries')
   $$ values ('published_rev_id', 'UPDATE'), ('published_draft_version', 'UPDATE'),
             ('first_published_at', 'UPDATE'), ('last_published_at', 'UPDATE') $$,
   'service_role: update only the publish pointer and timestamps on entries');
-select is_empty($$ select * from tests.column_privs('service_role', 'cms.drafts') $$,
-  'service_role: no insert, update or references on any drafts column');
+-- Plan decision 31 (Task 11): update (updated_at) only, so worker_commit_publish
+-- can lock the draft FOR UPDATE (§6.2 step 1); the worker never updates drafts.
+select set_eq($$ select * from tests.column_privs('service_role', 'cms.drafts') $$,
+  $$ values ('updated_at', 'UPDATE') $$,
+  'service_role: update (updated_at) only on drafts (decision 31); no insert or references');
 select set_eq($$ select * from tests.column_privs('service_role', 'cms.revisions') $$,
   $$ select a.attname::text, 'INSERT' from pg_catalog.pg_attribute a
      where a.attrelid = 'cms.revisions'::regclass and a.attnum > 0 and not a.attisdropped $$,

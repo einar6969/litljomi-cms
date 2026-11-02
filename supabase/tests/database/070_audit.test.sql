@@ -96,9 +96,10 @@ select is((select qual from pg_catalog.pg_policies where schemaname = 'cms' and 
 -- Triggers (plan Task 10): the actor trigger on audit_log and the audit
 -- triggers. 050 and 060 pin the full trigger lists of assets and publish_requests.
 select triggers_are('cms', 'audit_log', array['audit_log_force_actor'], 'audit_log triggers: audit_force_actor');
+-- entries_lock_first_published_at is Task 11's (first_published_at is write-once).
 select triggers_are('cms', 'entries', array['entries_force_actor', 'entries_check_actor', 'entries_lock_slug',
-    'entries_audit_insert', 'entries_audit_update'],
-  'entries triggers: actor, slug lock and audit');
+    'entries_audit_insert', 'entries_audit_update', 'entries_lock_first_published_at'],
+  'entries triggers: actor, slug lock, first_published_at lock and audit');
 select triggers_are('cms', 'releases', array['releases_audit_update'], 'releases triggers: audit on status change');
 select triggers_are('cms', 'memberships', array['memberships_audit'], 'memberships triggers: audit on insert and delete');
 select triggers_are('cms', 'drafts', array['drafts_bump_version', 'drafts_check_version', 'drafts_force_actor',

@@ -3,7 +3,7 @@
 -- that need tables.
 begin;
 \ir _helpers.sql
-select plan(36);
+select plan(40);
 
 select has_schema('api');
 select has_schema('cms');
@@ -54,6 +54,28 @@ select is_empty($$ select p.oid::regprocedure::text from pg_proc p join pg_names
   where n.nspname = 'api'
     and (p.proacl is null or exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0)) $$,
   'no api function is executable by PUBLIC');
+-- worker_* and admin_* (§4.6, §8.1 item 2; plan Task 11): EXECUTE for
+-- service_role only; the owner (postgres) is the only other grantee.
+select is((select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'api' and p.proname ~ '^(worker|admin)_'), 14,
+  'api holds the 14 worker_* and admin_* functions (so the checks below are not vacuous)');
+select is_empty($$ select p.oid::regprocedure::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'api' and p.proname ~ '^(worker|admin)_'
+    and (not has_function_privilege('service_role', p.oid, 'execute')
+         or has_function_privilege('authenticated', p.oid, 'execute')
+         or has_function_privilege('anon', p.oid, 'execute')) $$,
+  'every worker_* and admin_* function is executable by service_role and not by authenticated or anon');
+select is_empty($$ select p.oid::regprocedure::text, a.grantee::regrole::text from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace, aclexplode(p.proacl) a
+  where n.nspname = 'api' and p.proname ~ '^(worker|admin)_'
+    and (a.grantee = 0 or a.grantee::regrole::text not in ('postgres', 'service_role')) $$,
+  'worker_* and admin_* grantees: postgres (owner) and service_role only');
+-- The editor's functions and the worker's never overlap: no api function is
+-- executable by both authenticated and service_role.
+select is_empty($$ select p.oid::regprocedure::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'api' and has_function_privilege('authenticated', p.oid, 'execute')
+    and has_function_privilege('service_role', p.oid, 'execute') $$,
+  'no api function is executable by both authenticated and service_role');
 
 -- Relations in api (§4.2): security_invoker views only, nothing for anon or PUBLIC.
 select is_empty($$ select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
