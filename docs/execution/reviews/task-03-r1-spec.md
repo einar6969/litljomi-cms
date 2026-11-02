@@ -1,0 +1,14 @@
+# Task 3 (Hosted environments runbook): spec review, round 1
+
+- Reviewer: fresh `cms-spec-reviewer` (Sonnet), 2026-11-02
+- Changes: 27e3d3b (decision 21 local configuration), 2f5c62f (runbook, `.env.example`, env test)
+- Result: **PASS** (no Critical or Important; 3 Minor)
+
+Minor (verbatim in substance)
+- staging.md:49 (deployment sequence row 12): "Pro plan for per-minute cron" lacks the "**Einar: upgrade when needed**" marker (present on the matching steps at 301 and 421); a consistency gap in the table.
+- staging.md:137 (secure password change row): verifies only that "the setting shows on" and does not say where on hosted it is changed; the section intro marks menu paths "confirm at execution time"; stricter to say whether the dashboard or Management API exposes it. Line 153 covers the Auth-version check.
+- env-example.test.ts:56-59: the extra "values are empty" test follows from R7; scope-compatible.
+
+Compliant: Task 3's three files only in 2f5c62f, exact commit message; decision 21's local section matches (assertion, `secure_password_change = true`, plan S3 says `GET /auth/v1/reauthenticate`, exact message); the 10 environment variable names match the Interfaces in `.env.example` and the section 13 table, checked both ways by the test with paths and heading from its own location and no hard-coded names (Vitest tools/checks 121 pass, env test 4/4); Step 1 coverage complete (EU regions with London, Zurich and generic Europe excluded; `api`-only schemas; Auth settings; hook enabling and revocation with privilege check, count 0, `jwt_expiry`; decision-20 procedure with when, checks, expected results, failure handling, automation deferred; decision 18 limitations in full; both SMTP providers; SPF/DKIM/DMARC in litljomi.is; rate limit 30 → 100 with a reason; three Vercel projects without deployment protection and the cron; secrets table); decision 21 as Einar specified (24-hour rule, GET nonce, aal2, other sessions revoked; additional protection, not fresh verification for every change; CLI-reference discrepancy noted); every G2–G6 step with action, owner, settings and verify; nothing executed; status line per R2; G2–G7 boundaries and the LABAK off-limits paragraph; G2.4 SHA pinning; no secret values.
+Out-of-brief choices judged compatible: empty values (R7); numbered heading; rate limit 100 with reason (open for Einar); Einar entering secrets (a proposal, compatible with §8.2); no `supabase config push` (consistent with decision 18). Open items raised, not resolved: `@litljomi` scope under owner `einar6969` (line 82) may conflict with Task 28 Step 1; SMTP credentials not in the CMS environment although §8.2 lists "Supabase Auth settings and CMS environment" (lines 344, 416) — a visible departure from the spec's table, for the controller to raise with Einar; production project out of scope.
+Commands: read-only git, `pnpm vitest run tools/checks`; working tree unchanged by the reviewer.
