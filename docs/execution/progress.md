@@ -29,8 +29,8 @@ Branch: `m1/phase-1` · Updated: 2026-11-02T08:37:01.997Z · Next task: **17** C
 | 17 | CMS app skeleton and the privileged zone | 3 | high | A | pending | — | — | G0 G1 | — |
 | 19 | Worker step 1: validate, project and commit | 3 | high | A | pending | — | — | G0 G1 | — |
 | 20 | Worker step 2: release build | 3 | high | A | pending | — | — | G0 G1 | — |
-| 21 | Worker step 3: notify, live check, sweep | 3 | high | A | pending | — | — | G0 G1 | — |
-| 26 | Demo fixture site | 5 | medium | A | pending | — | — | G0 G1 | C2 |
+| 26 | Demo fixture site | 5 | medium | B | pending | — | — | G0 G1 | — |
+| 21 | Worker step 3: notify, live check, sweep | 3 | high | A | pending | — | — | G0 G1 | C2 |
 | 22 | Sign-in, tenant routing and Icelandic shell | 4 | high | A | pending | — | — | G0 G1 | — |
 | 23 | Entry list, new entry, generated form, autosave | 4 | low | A | pending | — | — | G0 G1 | — |
 | 24 | Image upload and rich-text field | 4 | high | A | pending | — | — | G0 G1 | — |
@@ -73,7 +73,7 @@ None.
 |---|---|---|---|---|
 | C0 | 3 | reported | docs/execution/checkpoints/C0.md | yes |
 | C1 | 18 | reported | docs/execution/checkpoints/C1.md | yes |
-| C2 | 26 | pending | — | no |
+| C2 | 21 | pending | — | no |
 | C3 | 27 | pending | — | no |
 | C4 | 29 | pending | — | no |
 
@@ -106,7 +106,7 @@ None.
 - **C1 approved** by Einar on 2026-11-02 (recorded in `state.json`, commit `f918d59`); `main` was fast-forwarded to `m1/phase-1` at that commit (local only). Later commits on `m1/phase-1` are the C1 follow-ups below; `main` stays where it is until the next checkpoint.
 - **Decision 32** records Einar's C1 rulings: worker statement timeout per statement on the worker's own connection in Task 19 (row moved to Task 19); spec §4.2 (Vault outside the no-definer rule) and §6.2 step 5 (refs checked from the copied data) amended; Auth-user deletion keeps failing closed and offboarding removes memberships first; links with credentials rejected (`feb827c`); plan wording updated in one change (`e0fc0b6`, `10dbbb5`) with one combined review (pass).
 - **Deferred Minors:** the four stale "Task 15" rows were cleared by `e97329c`; every C1 row was triaged once: cheap fixes in `7caffe3` (cleanup), the rest accepted with a one-line reason. Reviews of the cleanup: security r1 pass, combined spec-and-quality r1 pass (`docs/execution/reviews/c1-*`). Suite after the cleanup (implementer, confirmed by the security reviewer): harness 32/32; lint, typecheck, slugs clean; Vitest 25 files 342; pgTAP 13 files 1252; integration 6 files 67.
-- **Two questions for Einar** (rows with owner "Einar" in `deferred-minors.md`): narrow `service_role` UPDATE on `cms.tenants` to `(name, status)`?; lock the tenant `FOR SHARE` and the membership `FOR KEY SHARE` in the worker commit (needs a one-column UPDATE grant on `cms.memberships`, like decision 31)?
+- **Decision 33** (Einar, 2026-11-02): narrow `service_role` UPDATE on `cms.tenants` to `(name, status)`, and lock the tenant row `FOR SHARE` in both worker commit functions; no membership lock and no `cms.memberships` grant (the millisecond revocation race is accepted and documented). Implement both as one small change in Task 19 (the next phase's first worker task), with tests and a security review; the two rows in `deferred-minors.md` are owned by Task 19.
 - Einar removes the three worktrees himself. The next phase (Task 17 onward) starts in a fresh controller session.
 
 ### Handoff at checkpoint C1 (2026-11-02, second controller session)

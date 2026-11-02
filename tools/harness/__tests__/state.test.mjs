@@ -11,7 +11,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '../../..');
 const PLAN_INDEX = JSON.parse(fs.readFileSync(path.join(REPO, 'tools/harness/plan-index.json'), 'utf8'));
 const SCHEMA = JSON.parse(fs.readFileSync(path.join(REPO, 'docs/execution/state.schema.json'), 'utf8'));
-const EXECUTION_ORDER = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 17, 19, 20, 21, 26, 22, 23, 24, 25, 27, 28, 29];
+const EXECUTION_ORDER = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 17, 19, 20, 26, 21, 22, 23, 24, 25, 27, 28, 29];
 
 function gatesFile(approved = ['G0']) {
   const gates = {};
@@ -92,12 +92,12 @@ test('plan-index lists Tasks 0–29 in execution order with phases, gates and ch
   assert.deepEqual(byId[28].requiredGates, ['G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6']);
   assert.deepEqual(byId[29].requiredGates, ['G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6']);
   const checkpoints = PLAN_INDEX.filter((t) => t.checkpointAfter).map((t) => [t.id, t.checkpointAfter]);
-  assert.deepEqual(checkpoints, [[3, 'C0'], [18, 'C1'], [26, 'C2'], [27, 'C3'], [29, 'C4']]);
+  assert.deepEqual(checkpoints, [[3, 'C0'], [18, 'C1'], [21, 'C2'], [27, 'C3'], [29, 'C4']]);
   const tiers = { high: [0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 17, 19, 20, 21, 22, 24, 25, 28], medium: [18, 26, 27, 29] };
   for (const t of PLAN_INDEX) {
     const expected = tiers.high.includes(t.id) ? 'high' : tiers.medium.includes(t.id) ? 'medium' : 'low';
     assert.equal(t.tier, expected, `tier of Task ${t.id}`);
-    assert.equal(t.lane, [13, 14, 15, 16, 18].includes(t.id) ? 'B' : 'A', `lane of Task ${t.id}`);
+    assert.equal(t.lane, [13, 14, 15, 16, 18, 26].includes(t.id) ? 'B' : 'A', `lane of Task ${t.id}`);
     for (const dep of t.dependsOn) {
       assert.ok(EXECUTION_ORDER.indexOf(dep) < EXECUTION_ORDER.indexOf(t.id), `Task ${t.id} depends on a later task ${dep}`);
     }
@@ -106,6 +106,9 @@ test('plan-index lists Tasks 0–29 in execution order with phases, gates and ch
   assert.deepEqual(byId[18].dependsOn, [16]);
   assert.deepEqual(byId[17].dependsOn, [12, 16]);
   assert.deepEqual(byId[19].dependsOn, [17, 18]);
+  assert.deepEqual(byId[26].dependsOn, [16, 18]);
+  assert.deepEqual(byId[21].dependsOn, [20, 26]);
+  assert.deepEqual(byId[22].dependsOn, [21, 26]);
   const phases = { 0: [0, 1, 2, 3], 1: [4, 5, 6, 7, 8, 9, 10, 11, 12], 2: [13, 14, 15, 16], 3: [17, 18, 19, 20, 21], 4: [22, 23, 24, 25], 5: [26, 27], 6: [28, 29] };
   for (const [phase, ids] of Object.entries(phases)) for (const id of ids) assert.equal(byId[id].phase, Number(phase));
   assert.equal(byId[0].title, 'Execution setup');
