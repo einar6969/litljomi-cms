@@ -131,7 +131,8 @@ test.describe('labak editor, remaining screens', () => {
 
   test('tenant home and not found', async ({ page }) => {
     await page.goto('/t/labak');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('LABAK');
+    // The tenant home's h1 is the seeded tenant name (tests/integration/src/seed.ts).
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Landssamband bakarameistara');
     await shoot2(page, 'tenant-home');
     await page.goto('/t/finnst-ekki');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(t.notFound.title);
