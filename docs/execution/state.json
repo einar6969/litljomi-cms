@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T00:47:29.600Z",
+  "updatedAt": "2026-11-02T01:11:29.045Z",
   "branch": "m1/phase-0",
   "tasks": [
     {
@@ -138,10 +138,13 @@
     },
     {
       "id": 3,
-      "status": "pending",
+      "status": "in_progress",
       "commits": [],
       "reviews": {},
-      "gatesUsed": [],
+      "gatesUsed": [
+        "G0",
+        "G1"
+      ],
       "blockers": [
         {
           "text": "N1 (Task 2 security review r2): password sign-in is reachable once the email provider is on, contradicting spec 4.4 (No passwords in v1). Einar decides the mitigation before the Task 3 runbook fixes hosted auth settings.",
@@ -150,7 +153,8 @@
           "resolvedAt": "2026-11-02T00:47:29.600Z"
         }
       ],
-      "notes": "N1 blocker resolved on 2026-11-02 by decision 18, approved by Einar in chat: \"I approve the hardened Custom Access Token hook as the solution to N1, and I approve correcting the email-confirmation configuration.\" Task 3 must include the decision 18/19 runbook items. Not started: Einar asked to stop before Task 3."
+      "notes": "N1 blocker resolved on 2026-11-02 by decision 18, approved by Einar in chat: \"I approve the hardened Custom Access Token hook as the solution to N1, and I approve correcting the email-confirmation configuration.\" Task 3 must include the decision 18/19 runbook items. Not started: Einar asked to stop before Task 3.",
+      "startedAt": "2026-11-02T01:11:29.045Z"
     },
     {
       "id": 4,

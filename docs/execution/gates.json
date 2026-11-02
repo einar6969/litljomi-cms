@@ -19,6 +19,11 @@
           "at": "2026-11-01",
           "scope": "Task 2: Local Supabase stack and pgTAP harness, under G0 and G1 (local only). Any sandbox configuration change for Docker/OrbStack is presented to Einar as an exact diff before it is applied; the sandbox is not bypassed.",
           "note": "Einar in chat, 2026-11-01: \"I also authorize Task 2: local Supabase stack and pgTAP harness, under the existing G0 approval and the newly approved G1.\" and \"If the sandbox requires a configuration change to operate Docker or OrbStack, present the exact proposed change for my approval before applying it. Do not bypass the sandbox.\""
+        },
+        {
+          "at": "2026-11-02",
+          "scope": "Task 3: hosted environments runbook, documentation only, under G0. Includes the local configuration for decision 21 (secure_password_change, verified locally). G2–G7 stay unauthorized: the hosted setup is documented, not executed.",
+          "note": "Einar in chat, 2026-11-02: \"I approve starting Task 3: Hosted Environments Runbook, strictly as a documentation-only task.\" and \"Preserve the existing G2–G7 approval boundaries. Document the hosted setup, but do not execute it.\""
         }
       ]
     },
