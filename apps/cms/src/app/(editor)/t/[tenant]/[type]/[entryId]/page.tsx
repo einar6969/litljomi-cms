@@ -15,6 +15,7 @@ type Detail = {
   slug: string | null;
   draft_version: number;
   first_published_at: string | null;
+  status: 'draft' | 'published' | 'changed' | 'archived';
 };
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -31,7 +32,7 @@ export default async function EntryPage({ params }: Props) {
   if (!type) notFound();
   const { data, error } = await (await createEditorClient())
     .from('entry_detail')
-    .select('data, slug, draft_version, first_published_at')
+    .select('data, slug, draft_version, first_published_at, status')
     .eq('id', entryId)
     .eq('tenant_id', tenant.id)
     .eq('type', type.name)
@@ -54,6 +55,7 @@ export default async function EntryPage({ params }: Props) {
         initialVersion={entry.draft_version}
         initialSlug={entry.slug}
         slugLocked={entry.first_published_at !== null}
+        published={entry.status === 'published' || entry.status === 'changed'}
       />
     </main>
   );

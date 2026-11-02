@@ -161,11 +161,104 @@ describe('apps/cms/e2e/global-setup.ts', () => {
 });
 
 describe('apps/cms/playwright.config.ts', () => {
-  it('starts the web server with Supabase CLI and Next.js network calls off', async () => {
+  it('starts every web server with Supabase CLI and Next.js network calls off', async () => {
     const path = pathToFileURL(join(repoRoot, 'apps', 'cms', 'playwright.config.ts')).href;
     const { default: config } = (await import(/* @vite-ignore */ path)) as {
-      default: { webServer: { env: Record<string, string> } };
+      default: { webServer: Array<{ name: string; command: string; env: Record<string, string> }> };
     };
-    expect(config.webServer.env).toMatchObject({ ...SUPABASE_QUIET, NEXT_TELEMETRY_DISABLED: '1' });
+    expect(config.webServer.map((w) => w.name)).toEqual(['cms', 'demo-site']);
+    for (const server of config.webServer) expect(server.env, server.name).toMatchObject({ ...SUPABASE_QUIET, NEXT_TELEMETRY_DISABLED: '1' });
+    // The demo site is started by the guarded script, with this Node binary (no package manager).
+    expect(config.webServer[1]!.command).toBe(`${JSON.stringify(process.execPath)} e2e/demo-site-server.ts`);
+  });
+});
+
+describe('apps/cms/e2e/demo-site-server.ts', () => {
+  const serverPath = pathToFileURL(join(repoRoot, 'apps', 'cms', 'e2e', 'demo-site-server.ts')).href;
+  type Server = { main: (o?: { siteDir?: string }) => Promise<void>; siteEnv: (base?: NodeJS.ProcessEnv) => NodeJS.ProcessEnv };
+  const load = async () => (await import(/* @vite-ignore */ serverPath)) as Server;
+  const fetchMock = vi.fn<typeof fetch>();
+  let exit: { mockRestore(): void };
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+    vi.stubGlobal('fetch', fetchMock);
+    exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit ${code}`);
+    }) as never);
+    spawnMock.mockImplementation(() => {
+      const child = Object.assign(new EventEmitter(), { kill: vi.fn() });
+      queueMicrotask(() => child.emit('exit', 0, null));
+      return child;
+    });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    exit.mockRestore();
+    process.exitCode = undefined;
+  });
+
+  /** Nothing listens on the demo site's port; the demo tenant's pointer is public. */
+  const freePortAndPointer = () =>
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/demo/current.json')) return Response.json({ format: 1, release: 1 });
+      throw new TypeError('fetch failed');
+    });
+
+  it('gives the site the loopback stack, the seeded secret and Next.js telemetry off', async () => {
+    const { siteEnv } = await load();
+    const env = siteEnv({});
+    expect(env).toMatchObject({ NEXT_TELEMETRY_DISABLED: '1', NODE_ENV: 'production', CMS_TENANT: 'demo' });
+    expect(env.CMS_DELIVERY_BASE_URL).toBe('http://127.0.0.1:54321/storage/v1/object/public/delivery');
+  });
+
+  it('builds and starts the site on 127.0.0.1:3101 with that environment, reaching only loopback', async () => {
+    freePortAndPointer();
+    const siteDir = mkdtempSync(join(tmp, 'site-'));
+    const { main } = await load();
+    await main({ siteDir });
+    expect(spawnMock).toHaveBeenCalledTimes(2);
+    type Call = [string, string[], { cwd: string; env: NodeJS.ProcessEnv }];
+    const [build, start] = spawnMock.mock.calls as unknown as [Call, Call];
+    expect(build[1].slice(1)).toEqual(['build']);
+    expect(start[1].slice(1)).toEqual(['start', '-p', '3101', '-H', '127.0.0.1']);
+    for (const call of [build, start]) {
+      expect(call[0]).toBe(process.execPath);
+      expect(call[2].cwd).toBe(siteDir);
+      expect(call[2].env).toMatchObject({ ...SUPABASE_QUIET, NEXT_TELEMETRY_DISABLED: '1' });
+    }
+    const reached = fetchMock.mock.calls.map(([input]) => new URL(String(input)).hostname);
+    expect(reached.length).toBeGreaterThan(0);
+    expect(new Set(reached)).toEqual(new Set(['localhost', '127.0.0.1']));
+  });
+
+  it.each(['.env', '.env.local', '.env.production'])('refuses to run when apps/demo-site/%s exists, before any request', async (name) => {
+    freePortAndPointer();
+    const siteDir = mkdtempSync(join(tmp, 'site-'));
+    writeFileSync(join(siteDir, name), 'X=1\n');
+    const { main } = await load();
+    await expect(main({ siteDir })).rejects.toThrow('exit 1');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses to run when the demo site port is already in use', async () => {
+    fetchMock.mockResolvedValue(new Response('busy'));
+    const { main } = await load();
+    await expect(main({ siteDir: mkdtempSync(join(tmp, 'site-')) })).rejects.toThrow('exit 1');
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('uses the seeded demo site of the integration fixtures', async () => {
+    const demo = (await import(/* @vite-ignore */ pathToFileURL(join(repoRoot, 'apps', 'cms', 'e2e', 'support', 'demo-site.ts')).href)) as {
+      DEMO_SITE_URL: string;
+      DEMO_SITE_WEBHOOK_SECRET: string;
+    };
+    const { DEMO_SITE } = (await import(/* @vite-ignore */ pathToFileURL(join(repoRoot, 'tests', 'integration', 'src', 'fixtures.ts')).href)) as {
+      DEMO_SITE: { baseUrl: string; webhookSecret: string };
+    };
+    expect(demo.DEMO_SITE_URL).toBe(DEMO_SITE.baseUrl);
+    expect(demo.DEMO_SITE_WEBHOOK_SECRET).toBe(DEMO_SITE.webhookSecret);
   });
 });

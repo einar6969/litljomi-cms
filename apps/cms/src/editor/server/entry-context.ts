@@ -29,6 +29,9 @@ export function failureOf({ error, status }: ApiResult & { error: ApiError }): A
   return 'error';
 }
 
+/** A failed `api` call for an action whose only own code is `auth`: everything else is the generic error. */
+export const authOrError = (result: ApiResult & { error: ApiError }): 'auth' | 'error' => (failureOf(result) === 'auth' ? 'auth' : 'error');
+
 /** True when Supabase Auth, asked with the editor's session, says there is a signed-in user. */
 export async function hasSession(client: SupabaseClient): Promise<boolean> {
   try {

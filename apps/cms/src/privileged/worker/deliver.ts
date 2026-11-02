@@ -7,6 +7,7 @@
 import type { LiveCheck, ModuleManifest, ReleaseView, SiteEntry } from '@litljomi/cms-schema';
 import type { Bundle, BundleEntry } from '@litljomi/cms-sdk';
 import { getModule } from '@/modules/registry';
+import { MAX_NOTIFY_ATTEMPTS } from '../../lib/delivery';
 import { supabaseUrl } from '../../lib/supabase/env';
 import type { SupabaseClient } from '../../lib/supabase/types';
 import { createAdminClient } from '../admin-client';
@@ -17,8 +18,10 @@ import { notifySite } from './notify';
 import { publicMediaUrl } from './projection-context';
 import { callRpc } from './rpc';
 
-/** M1: one notification attempt per sweep, up to this many per delivery (decision 35, plan Task 21). */
-export const MAX_NOTIFY_ATTEMPTS = 10;
+// The attempt limit lives in lib/delivery.ts, which the editor's status display also reads
+// (decision 37.8); re-exported for the sweep and the tests.
+export { MAX_NOTIFY_ATTEMPTS };
+
 /** At most this many live-check failures are stored in last_error. */
 const MAX_STORED_FAILURES = 50;
 

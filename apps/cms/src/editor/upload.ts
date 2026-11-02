@@ -45,7 +45,7 @@ export function safeFilename(name: string, mime: AcceptedMime): string {
 export type PreparedUpload = { ok: true; assetId: string; path: string } | { ok: false; reason: 'type' | 'size' };
 
 /**
- * Checks a chosen file before it is uploaded (review focus 4) and names it: a fresh asset id
+ * Checks a chosen file before it is uploaded (unsupported or oversized images are refused before upload) and names it: a fresh asset id
  * (`crypto.randomUUID()`, spec §4.3) and the path `${tenantId}/${assetId}/${safeFilename}` in
  * `media-private` (§5.6). The type is the browser's (from the file name); the server checks the
  * real bytes after upload. `tenantId` is the tenant the page resolved through `api.my_tenants`.

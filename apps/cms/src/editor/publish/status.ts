@@ -1,0 +1,145 @@
+// What the editor is shown about an entry's publication (spec §6.3, §7.4; plan Task 25, decisions
+// 35, 36.1, 36.4 and 37.8), derived from its row of `api.publication_status`. Success is never
+// shown before its proof exists: "Birt á vef ✓" only when every active site's live_status is 'ok'
+// for the request's delivered release. No text promises removal from caches ("Withdrawal and
+// failure visibility").
+import { t } from '@/i18n/is';
+import { MAX_NOTIFY_ATTEMPTS } from '@/lib/delivery';
+
+export type RequestStatus = 'pending' | 'validating' | 'committed' | 'failed_validation' | 'superseded' | 'rejected' | 'failed';
+
+/** One row of `api.publication_status` (20261102001500_publication_status.sql): an entry's latest request. */
+export type PublicationStatusRow = {
+  request_id: string;
+  tenant_id: string;
+  entry_id: string;
+  action: 'publish' | 'unpublish';
+  status: RequestStatus;
+  error: unknown;
+  requested_at: string;
+  release_number: number | null;
+  release_status: 'building' | 'delivered' | 'failed' | null;
+  /** The request's release left this entry out (`releases.error.omitted`). */
+  omitted: boolean;
+  /** asset_missing only: the missing images' filenames. */
+  missing_assets: string[] | null;
+  /** The tenant's active sites, and how many of them are notified, live ok and not confirmed. */
+  site_count: number;
+  sites_notified: number;
+  sites_live_ok: number;
+  sites_not_confirmed: number;
+  /** The most notification attempts an active site not yet notified has used. */
+  notify_attempts: number;
+};
+
+export type DisplayState = { label: string; tone: 'pending' | 'ok' | 'error'; detail?: string };
+
+export type DisplayOptions = {
+  /** The content type's field labels by key, to name the fields a validation failure is about. */
+  fieldLabels?: Readonly<Record<string, string>>;
+};
+
+/** The columns the panel reads, in the view's order. */
+export const PUBLICATION_STATUS_COLUMNS =
+  'request_id, tenant_id, entry_id, action, status, error, requested_at, release_number, release_status, omitted, ' +
+  'missing_assets, site_count, sites_notified, sites_live_ok, sites_not_confirmed, notify_attempts';
+
+const inProgress: DisplayState = { label: t.publish.inProgress, tone: 'pending' };
+
+/** True once the state can no longer change without a new request: polling stops. */
+export const isFinal = (state: DisplayState): boolean => state.tone !== 'pending';
+
+/**
+ * The §7.4 state of an entry's latest request:
+ *
+ * - requested, validating, committed, and delivered but not every site notified → "Í birtingu…"
+ *   (a release still building, or one that failed before delivery, links no request, so it is
+ *   "committed" here too);
+ * - every active site notified, a live check still running → "Bíður eftir vefnum";
+ * - every active site's live_status ok → "Birt á vef ✓" (publish) or "Tekið af vef" (unpublish);
+ * - left out of the release, or a site's notification attempts exhausted → "Birting á vef mistókst";
+ * - every site settled, one not confirmed → "Ekki staðfest á vef";
+ * - the request's own failures: failed_validation, superseded, rejected, failed.
+ *
+ * A tenant with no active site never reaches a confirmed state: there is nothing to prove it on.
+ */
+export function displayState(row: PublicationStatusRow, options: DisplayOptions = {}): DisplayState {
+  switch (row.status) {
+    case 'pending':
+    case 'validating':
+      return inProgress;
+    case 'committed':
+      return deliveryState(row);
+    case 'failed_validation':
+      return invalidState(row, options.fieldLabels ?? {});
+    case 'superseded':
+      return { label: t.publish.superseded, tone: 'error' };
+    case 'rejected':
+      return { label: t.publish.rejected, tone: 'error' };
+    case 'failed':
+      return { label: t.publish.failed, tone: 'error' };
+    default:
+      // Fail closed: a status this display does not know is never shown as success.
+      return { label: t.publish.failed, tone: 'error' };
+  }
+}
+
+function deliveryState(row: PublicationStatusRow): DisplayState {
+  if (row.release_status !== 'delivered') return inProgress;
+  const deliveryFailed: DisplayState = { label: t.publish.deliveryFailed, tone: 'error', detail: t.publish.deliveryFailedDetail };
+  // §7.1: an entry left out of a release is never live. An unpublish has nothing to leave out.
+  if (row.action === 'publish' && row.omitted) return deliveryFailed;
+  const sites = row.site_count;
+  if (sites > 0 && row.sites_live_ok === sites) {
+    return row.action === 'publish' ? { label: t.publish.live, tone: 'ok' } : { label: t.publish.removed, tone: 'ok', detail: t.publish.removedDetail };
+  }
+  // §7.4, decision 36.1: the sweep stops retrying at the limit and alerts.
+  if (row.notify_attempts >= MAX_NOTIFY_ATTEMPTS) return deliveryFailed;
+  if (sites > 0 && row.sites_live_ok + row.sites_not_confirmed === sites) {
+    return { label: t.publish.notConfirmed, tone: 'error', detail: t.publish.notConfirmedDetail };
+  }
+  if (sites > 0 && row.sites_notified === sites) return { label: t.publish.revalidated, tone: 'pending' };
+  return inProgress;
+}
+
+const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+// A reference's location as the database records it: jsonpath with quoted keys, `$."field"…`.
+const REF_FIELD = /^\$\."([A-Za-z0-9_-]{1,64})"/;
+
+/** The keys of the top-level fields a recorded validation error is about, in order, once each. */
+function fieldKeysOf(error: Record<string, unknown>): string[] {
+  const keys: string[] = [];
+  if (Array.isArray(error.issues)) {
+    for (const issue of error.issues) {
+      const first = isObject(issue) && Array.isArray(issue.path) ? issue.path[0] : undefined;
+      if (typeof first === 'string' && first !== '') keys.push(first);
+    }
+  }
+  if (Array.isArray(error.refs)) {
+    for (const ref of error.refs) {
+      const match = isObject(ref) && typeof ref.path === 'string' ? REF_FIELD.exec(ref.path) : null;
+      if (match) keys.push(match[1]!);
+    }
+  }
+  return [...new Set(keys)];
+}
+
+function invalidState(row: PublicationStatusRow, labels: Readonly<Record<string, string>>): DisplayState {
+  const error = isObject(row.error) ? row.error : {};
+  const named = (names: string[], detail?: string): DisplayState => ({
+    label: `${t.publish.invalid} ${names.length > 0 ? names.join(', ') : t.publish.invalidGeneric}`,
+    tone: 'error',
+    ...(detail ? { detail } : {}),
+  });
+  if (error.code === 'asset_missing') {
+    const files = (row.missing_assets ?? []).filter((f) => typeof f === 'string' && f !== '');
+    return named(files.length > 0 ? files : [t.publish.missingImage], t.publish.missingImageDetail);
+  }
+  if (error.code === 'slug_required') return named([t.editor.slug.label], t.publish.invalidDetail);
+  const keys = fieldKeysOf(error);
+  return named(
+    keys.map((key) => (Object.hasOwn(labels, key) ? labels[key]! : key)),
+    keys.length > 0 ? t.publish.invalidDetail : undefined,
+  );
+}

@@ -5,6 +5,7 @@ import { saveDraftAction, setSlugAction } from '@/app/(editor)/t/[tenant]/action
 import { t } from '@/i18n/is';
 import { createBrowserEditorClient } from '@/lib/supabase/browser';
 import { useAutosave } from '../autosave';
+import { PublishPanel } from '../publish/PublishPanel';
 import type { FieldDescriptor } from './descriptors';
 import { fieldRegistry } from './field-registry';
 import { SlugField } from './SlugField';
@@ -21,6 +22,8 @@ type Props = {
   initialVersion: number;
   initialSlug: string | null;
   slugLocked: boolean;
+  /** The entry has a published revision (Task 25: the publish panel offers to take it down). */
+  published?: boolean;
 };
 
 /** False only when Supabase Auth says the browser has no valid session (not on a network failure). */
@@ -35,7 +38,7 @@ async function sessionIsValid(): Promise<boolean> {
  * edit yet is never touched, so it is sent back exactly as it was loaded. Every edit schedules an
  * autosave; local values stay on the screen whatever the save answers.
  */
-export function EntryForm({ tenant, entryId, fields, titleKey, initialData, initialVersion, initialSlug, slugLocked }: Props) {
+export function EntryForm({ tenant, entryId, fields, titleKey, initialData, initialVersion, initialSlug, slugLocked, published = false }: Props) {
   const [data, setData] = useState<Record<string, unknown>>(initialData);
   const latest = useRef(data);
   const autosave = useAutosave({ entryId, initialVersion, save: saveDraftAction, sessionIsValid });
@@ -53,6 +56,7 @@ export function EntryForm({ tenant, entryId, fields, titleKey, initialData, init
   );
   const titleValue = data[titleKey];
   const title = useMemo(() => (typeof titleValue === 'string' ? titleValue : ''), [titleValue]);
+  const fieldLabels = useMemo(() => Object.fromEntries(fields.map((f) => [f.key, f.label])), [fields]);
 
   return (
     <EditorTenantProvider value={tenant}>
@@ -84,6 +88,14 @@ export function EntryForm({ tenant, entryId, fields, titleKey, initialData, init
         <SlugField entryId={entryId} initialSlug={initialSlug} title={title} locked={slugLocked} setSlug={setSlugAction} />
         <SaveStatus state={autosave.state} retry={autosave.retry} />
       </form>
+      {/* The request carries the version the editor last saw (review focus 3). */}
+      <PublishPanel
+        entryId={entryId}
+        version={autosave.version}
+        disabled={autosave.state === 'conflict' || autosave.state === 'signed_out'}
+        initiallyPublished={published}
+        fieldLabels={fieldLabels}
+      />
     </EditorTenantProvider>
   );
 }
