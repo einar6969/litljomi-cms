@@ -33,4 +33,10 @@ export default defineWorkspace([
       environment: 'jsdom',
     },
   },
+  {
+    test: {
+      name: 'sdk',
+      include: ['packages/sdk/src/__tests__/**/*.test.{ts,tsx}'],
+    },
+  },
 ]);

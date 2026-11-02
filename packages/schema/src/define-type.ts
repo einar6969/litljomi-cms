@@ -40,6 +40,11 @@ function assertFieldKey(key: string): void {
 }
 
 export function defineType<F extends Record<string, AnyFieldKind>>(d: TypeDefinition<F>): ContentType<F> {
+  // A literal `__proto__:` key in an object literal sets the prototype and is silently dropped.
+  const fieldsProto: unknown = Object.getPrototypeOf(d.fields);
+  if (fieldsProto !== Object.prototype && fieldsProto !== null) {
+    throw new Error('defineType: fields must be a plain object (its prototype is not Object.prototype or null; a literal "__proto__" key sets it)');
+  }
   for (const key of Object.keys(d.fields)) assertFieldKey(key);
   const draftShape: Record<string, z.ZodType> = {};
   const publishShape: Record<string, z.ZodType> = {};
