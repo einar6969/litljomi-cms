@@ -37,7 +37,8 @@
         "/Users/einarzoega/.orbstack/run/docker.sock",
         "/var/run/docker.sock"
       ],
-      "allowLocalBinding": true
+      "allowLocalBinding": true,
+      "allowMachLookup": ["org.chromium.Chromium.MachPortRendezvousServer.*"]
     }
   }
 }
