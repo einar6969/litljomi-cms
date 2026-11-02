@@ -58,7 +58,7 @@
 | 18 | security r1 | `defineType`: a `fields` Proxy with a lying prototype passes (trusted module code) (`task-18-r1-security.md`) | C1 | open |
 | 7 | spec r1 | Decision 3's error list: add 23514 for the AFTER checks `drafts.version must increase by exactly 1` and `<table>.<col> must equal auth.uid()` (`task-07-r1-spec.md`) | C1 | open |
 | 7 | security r1, Minor 1 | Editors hold INSERT/DELETE on `draft_refs` (§4.5), so it can diverge from `drafts.data`; the commit must validate references from the copied data or the trigger-written `revision_refs`, never from `draft_refs` (`task-07-r1-security.md`) | Task 11 | open |
-| 7 | Einar's note with decision 27 | Consider a statement timeout on the worker's `service_role` functions as defence in depth (`service_role` has none today) | Task 11 | open |
+| 7 | Einar's notes with decisions 27 and 28 | A statement timeout on the worker's `service_role` functions as defence in depth (`service_role` has none today); decision 28: "Also park for Task 11: a statement timeout on the worker's service_role functions as defence in depth." | Task 11 | open |
 | 3 | quality r2, Minors 1–6 | `docs/runbooks/staging.md`: placeholder list; P-2 pointer to G6.2; record the `vault.secrets` count before P-2; G3.4 owner note for the Management API fallback; "as in G2.5 but not exported" wording; wrap the URL check so `exit 1` does not close the shell (`task-03-r2-quality.md`) | Task 28 (before executing the runbook) | open |
 | 3 | security r6, Minors 1–2 | `staging.md:226` whole-string `REF` check; `staging.md:737` "less likely to be swapped" wording (`task-03-r6-security.md`) | Task 28 | open |
 | 3 | spec r4, Minor 2 | `vercel link` implies Einar's Vercel login, outside the repository (`task-03-r4-spec.md`) | Task 28 | open |
