@@ -6,8 +6,9 @@
 //
 // The site's build reads the tenant's current release, so it can only be built once the demo
 // tenant has one. This script therefore announces itself (Playwright's `wait` pattern, so the run
-// can go on), waits for the public pointer, then builds and starts the site; publish.spec.ts makes
-// the first release through the editor when none exists yet, then waits for the site.
+// can go on), waits for the public pointer, then builds and starts the site; the `demo-release` setup
+// project (demo-release.setup.ts) makes the first release through the editor when none exists yet,
+// then waits for the site.
 //
 // The e2e run is outside the Bash sandbox on the condition that it reaches only loopback and this
 // repository (Einar, 2026-11-02): every URL here passes requireLoopback, the site listens on
@@ -93,7 +94,7 @@ export async function main({ siteDir = demoSiteDir }: { siteDir?: string } = {})
   console.log(DEMO_SITE_READY_LINE);
   const deadline = Date.now() + POINTER_TIMEOUT_MS;
   while (!(await pointerExists())) {
-    if (Date.now() > deadline) fail('the demo tenant has no delivered release; publish.spec.ts creates the first one');
+    if (Date.now() > deadline) fail('the demo tenant has no delivered release; demo-release.setup.ts creates the first one');
     await new Promise((resolve) => setTimeout(resolve, POLL_MS));
   }
 
