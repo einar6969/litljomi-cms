@@ -19,6 +19,8 @@ create type cms.membership_role as enum ('editor');
 
 -- A tenant table (§4.3): tenant_id not null. Its only foreign key to another
 -- cms table points at tenants, which is not a tenant table (§4.1 rule 3).
+-- created_by is `created_by uuid` with no foreign key, exactly as the plan's
+-- Task 5 interface defines it.
 create table cms.memberships (
   tenant_id uuid not null references cms.tenants (id),
   user_id uuid not null references auth.users (id) on delete cascade,
@@ -31,16 +33,23 @@ create table cms.memberships (
 -- RLS lookups filter memberships by user (the primary key leads with tenant_id).
 create index memberships_user_id_idx on cms.memberships (user_id);
 
+-- user_id references auth.users without `on delete cascade`, exactly as the
+-- plan's Task 5 interface defines it (memberships.user_id cascades). Deleting a
+-- platform admin's auth user therefore fails until its row here is removed.
 create table cms.platform_admins (
   user_id uuid primary key references auth.users (id)
 );
 
 -- Tenant slugs are immutable once provisioned (§4.1 rule 7): they appear in
 -- public storage paths and site configuration. Fires for every writer,
--- including service_role and the owner. The trigger is on every UPDATE, not
--- column-specific (UPDATE OF slug, which looks only at the SET list), so the
--- WHEN clause also catches a slug change made by another BEFORE UPDATE trigger
--- that fires earlier (BEFORE triggers fire in name order).
+-- including service_role and the owner.
+--
+-- An AFTER UPDATE row trigger sees the final row, after every BEFORE UPDATE
+-- trigger has run, so the lock does not depend on trigger name order (a BEFORE
+-- trigger named after the lock could otherwise still change NEW.slug). It is on
+-- every UPDATE, not `UPDATE OF slug` (which looks only at the SET list). The
+-- WHEN clause only avoids calling the function; the function re-checks the
+-- condition itself, so it stays correct if the WHEN clause is ever dropped.
 create function private.tenants_lock_slug()
 returns trigger
 language plpgsql
@@ -48,12 +57,15 @@ security invoker
 set search_path = ''
 as $$
 begin
-  raise exception 'slug_locked' using errcode = 'P0001';
+  if new.slug is distinct from old.slug then
+    raise exception 'slug_locked' using errcode = 'P0001';
+  end if;
+  return null;
 end;
 $$;
 
 create trigger tenants_lock_slug
-  before update on cms.tenants
+  after update on cms.tenants
   for each row
   when (old.slug is distinct from new.slug)
   execute function private.tenants_lock_slug();
