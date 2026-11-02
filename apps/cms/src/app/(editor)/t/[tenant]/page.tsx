@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { t } from '@/i18n/is';
 import { getModule } from '@/modules/registry';
@@ -5,7 +6,7 @@ import { currentTenant } from '@/lib/tenant';
 
 type Props = { params: Promise<{ tenant: string }> };
 
-// A tenant's start page: its name and content types (the entry lists come with Task 23). The
+// A tenant's start page: its name and content types (each links to its entry list). The
 // layout shows the "Vefur óvirkur" notice for an inactive tenant; this page renders nothing then.
 export default async function TenantHome({ params }: Props) {
   const { tenant: slug } = await params;
@@ -21,7 +22,9 @@ export default async function TenantHome({ params }: Props) {
           <h2>{t.tenant.contentTypes}</h2>
           <ul>
             {structure.map((item) => (
-              <li key={item.type}>{item.label}</li>
+              <li key={item.type}>
+                <Link href={`/t/${encodeURIComponent(tenant.slug)}/${encodeURIComponent(item.type)}`}>{item.label}</Link>
+              </li>
             ))}
           </ul>
         </section>
