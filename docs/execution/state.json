@@ -1379,7 +1379,9 @@
       "status": "reported",
       "report": "docs/execution/checkpoints/C3.md",
       "at": "2026-11-02T23:39:06.496Z",
-      "approvedByEinar": false
+      "approvedByEinar": true,
+      "approvedAt": "2026-11-02",
+      "approval": "Einar in chat, 2026-11-02: \"C3 rulings (Einar, 2026-11-02). C3 is approved. Record these as decisions:\" and \"Apply the exclusion-removal diff exactly as shown (sha256 `9d62ac1e…b8ed`). Then fast-forward `main` to `m1/phase-1` (local only, no push).\" Rulings recorded as plan decision 42."
     },
     "C4": {
       "status": "pending",
