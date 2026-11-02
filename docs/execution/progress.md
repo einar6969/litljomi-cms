@@ -10,7 +10,7 @@ Branch: `m1/phase-0` · Updated: 2026-11-02T00:47:29.600Z · Next task: **3** Ho
 |---|---|---|---|---|---|---|---|---|
 | 0 | Execution setup | 0 | yes | done | `e6b59c8` `f34f4fb` `f9f7045` `a09ff7b` `6d3b43c` `5ea4f98` `4bfafe6` `c4e4d4b` `45b9776` | spec pass (2), security pass (5), quality pass (2) | G0 | — |
 | 1 | Monorepo skeleton, boundary checks and CI | 0 | no | done | `f95d874` `3c5438f` `d2ca911` `6a48046` | spec pass (4), security pass (3), quality pass (3) | G0 | — |
-| 2 | Local Supabase stack and pgTAP harness | 0 | no | done | `7933579` `20e1748` `b814f5e` `81d18b5` `84b2899` `1670c80` `87ad497` | spec pass (6), security pass (6), quality pass (3) | G0 G1 | — |
+| 2 | Local Supabase stack and pgTAP harness | 0 | no | done | `7933579` `20e1748` `b814f5e` `81d18b5` `84b2899` `1670c80` `87ad497` | spec pass (6), security pass (7), quality pass (4) | G0 G1 | — |
 | 3 | Hosted environments runbook (document only) | 0 | no | pending | — | — | G0 G1 | C0 |
 | 4 | Schemas, privileges and the first catalog tests | 1 | yes | pending | — | — | G0 G1 | — |
 | 5 | Tenancy tables and RLS | 1 | yes | pending | — | — | G0 G1 | — |
