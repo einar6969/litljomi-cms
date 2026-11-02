@@ -349,8 +349,9 @@ function bundleEntry(e: SnapshotEntry, type: ContentType, ctx: ReturnType<typeof
     schemaVersion: e.schema_version,
     data,
   };
-  const contentHash = entryContentHash(record);
-  return { id: record.id, revisionId: record.revisionId, contentHash, ...record };
+  const { id, revisionId, ...rest } = record;
+  // §7.2's field order: contentHash after revisionId.
+  return { id, revisionId, contentHash: entryContentHash(record), ...rest };
 }
 
 function projectionError(error: unknown): unknown {

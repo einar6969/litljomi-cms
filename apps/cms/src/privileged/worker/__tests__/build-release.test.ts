@@ -57,6 +57,7 @@ const requiredTarget: FieldKind<{ _ref: string; _kind: 'entry' }, unknown> = {
   draftSchema: () => targetSchema,
   publishSchema: () => targetSchema,
   project: (v, ctx) => {
+    if (v == null) return null;
     const e = resolveEntry(ctx, v._ref);
     if (e === null) throw new ProjectionError('pair', [{ code: 'custom', path: ['target'], message: 'target missing', input: v }]);
     return e;
@@ -516,7 +517,7 @@ describe('supabaseReleaseStorage', () => {
       },
       download: async (path: string) => {
         seen.push(['download', bucket, path]);
-        return { data: o.download ? new Blob([o.download]) : null, error: o.download ? null : { message: 'Object not found' } };
+        return { data: o.download ? new Blob([new Uint8Array(o.download)]) : null, error: o.download ? null : { message: 'Object not found' } };
       },
       copy: async (src: string, dest: string, options: unknown) => {
         seen.push(['copy', bucket, src, dest, options]);
