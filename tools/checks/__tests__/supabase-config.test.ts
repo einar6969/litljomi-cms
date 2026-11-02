@@ -5,9 +5,7 @@ import { parse } from 'smol-toml';
 import { describe, expect, it } from 'vitest';
 
 const here = dirname(fileURLToPath(import.meta.url));
-// SUPABASE_CONFIG_PATH lets a check run against a temporary copy (failing-first evidence).
-const configPath =
-  process.env.SUPABASE_CONFIG_PATH ?? join(here, '..', '..', '..', 'supabase', 'config.toml');
+const configPath = join(here, '..', '..', '..', 'supabase', 'config.toml');
 
 type Section = Record<string, unknown>;
 const config = parse(readFileSync(configPath, 'utf8')) as {
