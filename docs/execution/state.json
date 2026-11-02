@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T02:24:14.317Z",
+  "updatedAt": "2026-11-02T02:33:35.694Z",
   "branch": "m1/phase-0",
   "tasks": [
     {
@@ -138,14 +138,15 @@
     },
     {
       "id": 3,
-      "status": "in_review",
+      "status": "done",
       "commits": [
         "27e3d3b",
         "2f5c62f",
         "771127c",
         "6a5f940",
         "30c8a25",
-        "9d15d26"
+        "9d15d26",
+        "fc9e807"
       ],
       "reviews": {
         "spec": {
@@ -156,20 +157,19 @@
         },
         "security": {
           "status": "pass",
-          "round": 5,
-          "report": "docs/execution/reviews/task-03-r5-security.md",
-          "at": "2026-11-02T02:28:50.907Z"
+          "round": 6,
+          "report": "docs/execution/reviews/task-03-r6-security.md",
+          "at": "2026-11-02T02:33:35.669Z"
         },
         "quality": {
-          "status": "fail",
-          "round": 1,
-          "report": "docs/execution/reviews/task-03-r1-quality.md",
-          "at": "2026-11-02T02:12:19.566Z"
+          "status": "pass",
+          "round": 2,
+          "report": "docs/execution/reviews/task-03-r2-quality.md",
+          "at": "2026-11-02T02:31:39.575Z"
         }
       },
       "gatesUsed": [
-        "G0",
-        "G1"
+        "G0"
       ],
       "blockers": [
         {
@@ -179,8 +179,9 @@
           "resolvedAt": "2026-11-02T00:47:29.600Z"
         }
       ],
-      "notes": "N1 blocker resolved on 2026-11-02 by decision 18, approved by Einar in chat: \"I approve the hardened Custom Access Token hook as the solution to N1, and I approve correcting the email-confirmation configuration.\" Task 3 must include the decision 18/19 runbook items. Not started: Einar asked to stop before Task 3.",
-      "startedAt": "2026-11-02T01:11:29.045Z"
+      "notes": "N1 blocker resolved on 2026-11-02 by decision 18, approved by Einar in chat: \"I approve the hardened Custom Access Token hook as the solution to N1, and I approve correcting the email-confirmation configuration.\" Task 3 must include the decision 18/19 runbook items. Not started: Einar asked to stop before Task 3. Approved by Einar on 2026-11-02: \"I approve starting Task 3: Hosted Environments Runbook, strictly as a documentation-only task.\" Decisions 20 (manual hook verification procedure; automation deferred) and 21 (secure_password_change, verified locally: docs/verification/decision-21-secure-password-change.md) recorded in the plan. Commits: 27e3d3b (decision 21 local config), 2f5c62f (runbook, .env.example, env test), 771127c, 6a5f940, 30c8a25 (security fix rounds 1-3), 9d15d26 (quality fixes), fc9e807 (final security Minors). Reviews: spec r1-r4 pass; security r1-r6 pass (run although Task 3 is not on the sensitive list); quality r1 changes requested, r2 approved. Nothing hosted executed. Carried to Task 28 (apply before executing the runbook): quality r2 Minors 1-6 and security r6 Minors 1-2 (placeholder list; P-2 pointer to G6.2; record the vault.secrets count before P-2; G3.4 owner note for the Management API fallback; \"as in G2.5 but not exported\" wording; wrap the URL check so exit 1 does not close the shell; whole-string REF check; \"less likely to be swapped\" wording), and spec r4 Minor 2 (vercel-link implies Einar's Vercel login, outside the repository). Open for Einar (runbook section 16): GitHub Packages scope @litljomi vs owner einar6969; SMTP credentials not in the CMS environment although spec 8.2 lists them; production project out of M1 scope; rate limit 100/hour; Einar enters every secret value; Task 29 \"secret key from the local environment\" run by Einar; connecting the LABAK repository to Vercel needs approval at G6 and G7; .claude ask rules for risky hosted Supabase commands; a deny for agent Edit/Write of .env*. Process notes: one implementer saw a single unexplained vitest failure (not reproducible: 5/5 passes); a reviewer's rm -f of a scratch file was denied by a safety check (not retried); sandbox refusals of process substitution (/dev/fd) during reviews (not worked around).",
+      "startedAt": "2026-11-02T01:11:29.045Z",
+      "doneAt": "2026-11-02T02:33:35.694Z"
     },
     {
       "id": 4,
