@@ -19,7 +19,7 @@ export type RichTextBlock =
   | { type: 'paragraph'; content?: RichTextInline[] }
   | { type: 'heading'; attrs: { level: 2 | 3 }; content?: RichTextInline[] }
   | { type: 'bulletList'; content: RichTextListItem[] }
-  | { type: 'orderedList'; content: RichTextListItem[] }
+  | { type: 'orderedList'; attrs?: { start?: number | undefined; type?: null | undefined }; content: RichTextListItem[] }
   | { type: 'blockquote'; content: RichTextBlock[] }
   | {
       type: 'image';
@@ -36,7 +36,10 @@ export interface RichTextDoc {
   content: RichTextBlock[];
 }
 
-// Same rule as the schema package's link field: https:, http: and mailto: only.
+// Same rule as the schema package's link field (packages/schema/src/fields/link.ts); keep the two
+// copies identical, because §3.1 forbids rich-text from depending on schema.
+// https:, http: and mailto: only. Valid hrefs are stored in canonical form, new URL(s).href, so
+// consumers can classify them by prefix (upper-case schemes, tabs and newlines are removed).
 const ALLOWED_PROTOCOLS = new Set(['https:', 'http:', 'mailto:']);
 
 export function isSafeHref(s: string): boolean {
@@ -47,6 +50,8 @@ export function isSafeHref(s: string): boolean {
     return false;
   }
 }
+
+const canonicalHref = (s: string) => new URL(s).href;
 
 const ref = <K extends 'entry' | 'asset'>(kind: K) =>
   z.strictObject({ _ref: z.guid(), _kind: z.literal(kind) });
@@ -60,7 +65,7 @@ const markSchema = z.discriminatedUnion('type', [
   z.strictObject({
     type: z.literal('link'),
     attrs: z.union([
-      z.strictObject({ href: z.string().refine(isSafeHref, 'href must be https:, http: or mailto:'), entry: unset }),
+      z.strictObject({ href: z.string().refine(isSafeHref, 'href must be https:, http: or mailto:').transform(canonicalHref), entry: unset }),
       z.strictObject({ entry: ref('entry'), href: unset }),
     ]),
   }),
@@ -80,7 +85,14 @@ const blockSchema: z.ZodType<RichTextBlock> = z.lazy(() =>
       content: z.array(inlineSchema).optional(),
     }),
     z.strictObject({ type: z.literal('bulletList'), content: z.array(listItemSchema).min(1) }),
-    z.strictObject({ type: z.literal('orderedList'), content: z.array(listItemSchema).min(1) }),
+    // Tiptap's orderedList always emits `attrs: { start, type }`; `type` is always null here.
+    z.strictObject({
+      type: z.literal('orderedList'),
+      attrs: z
+        .strictObject({ start: z.number().int().positive().optional(), type: z.null().optional() })
+        .optional(),
+      content: z.array(listItemSchema).min(1),
+    }),
     z.strictObject({ type: z.literal('blockquote'), content: z.array(blockSchema).min(1) }),
     z.strictObject({
       type: z.literal('image'),

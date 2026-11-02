@@ -53,4 +53,30 @@ describe('richTextDocSchema', () => {
       richTextDocSchema.safeParse(doc({ type: 'paragraph', attrs: { style: 'color:red' } })).success,
     ).toBe(false);
   });
+
+  it('stores link hrefs in canonical form (new URL(s).href)', () => {
+    const cases: [string, string][] = [
+      ['HTTPS://Example.com', 'https://example.com/'],
+      ['Mailto:a@b.is', 'mailto:a@b.is'],
+      ['ht\ttps://example.com', 'https://example.com/'],
+      ['https://exa\nmple.com/a', 'https://example.com/a'],
+      ['\u0001https://example.com', 'https://example.com/'],
+    ];
+    for (const [input, expected] of cases) {
+      const r = richTextDocSchema.safeParse(doc(p('t', [{ type: 'link', attrs: { href: input } }])));
+      expect(r.success).toBe(true);
+      expect(JSON.stringify(r.data)).toContain(`"href":"${expected}"`);
+    }
+  });
+
+  it('accepts ordered lists as the editor emits them', () => {
+    const li = { type: 'listItem', content: [{ type: 'paragraph' }] };
+    for (const attrs of [{ start: 1, type: null }, { start: 3 }, undefined]) {
+      const ol = { type: 'orderedList', ...(attrs ? { attrs } : {}), content: [li] };
+      expect(richTextDocSchema.safeParse(doc(ol)).success).toBe(true);
+    }
+    const bad = { type: 'orderedList', attrs: { start: 0 }, content: [li] };
+    expect(richTextDocSchema.safeParse(doc(bad)).success).toBe(false);
+    expect(richTextDocSchema.safeParse(doc({ ...bad, attrs: { start: 1, type: 'a' } })).success).toBe(false);
+  });
 });

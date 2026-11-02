@@ -56,3 +56,18 @@ it('maps nodes and marks to elements', async () => {
   expect(img?.getAttribute('height')).toBe('20');
   expect(out).toContain('<figcaption>cap</figcaption>');
 });
+
+it('adds rel to every external link, whatever the scheme case or stray characters', async () => {
+  for (const href of ['https://example.com', 'HTTPS://example.com', 'Mailto:a@b.is', 'ht\ttps://example.com', 'http://a.is']) {
+    const out = await html({
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 't', marks: [{ type: 'link', attrs: { href } }] }] }],
+    });
+    expect(out, href).toContain('rel="noopener noreferrer"');
+  }
+  const internal = await html({
+    type: 'doc',
+    content: [{ type: 'paragraph', content: [{ type: 'text', text: 't', marks: [{ type: 'link', attrs: { href: '/a/b' } }] }] }],
+  });
+  expect(internal).not.toContain('rel=');
+});

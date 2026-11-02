@@ -36,7 +36,8 @@ export interface ProjectedRichTextDoc {
 }
 
 function projectInline(n: RichTextInline, r: RichTextResolver): ProjectedInline {
-  if (n.type === 'hardBreak' || !n.marks) return n.type === 'hardBreak' ? n : { type: 'text', text: n.text };
+  if (n.type === 'hardBreak') return n;
+  if (!n.marks) return { type: 'text', text: n.text };
   const marks: ProjectedMark[] = [];
   for (const m of n.marks) {
     if (m.type !== 'link') {

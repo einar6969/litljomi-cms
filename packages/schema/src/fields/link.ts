@@ -11,6 +11,8 @@ export interface LinkOptions {
 export type LinkValue = { href: string } | { entry: Ref<'entry'> };
 export type LinkField = FieldKind<LinkValue, LinkValue> & { entryTypes: string[] | undefined };
 
+// Same rule as packages/rich-text/src/doc-schema.ts (isSafeHref, canonicalHref); keep the two
+// copies identical. Valid hrefs are stored as new URL(s).href.
 const ALLOWED_PROTOCOLS = new Set(['https:', 'http:', 'mailto:']);
 
 function isSafeHref(s: string): boolean {
@@ -25,7 +27,7 @@ function isSafeHref(s: string): boolean {
 export function link(o: LinkOptions): LinkField {
   const required = o.required ?? false;
   const base = z.union([
-    z.strictObject({ href: z.string().refine(isSafeHref, 'href must be https:, http: or mailto:') }),
+    z.strictObject({ href: z.string().refine(isSafeHref, 'href must be https:, http: or mailto:').transform((s) => new URL(s).href) }),
     z.strictObject({ entry: refSchema('entry') }),
   ]) as unknown as z.ZodType<LinkValue>;
   return {

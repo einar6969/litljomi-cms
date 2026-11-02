@@ -3,7 +3,15 @@ import type { ProjectedBlock, ProjectedInline, ProjectedMark, ProjectedRichTextD
 
 // A pure node-to-element mapping. Text goes through React's escaping; there is no raw HTML path.
 
-const isExternal = (href: string) => /^(https?:|mailto:)/.test(href);
+// Decided from the parsed protocol, so `HTTPS:`, `Mailto:` and hrefs with stray tabs still count.
+// Relative paths (resolved entry links) do not parse and are internal.
+function isExternal(href: string): boolean {
+  try {
+    return ['https:', 'http:', 'mailto:'].includes(new URL(href).protocol);
+  } catch {
+    return false;
+  }
+}
 
 function mark(m: ProjectedMark, children: ReactNode): ReactNode {
   switch (m.type) {

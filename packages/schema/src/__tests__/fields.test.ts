@@ -47,6 +47,19 @@ describe('link', () => {
     expect(s.safeParse({ entry: { _ref: id, _kind: 'asset' } }).success).toBe(false);
     expect(s.safeParse({ href: 'https://a.is', entry: { _ref: id, _kind: 'entry' } }).success).toBe(false);
   });
+  it('stores hrefs in canonical form (new URL(s).href)', () => {
+    const cases: [string, string][] = [
+      ['HTTPS://Example.com', 'https://example.com/'],
+      ['Mailto:a@b.is', 'mailto:a@b.is'],
+      ['ht\ttps://example.com', 'https://example.com/'],
+      ['\u0001https://example.com', 'https://example.com/'],
+    ];
+    for (const [input, href] of cases) {
+      const r = s.safeParse({ href: input });
+      expect(r.success).toBe(true);
+      expect(r.data).toEqual({ href });
+    }
+  });
   it('required link rejects null on publish; draft accepts it', () => {
     const r = link({ label: 'L', required: true });
     expect(r.publishSchema().safeParse(null).success).toBe(false);

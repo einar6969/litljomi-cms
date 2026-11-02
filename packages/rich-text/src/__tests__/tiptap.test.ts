@@ -1,7 +1,10 @@
-import { generateJSON } from '@tiptap/core';
+import { Editor, generateJSON } from '@tiptap/core';
 import { expect, it } from 'vitest';
 import { richTextDocSchema } from '../doc-schema.ts';
 import { richTextExtensions } from '../tiptap.ts';
+
+const A = '11111111-1111-4111-8111-111111111111';
+const B = '22222222-2222-4222-8222-222222222222';
 
 const names = (extensions: { name: string }[]) => extensions.map((e) => e.name);
 
@@ -25,8 +28,58 @@ it('strips pasted tables, colours and strike-through (review focus 2)', () => {
   expect(richTextDocSchema.safeParse(json).success).toBe(true);
 });
 
-it('clamps pasted heading levels to 2 and 3', () => {
+it('clamps pasted heading levels to 2 and 3, keeping the text and level 3', () => {
   const json = generateJSON('<h1>a</h1><h4>b</h4><h3>c</h3>', richTextExtensions());
+  expect(richTextDocSchema.safeParse(json).success).toBe(true);
+  const text = JSON.stringify(json);
+  for (const t of ['"a"', '"b"', '"c"']) expect(text).toContain(t);
+  const h3 = (json.content as { type: string; attrs?: { level: number }; content?: { text: string }[] }[]).find(
+    (n) => n.type === 'heading' && n.content?.[0]?.text === 'c',
+  );
+  expect(h3?.attrs?.level).toBe(3);
+});
+
+it('an ordered list from the editor or a paste validates', () => {
+  const json = generateJSON('<ol><li><p>x</p></li></ol>', richTextExtensions());
+  expect(JSON.stringify(json)).toContain('orderedList');
+  expect(richTextDocSchema.safeParse(json).success).toBe(true);
+  const started = generateJSON('<ol start="3"><li><p>x</p></li></ol>', richTextExtensions());
+  expect(richTextDocSchema.safeParse(started).success).toBe(true);
+});
+
+it('normalizes a pasted upper-case scheme link to a canonical href', () => {
+  const json = generateJSON('<p><a href="HTTPS://Example.com">t</a></p>', richTextExtensions());
+  const parsed = richTextDocSchema.safeParse(json);
+  expect(parsed.success).toBe(true);
+  expect(JSON.stringify(parsed.data)).toContain('"href":"https://example.com/"');
+});
+
+it('round-trips entry links and images through the extensions against the schema', () => {
+  const doc = {
+    type: 'doc',
+    content: [
+      {
+        type: 'paragraph',
+        content: [{ type: 'text', text: 'see', marks: [{ type: 'link', attrs: { entry: { _ref: A, _kind: 'entry' } } }] }],
+      },
+      { type: 'image', attrs: { asset: { _ref: B, _kind: 'asset' }, alt: 'An alt', caption: 'A caption' } },
+    ],
+  };
+  expect(richTextDocSchema.safeParse(doc).success).toBe(true);
+  const editor = new Editor({ extensions: richTextExtensions(), content: doc, element: document.createElement('div') });
+  const out = editor.getJSON();
+  editor.destroy();
+  expect(richTextDocSchema.safeParse(out).success).toBe(true);
+  const text = JSON.stringify(out);
+  expect(text).toContain(A);
+  expect(text).toContain(B);
+  expect(text).toContain('An alt');
+  expect(text).toContain('A caption');
+});
+
+it('drops a pasted <img>', () => {
+  const json = generateJSON('<p>a</p><img src="https://example.com/x.png" alt="x">', richTextExtensions());
+  expect(JSON.stringify(json)).not.toContain('"image"');
   expect(richTextDocSchema.safeParse(json).success).toBe(true);
 });
 

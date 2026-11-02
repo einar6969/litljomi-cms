@@ -53,7 +53,8 @@ export function richTextExtensions(): Extensions {
       autolink: false,
       linkOnPaste: false,
       defaultProtocol: 'https',
-      isAllowedUri: (url) => isSafeHref(url),
+      // An entry link has no href; Tiptap's renderHTML still asks about it.
+      isAllowedUri: (url) => (url as string | undefined) === undefined || isSafeHref(url),
       HTMLAttributes: {},
     }),
     HubImage,
