@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T12:34:05.720Z",
+  "updatedAt": "2026-11-02T13:57:09.634Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -926,21 +926,54 @@
     },
     {
       "id": 30,
-      "status": "pending",
-      "commits": [],
-      "reviews": {},
-      "gatesUsed": [],
+      "status": "done",
+      "commits": [
+        "8aa9d69"
+      ],
+      "reviews": {
+        "spec": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-30-r1-spec.md",
+          "at": "2026-11-02T13:39:25.274Z",
+          "atCommits": 1
+        },
+        "security": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-30-r1-security.md",
+          "at": "2026-11-02T13:44:21.886Z",
+          "atCommits": 1
+        },
+        "quality": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-30-r1-quality.md",
+          "at": "2026-11-02T13:53:13.733Z",
+          "atCommits": 1
+        }
+      },
+      "gatesUsed": [
+        "G0",
+        "G1"
+      ],
       "blockers": [],
-      "notes": "Added at C2 (decision 36 items 2 and 4)."
+      "notes": "Added at C2 (decision 36 items 2 and 4).",
+      "startedAt": "2026-11-02T13:03:26.262Z",
+      "doneAt": "2026-11-02T13:57:09.634Z"
     },
     {
       "id": 22,
-      "status": "pending",
+      "status": "in_progress",
       "commits": [],
       "reviews": {},
-      "gatesUsed": [],
+      "gatesUsed": [
+        "G0",
+        "G1"
+      ],
       "blockers": [],
-      "notes": ""
+      "notes": "",
+      "startedAt": "2026-11-02T13:14:00.404Z"
     },
     {
       "id": 23,
