@@ -1,5 +1,6 @@
 'use client';
 
+import { Field } from '@/ui/Field';
 import type { FieldProps } from '../field-registry';
 
 export function TextField({ id, label, required, value, onChange, max, multiline }: FieldProps) {
@@ -12,5 +13,9 @@ export function TextField({ id, label, required, value, onChange, max, multiline
     maxLength: max,
     onChange: (e: { target: { value: string } }) => onChange(e.target.value === '' ? undefined : e.target.value),
   };
-  return <label htmlFor={id}>{label}{multiline ? <textarea {...common} rows={4} /> : <input type="text" {...common} />}</label>;
+  return (
+    <Field label={label} htmlFor={id}>
+      {multiline ? <textarea {...common} rows={4} /> : <input type="text" {...common} />}
+    </Field>
+  );
 }

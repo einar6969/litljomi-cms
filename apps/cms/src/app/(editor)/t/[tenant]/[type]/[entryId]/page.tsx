@@ -41,9 +41,11 @@ export default async function EntryPage({ params }: Props) {
   if (!data) notFound();
   const entry = data as Detail;
   return (
-    <main>
+    <main className="flex flex-col gap-4">
       <p>
-        <Link href={`/t/${encodeURIComponent(tenant.slug)}/${encodeURIComponent(type.name)}`}>{t.entries.back}</Link>
+        <Link href={`/t/${encodeURIComponent(tenant.slug)}/${encodeURIComponent(type.name)}`} className="inline-flex min-h-[44px] items-center text-[15px] font-medium">
+          {t.entries.back}
+        </Link>
       </p>
       <h1>{type.label}</h1>
       <EntryForm

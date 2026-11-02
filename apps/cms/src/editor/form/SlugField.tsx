@@ -4,6 +4,9 @@ import { slugify } from '@litljomi/cms-schema/src/slugify.ts';
 import { useState } from 'react';
 import type { setSlugAction } from '@/app/(editor)/t/[tenant]/actions';
 import { t } from '@/i18n/is';
+import { Button } from '@/ui/Button';
+import { Field } from '@/ui/Field';
+import { Notice } from '@/ui/Notice';
 
 type Props = {
   entryId: string;
@@ -62,9 +65,8 @@ export function SlugField({ entryId, initialSlug, title, locked, setSlug }: Prop
   };
 
   return (
-    <div>
-      <label htmlFor="slug">
-        {t.editor.slug.label}
+    <div className="flex flex-col gap-2">
+      <Field label={t.editor.slug.label} htmlFor="slug">
         <input
           id="slug"
           name="slug"
@@ -76,22 +78,26 @@ export function SlugField({ entryId, initialSlug, title, locked, setSlug }: Prop
             setNotice(null);
           }}
         />
-      </label>
+      </Field>
       {locked ? (
-        <p>{t.editor.slug.locked}</p>
+        <p className="text-sm text-muted">{t.editor.slug.locked}</p>
       ) : (
         <>
           {saved === null && suggestion !== '' ? (
-            <p data-testid="slug-suggestion">
+            <p data-testid="slug-suggestion" className="text-sm text-muted">
               {t.editor.slug.suggestion}: {suggestion}
             </p>
           ) : null}
-          <button type="button" disabled={busy || value === '' || value === saved} onClick={() => void submit()}>
+          <Button className="self-start max-sm:w-full" disabled={busy || value === '' || value === saved} onClick={() => void submit()}>
             {t.editor.slug.save}
-          </button>
+          </Button>
         </>
       )}
-      {notice ? <p data-testid="slug-notice" role={notice === 'saved' ? undefined : 'alert'}>{messages[notice]}</p> : null}
+      {notice ? (
+        <Notice data-testid="slug-notice" tone={notice === 'saved' ? 'success' : 'error'} role={notice === 'saved' ? undefined : 'alert'}>
+          {messages[notice]}
+        </Notice>
+      ) : null}
     </div>
   );
 }

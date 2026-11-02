@@ -4,6 +4,8 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { saveDraftAction, setSlugAction } from '@/app/(editor)/t/[tenant]/actions';
 import { t } from '@/i18n/is';
 import { createBrowserEditorClient } from '@/lib/supabase/browser';
+import { Button } from '@/ui/Button';
+import { Notice } from '@/ui/Notice';
 import { useAutosave } from '../autosave';
 import { PublishPanel } from '../publish/PublishPanel';
 import type { FieldDescriptor } from './descriptors';
@@ -60,15 +62,16 @@ export function EntryForm({ tenant, entryId, fields, titleKey, initialData, init
 
   return (
     <EditorTenantProvider value={tenant}>
-      <form onSubmit={(e) => e.preventDefault()}>
+      <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <form onSubmit={(e) => e.preventDefault()} className="flex min-w-0 flex-col gap-5">
         {fields.map((field) => {
           const Component = fieldRegistry[field.kind];
           const id = `field-${field.key}`;
           if (!Component) {
             return (
-              <div key={field.key}>
-                <span>{field.label}</span>
-                <p role="note">{t.editor.unsupportedField}</p>
+              <div key={field.key} className="flex flex-col gap-1.5">
+                <span className="text-[15px] font-medium">{field.label}</span>
+                <Notice role="note">{t.editor.unsupportedField}</Notice>
               </div>
             );
           }
@@ -96,41 +99,46 @@ export function EntryForm({ tenant, entryId, fields, titleKey, initialData, init
         initiallyPublished={published}
         fieldLabels={fieldLabels}
       />
+      </div>
     </EditorTenantProvider>
   );
 }
+
+const NOTICE_COLUMN = 'flex flex-col items-start gap-3';
+// A fixed line height keeps the form from jumping when the status text appears.
+const SAVE_LINE = 'min-h-5 text-sm text-muted';
 
 function SaveStatus({ state, retry }: { state: ReturnType<typeof useAutosave>['state']; retry: () => void }) {
   switch (state) {
     case 'conflict':
       return (
-        <div role="alert">
+        <Notice as="div" tone="error" role="alert" className={NOTICE_COLUMN}>
           <strong>{t.editor.conflict}</strong>
           <p>{t.editor.conflictBody}</p>
-          <button type="button" onClick={() => window.location.reload()}>{t.editor.reload}</button>
-        </div>
+          <Button onClick={() => window.location.reload()}>{t.editor.reload}</Button>
+        </Notice>
       );
     case 'signed_out':
       return (
-        <div role="alert">
+        <Notice as="div" tone="error" role="alert" className={NOTICE_COLUMN}>
           <strong>{t.editor.signedOut}</strong>
           <p>{t.editor.signedOutBody}</p>
-          <a href="/login" target="_blank" rel="noreferrer">{t.editor.signIn}</a>
-          <button type="button" onClick={retry}>{t.editor.retry}</button>
-        </div>
+          <a href="/login" target="_blank" rel="noreferrer" className="inline-flex min-h-[44px] items-center font-medium">{t.editor.signIn}</a>
+          <Button onClick={retry}>{t.editor.retry}</Button>
+        </Notice>
       );
     case 'error':
       return (
-        <div role="alert">
+        <Notice as="div" tone="error" role="alert" className={NOTICE_COLUMN}>
           <p>{t.editor.error}</p>
-          <button type="button" onClick={retry}>{t.editor.retry}</button>
-        </div>
+          <Button onClick={retry}>{t.editor.retry}</Button>
+        </Notice>
       );
     case 'saving':
-      return <p role="status">{t.editor.saving}</p>;
+      return <p role="status" className={SAVE_LINE}>{t.editor.saving}</p>;
     case 'saved':
-      return <p role="status">{t.editor.saved}</p>;
+      return <p role="status" className={SAVE_LINE}>{t.editor.saved}</p>;
     case 'idle':
-      return <p role="status" />;
+      return <p role="status" className={SAVE_LINE} />;
   }
 }

@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { createEntryAction } from '@/app/(editor)/t/[tenant]/actions';
 import { t } from '@/i18n/is';
+import { Button } from '@/ui/Button';
+import { Notice } from '@/ui/Notice';
 
 /** Creates an empty entry of the type and opens it. */
 export function NewEntryButton({ tenantSlug, type }: { tenantSlug: string; type: string }) {
@@ -19,11 +21,15 @@ export function NewEntryButton({ tenantSlug, type }: { tenantSlug: string; type:
     }
   };
   return (
-    <>
-      <button type="button" disabled={state === 'creating'} onClick={() => void create()}>
+    <div className="flex flex-col gap-2 max-sm:w-full">
+      <Button variant="primary" disabled={state === 'creating'} onClick={() => void create()}>
         {state === 'creating' ? t.entries.creating : t.entries.new}
-      </button>
-      {state === 'failed' ? <p role="alert">{t.entries.createFailed}</p> : null}
-    </>
+      </Button>
+      {state === 'failed' ? (
+        <Notice tone="error" role="alert">
+          {t.entries.createFailed}
+        </Notice>
+      ) : null}
+    </div>
   );
 }

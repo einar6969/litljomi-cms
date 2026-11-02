@@ -13,3 +13,4 @@ next-env.d.ts
 test-results/
 playwright-report/
 apps/cms/e2e/.auth/
+apps/cms/e2e-screenshots/
