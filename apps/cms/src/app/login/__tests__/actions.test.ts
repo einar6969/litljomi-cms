@@ -41,19 +41,19 @@ afterEach(() => {
 const consoleText = () => JSON.stringify([errors.mock.calls, logs.mock.calls, warns.mock.calls]);
 
 describe('requestMagicLink', () => {
-  it('asks Auth for a magic link to an existing user only, landing on the callback, through the editor client', async () => {
+  it('asks Auth for a magic link to an existing user only, landing on /auth/confirm, through the editor client', async () => {
     await expect(requestMagicLink(form(`  ${KNOWN} `))).rejects.toThrow(SENT);
     expect(createEditorClient).toHaveBeenCalledOnce();
     expect(auth.signInWithOtp).toHaveBeenCalledExactlyOnceWith({
       email: KNOWN,
-      options: { shouldCreateUser: false, emailRedirectTo: 'http://localhost:3100/auth/callback' },
+      options: { shouldCreateUser: false, emailRedirectTo: 'http://localhost:3100/auth/confirm' },
     });
   });
 
-  it('builds the callback from CMS_PUBLIC_URL without a doubled slash', async () => {
+  it('builds the landing URL from CMS_PUBLIC_URL without a doubled slash', async () => {
     vi.stubEnv('CMS_PUBLIC_URL', 'https://cms.example.test/');
     await expect(requestMagicLink(form(KNOWN))).rejects.toThrow(SENT);
-    expect(auth.signInWithOtp.mock.calls[0]![0].options.emailRedirectTo).toBe('https://cms.example.test/auth/callback');
+    expect(auth.signInWithOtp.mock.calls[0]![0].options.emailRedirectTo).toBe('https://cms.example.test/auth/confirm');
   });
 
   // The same outcome whatever Auth answers, so the response never reveals whether an account

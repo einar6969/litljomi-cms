@@ -14,7 +14,7 @@
 <tr><td style="padding:8px 32px 24px 32px;font-size:16px;line-height:1.5;">
 <h1 style="margin:0 0 16px 0;font-size:20px;">Innskráning í Litljómi vefumsjón</h1>
 <p style="margin:0 0 16px 0;">Smelltu á hnappinn til að skrá þig inn í Litljómi vefumsjón.</p>
-<p style="margin:24px 0;"><a href="{{ .ConfirmationURL }}" style="display:inline-block;padding:12px 24px;background-color:#7a4b12;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:bold;">Skrá inn</a></p>
+<p style="margin:24px 0;"><a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email" style="display:inline-block;padding:12px 24px;background-color:#7a4b12;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:bold;">Skrá inn</a></p>
 <p style="margin:0 0 8px 0;">Þú getur líka slegið inn þennan kóða:</p>
 <p style="margin:0 0 16px 0;font-size:24px;font-weight:bold;letter-spacing:4px;">{{ .Token }}</p>
 <p style="margin:0 0 16px 0;">Hlekkurinn og kóðinn gilda í eina klukkustund og aðeins einu sinni.</p>

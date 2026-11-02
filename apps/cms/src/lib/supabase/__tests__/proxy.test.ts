@@ -64,7 +64,7 @@ describe('updateSession', () => {
     expect(response.cookies.get('sb-access')?.value).toBe('');
   });
 
-  it.each(['/login', '/auth/callback'])('lets %s through without a session', async (path) => {
+  it.each(['/login', '/auth/confirm'])('lets %s through without a session', async (path) => {
     const response = await updateSession(request(path));
     expect(response.headers.get('location')).toBeNull();
   });

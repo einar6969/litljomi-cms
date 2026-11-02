@@ -6,21 +6,22 @@ import { createEditorClient } from '@/lib/supabase/server';
 
 const emailSchema = z.email().max(254);
 
-function callbackUrl(): string {
+function confirmUrl(): string {
   const base = process.env.CMS_PUBLIC_URL;
   if (!base) throw new Error('CMS_PUBLIC_URL is not set');
-  return `${base.replace(/\/+$/, '')}/auth/callback`;
+  return `${base.replace(/\/+$/, '')}/auth/confirm`;
 }
 
 /**
  * Sends a magic link to an existing editor (spec §4.4; self sign-up is off, so
- * `shouldCreateUser: false`), with the editor's publishable-key client, which keeps the PKCE
- * verifier in a cookie for the callback. Every outcome (sent, unknown address, rate limit, Auth
+ * `shouldCreateUser: false`), with the editor's publishable-key client. The mail links to
+ * `/auth/confirm` with the token hash (supabase/templates/magic_link.html, decision 41.1), which
+ * needs no PKCE verifier, so the link works in any browser. Every outcome (sent, unknown address, rate limit, Auth
  * failure, malformed input) ends in the same redirect to the same neutral message, so the answer
  * never reveals whether an account exists. The address is never logged or echoed back.
  */
 export async function requestMagicLink(formData: FormData): Promise<void> {
-  const emailRedirectTo = callbackUrl();
+  const emailRedirectTo = confirmUrl();
   const raw = formData.get('email');
   const parsed = emailSchema.safeParse(typeof raw === 'string' ? raw.trim() : undefined);
   if (parsed.success) {

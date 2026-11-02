@@ -124,6 +124,23 @@ export const verifyLink = (msg: MailMessage): string => {
 };
 export const tokenHashOf = (msg: MailMessage) => new URL(verifyLink(msg)).searchParams.get('token') ?? '';
 
+/**
+ * The CMS sign-in link of a magic-link or invitation mail (decision 41.1): the CMS's
+ * `/auth/confirm` page with the token hash and type, built from `{{ .SiteURL }}`.
+ */
+export const confirmLink = (msg: MailMessage): URL => {
+  const link = hrefs(msg).find((h) => URL.canParse(h) && new URL(h).pathname === '/auth/confirm');
+  if (!link) throw new Error(`no /auth/confirm link in mail "${msg.Subject}"`);
+  return new URL(link);
+};
+
+/**
+ * Supabase Auth's own GET /verify URL for a token hash (what `{{ .ConfirmationURL }}` links to), so
+ * the redirect flows stay covered now that the templates link to the CMS instead.
+ */
+export const verifyUrlFor = (tokenHash: string, type: 'magiclink' | 'invite'): string =>
+  `${env.apiUrl}/auth/v1/verify?${new URLSearchParams({ token: tokenHash, type })}`;
+
 /** GET of an emailed /verify link without following the redirect: its Location. */
 export async function followVerify(link: string): Promise<string | null> {
   const res = await fetch(link, { redirect: 'manual', headers: { apikey: env.publishableKey } });

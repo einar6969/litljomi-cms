@@ -30,10 +30,10 @@ describe('safeRedirectPath (no open redirect)', () => {
 });
 
 describe('isPublicPath', () => {
-  it.each(['/login', '/auth/callback'])('%s is reachable without a session', (path) => {
+  it.each(['/login', '/auth/confirm'])('%s is reachable without a session', (path) => {
     expect(isPublicPath(path)).toBe(true);
   });
-  it.each(['/', '/t/acme', '/login/x', '/loginx', '/auth', '/auth/callback/x', '/auth/other'])('%s needs a session', (path) => {
+  it.each(['/', '/t/acme', '/login/x', '/loginx', '/auth', '/auth/confirm/x', '/auth/callback', '/auth/other'])('%s needs a session', (path) => {
     expect(isPublicPath(path)).toBe(false);
   });
 });

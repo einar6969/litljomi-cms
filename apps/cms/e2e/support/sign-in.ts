@@ -1,4 +1,5 @@
-// Signing in through the real flow: the sign-in form, the magic link from Mailpit, the callback.
+// Signing in through the real flow: the sign-in form, the magic link from Mailpit, and the
+// "Halda áfram" button of the CMS's /auth/confirm page (decision 41.1).
 import { expect, type Page } from '@playwright/test';
 import { t } from '../../src/i18n/is';
 import { CMS_URL } from './local';
@@ -17,24 +18,40 @@ export async function requestLink(page: Page, email: string): Promise<void> {
 const RESEND_BACKOFF_MS = 2000;
 
 /**
- * Signs `email` in on `page` and returns where the callback landed. A missing mail is requested
- * again after RESEND_BACKOFF_MS, up to three times. A callback that fails lands on
- * `/login?error=link`; that is an error here, not a signed-in landing.
+ * Requests a magic link for `email` on `page` and returns the emailed link, without opening it. A
+ * missing mail is requested again after RESEND_BACKOFF_MS, up to three times.
  */
-export async function signIn(page: Page, email: string): Promise<URL> {
+export async function requestMagicLink(page: Page, email: string): Promise<URL> {
   for (let attempt = 1; attempt <= 3; attempt++) {
     const seen = await messageIds(email);
     await requestLink(page, email);
     const message = await waitForNewMessage(email, seen);
-    if (!message) {
-      await page.waitForTimeout(RESEND_BACKOFF_MS);
-      continue;
-    }
-    await page.goto(magicLinkOf(message).href);
-    await page.waitForURL((url) => url.origin === CMS_URL && url.pathname !== '/auth/callback');
-    const landed = new URL(page.url());
-    if (landed.pathname === '/login') throw new Error(`the magic link for ${email} did not sign in (landed on ${landed.pathname}${landed.search})`);
-    return landed;
+    if (message) return magicLinkOf(message);
+    await page.waitForTimeout(RESEND_BACKOFF_MS);
   }
   throw new Error(`no magic link arrived for ${email}`);
+}
+
+/** Opens the confirm page of `link` on `page`, without pressing its button (as a mail scanner would). */
+export async function openLink(page: Page, link: URL): Promise<void> {
+  await page.goto(link.href);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(t.confirm.title);
+}
+
+/**
+ * Opens `link` on `page`, presses "Halda áfram" and returns where the sign-in landed. A link that
+ * fails lands on `/login?error=link`; that is an error here, not a signed-in landing.
+ */
+export async function followLink(page: Page, link: URL): Promise<URL> {
+  await openLink(page, link);
+  await page.getByRole('button', { name: t.confirm.submit }).click();
+  await page.waitForURL((url) => url.origin === CMS_URL && url.pathname !== '/auth/confirm');
+  const landed = new URL(page.url());
+  if (landed.pathname === '/login') throw new Error(`the magic link did not sign in (landed on ${landed.pathname}${landed.search})`);
+  return landed;
+}
+
+/** Signs `email` in on `page` through the magic link and returns where the sign-in landed. */
+export async function signIn(page: Page, email: string): Promise<URL> {
+  return followLink(page, await requestMagicLink(page, email));
 }

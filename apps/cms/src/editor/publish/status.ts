@@ -32,7 +32,11 @@ export type PublicationStatusRow = {
   notify_attempts: number;
 };
 
-export type DisplayState = { label: string; tone: 'pending' | 'ok' | 'error'; detail?: string };
+/**
+ * `pending` changes on its own; every other tone is final. `ok` is "Birt á vef ✓", `neutral` is
+ * "Tekið af vef", `warning` is "Enginn vefur tengdur", `error` every failure (Task 32).
+ */
+export type DisplayState = { label: string; tone: 'pending' | 'ok' | 'neutral' | 'warning' | 'error'; detail?: string };
 
 export type DisplayOptions = {
   /** The content type's field labels by key, to name the fields a validation failure is about. */
@@ -56,10 +60,10 @@ export const isFinal = (state: DisplayState): boolean => state.tone !== 'pending
  *   (a release still building, or one that failed before delivery, links no request, so it is
  *   "committed" here too);
  * - every active site notified, a live check still running → "Bíður eftir vefnum";
- * - every active site's live_status ok → "Birt á vef ✓" (publish) or "Tekið af vef" (unpublish);
+ * - every active site's live_status ok → "Birt á vef ✓" (publish) or "Tekið af vef" (unpublish, neutral);
  * - left out of the release, or a site's notification attempts exhausted → "Birting á vef mistókst";
  * - every site settled, one not confirmed → "Ekki staðfest á vef";
- * - delivered in a tenant with no active site → "Enginn vefur tengdur", final (decision 39.3);
+ * - delivered in a tenant with no active site → "Enginn vefur tengdur", a final warning (decision 39.3);
  * - the request's own failures: failed_validation, superseded, rejected, failed.
  *
  * A tenant with no active site never reaches a confirmed state: there is nothing to prove it on.
@@ -92,9 +96,9 @@ function deliveryState(row: PublicationStatusRow): DisplayState {
   if (row.action === 'publish' && row.omitted) return deliveryFailed;
   const sites = row.site_count;
   // Decision 39.3: nothing will ever confirm it, so the panel stops polling. Never a success.
-  if (sites === 0) return { label: t.publish.noSite, tone: 'error' };
+  if (sites === 0) return { label: t.publish.noSite, tone: 'warning' };
   if (row.sites_live_ok === sites) {
-    return row.action === 'publish' ? { label: t.publish.live, tone: 'ok' } : { label: t.publish.removed, tone: 'ok', detail: t.publish.removedDetail };
+    return row.action === 'publish' ? { label: t.publish.live, tone: 'ok' } : { label: t.publish.removed, tone: 'neutral', detail: t.publish.removedDetail };
   }
   // §7.4, decision 36.1: the sweep stops retrying at the limit and alerts.
   if (row.notify_attempts >= MAX_NOTIFY_ATTEMPTS) return deliveryFailed;

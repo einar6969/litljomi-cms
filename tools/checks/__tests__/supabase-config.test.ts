@@ -52,8 +52,8 @@ describe('supabase/config.toml security settings', () => {
     expect(setting(path)).toBe(expected);
   });
 
-  it('auth.additional_redirect_urls is exactly the local CMS callback (decision 37.4)', () => {
-    expect(setting('auth.additional_redirect_urls')).toEqual(['http://localhost:3100/auth/callback']);
+  it('auth.additional_redirect_urls is exactly the local CMS sign-in landing, /auth/confirm (decisions 37.4, 41.1)', () => {
+    expect(setting('auth.additional_redirect_urls')).toEqual(['http://localhost:3100/auth/confirm']);
   });
 
   // Two tests on purpose: the exact-value test below fails on any change (adding a schema is a
@@ -74,12 +74,17 @@ describe('supabase/config.toml security settings', () => {
 
   // Spec §4.4: Icelandic, Litljómi-branded templates for the email flows v1 uses. The Supabase CLI
   // reads `content_path` from the project root (its own scaffold's form, `./supabase/templates/…`).
+  // Magic links and invitations go to the CMS's own /auth/confirm page with the token hash, which
+  // verifies it on the server only when the editor presses its button, so the link works in any
+  // browser (decision 41.1); `{{ .SiteURL }}` is the Auth Site URL, the CMS host.
+  const MAGIC_LINK = '{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email';
+  const INVITE_LINK = '{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=invite';
   describe.each([
-    ['magic_link', ['{{ .ConfirmationURL }}', '{{ .Token }}']],
-    ['invite', ['{{ .ConfirmationURL }}']],
-    ['email_change', ['{{ .ConfirmationURL }}', '{{ .Email }}', '{{ .NewEmail }}']],
-    ['reauthentication', ['{{ .Token }}']],
-  ])('[auth.email.template.%s]', (name, variables) => {
+    ['magic_link', [MAGIC_LINK, '{{ .Token }}'], [MAGIC_LINK]],
+    ['invite', [INVITE_LINK], [INVITE_LINK]],
+    ['email_change', ['{{ .ConfirmationURL }}', '{{ .Email }}', '{{ .NewEmail }}'], ['{{ .ConfirmationURL }}']],
+    ['reauthentication', ['{{ .Token }}'], []],
+  ])('[auth.email.template.%s]', (name, variables, links) => {
     const contentPath = `./supabase/templates/${name}.html`;
     const file = join(repoRoot, contentPath);
 
@@ -97,11 +102,11 @@ describe('supabase/config.toml security settings', () => {
       for (const variable of variables) expect(html, `${name} uses ${variable}`).toContain(variable);
     });
 
-    it('loads nothing external and links only to the Auth confirmation URL (no images, fonts or tracking)', () => {
+    it('loads nothing external and has exactly its one link (no images, fonts or tracking)', () => {
       const html = readFileSync(file, 'utf8');
       expect(html).not.toMatch(/https?:\/\/|\/\/[a-z0-9]|<img|<link|<script|<iframe|@import|url\(|\bsrc\s*=|srcset|background\s*=/i);
       const hrefs = [...html.matchAll(/href\s*=\s*"([^"]*)"/gi)].map((m) => m[1]);
-      expect(hrefs).toEqual(variables.includes('{{ .ConfirmationURL }}') ? ['{{ .ConfirmationURL }}'] : []);
+      expect(hrefs).toEqual(links);
     });
   });
 

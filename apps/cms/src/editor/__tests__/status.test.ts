@@ -226,10 +226,10 @@ describe('displayState: failed_validation, "Ekki hægt að birta: …"', () => {
 });
 
 describe('displayState: no active site (decision 39.3)', () => {
-  it('a delivered release in a tenant without an active site is "Enginn vefur tengdur", final, never a success', () => {
+  it('a delivered release in a tenant without an active site is "Enginn vefur tengdur", a final warning, never a success', () => {
     for (const action of ['publish', 'unpublish'] as const) {
       const state = displayState(row({ action, site_count: 0, sites_notified: 0, sites_live_ok: 0, sites_not_confirmed: 0 }));
-      expect(state).toEqual({ label: 'Enginn vefur tengdur', tone: 'error' });
+      expect(state).toEqual({ label: 'Enginn vefur tengdur', tone: 'warning' });
       expect(isFinal(state)).toBe(true);
     }
   });
@@ -248,9 +248,9 @@ describe('displayState: no active site (decision 39.3)', () => {
 });
 
 describe('displayState: unpublish', () => {
-  it('confirmed on every active site is "Tekið af vef", final, and its detail never claims removal from caches', () => {
+  it('confirmed on every active site is "Tekið af vef", final and neutral, and its detail never claims removal from caches', () => {
     const state = displayState(unpublish());
-    expect(state).toMatchObject({ label: 'Tekið af vef', tone: 'ok' });
+    expect(state).toMatchObject({ label: 'Tekið af vef', tone: 'neutral' });
     expect(isFinal(state)).toBe(true);
     expect(state.detail).toBe(t.publish.removedDetail);
     // The detail says copies may remain; it never says they were removed.
@@ -272,9 +272,23 @@ describe('displayState: unpublish', () => {
   });
 });
 
+describe('tones', () => {
+  it('only "Birt á vef ✓" is ok, only "Tekið af vef" is neutral, and only "Enginn vefur tengdur" is a warning', () => {
+    const rows = [...deliveredCombinations()].flatMap((r) => [r, { ...r, site_count: 0, sites_notified: 0, sites_live_ok: 0, sites_not_confirmed: 0 }]);
+    for (const r of rows) {
+      const { label, tone } = displayState(r);
+      expect(tone === 'ok', label).toBe(label === t.publish.live);
+      expect(tone === 'neutral', label).toBe(label === t.publish.removed);
+      expect(tone === 'warning', label).toBe(label === t.publish.noSite);
+    }
+  });
+});
+
 describe('isFinal', () => {
-  it('is true for ok and error, false for pending', () => {
+  it('is true for ok, neutral, warning and error, false for pending', () => {
     expect(isFinal({ label: 'x', tone: 'ok' })).toBe(true);
+    expect(isFinal({ label: 'x', tone: 'neutral' })).toBe(true);
+    expect(isFinal({ label: 'x', tone: 'warning' })).toBe(true);
     expect(isFinal({ label: 'x', tone: 'error' })).toBe(true);
     expect(isFinal({ label: 'x', tone: 'pending' })).toBe(false);
   });
