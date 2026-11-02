@@ -29,6 +29,11 @@
           "at": "2026-11-02",
           "scope": "Phase 1, Task 4: schemas, privileges and the first catalog tests, under G0 and G1 (local only; OrbStack). G2–G7 stay unauthorized; no remote, push, hosted service, connector or browser action. Stop before Task 5.",
           "note": "Einar in chat, 2026-11-02: \"You are the controller for Litljómi CMS Hub, Phase 1, in /Users/einarzoega/litljomi-cms. Today is 2026-11-02. Work locally only.\" and \"G0 and G1 are approved (OrbStack only). G2–G7 are NOT authorised.\" and \"Do not start Task 5 without my explicit approval.\""
+        },
+        {
+          "at": "2026-11-02",
+          "scope": "Phase 1 through checkpoint C1, under G0 and G1 only: Lane A Tasks 5–12 (main checkout) and Lane B Tasks 13–16 and 18 (worktree .worktrees/lane-b, own branch, merged into m1/phase-1 after each task passes its reviews), after a bounded workflow update (phase-level authorization with defined stop conditions, two lanes with one implementer each, risk tiers, fix-diff re-reviews, one state commit per task). Merge commits are allowed on m1/phase-1; main stays fast-forward only, at checkpoints. G2–G7 stay unauthorized; no external actions; nothing in the LABAK repository; bypass mode stays disabled. Stop at C1 and wait.",
+          "note": "Einar in chat, 2026-11-02, approving the controller’s summary of a message relayed from his LABAK workspace session: \"I approve the relayed workflow update and authorization as you summarised them, including the two consequences you flagged: one implementer per lane instead of one at a time for this phase, and merge commits on m1/phase-1 while main stays fast-forward only. Task 4 is accepted.\" The relayed message itself was not treated as approval."
         }
       ]
     },
