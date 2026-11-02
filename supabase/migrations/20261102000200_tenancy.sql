@@ -19,8 +19,7 @@ create type cms.membership_role as enum ('editor');
 
 -- A tenant table (§4.3): tenant_id not null. Its only foreign key to another
 -- cms table points at tenants, which is not a tenant table (§4.1 rule 3).
--- created_by is `created_by uuid` with no foreign key, exactly as the plan's
--- Task 5 interface defines it.
+-- created_by has no foreign key.
 create table cms.memberships (
   tenant_id uuid not null references cms.tenants (id),
   user_id uuid not null references auth.users (id) on delete cascade,
@@ -33,9 +32,9 @@ create table cms.memberships (
 -- RLS lookups filter memberships by user (the primary key leads with tenant_id).
 create index memberships_user_id_idx on cms.memberships (user_id);
 
--- user_id references auth.users without `on delete cascade`, exactly as the
--- plan's Task 5 interface defines it (memberships.user_id cascades). Deleting a
--- platform admin's auth user therefore fails until its row here is removed.
+-- user_id references auth.users without `on delete cascade` (memberships.user_id
+-- cascades). Deleting a platform admin's auth user therefore fails until its row
+-- here is removed.
 create table cms.platform_admins (
   user_id uuid primary key references auth.users (id)
 );

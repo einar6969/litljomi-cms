@@ -90,6 +90,29 @@ create trigger drafts_bump_version
   for each row
   execute function private.drafts_bump_version();
 
+-- The bump above is a BEFORE trigger, so a BEFORE trigger whose name sorts after
+-- it could still change NEW.version. This AFTER UPDATE row trigger sees the
+-- final row and refuses anything but old.version + 1, whatever the trigger
+-- order and whoever writes.
+create function private.drafts_check_version()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  if new.version is distinct from old.version + 1 then
+    raise exception 'drafts.version must increase by exactly 1' using errcode = '23514';
+  end if;
+  return null;
+end;
+$$;
+
+create trigger drafts_check_version
+  after update on cms.drafts
+  for each row
+  execute function private.drafts_check_version();
+
 -- Entry slugs are immutable once first_published_at is set (§4.3; decision 3's
 -- slug_locked). Like tenants_lock_slug, an AFTER UPDATE row trigger on every
 -- UPDATE: it sees the final row after every BEFORE UPDATE trigger has run, so it
@@ -118,8 +141,8 @@ create trigger entries_lock_slug
 -- Actor columns cannot be spoofed (decision 11): the column named by the trigger
 -- argument is overwritten with auth.uid() whenever auth.uid() is not null. In
 -- owner context and for the service role (no sub claim) auth.uid() is null and
--- the written value is kept (decisions 12 and 17). Tasks 8 and 9 attach it to
--- assets.created_by and publish_requests.requested_by.
+-- the written value is kept (decisions 12 and 17). Tasks 8 and 9 attach it, and
+-- private.check_actor below, to assets.created_by and publish_requests.requested_by.
 create function private.force_actor()
 returns trigger
 language plpgsql
@@ -129,8 +152,12 @@ as $$
 declare
   v_uid uuid := auth.uid();
 begin
-  -- A missing or misspelt column name would otherwise be ignored silently.
-  if tg_nargs <> 1 or not (pg_catalog.to_jsonb(new) ? tg_argv[0]) then
+  -- A missing or misspelt column name would otherwise be ignored silently. The
+  -- catalog lookup avoids serialising the whole row (drafts.data is up to 1 MB).
+  if tg_nargs <> 1 or not exists (
+    select 1 from pg_catalog.pg_attribute a
+    where a.attrelid = tg_relid and a.attname = tg_argv[0] and a.attnum > 0 and not a.attisdropped
+  ) then
     raise exception 'private.force_actor: the trigger argument must name a column of %.%',
       tg_table_schema, tg_table_name;
   end if;
@@ -151,8 +178,51 @@ create trigger drafts_force_actor
   for each row
   execute function private.force_actor('updated_by');
 
+-- force_actor is a BEFORE trigger, so a BEFORE trigger whose name sorts after it
+-- could still rewrite the actor column. This AFTER row trigger sees the final
+-- row: whenever auth.uid() is not null, the column named by the trigger argument
+-- must equal it. Attached with the same events as force_actor.
+create function private.check_actor()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_actor uuid;
+begin
+  if tg_nargs <> 1 or not exists (
+    select 1 from pg_catalog.pg_attribute a
+    where a.attrelid = tg_relid and a.attname = tg_argv[0] and a.attnum > 0 and not a.attisdropped
+  ) then
+    raise exception 'private.check_actor: the trigger argument must name a column of %.%',
+      tg_table_schema, tg_table_name;
+  end if;
+  if v_uid is not null then
+    execute pg_catalog.format('select ($1).%I', tg_argv[0]) into v_actor using new;
+    if v_actor is distinct from v_uid then
+      raise exception '%.% must equal auth.uid()', tg_table_name, tg_argv[0] using errcode = '23514';
+    end if;
+  end if;
+  return null;
+end;
+$$;
+
+create trigger entries_check_actor
+  after insert on cms.entries
+  for each row
+  execute function private.check_actor('created_by');
+
+create trigger drafts_check_actor
+  after insert or update on cms.drafts
+  for each row
+  execute function private.check_actor('updated_by');
+
 -- RLS (§4.5): access requires a membership in the row's tenant. The subquery runs
 -- under the memberships policy, which permits the user's own rows.
+-- Keep every membership predicate below identical (and identical to those of the
+-- other tenant tables): a change to one copy is a change to tenant isolation.
 alter table cms.entries enable row level security;
 alter table cms.drafts enable row level security;
 alter table cms.revisions enable row level security;

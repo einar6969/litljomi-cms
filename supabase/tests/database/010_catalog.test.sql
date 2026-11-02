@@ -3,15 +3,21 @@
 -- that need tables.
 begin;
 \ir _helpers.sql
-select plan(25);
+select plan(27);
 
 select has_schema('api');
 select has_schema('cms');
 select has_schema('private');
 select ok(not has_schema_privilege('anon', 'cms', 'usage'), 'anon has no usage on cms');
 select ok(not has_schema_privilege('anon', 'private', 'usage'), 'anon has no usage on private');
-select ok(not has_schema_privilege('authenticated', 'private', 'usage'), 'authenticated has no usage on private');
-select ok(not has_schema_privilege('service_role', 'private', 'usage'), 'service_role has no usage on private');
+-- The reference triggers run as the invoking role and call private.extract_refs,
+-- so authenticated and service_role have usage on private (spec §4.5
+-- "Reference-extraction grant", plan decision 26); what they may execute there
+-- is pinned below.
+select ok(has_schema_privilege('authenticated', 'private', 'usage'), 'authenticated has usage on private (decision 26)');
+select ok(has_schema_privilege('service_role', 'private', 'usage'), 'service_role has usage on private (decision 26)');
+select ok(not has_schema_privilege('authenticated', 'private', 'create'), 'authenticated cannot create in private');
+select ok(not has_schema_privilege('service_role', 'private', 'create'), 'service_role cannot create in private');
 select ok(has_schema_privilege('authenticated', 'api', 'usage'), 'authenticated has usage on api');
 select ok(has_schema_privilege('authenticated', 'cms', 'usage'), 'authenticated has usage on cms');
 select ok(has_schema_privilege('service_role', 'api', 'usage'), 'service_role has usage on api');
@@ -48,30 +54,59 @@ select is_empty($$ select c.relname from pg_class c join pg_namespace n on n.oid
     and (has_table_privilege('anon', c.oid, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
          or has_any_column_privilege('anon', c.oid, 'SELECT, INSERT, UPDATE, REFERENCES')) $$,
   'anon has no privilege on any cms table');
--- Trigger functions and helpers in private are executed by no API role: triggers
--- fire without an EXECUTE check, and the Auth hook is granted to
--- supabase_auth_admin only (012_auth_hook).
+-- Functions in private: triggers fire without an EXECUTE check, and the Auth hook
+-- is granted to supabase_auth_admin only (012_auth_hook). The one exception is
+-- private.extract_refs, which the reference triggers call as the invoking role
+-- (decision 26): executable by authenticated and service_role, never by anon.
 select is_empty($$ select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'private'
+    and p.oid <> 'private.extract_refs(jsonb)'::regprocedure
     and (has_function_privilege('anon', p.oid, 'execute')
          or has_function_privilege('authenticated', p.oid, 'execute')
          or has_function_privilege('service_role', p.oid, 'execute')) $$,
-  'anon, authenticated and service_role execute nothing in private');
+  'anon, authenticated and service_role execute nothing in private except extract_refs');
+select set_eq($$ select case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end, a.privilege_type
+     from pg_catalog.pg_proc p, pg_catalog.aclexplode(p.proacl) a
+     where p.oid = 'private.extract_refs(jsonb)'::regprocedure $$,
+  $$ values ('postgres', 'EXECUTE'), ('authenticated', 'EXECUTE'), ('service_role', 'EXECUTE') $$,
+  'extract_refs grantees are exactly postgres, authenticated and service_role (not PUBLIC, anon)');
 
--- Tenant tables (§4.3) have tenant_id not null; later tasks add the others.
-select col_not_null('cms', 'memberships', 'tenant_id', 'memberships.tenant_id is not null');
-select col_not_null('cms', 'entries', 'tenant_id', 'entries.tenant_id is not null');
-select col_not_null('cms', 'drafts', 'tenant_id', 'drafts.tenant_id is not null');
-select col_not_null('cms', 'revisions', 'tenant_id', 'revisions.tenant_id is not null');
+-- Tenant tables: the definitive list in §4.3, in one place. Tables that later
+-- tasks create are checked as soon as they exist.
+create function tests.tenant_tables() returns text[]
+language sql
+set search_path = ''
+as $$
+  select array['memberships', 'entries', 'drafts', 'revisions', 'draft_refs', 'revision_refs', 'assets',
+               'publish_requests', 'releases', 'sites', 'site_deliveries']
+$$;
+-- Every cms table with a tenant_id column is in the list, so a new table cannot
+-- escape the checks below. audit_log is the one exception (§4.3: nullable
+-- tenant_id, its own policies; Task 10).
+select is_empty($$ select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+  join pg_attribute a on a.attrelid = c.oid and a.attname = 'tenant_id' and not a.attisdropped
+  where n.nspname = 'cms' and c.relkind in ('r', 'p')
+    and c.relname <> all (tests.tenant_tables()) and c.relname <> 'audit_log' $$,
+  'every cms table with a tenant_id column is a §4.3 tenant table');
+-- Every tenant table that exists has tenant_id not null (§4.1 rule 3).
+select is_empty($$ select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'cms' and c.relkind in ('r', 'p') and c.relname = any (tests.tenant_tables())
+    and not exists (select 1 from pg_attribute a
+      where a.attrelid = c.oid and a.attname = 'tenant_id' and a.attnotnull and not a.attisdropped) $$,
+  'every existing tenant table has tenant_id not null');
+-- The tenant tables created so far (this list grows with each task), so the two
+-- checks above cannot pass because a table is missing.
+select set_eq($$ select c.relname::text from pg_class c join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'cms' and c.relkind in ('r', 'p') and c.relname = any (tests.tenant_tables()) $$,
+  array['memberships', 'entries', 'drafts', 'revisions', 'draft_refs', 'revision_refs'],
+  'tenant tables created so far: memberships, entries, drafts, revisions, draft_refs, revision_refs');
 -- Every foreign key between two tenant tables (§4.1 rule 3, the §4.3 list) pairs
 -- tenant_id with tenant_id, so a cross-tenant reference cannot exist.
-select is_empty($$ with tenant_tables(names) as (values (array['memberships', 'entries', 'drafts', 'revisions',
-    'draft_refs', 'revision_refs', 'assets', 'publish_requests', 'releases', 'sites', 'site_deliveries']))
-  select c.conname from pg_constraint c cross join tenant_tables t
+select is_empty($$ select c.conname from pg_constraint c
   join pg_class src on src.oid = c.conrelid join pg_namespace sn on sn.oid = src.relnamespace
   join pg_class dst on dst.oid = c.confrelid join pg_namespace dn on dn.oid = dst.relnamespace
   where c.contype = 'f' and sn.nspname = 'cms' and dn.nspname = 'cms'
-    and src.relname = any (t.names) and dst.relname = any (t.names)
+    and src.relname = any (tests.tenant_tables()) and dst.relname = any (tests.tenant_tables())
     and not exists (
       select 1 from unnest(c.conkey, c.confkey) as k(src_att, dst_att)
       join pg_attribute sa on sa.attrelid = c.conrelid and sa.attnum = k.src_att
@@ -79,7 +114,8 @@ select is_empty($$ with tenant_tables(names) as (values (array['memberships', 'e
       where sa.attname = 'tenant_id' and da.attname = 'tenant_id') $$,
   'every foreign key between tenant tables is composite with tenant_id');
 -- History is append-only (§4.3, §4.5): no UPDATE or DELETE on revisions for
--- anon, authenticated or service_role (Task 10 adds audit_log).
+-- anon, authenticated or service_role. The values list is there so Task 10 can
+-- add cms.audit_log to it.
 select is_empty($$ select r.rolname, t.tbl from pg_roles r
   cross join (values ('cms.revisions')) as t(tbl)
   where r.rolname in ('anon', 'authenticated', 'service_role')

@@ -56,3 +56,38 @@ Evidence (controller's own runs on commit 7933579, Supabase CLI 2.121.0, local s
 ## Correction to the bootstrap exposure (Task 2 security review, 2026-11-01)
 
 The security review found that `[api] schemas = []` makes PostgREST fall back to exposing `public` (empty at the time; `Accept-Profile: public` returned the OpenAPI document). Controller pre-check: `["graphql_public"]` keeps the stack healthy and rejects `public` (406). Einar approved the correction on 2026-11-01 ("I approve F1–F3 as recommended, including the three minor corrections."); recorded as plan decision 17, with decision 16 corrected in place.
+
+## A13 (Task 7, 2026-11-02)
+
+Assumption (spec §11.1): the reference extraction finds `_ref` at any depth, including inside arrays and rich text. Under decision 25 (spec §4.3 revised), `private.extract_refs` walks the document recursively and returns each reference's location as jsonpath text, and the tests cross-check the walk against the recursive JSON path `strict $.**._ref`.
+
+Evidence: `supabase/tests/database/040_refs.test.sql`. Local stack: PostgreSQL 17.11, Supabase CLI. `pnpm db:reset && pnpm db:test` gave `Files=7, Tests=405 … Result: PASS`. The A13 assertions, as reported:
+
+```
+ok 22 - refs found at any depth
+ok 23 - each reference's location is a jsonpath to the reference object, with its kind
+ok 24 - the walk finds exactly the refs jsonb_path_query(strict $.**._ref) finds (rich-text document)
+ok 25 - edge cases: root, nested inside a reference, arrays of arrays, duplicates, quoted keys
+ok 26 - the walk finds exactly the refs jsonb_path_query(strict $.**._ref) finds (edge cases)
+ok 27 - every path evaluates, as a jsonpath, to the reference object it names
+ok 51 - draft_refs rebuilt on save
+ok 56 - draft_refs replaced by the new document's references (stray and old rows gone)
+ok 78 - revision_refs equal the draft's draft_refs at that version
+```
+
+- Test 22 uses the plan's document: a top-level field, an array element, a rich-text link mark (`attrs.entry`) and a rich-text image node (`attrs.asset`), the shapes of `packages/rich-text/src/doc-schema.ts`.
+- Test 23 pins the locations, for example `$."body"."content"[0]."content"[0]."marks"[0]."attrs"."entry"`.
+- Tests 24 and 26 compare the walk with `jsonb_path_query(p_data, 'strict $.**._ref')` as multisets (`bag_eq`), so duplicates count.
+- Tests 51 and 56 show the same documents saved through the draft trigger as an editor.
+
+Malformed and canonical cases (decision 25), tests 30–48:
+- Rejected with 22P02: upper-case, braced, unhyphenated, extra digit, leading space, leading or trailing newline, JSON null, number, object and array `_ref`.
+- Accepted: the nil UUID and a canonical non-v4 UUID.
+- Rejected with `invalid_reference`: an unknown, missing, wrong-case or non-string `_kind`.
+
+Mutation check: each mutation was applied inside the test's transaction and rolled back.
+- A walk that skips arrays fails tests 22–26.
+- A cast-only `_ref` check (no pattern) fails the upper-case, braced and unhyphenated cases.
+- A newline-sensitive pattern (`(?n)`) still rejects a trailing newline, because the `uuid` cast also rejects it. Checked directly: the plain anchored `~` gives `false` for a trailing newline, `(?n)` gives `true`, and the cast raises 22P02.
+
+**Result: pass.**

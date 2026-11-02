@@ -83,17 +83,8 @@ select lives_ok($$ update cms.tenants set status = 'suspended' where slug = 'dem
 -- The lock sees the final row, whatever other triggers run: a BEFORE UPDATE
 -- trigger whose name sorts after the lock's cannot change the slug.
 select tests.act_as_owner();
-create function tests.probe_change_slug() returns trigger
-language plpgsql
-set search_path = ''
-as $$
-begin
-  new.slug := 'probe';
-  return new;
-end;
-$$;
 create trigger zz_probe_change_slug before update on cms.tenants
-  for each row execute function tests.probe_change_slug();
+  for each row execute function tests.probe_set_column('slug', 'probe');
 select throws_ok($$ update cms.tenants set name = 'Probe' where slug = 'labak' $$,
   'P0001', 'slug_locked', 'a later BEFORE trigger cannot change a tenant slug');
 drop trigger zz_probe_change_slug on cms.tenants;

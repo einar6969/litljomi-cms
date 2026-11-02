@@ -2,17 +2,29 @@
 -- Entries, drafts, revisions (spec §4.1 rule 3, §4.3, §4.5, §5.5, §8.5; plan Task 6,
 -- decisions 2, 3, 11 and 17).
 --
--- Fixture rows (inserted below in owner context; UUIDs are literals because psql
--- variables are not expanded inside the $$ strings that pgTAP executes):
---   entry    ...c001  labak  news  slug braud-arsins-2025  unpublished, draft v1
---   entry    ...c002  labak  news  slug utgefin-frett      published (revision ...d001), draft v1
---   entry    ...c003  demo   news  slug demo-frett         unpublished, revision ...d002, draft v1
---   entry    ...c004  labak  news  no slug                 no draft
---   revision ...d001  labak, of c002
---   revision ...d002  demo, of c003
+-- Personas and tenants come from tests.seed() (_helpers.sql): editor_labak and
+-- editor_demo are members of labak and demo; outsider, revoked and
+-- platform_admin are members of nothing.
+--
+-- Fixture rows (inserted below in owner context; tests.entry('c001') and
+-- tests.revision('d001') give their UUIDs, also inside pgTAP's $$ strings):
+--   entry    c001  labak  news  slug braud-arsins-2025  unpublished, draft v1
+--   entry    c002  labak  news  slug utgefin-frett      published (revision d001), draft v1
+--   entry    c003  demo   news  slug demo-frett         unpublished, revision d002, draft v1
+--   entry    c004  labak  news  no slug                 no draft
+--   revision d001  labak, of c002
+--   revision d002  demo, of c003
+--
+-- Later assertions depend on earlier mutations, in this order:
+--   c001's draft goes to version 2 (data), 3 (title), 4 (owner); its slug becomes
+--   nytt-heiti, then it is archived and the slug reused by a new entry.
+--   c002's draft is saved with exactly 1 MB of data (version 2) and its
+--   updated_by is rewritten (version 3); the trigger-order probes leave it
+--   unchanged; its publish pointer moves to d003.
+--   c003's draft is updated by the owner during the actor probe (version 2).
 begin;
 \ir _helpers.sql
-select plan(88);
+select plan(99);
 
 select has_table('cms', 'entries', 'cms.entries exists');
 select has_table('cms', 'drafts', 'cms.drafts exists');
@@ -32,20 +44,7 @@ select table_privs_are('cms', 'entries', 'anon', array[]::text[], 'anon: nothing
 select table_privs_are('cms', 'drafts', 'anon', array[]::text[], 'anon: nothing on drafts');
 select table_privs_are('cms', 'revisions', 'anon', array[]::text[], 'anon: nothing on revisions');
 
--- Column privileges: every (column, privilege) pair a role holds for INSERT,
--- UPDATE or REFERENCES, whether granted per column or for the whole table.
-create function tests.column_privs(p_role text, p_table regclass)
-returns table (col text, priv text)
-language sql
-set search_path = ''
-as $$
-  select a.attname::text, p.priv
-  from pg_catalog.pg_attribute a
-  cross join (values ('INSERT'), ('UPDATE'), ('REFERENCES')) as p(priv)
-  where a.attrelid = p_table and a.attnum > 0 and not a.attisdropped
-    and pg_catalog.has_column_privilege(p_role, a.attrelid, a.attnum, p.priv)
-$$;
-
+-- Column privileges, per tests.column_privs() (_helpers.sql).
 select set_eq($$ select * from tests.column_privs('authenticated', 'cms.entries') $$,
   $$ values ('tenant_id', 'INSERT'), ('type', 'INSERT'), ('slug', 'INSERT'), ('created_by', 'INSERT'),
             ('slug', 'UPDATE'), ('archived_at', 'UPDATE') $$,
@@ -68,56 +67,56 @@ select set_eq($$ select * from tests.column_privs('service_role', 'cms.revisions
   $$ select a.attname::text, 'INSERT' from pg_catalog.pg_attribute a
      where a.attrelid = 'cms.revisions'::regclass and a.attnum > 0 and not a.attisdropped $$,
   'service_role: insert (table level) and nothing else on revisions');
--- Revisions are append-only (§4.3): no UPDATE or DELETE for the service role either.
-select ok(not has_table_privilege('service_role', 'cms.revisions', 'update'), 'revisions not updatable');
-select ok(not has_table_privilege('service_role', 'cms.revisions', 'delete'), 'revisions not deletable');
+-- Revisions are append-only (§4.3): the table_privs_are lines above and
+-- 010_catalog pin the missing UPDATE and DELETE; the service_role cases at the
+-- end show them failing.
 
 -- Fixtures (owner context: auth.uid() is null, so actor columns keep the given values).
 select tests.seed();
 insert into cms.entries (id, tenant_id, type, slug, created_by) values
-  ('00000000-0000-4000-8000-00000000c001', tests.tenant('labak'), 'news', 'braud-arsins-2025', tests.persona('editor_labak')),
-  ('00000000-0000-4000-8000-00000000c002', tests.tenant('labak'), 'news', 'utgefin-frett', tests.persona('editor_labak')),
-  ('00000000-0000-4000-8000-00000000c003', tests.tenant('demo'), 'news', 'demo-frett', tests.persona('editor_demo')),
-  ('00000000-0000-4000-8000-00000000c004', tests.tenant('labak'), 'news', null, tests.persona('editor_labak'));
+  (tests.entry('c001'), tests.tenant('labak'), 'news', 'braud-arsins-2025', tests.persona('editor_labak')),
+  (tests.entry('c002'), tests.tenant('labak'), 'news', 'utgefin-frett', tests.persona('editor_labak')),
+  (tests.entry('c003'), tests.tenant('demo'), 'news', 'demo-frett', tests.persona('editor_demo')),
+  (tests.entry('c004'), tests.tenant('labak'), 'news', null, tests.persona('editor_labak'));
 insert into cms.drafts (entry_id, tenant_id, schema_version, data, title, updated_by) values
-  ('00000000-0000-4000-8000-00000000c001', tests.tenant('labak'), 1, '{"title": "Brauð ársins 2025"}', 'Brauð ársins 2025', tests.persona('editor_labak')),
-  ('00000000-0000-4000-8000-00000000c002', tests.tenant('labak'), 1, '{"title": "Útgefin frétt"}', 'Útgefin frétt', tests.persona('editor_labak')),
-  ('00000000-0000-4000-8000-00000000c003', tests.tenant('demo'), 1, '{"title": "Demo"}', 'Demo', tests.persona('editor_demo'));
+  (tests.entry('c001'), tests.tenant('labak'), 1, '{"title": "Brauð ársins 2025"}', 'Brauð ársins 2025', tests.persona('editor_labak')),
+  (tests.entry('c002'), tests.tenant('labak'), 1, '{"title": "Útgefin frétt"}', 'Útgefin frétt', tests.persona('editor_labak')),
+  (tests.entry('c003'), tests.tenant('demo'), 1, '{"title": "Demo"}', 'Demo', tests.persona('editor_demo'));
 insert into cms.revisions (id, tenant_id, entry_id, draft_version, schema_version, data, title, requested_by) values
-  ('00000000-0000-4000-8000-00000000d001', tests.tenant('labak'), '00000000-0000-4000-8000-00000000c002', 1, 1, '{"title": "Útgefin frétt"}', 'Útgefin frétt', tests.persona('editor_labak')),
-  ('00000000-0000-4000-8000-00000000d002', tests.tenant('demo'), '00000000-0000-4000-8000-00000000c003', 1, 1, '{"title": "Demo"}', 'Demo', tests.persona('editor_demo'));
+  (tests.revision('d001'), tests.tenant('labak'), tests.entry('c002'), 1, 1, '{"title": "Útgefin frétt"}', 'Útgefin frétt', tests.persona('editor_labak')),
+  (tests.revision('d002'), tests.tenant('demo'), tests.entry('c003'), 1, 1, '{"title": "Demo"}', 'Demo', tests.persona('editor_demo'));
 update cms.entries
-  set published_rev_id = '00000000-0000-4000-8000-00000000d001', published_draft_version = 1,
+  set published_rev_id = tests.revision('d001'), published_draft_version = 1,
       first_published_at = now(), last_published_at = now()
-  where id = '00000000-0000-4000-8000-00000000c002';
-select is((select created_by from cms.entries where id = '00000000-0000-4000-8000-00000000c003'),
+  where id = tests.entry('c002');
+select is((select created_by from cms.entries where id = tests.entry('c003')),
   tests.persona('editor_demo'), 'owner context (auth.uid() null) keeps the given created_by');
 
 -- Isolation: each editor reads only its own tenant's rows (§4.5 tenant policy).
 select tests.act_as(tests.persona('editor_labak'));
 select set_eq($$ select id from cms.entries $$,
-  array['00000000-0000-4000-8000-00000000c001'::uuid, '00000000-0000-4000-8000-00000000c002',
-        '00000000-0000-4000-8000-00000000c004'], 'labak editor sees only labak entries');
+  array[tests.entry('c001'), tests.entry('c002'),
+        tests.entry('c004')], 'labak editor sees only labak entries');
 select set_eq($$ select entry_id from cms.drafts $$,
-  array['00000000-0000-4000-8000-00000000c001'::uuid, '00000000-0000-4000-8000-00000000c002'], 'labak editor sees only labak drafts');
+  array[tests.entry('c001'), tests.entry('c002')], 'labak editor sees only labak drafts');
 select set_eq($$ select id from cms.revisions $$,
-  array['00000000-0000-4000-8000-00000000d001'::uuid], 'labak editor sees only labak revisions');
+  array[tests.revision('d001')], 'labak editor sees only labak revisions');
 select tests.act_as(tests.persona('editor_demo'));
 select set_eq($$ select id from cms.entries $$,
-  array['00000000-0000-4000-8000-00000000c003'::uuid], 'demo editor sees only demo entries');
+  array[tests.entry('c003')], 'demo editor sees only demo entries');
 select throws_ok($$ insert into cms.entries(tenant_id, type) values (tests.tenant('labak'), 'news') $$,
   '42501', null, 'cannot create in another tenant');
 select throws_ok($$ insert into cms.drafts(entry_id, tenant_id, schema_version)
-  values ('00000000-0000-4000-8000-00000000c004', tests.tenant('labak'), 1) $$,
+  values (tests.entry('c004'), tests.tenant('labak'), 1) $$,
   '42501', null, 'cannot create a draft in another tenant');
 -- Composite foreign key (§4.1 rule 3): a draft in the editor's own tenant cannot
 -- point at another tenant's entry.
 select throws_ok($$ insert into cms.drafts(entry_id, tenant_id, schema_version)
-  values ('00000000-0000-4000-8000-00000000c004', tests.tenant('demo'), 1) $$,
+  values (tests.entry('c004'), tests.tenant('demo'), 1) $$,
   '23503', null, 'draft cannot reference an entry of another tenant');
-select is_empty($$ update cms.entries set slug = 'tekid' where id = '00000000-0000-4000-8000-00000000c001' returning id $$,
+select is_empty($$ update cms.entries set slug = 'tekid' where id = tests.entry('c001') returning id $$,
   'demo editor cannot update a labak entry');
-select is_empty($$ update cms.drafts set title = 'x' where entry_id = '00000000-0000-4000-8000-00000000c001' returning entry_id $$,
+select is_empty($$ update cms.drafts set title = 'x' where entry_id = tests.entry('c001') returning entry_id $$,
   'demo editor cannot update a labak draft');
 -- Without a WHERE or RETURNING clause an UPDATE reads no column, so the SELECT
 -- policy does not filter its rows and only the UPDATE policy keeps labak's rows
@@ -166,23 +165,29 @@ select throws_ok($$ delete from cms.drafts $$, '42501', null, 'editor cannot del
 -- Integrity of drafts (§4.3): data is a JSON object of at most 1 MB; version
 -- increments by exactly 1 on every update and is set by the trigger only.
 select throws_ok($$ update cms.drafts set data = '[]'::jsonb $$, '23514', null, 'data must be an object');
-select throws_ok($$ update cms.drafts set data = jsonb_build_object('x', repeat('a', 1048577)) $$, '23514', null, 'data at most 1 MB');
+-- {"x": "<n characters>"} is n + 9 bytes as text: 1048567 gives exactly 1 MB.
+select throws_ok($$ update cms.drafts set data = jsonb_build_object('x', repeat('a', 1048568)) $$, '23514', null,
+  'data at most 1 MB (1048577 bytes refused)');
+select lives_ok($$ update cms.drafts set data = jsonb_build_object('x', repeat('a', 1048567))
+  where entry_id = tests.entry('c002') $$, 'data of exactly 1 MB (1048576 bytes) is accepted');
+select is((select octet_length(data::text) from cms.drafts where entry_id = tests.entry('c002')), 1048576,
+  'the accepted boundary document is exactly 1048576 bytes');
 select lives_ok($$ update cms.drafts set data = '{"title": "Nýtt"}', updated_at = '2000-01-01'
-  where entry_id = '00000000-0000-4000-8000-00000000c001' $$, 'editor saves a draft');
-select is((select version from cms.drafts where entry_id = '00000000-0000-4000-8000-00000000c001'), 2,
+  where entry_id = tests.entry('c001') $$, 'editor saves a draft');
+select is((select version from cms.drafts where entry_id = tests.entry('c001')), 2,
   'update bumps version by exactly 1');
-select is((select updated_at from cms.drafts where entry_id = '00000000-0000-4000-8000-00000000c001'), now(),
+select is((select updated_at from cms.drafts where entry_id = tests.entry('c001')), now(),
   'updated_at is set by the database on update');
-select lives_ok($$ update cms.drafts set title = 'Bara titill' where entry_id = '00000000-0000-4000-8000-00000000c001' $$,
+select lives_ok($$ update cms.drafts set title = 'Bara titill' where entry_id = tests.entry('c001') $$,
   'editor updates the title only');
-select is((select version from cms.drafts where entry_id = '00000000-0000-4000-8000-00000000c001'), 3,
+select is((select version from cms.drafts where entry_id = tests.entry('c001')), 3,
   'an update that leaves data unchanged still bumps version');
 select tests.act_as_owner();
-update cms.drafts set version = 99, data = '{"title": "Eigandi"}' where entry_id = '00000000-0000-4000-8000-00000000c001';
-select is((select version from cms.drafts where entry_id = '00000000-0000-4000-8000-00000000c001'), 4,
+update cms.drafts set version = 99, data = '{"title": "Eigandi"}' where entry_id = tests.entry('c001');
+select is((select version from cms.drafts where entry_id = tests.entry('c001')), 4,
   'even the owner cannot set version: data changes only with version + 1');
 
--- Slugs (decision 2; §4.3 partial unique; review focus 5).
+-- Slugs (decision 2; §4.3 partial unique; the plan's "Review focus" item 5).
 select tests.act_as(tests.persona('editor_labak'));
 select throws_ok($$ insert into cms.entries(tenant_id, type, slug) values (tests.tenant('labak'), 'news', 'Brauð') $$,
   '23514', null, 'slug format enforced');
@@ -211,43 +216,93 @@ select is((select d.updated_by from cms.drafts d join cms.entries e on e.id = d.
 select is((select d.version from cms.drafts d join cms.entries e on e.id = d.entry_id where e.slug = 'hver-skrifadi'),
   1, 'a new draft starts at version 1');
 select lives_ok($$ update cms.drafts set updated_by = tests.persona('outsider')
-  where entry_id = '00000000-0000-4000-8000-00000000c002' $$, 'editor updates a draft naming another user');
-select is((select updated_by from cms.drafts where entry_id = '00000000-0000-4000-8000-00000000c002'),
+  where entry_id = tests.entry('c002') $$, 'editor updates a draft naming another user');
+select is((select updated_by from cms.drafts where entry_id = tests.entry('c002')),
   tests.persona('editor_labak'), 'drafts.updated_by forced to auth.uid() on update');
 
 -- Slug lock (§4.3, decision 3): immutable once first_published_at is set (c002).
-select lives_ok($$ update cms.entries set slug = 'nytt-heiti' where id = '00000000-0000-4000-8000-00000000c001' $$,
+select lives_ok($$ update cms.entries set slug = 'nytt-heiti' where id = tests.entry('c001') $$,
   'slug changes freely before first publish');
-select throws_ok($$ update cms.entries set slug = 'nytt' where id = '00000000-0000-4000-8000-00000000c002' $$,
+select throws_ok($$ update cms.entries set slug = 'nytt' where id = tests.entry('c002') $$,
   'P0001', 'slug_locked', 'slug immutable after first publish');
-select throws_ok($$ update cms.entries set slug = null where id = '00000000-0000-4000-8000-00000000c002' $$,
+select throws_ok($$ update cms.entries set slug = null where id = tests.entry('c002') $$,
   'P0001', 'slug_locked', 'slug cannot be cleared after first publish');
-select lives_ok($$ update cms.entries set slug = 'utgefin-frett' where id = '00000000-0000-4000-8000-00000000c002' $$,
+select lives_ok($$ update cms.entries set slug = 'utgefin-frett' where id = tests.entry('c002') $$,
   'setting the same slug after publish is not a change');
 select tests.act_as_owner();
-select throws_ok($$ update cms.entries set slug = 'nytt' where id = '00000000-0000-4000-8000-00000000c002' $$,
+select throws_ok($$ update cms.entries set slug = 'nytt' where id = tests.entry('c002') $$,
   'P0001', 'slug_locked', 'slug immutable after first publish, for the owner too');
-select lives_ok($$ update cms.entries set last_published_at = now() where id = '00000000-0000-4000-8000-00000000c002' $$,
+select lives_ok($$ update cms.entries set last_published_at = now() where id = tests.entry('c002') $$,
   'other columns of a published entry stay updatable');
 -- The lock sees the final row, whatever other triggers run: a BEFORE UPDATE
 -- trigger whose name sorts after the lock's cannot change the slug.
-create function tests.probe_change_slug() returns trigger
-language plpgsql
-set search_path = ''
-as $$
-begin
-  new.slug := 'probe';
-  return new;
-end;
-$$;
 create trigger zz_probe_change_slug before update on cms.entries
-  for each row execute function tests.probe_change_slug();
-select throws_ok($$ update cms.entries set last_published_at = now() where id = '00000000-0000-4000-8000-00000000c002' $$,
+  for each row execute function tests.probe_set_column('slug', 'probe');
+select throws_ok($$ update cms.entries set last_published_at = now() where id = tests.entry('c002') $$,
   'P0001', 'slug_locked', 'a later BEFORE trigger cannot change a published slug');
 drop trigger zz_probe_change_slug on cms.entries;
+
+-- The draft version bump and the actor columns hold whatever other triggers run
+-- (§4.3; decision 11): AFTER triggers check the final row, so a BEFORE trigger
+-- whose name sorts after drafts_bump_version or *_force_actor cannot undo them.
+create trigger zz_probe_keep_version before update on cms.drafts
+  for each row execute function tests.probe_keep_column('version');
+select throws_ok($$ update cms.drafts set title = 'Eigandi' where entry_id = tests.entry('c002') $$,
+  '23514', 'drafts.version must increase by exactly 1', 'a later BEFORE trigger cannot undo the version bump, for the owner');
+select tests.act_as(tests.persona('editor_labak'));
+select throws_ok($$ update cms.drafts set data = '{"breytt": true}' where entry_id = tests.entry('c002') $$,
+  '23514', 'drafts.version must increase by exactly 1', 'a later BEFORE trigger cannot undo the version bump, for an editor');
+select tests.act_as_owner();
+drop trigger zz_probe_keep_version on cms.drafts;
+create trigger zz_probe_spoof_actor before insert or update on cms.drafts
+  for each row execute function tests.probe_set_column('updated_by', '00000000-0000-4000-8000-00000000b003');
+create trigger zz_probe_spoof_actor before insert on cms.entries
+  for each row execute function tests.probe_set_column('created_by', '00000000-0000-4000-8000-00000000b003');
+select lives_ok($$ update cms.drafts set title = 'Eigandi' where entry_id = tests.entry('c003') $$,
+  'owner context (auth.uid() null) keeps whatever actor the row carries');
+select tests.act_as(tests.persona('editor_labak'));
+select throws_ok($$ update cms.drafts set title = 'Spoof' where entry_id = tests.entry('c002') $$,
+  '23514', 'drafts.updated_by must equal auth.uid()', 'a later BEFORE trigger cannot spoof drafts.updated_by on update');
+select throws_ok($$ insert into cms.drafts(entry_id, tenant_id, schema_version)
+  values (tests.entry('c004'), tests.tenant('labak'), 1) $$,
+  '23514', 'drafts.updated_by must equal auth.uid()', 'a later BEFORE trigger cannot spoof drafts.updated_by on insert');
+select throws_ok($$ insert into cms.entries(tenant_id, type) values (tests.tenant('labak'), 'news') $$,
+  '23514', 'entries.created_by must equal auth.uid()', 'a later BEFORE trigger cannot spoof entries.created_by');
+select tests.act_as_owner();
+drop trigger zz_probe_spoof_actor on cms.drafts;
+drop trigger zz_probe_spoof_actor on cms.entries;
+select is((select updated_by from cms.drafts where entry_id = tests.entry('c002')), tests.persona('editor_labak'),
+  'the refused probe updates left c002''s updated_by alone');
+
+-- force_actor's and check_actor's argument must name a column of the table
+-- (looked up in pg_attribute); a missing or misspelt name is an error, not a
+-- silent no-op.
+create table tests.actor_target (id int, who uuid);
+create trigger t_misspelt before insert on tests.actor_target
+  for each row execute function private.force_actor('whom');
+select throws_ok($$ insert into tests.actor_target values (1, null) $$, 'P0001',
+  'private.force_actor: the trigger argument must name a column of tests.actor_target', 'force_actor rejects a misspelt column');
+drop trigger t_misspelt on tests.actor_target;
+create trigger t_missing before insert on tests.actor_target
+  for each row execute function private.force_actor();
+select throws_ok($$ insert into tests.actor_target values (1, null) $$, 'P0001',
+  'private.force_actor: the trigger argument must name a column of tests.actor_target', 'force_actor rejects a missing argument');
+drop trigger t_missing on tests.actor_target;
+create trigger t_check_misspelt after insert on tests.actor_target
+  for each row execute function private.check_actor('whom');
+select throws_ok($$ insert into tests.actor_target values (1, null) $$, 'P0001',
+  'private.check_actor: the trigger argument must name a column of tests.actor_target', 'check_actor rejects a misspelt column');
+drop trigger t_check_misspelt on tests.actor_target;
+create trigger t_ok before insert on tests.actor_target
+  for each row execute function private.force_actor('who');
+select set_config('request.jwt.claims', json_build_object('sub', tests.persona('editor_demo'))::text, true);
+insert into tests.actor_target values (1, tests.persona('outsider'));
+select tests.act_as_owner();
+select is((select who from tests.actor_target), tests.persona('editor_demo'), 'force_actor sets the named column to auth.uid()');
+drop table tests.actor_target;
 -- An archived entry's slug is free again (the unique index is partial).
 select tests.act_as(tests.persona('editor_labak'));
-select lives_ok($$ update cms.entries set archived_at = now() where id = '00000000-0000-4000-8000-00000000c001' $$,
+select lives_ok($$ update cms.entries set archived_at = now() where id = tests.entry('c001') $$,
   'editor archives an unpublished entry');
 select lives_ok($$ insert into cms.entries(tenant_id, type, slug) values (tests.tenant('labak'), 'news', 'nytt-heiti') $$,
   'an archived entry''s slug can be reused');
@@ -256,17 +311,17 @@ select lives_ok($$ insert into cms.entries(tenant_id, type, slug) values (tests.
 -- revisions; the pointer must name a revision of the same entry and tenant.
 select tests.act_as_service();
 select lives_ok($$ insert into cms.revisions(id, tenant_id, entry_id, draft_version, schema_version, data, requested_by)
-  values ('00000000-0000-4000-8000-00000000d003', tests.tenant('labak'), '00000000-0000-4000-8000-00000000c002', 2, 1, '{}',
+  values (tests.revision('d003'), tests.tenant('labak'), tests.entry('c002'), 2, 1, '{}',
           tests.persona('editor_labak')) $$, 'service_role appends a revision');
 select throws_ok($$ insert into cms.revisions(tenant_id, entry_id, draft_version, schema_version, data, requested_by)
-  values (tests.tenant('demo'), '00000000-0000-4000-8000-00000000c002', 1, 1, '{}', tests.persona('editor_labak')) $$,
+  values (tests.tenant('demo'), tests.entry('c002'), 1, 1, '{}', tests.persona('editor_labak')) $$,
   '23503', null, 'revision cannot reference an entry of another tenant');
-select lives_ok($$ update cms.entries set published_rev_id = '00000000-0000-4000-8000-00000000d003', published_draft_version = 2
-  where id = '00000000-0000-4000-8000-00000000c002' $$, 'pointer to a revision of the same entry');
-select throws_ok($$ update cms.entries set published_rev_id = '00000000-0000-4000-8000-00000000d003'
-  where id = '00000000-0000-4000-8000-00000000c001' $$, '23503', null, 'pointer cannot name a revision of another entry');
-select throws_ok($$ update cms.entries set published_rev_id = '00000000-0000-4000-8000-00000000d002'
-  where id = '00000000-0000-4000-8000-00000000c002' $$, '23503', null, 'pointer cannot name a revision of another tenant');
+select lives_ok($$ update cms.entries set published_rev_id = tests.revision('d003'), published_draft_version = 2
+  where id = tests.entry('c002') $$, 'pointer to a revision of the same entry');
+select throws_ok($$ update cms.entries set published_rev_id = tests.revision('d003')
+  where id = tests.entry('c001') $$, '23503', null, 'pointer cannot name a revision of another entry');
+select throws_ok($$ update cms.entries set published_rev_id = tests.revision('d002')
+  where id = tests.entry('c002') $$, '23503', null, 'pointer cannot name a revision of another tenant');
 select throws_ok($$ update cms.revisions set data = '{"x": 1}' $$, '42501', null, 'service_role cannot update revisions');
 select throws_ok($$ delete from cms.revisions $$, '42501', null, 'service_role cannot delete revisions');
 select throws_ok($$ update cms.entries set slug = 'nytt' $$, '42501', null, 'service_role cannot update slugs');

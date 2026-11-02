@@ -2,7 +2,7 @@
 -- Covers every helper in _helpers.sql (000_harness.test.sql covers the main path).
 begin;
 \ir _helpers.sql
-select plan(37);
+select plan(51);
 
 -- persona(): one UUID per name, and the unknown-name exception
 select is(tests.persona('editor_labak'),   '00000000-0000-4000-8000-00000000b001'::uuid, 'persona editor_labak');
@@ -16,6 +16,45 @@ select throws_ok($$select tests.persona('nobody')$$, 'P0001', 'unknown persona: 
 select is(tests.tenant('labak'), '00000000-0000-4000-8000-00000000a001'::uuid, 'tenant labak');
 select is(tests.tenant('demo'),  '00000000-0000-4000-8000-00000000a002'::uuid, 'tenant demo');
 select throws_ok($$select tests.tenant('nope')$$, 'P0001', 'unknown tenant: nope', 'tenant rejects an unknown slug');
+
+-- entry() and revision(): fixture UUIDs by key
+select is(tests.entry('c001'), '00000000-0000-4000-8000-00000000c001'::uuid, 'entry c001');
+select is(tests.entry('c0af'), '00000000-0000-4000-8000-00000000c0af'::uuid, 'entry keys are hex');
+select throws_ok($$select tests.entry('d001')$$, 'P0001', 'unknown entry key: d001', 'entry rejects a revision key');
+select throws_ok($$select tests.entry(null)$$, 'P0001', 'unknown entry key: <null>', 'entry rejects null');
+select is(tests.revision('d002'), '00000000-0000-4000-8000-00000000d002'::uuid, 'revision d002');
+select throws_ok($$select tests.revision('c001')$$, 'P0001', 'unknown revision key: c001', 'revision rejects an entry key');
+
+-- column_privs(): table-level and per-column INSERT/UPDATE/REFERENCES
+select is_empty($$ select * from tests.column_privs('authenticated', 'cms.tenants') $$,
+  'column_privs: nothing for a select-only grant');
+select set_eq($$ select * from tests.column_privs('service_role', 'cms.tenants') $$,
+  $$ select a.attname::text, p.priv from pg_catalog.pg_attribute a
+     cross join (values ('INSERT'), ('UPDATE')) as p(priv)
+     where a.attrelid = 'cms.tenants'::regclass and a.attnum > 0 and not a.attisdropped $$,
+  'column_privs: table-level insert and update expand to every column');
+
+-- probe_set_column() and probe_keep_column(): BEFORE-trigger probes
+create table tests.probe_target (id int primary key, n int, s text);
+create trigger zz_probe_set before insert on tests.probe_target
+  for each row execute function tests.probe_set_column('s', 'probe');
+create trigger zz_probe_keep before update on tests.probe_target
+  for each row execute function tests.probe_keep_column('n');
+insert into tests.probe_target values (1, 7, 'given');
+select is((select s from tests.probe_target), 'probe', 'probe_set_column sets the named column');
+update tests.probe_target set n = 8, s = 'changed';
+select is((select n from tests.probe_target), 7, 'probe_keep_column restores the old value');
+select is((select s from tests.probe_target), 'changed', 'probe_keep_column leaves other columns alone');
+drop trigger zz_probe_set on tests.probe_target;
+create trigger zz_probe_set_int before insert on tests.probe_target
+  for each row execute function tests.probe_set_column('n', '42');
+insert into tests.probe_target (id, n) values (2, 1);
+select is((select n from tests.probe_target where id = 2), 42, 'probe_set_column converts the text value to the column type');
+drop table tests.probe_target;
+select ok(not has_function_privilege('authenticated', 'tests.column_privs(text, regclass)', 'execute'),
+  'column_privs is for the owner context only');
+select ok(not has_function_privilege('anon', 'tests.column_privs(text, regclass)', 'execute'),
+  'anon cannot execute column_privs');
 
 -- seed(): five users; not executable by the roles the tests switch to
 select lives_ok($$select tests.seed()$$, 'seed runs');
@@ -34,7 +73,8 @@ select tests.act_as_owner();
 select ok(
   (select bool_and(has_function_privilege(r, f, 'execute'))
    from unnest(array['anon', 'authenticated', 'service_role']) as r,
-        unnest(array['tests.persona(text)', 'tests.tenant(text)', 'tests.act_as(uuid,text)',
+        unnest(array['tests.persona(text)', 'tests.tenant(text)', 'tests.entry(text)', 'tests.revision(text)',
+                     'tests.act_as(uuid,text)',
                      'tests.act_as_anon()', 'tests.act_as_service()', 'tests.act_as_owner()']) as f),
   'every role can execute the helpers used after a role switch');
 
