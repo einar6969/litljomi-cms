@@ -18,7 +18,8 @@
     "db:stop": "SUPABASE_TELEMETRY_DISABLED=1 supabase stop",
     "db:reset": "SUPABASE_TELEMETRY_DISABLED=1 supabase db reset",
     "db:test": "node tools/db/test.mjs",
-    "seed:local": "node tests/integration/scripts/seed-local.ts"
+    "seed:local": "node tests/integration/scripts/seed-local.ts",
+    "seed:labak-site": "node tests/integration/scripts/seed-labak-site.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

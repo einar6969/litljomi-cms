@@ -34,3 +34,14 @@ export const DEMO_SITE = {
   revalidateUrl: 'http://localhost:3101/api/cms/revalidate',
   webhookSecret: 's3cr3t',
 } as const;
+
+/**
+ * The site `pnpm seed:labak-site` gives the labak tenant, by hand, on the local stack only: the
+ * LABAK site running locally. A local test secret, never a real one. Not part of seedIntegration:
+ * the design e2e expects labak to have no site after a reset.
+ */
+export const LABAK_LOCAL_SITE = {
+  baseUrl: 'http://localhost:3200',
+  revalidateUrl: 'http://localhost:3200/api/cms/revalidate',
+  webhookSecret: 'labak-local-secret',
+} as const;
