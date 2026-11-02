@@ -13,7 +13,8 @@ import { CMS_PORT, CMS_URL, NO_CLI_NETWORK_ENV } from './e2e/support/local';
 // nothing is written to a file. The global setup seeds the fixed identities (`pnpm seed:local`'s
 // script). The `editor-session` setup project signs editor_labak and editor_demo in once; specs
 // reuse their state. The demo site (Task 25) is served on 3101 by e2e/demo-site-server.ts, also
-// loopback only, reading the local stack's public delivery bucket.
+// loopback only, reading the local stack's public delivery bucket; the `demo-release` setup project
+// makes the demo tenant's first release when there is none and waits for the site.
 const cmsNext = 'sh ../../tests/integration/scripts/cms-next.sh';
 
 export default defineConfig({
@@ -51,8 +52,8 @@ export default defineConfig({
     },
     {
       // The real demo site on its seeded URL (Task 25's live checks). It can be built only once the
-      // demo tenant has a release, so Playwright waits only for its announcement; publish.spec.ts
-      // waits for the site itself (and makes the first release when there is none).
+      // demo tenant has a release, so Playwright waits only for its announcement; the `demo-release`
+      // setup project waits for the site itself (and makes the first release when there is none).
       name: 'demo-site',
       command: `${JSON.stringify(process.execPath)} e2e/demo-site-server.ts`,
       wait: { stdout: new RegExp(DEMO_SITE_READY_LINE) },
@@ -65,10 +66,13 @@ export default defineConfig({
   ],
   projects: [
     { name: 'editor-session', testMatch: /editor-session\.setup\.ts$/, use: { ...devices['Desktop Chrome'] } },
+    // The demo tenant's first release and the demo site up before any spec publishes, so a publish
+    // can be confirmed from a freshly reset database whatever order the specs run in.
+    { name: 'demo-release', testMatch: /demo-release\.setup\.ts$/, dependencies: ['editor-session'], use: { ...devices['Desktop Chrome'] } },
     {
       name: 'chromium',
       testIgnore: /\.setup\.ts$/,
-      dependencies: ['editor-session'],
+      dependencies: ['editor-session', 'demo-release'],
       use: { ...devices['Desktop Chrome'] },
     },
   ],
