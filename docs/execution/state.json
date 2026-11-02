@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T04:26:09.670Z",
+  "updatedAt": "2026-11-02T04:28:52.002Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -304,12 +304,16 @@
     },
     {
       "id": 7,
-      "status": "pending",
+      "status": "in_progress",
       "commits": [],
       "reviews": {},
-      "gatesUsed": [],
+      "gatesUsed": [
+        "G0",
+        "G1"
+      ],
       "blockers": [],
-      "notes": ""
+      "notes": "",
+      "startedAt": "2026-11-02T04:26:10.172Z"
     },
     {
       "id": 8,
@@ -422,7 +426,7 @@
     },
     {
       "id": 15,
-      "status": "in_review",
+      "status": "done",
       "commits": [
         "e97329c"
       ],
@@ -432,6 +436,13 @@
           "round": 1,
           "report": "docs/execution/reviews/task-15-r1-spec-quality.md",
           "at": "2026-11-02T04:24:58.797Z",
+          "atCommits": 1
+        },
+        "security": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-15-r1-security.md",
+          "at": "2026-11-02T04:28:21.408Z",
           "atCommits": 1
         }
       },
@@ -447,8 +458,9 @@
           "resolvedAt": "2026-11-02T04:17:18.495Z"
         }
       ],
-      "notes": "Blocked 2026-11-02 before any work on a spec/plan contradiction (§3.1: schema may depend on Zod only; Task 15 consumes rich-text). Einar ruled in chat: \"Allow rich-text main entry\" (decision 24; spec §3.1 revised). Unblocked; the same implementer continues.",
-      "startedAt": "2026-11-02T04:14:42.592Z"
+      "notes": "Blocked 2026-11-02 before any work on a spec/plan contradiction (§3.1: schema may depend on Zod only; Task 15 consumes rich-text). Einar ruled in chat: \"Allow rich-text main entry\" (decision 24; spec §3.1 revised). Unblocked; the same implementer continues. Commit e97329c (fields image and richText, projection, canonicalJson/contentHash (plan hash verified), codegen; deferred Minors from Tasks 13 and 14 cleared, including resolver-output checks and the depth cap). Lockfile: 3-line workspace link, frozen install verified by the controller. Reviews: specQuality r1 pass ({ entry: null } adaptation ratified per spec §6.2), security r1 pass (5 Minors -> Tasks 16, 19, 20). Worktree suite on e97329c: harness 27/27; lint, typecheck, check:slugs exit 0; Vitest 17 files 223 passed. Merge into m1/phase-1 waits for the Lane A implementer (Task 7) to be idle.",
+      "startedAt": "2026-11-02T04:14:42.592Z",
+      "doneAt": "2026-11-02T04:28:52.002Z"
     },
     {
       "id": 16,
