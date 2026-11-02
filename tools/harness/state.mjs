@@ -6,6 +6,9 @@
 //   done <task> | checkpoint C<n> <report> | render
 // "waived" is accepted only for V-HARNESS and V-CONNECTORS.
 // start: every task in dependsOn done, and at most one active task per lane (Einar, 2026-11-02).
+// start, Lane A overlap (Einar, 2026-11-02): a Lane A task may start while a Lane A dependency is
+// in_review (not blocked, not in_progress); at most one Lane A task is in_progress at a time.
+// done: every task in dependsOn done.
 // start: also refuses a task placed after a checkpoint Einar has not approved.
 // done: the reviews the task's tier requires have passed, no recorded review failed, and every
 // security review covers the latest recorded commit (atCommits).
@@ -269,9 +272,19 @@ function cmdStart(ctx, root, args, now) {
   const blocked = ctx.state.tasks.find((x) => openBlockers(x).length);
   if (blocked) throw new Refusal(`Task ${blocked.id} has an open blocker: ${openBlockers(blocked)[0].text}`);
   if (t.task.status !== 'pending') throw new Refusal(`Task ${t.id} is already ${t.task.status}`);
-  const notDone = t.plan.dependsOn.filter((id) => ctx.state.tasks.find((x) => x.id === id)?.status !== 'done');
-  if (notDone.length) throw new Refusal(`Task ${t.id} depends on Task ${notDone.join(', Task ')}, not done`);
-  const busy = ctx.state.tasks.find((x, i) => ACTIVE.includes(x.status) && ctx.planIndex[i].lane === t.plan.lane);
+  // Lane A overlap: a Lane A dependency that is in_review counts as ready for a Lane A task.
+  const overlap = t.plan.lane === 'A';
+  const ready = (id) => {
+    const i = ctx.state.tasks.findIndex((x) => x.id === id);
+    const status = ctx.state.tasks[i]?.status;
+    return status === 'done' || (overlap && status === 'in_review' && ctx.planIndex[i].lane === 'A');
+  };
+  const notReady = t.plan.dependsOn.filter((id) => !ready(id));
+  if (notReady.length) {
+    throw new Refusal(`Task ${t.id} depends on Task ${notReady.join(', Task ')}, not done${overlap ? ' or in review' : ''}`);
+  }
+  const busyStatuses = overlap ? ['in_progress', 'blocked'] : ACTIVE;
+  const busy = ctx.state.tasks.find((x, i) => busyStatuses.includes(x.status) && ctx.planIndex[i].lane === t.plan.lane);
   if (busy) throw new Refusal(`lane ${t.plan.lane} already has an active task: Task ${busy.id} (${busy.status})`);
   const unapproved = ctx.planIndex
     .slice(0, t.index)
@@ -344,6 +357,8 @@ function cmdDone(ctx, root, args, now) {
   const missing = [];
   if (openBlockers(t.task).length) missing.push('an open blocker must be resolved');
   if (!t.task.commits.length) missing.push('at least one commit');
+  const depsNotDone = t.plan.dependsOn.filter((id) => ctx.state.tasks.find((x) => x.id === id)?.status !== 'done');
+  if (depsNotDone.length) missing.push(`Task ${depsNotDone.join(', Task ')} done first (dependsOn)`);
   for (const kind of TIER_REVIEWS[t.plan.tier]) {
     if (t.task.reviews[kind]?.status !== 'pass') missing.push(`a passing ${kind} review (${t.plan.tier} tier)`);
   }

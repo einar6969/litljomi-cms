@@ -176,6 +176,7 @@ test('start is refused while a blocker is open', withRoot((root) => {
 }));
 
 test('done 4 is refused without a passing security review', withRoot((root) => {
+  markDone(root, [0, 1, 2, 3]);
   const s = readState(root);
   const t = task(s, 4);
   t.status = 'in_review';
@@ -207,6 +208,64 @@ test('start allows one active task per lane', withRoot((root) => {
   assert.equal(run(['start', '13'], { root }).code, 0);
   assert.equal(task(readState(root), 13).status, 'in_progress');
 }, { planIndex: twoLaneIndex, approved: ['G0', 'G1'] }));
+
+// Lane A overlap (Einar, 2026-11-02): the next Lane A task may start while its Lane A dependency is in review.
+test('start allows a Lane A task while its Lane A dependency is in_review, not in_progress or blocked', withRoot((root) => {
+  markDone(root, [0, 1, 2, 3, 4, 5, 6]);
+  approveCheckpoints(root, ['C0']);
+  assert.equal(run(['start', '7'], { root }).code, 0);
+  let r = run(['start', '8'], { root });
+  assert.notEqual(r.code, 0, 'Task 7 in_progress');
+  assert.match(r.stderr, /Task 7/);
+  let s = readState(root);
+  task(s, 7).status = 'in_review';
+  writeState(root, s);
+  r = run(['start', '8'], { root });
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(task(readState(root), 8).status, 'in_progress');
+  // A second Lane A task cannot be in_progress, even with Task 8 still unfinished.
+  s = readState(root);
+  task(s, 8).status = 'in_progress';
+  task(s, 9).status = 'pending';
+  writeState(root, s);
+  r = run(['start', '9'], { root });
+  assert.notEqual(r.code, 0);
+  assert.match(r.stderr, /Task 8/);
+}, { approved: ['G0', 'G1'] }));
+
+test('start refuses a Lane A task whose dependency is blocked', withRoot((root) => {
+  markDone(root, [0, 1, 2, 3, 4, 5, 6]);
+  approveCheckpoints(root, ['C0']);
+  const s = readState(root);
+  task(s, 7).status = 'blocked';
+  task(s, 7).blockers = [{ text: 'x', at: '2026-11-02T00:00:00.000Z', previousStatus: 'in_review', resolvedAt: null }];
+  writeState(root, s);
+  let r = run(['start', '8'], { root });
+  assert.notEqual(r.code, 0);
+  assert.match(r.stderr, /Task 7/);
+  // Blocked without an open blocker recorded: still not ready.
+  const s2 = readState(root);
+  task(s2, 7).blockers = [];
+  writeState(root, s2);
+  r = run(['start', '8'], { root });
+  assert.notEqual(r.code, 0);
+  assert.match(r.stderr, /Task 7/);
+}, { approved: ['G0', 'G1'] }));
+
+test('done refuses while a dependency is not done', withRoot((root) => {
+  markDone(root, [0, 1, 2, 3, 4, 5, 6]);
+  approveCheckpoints(root, ['C0']);
+  const s = readState(root);
+  task(s, 7).status = 'in_review';
+  Object.assign(task(s, 8), { status: 'in_review', commits: ['abc1234'], reviews: { spec: pass(), security: { ...pass(), atCommits: 1 }, quality: pass() } });
+  writeState(root, s);
+  let r = run(['done', '8'], { root });
+  assert.notEqual(r.code, 0);
+  assert.match(r.stderr, /Task 7 done first/);
+  markDone(root, [7]);
+  r = run(['done', '8'], { root });
+  assert.equal(r.code, 0, r.stderr);
+}, { approved: ['G0', 'G1'] }));
 
 test('start refuses while any dependency is not done (Task 17 waits for both 12 and 16)', withRoot((root) => {
   markDone(root, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 18]);
@@ -244,6 +303,7 @@ test('state.mjs refuses a plan index with a security-sensitive low-tier task', w
 }, { planIndex: PLAN_INDEX.map((t) => (t.id === 13 ? { ...t, sensitive: true } : t)) }));
 
 test('done refuses when a security review is older than the latest commit', withRoot((root) => {
+  markDone(root, [0, 1, 2, 3, 4]);
   reviewed(root, 5, { spec: pass(), security: pass(), quality: pass() });
   assert.equal(run(['commit', '5', 'def5678'], { root }).code, 0);
   let r = run(['done', '5'], { root });
@@ -262,6 +322,7 @@ function reviewed(root, id, reviews) {
 }
 
 test('done on a low-tier task needs only a combined spec-and-quality review', withRoot((root) => {
+  markDone(root, [0, 1, 2, 3]);
   reviewed(root, 13, {});
   let r = run(['done', '13'], { root });
   assert.notEqual(r.code, 0);
@@ -280,6 +341,7 @@ test('done refuses any recorded review that did not pass, even one the tier does
 }));
 
 test('done on a medium-tier task needs security and specQuality reviews', withRoot((root) => {
+  markDone(root, [0, 1, 2, 3, 13, 14, 15, 16]);
   reviewed(root, 18, { specQuality: pass() });
   let r = run(['done', '18'], { root });
   assert.notEqual(r.code, 0);
