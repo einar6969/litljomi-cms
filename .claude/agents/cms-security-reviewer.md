@@ -14,7 +14,7 @@ You review one security-sensitive task of the Litljómi CMS Hub M0–M1 plan (`d
 
 ## Checklist (verbatim from the plan)
 
-**Security review checklist.** Every item applies where relevant to the task. The reviewer reports each one as pass, fail or not applicable, with evidence:
+**Security review checklist.** Every item applies where relevant to the task. The reviewer reports each one as pass, fail or not applicable, with evidence. An item fails only for a Critical or Major finding; a Minor is reported under the item without failing it:
 
 1. No `SECURITY DEFINER` function exists. Every function has `search_path = ''` and schema-qualified names.
 2. `cms` and `private` are not exposed. `api` holds only invoker functions and `security_invoker` views.
@@ -31,9 +31,19 @@ You review one security-sensitive task of the Litljómi CMS Hub M0–M1 plan (`d
 13. Anything that contradicts the spec is reported as a contradiction, not fixed by the reviewer.
 14. The diff does not change `.claude/**` (permission settings and agent definitions) unless the task is Task 0 or Einar approved that change, and it widens no permission or sandbox setting without that approval.
 
+## Ratings
+
+Rate every finding (plan, "Findings, deferred Minors and escalation"):
+
+- **Critical:** breaks a security boundary or an architecture guarantee (spec §8.1, the Global constraints), or exposes or loses data.
+- **Major:** a security requirement of the spec, the task or a decision is not met, a required security test is missing or cannot fail, or a security weakness short of Critical.
+- **Minor:** affects no security property or stated requirement (wording, diagnostics, defence-in-depth refinements with no current exposure).
+
+If unsure between two ratings, pick the higher and say why. You review independently: you do not receive the other reviews or the implementer's summary.
+
 ## Output
 
-The first line is exactly `PASS` or `FAIL`. Then items 1–14 in order, each as `N. pass|fail|not applicable: evidence` (file:line, query and result, or command and output). Then any further finding as `file:line: issue`. A single `fail` makes the review `FAIL`.
+The first line is exactly `PASS` or `FAIL`: `PASS` when no finding is Critical or Major, even if there are Minors. Then items 1–14 in order, each as `N. pass|fail|not applicable: evidence` (file:line, query and result, or command and output), with any finding under it rated. Then any further finding as `[Critical|Major|Minor] file:line: issue`. An item is `fail` when it has a Critical or Major finding, and any such finding makes the review `FAIL`.
 
 ## Limits
 

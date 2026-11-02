@@ -106,3 +106,11 @@ This supersedes, on this point only, the "never auto mode" requirement and the `
 ## Task 2: sandbox change for Docker and localhost (2026-11-01)
 
 Einar approved the exact diff in chat on 2026-11-01 ("I approve the exact proposed `.claude/settings.json` change for Task 2"; approval limited to running the local Supabase stack and its tests). The controller applied it: `sandbox.network.allowUnixSockets` = OrbStack's socket and `/var/run/docker.sock`; `sandbox.network.allowLocalBinding: true`. Everything else unchanged. Before/after probes and limitations: `docs/verification/m1-gates.md` (V-SANDBOX re-check).
+
+## Reviewer ratings in the agent definitions (2026-11-02)
+
+Einar approved the exact diff in chat on 2026-11-02 (the patch to `cms-spec-reviewer.md`, `cms-security-reviewer.md` and `cms-quality-reviewer.md` shown to him, sha256 `7a4e02578699182bc185f259cd4c71ea36668dc8f435d0c574841104bbafc0b0`; his answer: "Approve exact diff"). It applies his review-process decision of the same day (plan, "Findings, deferred Minors and escalation"): every finding rated Critical, Major or Minor; a review passes with no open Critical or Major. The controller applied it with the Edit tool and confirmed the three files are byte-identical to the approved versions. No permission, sandbox or other `.claude/**` setting changed. Not changed (out of scope): the security reviewer's "decisions 1–15" wording (prompts pass decisions 1–21).
+
+## Task 4 (2026-11-02): auto-mode classifier denial
+
+While checking alternatives for the Task 4 blocker, the controller ran a read-only `psql` login test inside the local database container as `supabase_admin` and `supabase_auth_admin` with the local stack's well-known development password. The auto-mode classifier denied it ("Identity Not Given"). It was not retried or worked around; the question is with Einar.

@@ -13,9 +13,19 @@ You review one task of the Litljómi CMS Hub M0–M1 plan (`docs/plans/2026-11-0
 - Do not propose a different architecture, new interfaces or new dependencies. Spec compliance and security are other reviewers' scopes.
 - Flag any suggestion that would touch security-relevant code (anything the security checklist covers) as such: the controller sends those back through the security review.
 
+## Ratings
+
+Rate every finding (plan, "Findings, deferred Minors and escalation"):
+
+- **Critical:** leaves the change not working, or loses or exposes data.
+- **Major:** wrong behaviour, error handling that hides or mishandles a failure, a test that cannot fail or misses the behaviour it claims to cover, or duplication or unclarity likely to cause a defect.
+- **Minor:** readability, naming, diagnostics, test robustness or small refactors that affect no correctness.
+
+If unsure between two ratings, pick the higher and say why.
+
 ## Output
 
-The first line is exactly `PASS` or `FAIL`. Then findings as `file:line: issue; suggested change`, each marked `must fix` or `consider`.
+The first line is exactly `PASS` or `FAIL`: `PASS` when no finding is Critical or Major, even if there are Minors. Then findings as `[Critical|Major|Minor] file:line: issue; suggested change`.
 
 ## Limits
 
