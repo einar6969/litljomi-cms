@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 // Execution-state CLI (Task 0). docs/execution/state.json is authoritative; progress.md is generated.
 // The controller is its only user. Commands:
-//   show | start <task> | commit <task> <hash> | review <task> spec|security|quality pass|fail <report>
+//   show | start <task> | commit <task> <hash> | review <task> spec|security|quality|specQuality pass|fail <report>
 //   block <task> "<text>" | unblock <task> | validate <gate-id> pass|fail|waived <evidence>
 //   done <task> | checkpoint C<n> <report> | render
 // "waived" is accepted only for V-HARNESS and V-CONNECTORS.
+// start: every task in dependsOn done, and at most one active task per lane (Einar, 2026-11-02).
+// done: the reviews the task's tier requires have passed, and no recorded review failed.
 // The root is HARNESS_ROOT if set (tests), otherwise the repository holding this file.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -23,13 +25,20 @@ export const VALIDATION_GATES = [
 // Only these may be waived; security-critical validation gates must pass.
 const WAIVABLE_GATES = ['V-HARNESS', 'V-CONNECTORS'];
 export const CHECKPOINTS = ['C0', 'C1', 'C2', 'C3', 'C4'];
-const REVIEW_KINDS = ['spec', 'security', 'quality'];
+const REVIEW_KINDS = ['spec', 'security', 'quality', 'specQuality'];
+// Reviews each risk tier requires before done (plan, "Risk tiers"). specQuality is one combined
+// spec-and-quality review. A low-tier task gets a security review only when it touches the boundary.
+const TIER_REVIEWS = {
+  high: ['spec', 'security', 'quality'],
+  medium: ['security', 'specQuality'],
+  low: ['specQuality'],
+};
 const USAGE = [
   'usage: node tools/harness/state.mjs <command>',
   '  show',
   '  start <task>',
   '  commit <task> <hash>',
-  '  review <task> spec|security|quality pass|fail <report-path>',
+  '  review <task> spec|security|quality|specQuality pass|fail <report-path>',
   '  block <task> "<text>"',
   '  unblock <task>',
   '  validate <gate-id> pass|fail|waived <evidence-path>   (waived only for V-HARNESS and V-CONNECTORS)',
@@ -191,13 +200,13 @@ export function renderProgress(state, planIndex) {
     '',
     '## Tasks (execution order)',
     '',
-    '| # | Task | Phase | Sensitive | Status | Commits | Reviews | Required gates | Checkpoint after |',
-    '|---|---|---|---|---|---|---|---|---|',
+    '| # | Task | Phase | Tier | Lane | Status | Commits | Reviews | Required gates | Checkpoint after |',
+    '|---|---|---|---|---|---|---|---|---|---|',
   ];
   state.tasks.forEach((t, i) => {
     const p = planIndex[i];
     const commits = t.commits.length ? t.commits.map((c) => `\`${c.slice(0, 7)}\``).join(' ') : '—';
-    lines.push(`| ${t.id} | ${cell(p.title)} | ${p.phase} | ${p.sensitive ? 'yes' : 'no'} | ${t.status} | ${commits} | ${reviewSummary(t)} | ${p.requiredGates.join(' ')} | ${p.checkpointAfter ?? '—'} |`);
+    lines.push(`| ${t.id} | ${cell(p.title)} | ${p.phase} | ${p.tier} | ${p.lane} | ${t.status} | ${commits} | ${reviewSummary(t)} | ${p.requiredGates.join(' ')} | ${p.checkpointAfter ?? '—'} |`);
   });
   lines.push('', '## Open blockers', '');
   const blockers = state.tasks.flatMap((t) => openBlockers(t).map((b) => `- Task ${t.id} (since ${b.at}): ${b.text}`));
@@ -238,15 +247,17 @@ function renderShow(ctx, root) {
 // ---------------------------------------------------------------------------
 // Commands
 
+const ACTIVE = ['in_progress', 'in_review', 'blocked'];
+
 function cmdStart(ctx, root, args, now) {
   const t = taskArg(ctx, args[0]);
   const blocked = ctx.state.tasks.find((x) => openBlockers(x).length);
   if (blocked) throw new Refusal(`Task ${blocked.id} has an open blocker: ${openBlockers(blocked)[0].text}`);
   if (t.task.status !== 'pending') throw new Refusal(`Task ${t.id} is already ${t.task.status}`);
-  if (t.index > 0) {
-    const prev = ctx.state.tasks[t.index - 1];
-    if (prev.status !== 'done') throw new Refusal(`Task ${prev.id} (previous in execution order) is not done`);
-  }
+  const notDone = t.plan.dependsOn.filter((id) => ctx.state.tasks.find((x) => x.id === id)?.status !== 'done');
+  if (notDone.length) throw new Refusal(`Task ${t.id} depends on Task ${notDone.join(', Task ')}, not done`);
+  const busy = ctx.state.tasks.find((x, i) => ACTIVE.includes(x.status) && ctx.planIndex[i].lane === t.plan.lane);
+  if (busy) throw new Refusal(`lane ${t.plan.lane} already has an active task: Task ${busy.id} (${busy.status})`);
   const gates = readGates(root);
   if (!gates) throw new Refusal(`${GATES_FILE} could not be read`);
   const missing = t.plan.requiredGates.filter((g) => gates[g]?.status !== 'approved');
@@ -254,8 +265,6 @@ function cmdStart(ctx, root, args, now) {
   Object.assign(t.task, { status: 'in_progress', startedAt: now, gatesUsed: [...t.plan.requiredGates] });
   return `Task ${t.id} started: ${t.plan.title}`;
 }
-
-const ACTIVE = ['in_progress', 'in_review', 'blocked'];
 
 function cmdCommit(ctx, root, args) {
   const t = taskArg(ctx, args[0]);
@@ -269,7 +278,7 @@ function cmdCommit(ctx, root, args) {
 function cmdReview(ctx, root, args, now) {
   const t = taskArg(ctx, args[0]);
   const [, kind, result, report] = args;
-  if (!REVIEW_KINDS.includes(kind)) throw usage(`review kind must be spec, security or quality, got ${kind ?? '(none)'}`);
+  if (!REVIEW_KINDS.includes(kind)) throw usage(`review kind must be one of ${REVIEW_KINDS.join(', ')}, got ${kind ?? '(none)'}`);
   if (result !== 'pass' && result !== 'fail') throw usage(`review result must be pass or fail, got ${result ?? '(none)'}`);
   existingFile(root, report, 'report');
   if (!ACTIVE.includes(t.task.status)) throw new Refusal(`Task ${t.id} is ${t.task.status}; reviews are recorded on an active task`);
@@ -315,9 +324,12 @@ function cmdDone(ctx, root, args, now) {
   const missing = [];
   if (openBlockers(t.task).length) missing.push('an open blocker must be resolved');
   if (!t.task.commits.length) missing.push('at least one commit');
-  if (t.task.reviews.spec?.status !== 'pass') missing.push('a passing spec review');
-  if (t.plan.sensitive && t.task.reviews.security?.status !== 'pass') missing.push('a passing security review (security-sensitive task)');
-  if (t.task.reviews.quality?.status !== 'pass') missing.push('a passing quality review');
+  for (const kind of TIER_REVIEWS[t.plan.tier]) {
+    if (t.task.reviews[kind]?.status !== 'pass') missing.push(`a passing ${kind} review (${t.plan.tier} tier)`);
+  }
+  for (const [kind, review] of Object.entries(t.task.reviews)) {
+    if (review.status !== 'pass' && !TIER_REVIEWS[t.plan.tier].includes(kind)) missing.push(`the failed ${kind} review to pass`);
+  }
   if (missing.length) throw new Refusal(`Task ${t.id} cannot be marked done; it needs: ${missing.join('; ')}`);
   Object.assign(t.task, { status: 'done', doneAt: now });
   return `Task ${t.id} done: ${t.plan.title}`;

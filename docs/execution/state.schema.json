@@ -47,7 +47,8 @@
           "properties": {
             "spec": { "$ref": "#/$defs/review" },
             "security": { "$ref": "#/$defs/review" },
-            "quality": { "$ref": "#/$defs/review" }
+            "quality": { "$ref": "#/$defs/review" },
+            "specQuality": { "$ref": "#/$defs/review" }
           }
         },
         "gatesUsed": { "type": "array", "items": { "type": "string", "pattern": "^G[0-7]$" } },

@@ -6,38 +6,38 @@ Branch: `m1/phase-1` · Updated: 2026-11-02T03:19:14.500Z · Next task: **5** Te
 
 ## Tasks (execution order)
 
-| # | Task | Phase | Sensitive | Status | Commits | Reviews | Required gates | Checkpoint after |
-|---|---|---|---|---|---|---|---|---|
-| 0 | Execution setup | 0 | yes | done | `e6b59c8` `f34f4fb` `f9f7045` `a09ff7b` `6d3b43c` `5ea4f98` `4bfafe6` `c4e4d4b` `45b9776` | spec pass (2), security pass (5), quality pass (2) | G0 | — |
-| 1 | Monorepo skeleton, boundary checks and CI | 0 | no | done | `f95d874` `3c5438f` `d2ca911` `6a48046` | spec pass (4), security pass (3), quality pass (3) | G0 | — |
-| 2 | Local Supabase stack and pgTAP harness | 0 | no | done | `7933579` `20e1748` `b814f5e` `81d18b5` `84b2899` `1670c80` `87ad497` | spec pass (6), security pass (7), quality pass (4) | G0 G1 | — |
-| 3 | Hosted environments runbook (document only) | 0 | no | done | `27e3d3b` `2f5c62f` `771127c` `6a5f940` `30c8a25` `9d15d26` `fc9e807` | spec pass (4), security pass (6), quality pass (2) | G0 G1 | C0 |
-| 4 | Schemas, privileges and the first catalog tests | 1 | yes | done | `c6ad33f` | spec pass (1), security pass (1), quality pass (1) | G0 G1 | — |
-| 5 | Tenancy tables and RLS | 1 | yes | pending | — | — | G0 G1 | — |
-| 6 | Entries, drafts, revisions | 1 | yes | pending | — | — | G0 G1 | — |
-| 7 | Reference extraction | 1 | yes | pending | — | — | G0 G1 | — |
-| 8 | Assets, storage buckets and storage RLS | 1 | yes | pending | — | — | G0 G1 | — |
-| 9 | Publishing and site tables | 1 | yes | pending | — | — | G0 G1 | — |
-| 10 | Audit log and the editor `api` functions and views | 1 | yes | pending | — | — | G0 G1 | — |
-| 11 | Worker and admin `api` functions | 1 | yes | pending | — | — | G0 G1 | — |
-| 12 | HTTP, storage and concurrency integration tests | 1 | yes | pending | — | — | G0 G1 | C1 |
-| 13 | Schema language, field registry, text/date/link | 2 | no | pending | — | — | G0 G1 | — |
-| 14 | Rich text (v1 node set, validator, plain text, renderer, Tiptap config) | 2 | no | pending | — | — | G0 G1 | — |
-| 15 | Image and rich-text field kinds, projection and content hash | 2 | no | pending | — | — | G0 G1 | — |
-| 16 | Library `news` type, modules `labak` and `demo`, registry | 2 | no | pending | — | — | G0 G1 | — |
-| 17 | CMS app skeleton and the privileged zone | 3 | yes | pending | — | — | G0 G1 | — |
-| 18 | SDK contract: bundle types, webhook signing, markers | 3 | yes | pending | — | — | G0 G1 | — |
-| 19 | Worker step 1: validate, project and commit | 3 | yes | pending | — | — | G0 G1 | — |
-| 20 | Worker step 2: release build | 3 | yes | pending | — | — | G0 G1 | — |
-| 21 | Worker step 3: notify, live check, sweep | 3 | yes | pending | — | — | G0 G1 | — |
-| 26 | Demo fixture site | 5 | yes | pending | — | — | G0 G1 | C2 |
-| 22 | Sign-in, tenant routing and Icelandic shell | 4 | yes | pending | — | — | G0 G1 | — |
-| 23 | Entry list, new entry, generated form, autosave | 4 | no | pending | — | — | G0 G1 | — |
-| 24 | Image upload and rich-text field | 4 | yes | pending | — | — | G0 G1 | — |
-| 25 | Publish, unpublish and status display | 4 | yes | pending | — | — | G0 G1 | — |
-| 27 | LABAK slice integration on branch `hub-integration` | 5 | yes | pending | — | — | G0 G1 G7 | C3 |
-| 28 | Provision staging and deploy | 6 | yes | pending | — | — | G0 G1 G2 G3 G4 G5 G6 | — |
-| 29 | M1 acceptance on staging | 6 | no | pending | — | — | G0 G1 G2 G3 G4 G5 G6 | C4 |
+| # | Task | Phase | Tier | Lane | Status | Commits | Reviews | Required gates | Checkpoint after |
+|---|---|---|---|---|---|---|---|---|---|
+| 0 | Execution setup | 0 | high | A | done | `e6b59c8` `f34f4fb` `f9f7045` `a09ff7b` `6d3b43c` `5ea4f98` `4bfafe6` `c4e4d4b` `45b9776` | spec pass (2), security pass (5), quality pass (2) | G0 | — |
+| 1 | Monorepo skeleton, boundary checks and CI | 0 | low | A | done | `f95d874` `3c5438f` `d2ca911` `6a48046` | spec pass (4), security pass (3), quality pass (3) | G0 | — |
+| 2 | Local Supabase stack and pgTAP harness | 0 | low | A | done | `7933579` `20e1748` `b814f5e` `81d18b5` `84b2899` `1670c80` `87ad497` | spec pass (6), security pass (7), quality pass (4) | G0 G1 | — |
+| 3 | Hosted environments runbook (document only) | 0 | low | A | done | `27e3d3b` `2f5c62f` `771127c` `6a5f940` `30c8a25` `9d15d26` `fc9e807` | spec pass (4), security pass (6), quality pass (2) | G0 G1 | C0 |
+| 4 | Schemas, privileges and the first catalog tests | 1 | high | A | done | `c6ad33f` | spec pass (1), security pass (1), quality pass (1) | G0 G1 | — |
+| 5 | Tenancy tables and RLS | 1 | high | A | pending | — | — | G0 G1 | — |
+| 6 | Entries, drafts, revisions | 1 | high | A | pending | — | — | G0 G1 | — |
+| 7 | Reference extraction | 1 | high | A | pending | — | — | G0 G1 | — |
+| 8 | Assets, storage buckets and storage RLS | 1 | high | A | pending | — | — | G0 G1 | — |
+| 9 | Publishing and site tables | 1 | high | A | pending | — | — | G0 G1 | — |
+| 10 | Audit log and the editor `api` functions and views | 1 | high | A | pending | — | — | G0 G1 | — |
+| 11 | Worker and admin `api` functions | 1 | high | A | pending | — | — | G0 G1 | — |
+| 12 | HTTP, storage and concurrency integration tests | 1 | high | A | pending | — | — | G0 G1 | — |
+| 13 | Schema language, field registry, text/date/link | 2 | low | B | pending | — | — | G0 G1 | — |
+| 14 | Rich text (v1 node set, validator, plain text, renderer, Tiptap config) | 2 | low | B | pending | — | — | G0 G1 | — |
+| 15 | Image and rich-text field kinds, projection and content hash | 2 | low | B | pending | — | — | G0 G1 | — |
+| 16 | Library `news` type, modules `labak` and `demo`, registry | 2 | low | B | pending | — | — | G0 G1 | — |
+| 18 | SDK contract: bundle types, webhook signing, markers | 3 | medium | B | pending | — | — | G0 G1 | C1 |
+| 17 | CMS app skeleton and the privileged zone | 3 | high | A | pending | — | — | G0 G1 | — |
+| 19 | Worker step 1: validate, project and commit | 3 | high | A | pending | — | — | G0 G1 | — |
+| 20 | Worker step 2: release build | 3 | high | A | pending | — | — | G0 G1 | — |
+| 21 | Worker step 3: notify, live check, sweep | 3 | high | A | pending | — | — | G0 G1 | — |
+| 26 | Demo fixture site | 5 | medium | A | pending | — | — | G0 G1 | C2 |
+| 22 | Sign-in, tenant routing and Icelandic shell | 4 | high | A | pending | — | — | G0 G1 | — |
+| 23 | Entry list, new entry, generated form, autosave | 4 | low | A | pending | — | — | G0 G1 | — |
+| 24 | Image upload and rich-text field | 4 | high | A | pending | — | — | G0 G1 | — |
+| 25 | Publish, unpublish and status display | 4 | high | A | pending | — | — | G0 G1 | — |
+| 27 | LABAK slice integration on branch `hub-integration` | 5 | medium | A | pending | — | — | G0 G1 G7 | C3 |
+| 28 | Provision staging and deploy | 6 | high | A | pending | — | — | G0 G1 G2 G3 G4 G5 G6 | — |
+| 29 | M1 acceptance on staging | 6 | medium | A | pending | — | — | G0 G1 G2 G3 G4 G5 G6 | C4 |
 
 ## Open blockers
 
@@ -72,7 +72,7 @@ None.
 | Checkpoint | After task | Status | Report | Approved by Einar |
 |---|---|---|---|---|
 | C0 | 3 | reported | docs/execution/checkpoints/C0.md | yes |
-| C1 | 12 | pending | — | no |
+| C1 | 18 | pending | — | no |
 | C2 | 26 | pending | — | no |
 | C3 | 27 | pending | — | no |
 | C4 | 29 | pending | — | no |

@@ -11,7 +11,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '../../..');
 const PLAN_INDEX = JSON.parse(fs.readFileSync(path.join(REPO, 'tools/harness/plan-index.json'), 'utf8'));
 const SCHEMA = JSON.parse(fs.readFileSync(path.join(REPO, 'docs/execution/state.schema.json'), 'utf8'));
-const EXECUTION_ORDER = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 26, 22, 23, 24, 25, 27, 28, 29];
+const EXECUTION_ORDER = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 17, 19, 20, 21, 26, 22, 23, 24, 25, 27, 28, 29];
 
 function gatesFile(approved = ['G0']) {
   const gates = {};
@@ -23,17 +23,17 @@ function gatesFile(approved = ['G0']) {
   return { schemaVersion: 1, gates };
 }
 
-function setup({ approved = ['G0'] } = {}) {
+function setup({ approved = ['G0'], planIndex = PLAN_INDEX } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'state-test-'));
   fs.mkdirSync(path.join(root, 'tools/harness'), { recursive: true });
   fs.mkdirSync(path.join(root, 'docs/execution/reviews'), { recursive: true });
   fs.mkdirSync(path.join(root, 'docs/execution/checkpoints'), { recursive: true });
-  fs.copyFileSync(path.join(REPO, 'tools/harness/plan-index.json'), path.join(root, 'tools/harness/plan-index.json'));
+  fs.writeFileSync(path.join(root, 'tools/harness/plan-index.json'), JSON.stringify(planIndex, null, 2));
   fs.copyFileSync(path.join(REPO, 'docs/execution/state.schema.json'), path.join(root, 'docs/execution/state.schema.json'));
   fs.writeFileSync(path.join(root, 'docs/execution/gates.json'), JSON.stringify(gatesFile(approved), null, 2));
   fs.writeFileSync(
     path.join(root, 'docs/execution/state.json'),
-    JSON.stringify(initialState(PLAN_INDEX, 'm1/phase-0', '2026-11-01T00:00:00.000Z'), null, 2),
+    JSON.stringify(initialState(planIndex, 'm1/phase-0', '2026-11-01T00:00:00.000Z'), null, 2),
   );
   fs.writeFileSync(path.join(root, 'docs/execution/reviews/r.md'), 'report');
   fs.writeFileSync(path.join(root, 'docs/execution/checkpoints/C0.md'), 'checkpoint');
@@ -56,9 +56,9 @@ function markDone(root, ids) {
   writeState(root, s);
 }
 
-function withRoot(fn) {
+function withRoot(fn, options) {
   return () => {
-    const root = setup();
+    const root = setup(options);
     try {
       fn(root);
     } finally {
@@ -86,7 +86,20 @@ test('plan-index lists Tasks 0–29 in execution order with phases, gates and ch
   assert.deepEqual(byId[28].requiredGates, ['G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6']);
   assert.deepEqual(byId[29].requiredGates, ['G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6']);
   const checkpoints = PLAN_INDEX.filter((t) => t.checkpointAfter).map((t) => [t.id, t.checkpointAfter]);
-  assert.deepEqual(checkpoints, [[3, 'C0'], [12, 'C1'], [26, 'C2'], [27, 'C3'], [29, 'C4']]);
+  assert.deepEqual(checkpoints, [[3, 'C0'], [18, 'C1'], [26, 'C2'], [27, 'C3'], [29, 'C4']]);
+  const tiers = { high: [0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 17, 19, 20, 21, 22, 24, 25, 28], medium: [18, 26, 27, 29] };
+  for (const t of PLAN_INDEX) {
+    const expected = tiers.high.includes(t.id) ? 'high' : tiers.medium.includes(t.id) ? 'medium' : 'low';
+    assert.equal(t.tier, expected, `tier of Task ${t.id}`);
+    assert.equal(t.lane, [13, 14, 15, 16, 18].includes(t.id) ? 'B' : 'A', `lane of Task ${t.id}`);
+    for (const dep of t.dependsOn) {
+      assert.ok(EXECUTION_ORDER.indexOf(dep) < EXECUTION_ORDER.indexOf(t.id), `Task ${t.id} depends on a later task ${dep}`);
+    }
+  }
+  assert.deepEqual(byId[13].dependsOn, [3]);
+  assert.deepEqual(byId[18].dependsOn, [16]);
+  assert.deepEqual(byId[17].dependsOn, [12, 16]);
+  assert.deepEqual(byId[19].dependsOn, [17, 18]);
   const phases = { 0: [0, 1, 2, 3], 1: [4, 5, 6, 7, 8, 9, 10, 11, 12], 2: [13, 14, 15, 16], 3: [17, 18, 19, 20, 21], 4: [22, 23, 24, 25], 5: [26, 27], 6: [28, 29] };
   for (const [phase, ids] of Object.entries(phases)) for (const id of ids) assert.equal(byId[id].phase, Number(phase));
   assert.equal(byId[0].title, 'Execution setup');
@@ -172,6 +185,75 @@ test('done 4 is refused without a passing security review', withRoot((root) => {
   assert.equal(task(readState(root), 4).reviews.security.round, 2);
   assert.equal(run(['done', '4'], { root }).code, 0);
   assert.equal(task(readState(root), 4).status, 'done');
+}));
+
+// Lane A and Lane B: two active tasks only in different lanes.
+const twoLaneIndex = PLAN_INDEX.map((t) => (t.id === 6 ? { ...t, dependsOn: [4] } : t));
+
+test('start allows one active task per lane', withRoot((root) => {
+  markDone(root, [0, 1, 2, 3, 4]);
+  assert.equal(run(['start', '5'], { root }).code, 0);
+  const r = run(['start', '6'], { root });
+  assert.notEqual(r.code, 0);
+  assert.match(r.stderr, /lane A/);
+  assert.match(r.stderr, /Task 5/);
+  assert.equal(run(['start', '13'], { root }).code, 0);
+  assert.equal(task(readState(root), 13).status, 'in_progress');
+}, { planIndex: twoLaneIndex, approved: ['G0', 'G1'] }));
+
+test('start refuses while any dependency is not done', withRoot((root) => {
+  markDone(root, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  let r = run(['start', '17'], { root });
+  assert.notEqual(r.code, 0);
+  assert.match(r.stderr, /Task 16/);
+  markDone(root, [13, 14, 15, 16]);
+  r = run(['start', '17'], { root });
+  assert.equal(r.code, 0, r.stderr);
+}, { approved: ['G0', 'G1'] }));
+
+function reviewed(root, id, reviews) {
+  const s = readState(root);
+  Object.assign(task(s, id), { status: 'in_review', commits: ['abc1234'], reviews });
+  writeState(root, s);
+}
+
+test('done on a low-tier task needs only a combined spec-and-quality review', withRoot((root) => {
+  reviewed(root, 13, {});
+  let r = run(['done', '13'], { root });
+  assert.notEqual(r.code, 0);
+  assert.match(r.stderr, /specQuality/);
+  assert.equal(run(['review', '13', 'specQuality', 'pass', 'docs/execution/reviews/r.md'], { root }).code, 0);
+  r = run(['done', '13'], { root });
+  assert.equal(r.code, 0, r.stderr);
+}));
+
+test('done refuses any recorded review that did not pass, even one the tier does not require', withRoot((root) => {
+  reviewed(root, 13, { specQuality: pass() });
+  assert.equal(run(['review', '13', 'security', 'fail', 'docs/execution/reviews/r.md'], { root }).code, 0);
+  const r = run(['done', '13'], { root });
+  assert.notEqual(r.code, 0);
+  assert.match(r.stderr, /security/);
+}));
+
+test('done on a medium-tier task needs security and specQuality reviews', withRoot((root) => {
+  reviewed(root, 18, { specQuality: pass() });
+  let r = run(['done', '18'], { root });
+  assert.notEqual(r.code, 0);
+  assert.match(r.stderr, /security/);
+  reviewed(root, 18, { security: pass() });
+  r = run(['done', '18'], { root });
+  assert.notEqual(r.code, 0);
+  assert.match(r.stderr, /specQuality/);
+  reviewed(root, 18, { security: pass(), specQuality: pass() });
+  assert.equal(run(['done', '18'], { root }).code, 0);
+}));
+
+test('done on a high-tier task does not accept a combined review instead of spec and quality', withRoot((root) => {
+  reviewed(root, 5, { security: pass(), specQuality: pass() });
+  const r = run(['done', '5'], { root });
+  assert.notEqual(r.code, 0);
+  assert.match(r.stderr, /spec review/);
+  assert.match(r.stderr, /quality review/);
 }));
 
 test('done requires a commit and spec and quality reviews', withRoot((root) => {
