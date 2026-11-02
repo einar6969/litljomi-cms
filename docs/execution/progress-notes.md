@@ -78,3 +78,8 @@
 - **Gap recorded for the editor design task (Einar's brief to come):** the CMS has no visual design: no stylesheet, no classes, no layout in `apps/cms`; pages render as unstyled HTML. No plan task covers it; nothing was styled in Phase 4.
 - **Before any G2 work:** remove `sandbox.excludedCommands` (`pnpm --filter cms e2e *`) from `.claude/settings.json` (decision 39.1), shown to Einar as a diff.
 - **State:** `m1/phase-1` at the follow-up's state commit; `main` unchanged at `9f15275`; nothing pushed; nothing in the LABAK repository. Next task: 27 (G7), not started.
+
+### Task 31 started: editor design (2026-11-02, fifth controller session)
+
+- **Authorised** by Einar (decision 40; G0 extension in `gates.json`): Task 31, editor design, Phase 4, Lane A, low tier, after Task 25; Task 29 depends on it, Task 27 does not. Two steps with Einar's screenshot approval between them.
+- **Open issue for Einar's decision (recorded, not fixed):** sign-in fails when the magic link is opened in a different browser or device from the one that requested it (`pkce_code_verifier_not_found`; Einar hit this). The PKCE code verifier lives in the requesting browser's cookie, so the callback in another browser cannot exchange the code. Not part of Task 31.

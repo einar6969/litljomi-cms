@@ -61,6 +61,11 @@
           "at": "2026-11-02",
           "scope": "Phase 4 follow-up after Phase 4 acceptance, under G0 and G1 only: one small change with the usual reviews (decision 39.3): suspended-tenant check in api.register_asset and api.update_asset; \"Enginn vefur tengdur\" and no polling for a tenant without an active site; no doubled slug; an accessible name for the rich-text editor; keyboard date entry checked with Playwright and fixed only if a real bug. No styling. Stop when done and merged; main unchanged; Task 27 not started.",
           "note": "Einar in chat, 2026-11-02: \"Phase 4 rulings (Einar, 2026-11-02). Phase 4 is accepted. Authorisation, under G0 and G1 only: one small follow-up in this session before Phase 5, with the usual reviews\" and \"Stop when this is done and merged. `main` stays where it is. Don't start Task 27.\""
+        },
+        {
+          "at": "2026-11-02",
+          "scope": "Task 31, editor design, under G0 and G1 only: added to the plan and plan-index.json (Phase 4, Lane A, low tier, dependsOn 25; does not block Task 27; Task 29 depends on it) and run in a lane worktree brought up to m1/phase-1. Tailwind 4 (exact version, at least two weeks old) from registry.npmjs.org; fonts self-hosted from apps/cms/public/fonts/, no network fonts. Two steps with a stop for Einar's approval of the screenshots between them. One combined review per round (it also checks the screenshots), the controller's boundary check, a security review only if the boundary is touched; a round with only Minors passes. The pkce_code_verifier_not_found sign-in issue is recorded, not fixed. Stop when Task 31 is done and merged; main unchanged; Task 27 not started.",
+          "note": "Einar in chat, 2026-11-02: \"Editor design (Einar, 2026-11-02). Authorisation, under G0 and G1 only: add Task 31, editor design, to the plan and `plan-index.json` (after Task 25, before Task 29, low tier; it doesn’t block Task 27), and run it. Record it as a G0 extension quoting these words.\" and \"Stop when Task 31 is done and merged. `main` stays where it is. Don’t start Task 27.\""
         }
       ]
     },

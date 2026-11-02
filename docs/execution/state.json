@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T19:28:43.267Z",
+  "updatedAt": "2026-11-02T20:55:24.262Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -1107,6 +1107,19 @@
       "notes": "",
       "startedAt": "2026-11-02T18:54:38.670Z",
       "doneAt": "2026-11-02T19:28:43.267Z"
+    },
+    {
+      "id": 31,
+      "status": "in_progress",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [
+        "G0",
+        "G1"
+      ],
+      "blockers": [],
+      "notes": "Added 2026-11-02 (decision 40): editor design.",
+      "startedAt": "2026-11-02T20:55:24.262Z"
     },
     {
       "id": 27,

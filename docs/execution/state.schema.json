@@ -10,7 +10,7 @@
     "schemaVersion": { "const": 1 },
     "updatedAt": { "type": "string", "minLength": 1 },
     "branch": { "type": "string", "minLength": 1 },
-    "tasks": { "type": "array", "minItems": 31, "maxItems": 31, "items": { "$ref": "#/$defs/task" } },
+    "tasks": { "type": "array", "minItems": 32, "maxItems": 32, "items": { "$ref": "#/$defs/task" } },
     "validationGates": {
       "type": "object",
       "required": [
@@ -38,7 +38,7 @@
       "required": ["id", "status", "commits", "reviews", "gatesUsed", "blockers", "notes"],
       "additionalProperties": false,
       "properties": {
-        "id": { "type": "integer", "minimum": 0, "maximum": 30 },
+        "id": { "type": "integer", "minimum": 0, "maximum": 31 },
         "status": { "enum": ["pending", "in_progress", "in_review", "done", "blocked"] },
         "commits": { "type": "array", "items": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" } },
         "reviews": {
