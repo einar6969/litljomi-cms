@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T11:53:52.304Z",
+  "updatedAt": "2026-11-02T12:32:37.460Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -886,18 +886,43 @@
     },
     {
       "id": 21,
-      "status": "in_progress",
+      "status": "done",
       "commits": [
-        "49336e7"
+        "49336e7",
+        "78bed55",
+        "c337b48"
       ],
-      "reviews": {},
+      "reviews": {
+        "spec": {
+          "status": "pass",
+          "round": 3,
+          "report": "docs/execution/reviews/task-21-r3-spec.md",
+          "at": "2026-11-02T12:26:12.729Z",
+          "atCommits": 3
+        },
+        "security": {
+          "status": "pass",
+          "round": 3,
+          "report": "docs/execution/reviews/task-21-r3-security.md",
+          "at": "2026-11-02T12:27:11.192Z",
+          "atCommits": 3
+        },
+        "quality": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-21-r1-quality.md",
+          "at": "2026-11-02T12:28:55.543Z",
+          "atCommits": 3
+        }
+      },
       "gatesUsed": [
         "G0",
         "G1"
       ],
       "blockers": [],
-      "notes": "",
-      "startedAt": "2026-11-02T11:03:00.401Z"
+      "notes": "Phase 3 Lane A, high tier (Opus). Implemented in .worktrees/lane-a-next from Task 20's head 5771348: 49336e7 (notify, live check, deliver, sweep, pipeline; routes wired; migration 20261102001300_worker_sweep.sql with worker_tenants_to_release and worker_deliveries_to_retry, pgTAP 097; opt-in pnpm test:e2e-local with tests/integration/scripts/cms-next.sh; additive BuildResult.requests accepted by the controller; cleared every Task 21 deferred row incl. parseEntryMarkerIds fail-closed absent, 64 KiB revalidate cap, site lint block, server-only, digest comparison, triggerWorker redirect manual). Reviews: spec r1 pass; security r1 FAIL (Major: marker scan desync on U+0130 hides later markers, false absent). Fix 78bed55 (ASCII-only case folding, scanEntryMarkers complete flag, absent fails as scan_incomplete, browser comment endings, createPageFetcher bound 6 with in-flight dedupe). Spec r2 pass; security r2 FAIL (Major: the new comment scan was quadratic, ~80 min at the 5 MB cap). Fix c337b48 (remembered `-->` position; 14 scaling tests; 200k/300k random-page equivalence). Spec r3 pass; security r3 pass; quality r1 pass (Minors). Merged into m1/phase-1 as 99433dd (--no-ff, clean). Full suite by the controller after the merge: harness 32/32; lint, typecheck, check:slugs exit 0; Vitest 42 files 805 tests; demo-site test:e2e 6/6; db:reset ok, db:test Files=16 Tests=1342 PASS; test:integration 7 files 70 tests + cms 4 files 27 tests; pnpm test:e2e-local 1/1 (publish /events/x → live_status ok; CMS stopped → same marker served). Open for Einar at C2: spec §7.4 exponential backoff vs the plan's fixed M1 retries.",
+      "startedAt": "2026-11-02T11:03:00.401Z",
+      "doneAt": "2026-11-02T12:32:37.460Z"
     },
     {
       "id": 22,
