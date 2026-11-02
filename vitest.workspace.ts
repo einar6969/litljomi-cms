@@ -14,4 +14,11 @@ export default defineWorkspace([
       include: ['packages/schema/src/__tests__/**/*.test.ts'],
     },
   },
+  {
+    test: {
+      name: 'rich-text',
+      include: ['packages/rich-text/src/__tests__/**/*.test.{ts,tsx}'],
+      environment: 'jsdom',
+    },
+  },
 ]);
