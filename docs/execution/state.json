@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T03:19:14.500Z",
+  "updatedAt": "2026-11-02T03:51:59.867Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -227,12 +227,26 @@
     },
     {
       "id": 5,
-      "status": "pending",
-      "commits": [],
-      "reviews": {},
-      "gatesUsed": [],
+      "status": "in_review",
+      "commits": [
+        "5ec57b4"
+      ],
+      "reviews": {
+        "spec": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-05-r1-spec.md",
+          "at": "2026-11-02T03:51:38.773Z",
+          "atCommits": 1
+        }
+      },
+      "gatesUsed": [
+        "G0",
+        "G1"
+      ],
       "blockers": [],
-      "notes": ""
+      "notes": "",
+      "startedAt": "2026-11-02T03:44:22.286Z"
     },
     {
       "id": 6,
@@ -299,12 +313,27 @@
     },
     {
       "id": 13,
-      "status": "pending",
-      "commits": [],
-      "reviews": {},
-      "gatesUsed": [],
+      "status": "done",
+      "commits": [
+        "a411e47"
+      ],
+      "reviews": {
+        "specQuality": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-13-r1-spec-quality.md",
+          "at": "2026-11-02T03:51:38.797Z",
+          "atCommits": 1
+        }
+      },
+      "gatesUsed": [
+        "G0",
+        "G1"
+      ],
       "blockers": [],
-      "notes": ""
+      "notes": "",
+      "startedAt": "2026-11-02T03:46:07.245Z",
+      "doneAt": "2026-11-02T03:51:59.867Z"
     },
     {
       "id": 14,
