@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T23:10:57.002Z",
+  "updatedAt": "2026-11-02T23:20:49.275Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -1185,7 +1185,7 @@
     },
     {
       "id": 27,
-      "status": "in_review",
+      "status": "done",
       "commits": [
         "10f43bd",
         "3aa74b2",
@@ -1231,7 +1231,8 @@
         }
       ],
       "notes": "",
-      "startedAt": "2026-11-02T22:19:24.206Z"
+      "startedAt": "2026-11-02T22:19:24.206Z",
+      "doneAt": "2026-11-02T23:20:49.275Z"
     },
     {
       "id": 28,
