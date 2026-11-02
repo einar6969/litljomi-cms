@@ -3,5 +3,6 @@ packages:
   - "packages/*"
   - "modules/*"
   - "tools/*"
+  - "tests/*"
 allowBuilds:
   esbuild: false

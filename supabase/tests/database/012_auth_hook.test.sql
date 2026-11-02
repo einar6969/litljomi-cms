@@ -9,7 +9,10 @@
 -- HTTP through Supabase Auth (Task 4 Step 4b spot check, Task 12; decision 22).
 begin;
 \ir _helpers.sql
-select plan(81);
+-- 89 assertions: 23 method cases (7 allowed, 14 refused, missing and JSON null),
+-- 48 amr cases (24 shapes, each for token_refresh and totp), 2 claims cases,
+-- 6 definition checks, 5 grant checks and 5 checks on supabase_auth_admin.
+select plan(89);
 
 -- A realistic token-issuing event: Supabase Auth sends user_id, claims and
 -- authentication_method. The session amr is email-derived, so the method alone
@@ -68,6 +71,9 @@ insert into amr_cases values
   ('amr empty',            '[]', false),
   ('amr string entries',   '["otp"]', false),
   ('amr entry without method', '[{"x": "otp"}]', false),
+  ('amr [null]',           '[null]', false),
+  ('amr method JSON null', '[{"method": null}]', false),
+  ('amr method a number',  '[{"method": 1}]', false),
   ('[password]',           '[{"method": "password", "timestamp": 1793600000}]', false),
   ('[oauth]',              '[{"method": "oauth", "timestamp": 1793600000}]', false),
   ('[sso/saml]',           '[{"method": "sso/saml", "timestamp": 1793600000}]', false),
@@ -80,7 +86,7 @@ insert into amr_cases values
 insert into cases
 select m || ' with ' || a.label,
        pg_temp.event(pg_catalog.to_jsonb(m),
-         case when a.label = 'amr missing' then b.claims - 'amr'
+         case when a.amr is null then b.claims - 'amr'
               else pg_catalog.jsonb_set(b.claims, '{amr}', coalesce(a.amr, 'null'::jsonb)) end),
        a.allowed
 from base b, amr_cases a, unnest(array['token_refresh', 'totp']) as m;
@@ -92,6 +98,16 @@ select is(
   c.label || case when c.allowed then ': token issued, claims unchanged' else ': refused with 403' end)
 from cases c
 order by c.label;
+
+-- An allowed method with no claims, or JSON-null claims, returns {"claims": null}.
+-- Supabase Auth always sends claims; if it ever did not, it rejects a hook result
+-- without claims and answers 500, so sign-in fails closed (N1 investigation,
+-- question 5). Pinned here so a change to this behaviour is deliberate (Task 4
+-- quality r1, Minor 4).
+select is(private.passwordless_access_token('{"authentication_method": "otp"}'::jsonb),
+  '{"claims": null}'::jsonb, 'allowed method without claims: {"claims": null} (Auth answers 500)');
+select is(private.passwordless_access_token('{"authentication_method": "otp", "claims": null}'::jsonb),
+  '{"claims": null}'::jsonb, 'allowed method with JSON-null claims: {"claims": null} (Auth answers 500)');
 
 -- Definition (decision 18).
 select function_lang_is('private', 'passwordless_access_token', array['jsonb'], 'plpgsql', 'hook is plpgsql');
@@ -137,6 +153,7 @@ select is_empty(
 select is_empty(
   $$ select c.oid::regclass from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace
      where n.nspname in ('api', 'cms', 'private') and c.relkind in ('r', 'p', 'v', 'm', 'f')
+       -- MAINTAIN exists from PostgreSQL 17 (config.toml [db] major_version = 17).
        and (has_table_privilege('supabase_auth_admin', c.oid,
               'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN')
             or has_any_column_privilege('supabase_auth_admin', c.oid, 'SELECT, INSERT, UPDATE, REFERENCES')) $$,
