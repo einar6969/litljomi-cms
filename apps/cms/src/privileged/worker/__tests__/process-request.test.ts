@@ -3,7 +3,7 @@
 // process-request.integration.test.ts.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { defineModule, defineType, newsType, type FieldKind } from '@litljomi/cms-schema';
+import { ProjectionError, defineModule, defineType, newsType, type FieldKind } from '@litljomi/cms-schema';
 
 type Call = { fn: string; args: Record<string, unknown> };
 type Reply = { data?: unknown; error?: { code: string; message: string } };
@@ -44,11 +44,41 @@ const deepType = defineType({
   preview: { title: 'title' },
   orderBy: 'title',
 });
+// Fields that validate but whose projection throws: a ProjectionError (as projectEntry raises when
+// its own validation fails) and a RangeError (a projection recursing past the stack).
+const projectionIssue = { code: 'custom', path: ['title', 0], message: 'cannot project', input: 'x' };
+const throwingProjection = (thrown: () => Error): FieldKind<unknown, unknown> => {
+  const field: FieldKind<unknown, unknown> = {
+    ...overflowing,
+    publishSchema: () => z.unknown(),
+    project: () => {
+      throw thrown();
+    },
+    withOptions: () => field,
+  };
+  return field;
+};
+const unprojectableType = defineType({
+  name: 'unprojectable',
+  version: 1,
+  label: 'Unprojectable',
+  fields: { title: throwingProjection(() => new ProjectionError('unprojectable', [projectionIssue] as never)) },
+  preview: { title: 'title' },
+  orderBy: 'title',
+});
+const deepProjectionType = defineType({
+  name: 'deep-projection',
+  version: 1,
+  label: 'Deep projection',
+  fields: { title: throwingProjection(() => new RangeError('Maximum call stack size exceeded')) },
+  preview: { title: 'title' },
+  orderBy: 'title',
+});
 const testModule = defineModule({
   tenant: 'prufa',
   locale: 'is',
   branding: { name: 'Prufa' },
-  types: [newsType, deepType],
+  types: [newsType, deepType, unprojectableType, deepProjectionType],
   structure: [],
   site: {},
 });
@@ -111,6 +141,42 @@ describe('processRequestById', () => {
     expect(called('worker_commit_publish')).toEqual([]);
   });
 
+  it('stores projection_failed with the issues when the projection throws a ProjectionError, and does not commit', async () => {
+    handlers = {
+      worker_claim_request: () => ({ data: claimed() }),
+      worker_read_request: () => ({ data: read({ type: 'unprojectable', data: { title: 'x' } }) }),
+      worker_reject_request: () => ({}),
+    };
+
+    const outcome = await processRequestById('r1');
+
+    const error = {
+      code: 'projection_failed',
+      issues: [{ code: 'custom', path: ['title', 0], message: 'cannot project' }],
+    };
+    expect(outcome).toMatchObject({ status: 'failed_validation', errors: error });
+    expect(called('worker_reject_request')).toEqual([
+      { fn: 'worker_reject_request', args: { p_request_id: 'r1', p_status: 'failed_validation', p_error: error } },
+    ]);
+    expect(called('worker_commit_publish')).toEqual([]);
+  });
+
+  it('treats a RangeError from the projection as failed validation too_deep, and does not commit', async () => {
+    handlers = {
+      worker_claim_request: () => ({ data: claimed() }),
+      worker_read_request: () => ({ data: read({ type: 'deep-projection', data: { title: 'x' } }) }),
+      worker_reject_request: () => ({}),
+    };
+
+    const outcome = await processRequestById('r1');
+
+    expect(outcome).toMatchObject({ status: 'failed_validation', errors: { code: 'too_deep' } });
+    expect(called('worker_reject_request')).toEqual([
+      { fn: 'worker_reject_request', args: { p_request_id: 'r1', p_status: 'failed_validation', p_error: { code: 'too_deep' } } },
+    ]);
+    expect(called('worker_commit_publish')).toEqual([]);
+  });
+
   it('leaves the request validating after an unexpected error below 5 attempts, so the re-claim retries it', async () => {
     handlers = {
       worker_claim_request: () => ({ data: claimed({ attempts: 4 }) }),
@@ -134,7 +200,10 @@ describe('processRequestById', () => {
 
     const outcome = await processRequestById('r1');
 
-    const error = { code: 'unexpected', attempts: 5, message: 'worker_commit_publish: XX000 connection reset' };
+    // Editors can read the stored error: a stable code only. The database message goes only to
+    // the log and the alert (service_role and platform admins).
+    const error = { code: 'unexpected', attempts: 5 };
+    const message = 'worker_commit_publish: XX000 connection reset';
     expect(outcome).toEqual({
       requestId: 'r1',
       tenantId: 't1',
@@ -154,11 +223,47 @@ describe('processRequestById', () => {
         args: {
           p_tenant_id: 't1',
           p_event: 'publish_request.failed',
-          p_details: { tenantId: 't1', requestId: 'r1', entryId: 'e1', action: 'publish', ...error },
+          p_details: { tenantId: 't1', requestId: 'r1', entryId: 'e1', action: 'publish', ...error, message },
         },
       },
     ]);
     expect(console.error).toHaveBeenCalledWith('[cms-alert] publish_request.failed', expect.objectContaining({ requestId: 'r1' }));
+  });
+
+  it('still returns failed when the alert cannot be recorded', async () => {
+    handlers = {
+      worker_claim_request: () => ({ data: claimed({ attempts: 5 }) }),
+      worker_read_request: () => ({ data: read() }),
+      worker_commit_publish: () => dbError('XX000', 'connection reset'),
+      worker_reject_request: () => ({}),
+      worker_record_alert: () => dbError('XX000', 'audit down'),
+    };
+
+    expect(await processRequestById('r1')).toMatchObject({ status: 'failed', errors: { code: 'unexpected', attempts: 5 } });
+    expect(console.error).toHaveBeenCalledWith('[cms-alert] could not record publish_request.failed in the audit log', expect.any(Error));
+  });
+
+  it('returns the committed status without errors when the re-read for the errors fails', async () => {
+    let reads = 0;
+    handlers = {
+      worker_claim_request: () => ({ data: claimed() }),
+      worker_read_request: () => (++reads === 1 ? { data: read() } : dbError('XX000', 'connection reset')),
+      worker_commit_publish: () => ({ data: 'superseded' }),
+    };
+
+    const outcome = await processRequestById('r1');
+
+    expect(outcome).toEqual({
+      requestId: 'r1',
+      tenantId: 't1',
+      tenantSlug: 'prufa',
+      entryId: 'e1',
+      action: 'publish',
+      type: 'news',
+      status: 'superseded',
+    });
+    expect(called('worker_reject_request')).toEqual([]);
+    expect(console.error).toHaveBeenCalledWith(expect.stringMatching(/^\[cms-worker\] request r1 .*superseded/), expect.any(Error));
   });
 
   it.each(['forbidden', 'not_found'])('reports %s from the commit (a concurrent re-claim) as skipped', async (message) => {
@@ -262,6 +367,41 @@ describe('processPendingRequests', () => {
     expect(called('worker_claim_requests')).toEqual([{ fn: 'worker_claim_requests', args: { p_limit: 7 } }]);
     expect(outcomes.map((o) => [o.requestId, o.status])).toEqual([['r2', 'committed']]);
     expect(console.error).toHaveBeenCalledWith('[cms-worker] request r1 failed (attempt 1 of 5); left for retry', expect.any(Error));
+  });
+
+  it('logs and alerts when the 5th attempt cannot store failed, and continues with the other requests', async () => {
+    handlers = {
+      worker_claim_requests: () => ({ data: [claimed({ id: 'r1', attempts: 5 }), claimed({ id: 'r2' })] }),
+      worker_read_request: ({ p_request_id }) => ({ data: read({ id: p_request_id as string }) }),
+      worker_commit_publish: ({ p_request_id }) => (p_request_id === 'r1' ? dbError('XX000', 'connection reset') : { data: 'committed' }),
+      worker_reject_request: () => dbError('XX000', 'database down'),
+      worker_record_alert: () => ({}),
+    };
+
+    const outcomes = await processPendingRequests();
+
+    expect(outcomes.map((o) => [o.requestId, o.status])).toEqual([['r2', 'committed']]);
+    expect(console.error).toHaveBeenCalledWith(expect.stringMatching(/^\[cms-worker\] request r1 /), expect.any(Error));
+    expect(called('worker_record_alert')).toEqual([
+      {
+        fn: 'worker_record_alert',
+        args: {
+          p_tenant_id: 't1',
+          p_event: 'publish_request.failed',
+          p_details: {
+            tenantId: 't1',
+            requestId: 'r1',
+            entryId: 'e1',
+            action: 'publish',
+            code: 'unexpected',
+            attempts: 5,
+            message: 'worker_commit_publish: XX000 connection reset',
+            stored: false,
+            storeError: 'worker_reject_request: XX000 database down',
+          },
+        },
+      },
+    ]);
   });
 
   it('claims 10 by default', async () => {
