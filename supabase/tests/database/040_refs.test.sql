@@ -1,6 +1,6 @@
 -- supabase/tests/database/040_refs.test.sql
 -- Reference extraction (spec §4.1 rule 3, §4.3 "References inside JSON", §4.5,
--- §8.5 integrity, §11.1 A13; plan Task 7, decisions 3, 25 and 26).
+-- §8.5 integrity, §11.1 A13; plan Task 7, decisions 3, 25, 26 and 27).
 --
 -- Personas and tenants come from tests.seed() (_helpers.sql): editor_labak and
 -- editor_demo are members of labak and demo; outsider, revoked and
@@ -14,6 +14,7 @@
 --   entry c105  labak  news  no draft                      referenced by c106's draft only
 --   entry c106  labak  news  draft referencing c105        deleted in the cascade test
 --   entry c107  labak  news  no draft                      referenced by revision d102 only
+--   entry c108  labak  news  draft {}                      the nesting-limit draft (last section)
 --   assets f001, f002: plain UUIDs; cms.assets and the asset foreign keys come
 --   in Task 8, so asset references are not checked against a table yet.
 --
@@ -21,10 +22,11 @@
 -- saved with references (version 2), gets a stray draft_refs row, a title-only
 -- update (version 3) and a new document (version 4); the worker appends
 -- revisions d101 (c104 at version 4) and d102 (referencing c107); c106 and
--- c105 are deleted at the end.
+-- c105 are deleted; the last section adds c108, saves its draft and appends
+-- revision d103.
 begin;
 \ir _helpers.sql
-select plan(97);
+select plan(118);
 
 -- {"_ref": <id>, "_kind": <kind>}, the reference shape of §4.3.
 create function tests.ref(p_id uuid, p_kind text) returns jsonb
@@ -32,6 +34,14 @@ language sql
 set search_path = ''
 as $$ select pg_catalog.jsonb_build_object('_ref', p_id, '_kind', p_kind) $$;
 grant execute on function tests.ref(uuid, text) to authenticated, service_role;
+
+-- p_inner wrapped in p_levels objects {"a": ...}: tests.nest(127, '{}') is 128
+-- levels deep (decision 27).
+create function tests.nest(p_levels int, p_inner jsonb) returns jsonb
+language sql
+set search_path = ''
+as $$ select (pg_catalog.repeat('{"a":', p_levels) || p_inner::text || pg_catalog.repeat('}', p_levels))::jsonb $$;
+grant execute on function tests.nest(int, jsonb) to authenticated, service_role;
 
 -- Tables, keys and grants.
 select has_table('cms', 'draft_refs', 'cms.draft_refs exists');
@@ -351,6 +361,87 @@ select is_empty($$ select 1 from cms.draft_refs where entry_id = tests.entry('c1
   'the deleted entry''s draft_refs are gone (cascade)');
 select lives_ok($$ delete from cms.entries where id = tests.entry('c105') $$,
   'an entry no longer referenced can be deleted');
+
+-- Nesting limit and lean walk (§4.3, decision 27). Levels count nested objects
+-- and arrays: the document is level 1, a container directly inside a level-n
+-- container is level n + 1, and scalars are not levels. 128 levels are allowed;
+-- a container at level 129 fails the write with 54000, checked before the walk.
+-- The statement timeout is only a guard: without the limit, the 10,000-level
+-- documents below wrote gigabytes of temp files.
+set local statement_timeout = '5s';
+select is_empty($$ select * from private.extract_refs(tests.nest(127, '{}')) $$, '128 nested objects are allowed');
+select throws_ok($$ select * from private.extract_refs(tests.nest(128, '{}')) $$,
+  '54000', 'document nested deeper than 128 levels', '129 nested objects are rejected with 54000');
+select is_empty($$ select * from private.extract_refs((repeat('[', 128) || repeat(']', 128))::jsonb) $$,
+  '128 nested arrays are allowed');
+select throws_ok($$ select * from private.extract_refs((repeat('[', 129) || repeat(']', 129))::jsonb) $$,
+  '54000', 'document nested deeper than 128 levels', '129 nested arrays are rejected with 54000');
+select is_empty($$ select * from private.extract_refs(tests.nest(128, '"x"')) $$,
+  'a scalar inside the 128th level is not a level');
+select throws_ok($$ select * from private.extract_refs(tests.nest(128, '{"_ref": "nope", "_kind": "page"}')) $$,
+  '54000', 'document nested deeper than 128 levels', 'the limit is checked before the walk validates references');
+select results_eq($$ select path, ref, kind from private.extract_refs(tests.nest(119, tests.ref(tests.entry('c101'), 'entry'))) $$,
+  $$ values ('$' || repeat('."a"', 119), tests.entry('c101'), 'entry') $$,
+  'a reference at level 120 is found, with its full path');
+
+insert into cms.entries (id, tenant_id, type, created_by) values
+  (tests.entry('c108'), tests.tenant('labak'), 'news', tests.persona('editor_labak'));
+insert into cms.drafts (entry_id, tenant_id, schema_version, data, updated_by) values
+  (tests.entry('c108'), tests.tenant('labak'), 1, '{}', tests.persona('editor_labak'));
+
+-- Draft saves, as the editor.
+select tests.act_as(tests.persona('editor_labak'));
+select lives_ok($$ update cms.drafts set data = tests.nest(127, tests.ref(tests.entry('c101'), 'entry'))
+  where entry_id = tests.entry('c108') $$, 'editor saves a draft 128 levels deep');
+select results_eq($$ select path, target_entry_id from cms.draft_refs where entry_id = tests.entry('c108') $$,
+  $$ values ('$' || repeat('."a"', 127), tests.entry('c101')) $$, 'the reference at level 128 is in draft_refs');
+select throws_ok($$ update cms.drafts set data = tests.nest(128, tests.ref(tests.entry('c101'), 'entry'))
+  where entry_id = tests.entry('c108') $$,
+  '54000', 'document nested deeper than 128 levels', 'editor cannot save a draft 129 levels deep');
+-- The security review's document: 10,000 levels of 90-character keys, 960,001
+-- bytes as text (under the 1 MB data check). Rejected in milliseconds; 1 s is a
+-- wide margin that still fails if the walk runs first (8 s and 3 GB before).
+select set_config('tests.t0', clock_timestamp()::text, true);
+select throws_ok($$ update cms.drafts
+  set data = (repeat('{"' || repeat('a', 90) || '":', 10000) || '1' || repeat('}', 10000))::jsonb
+  where entry_id = tests.entry('c108') $$,
+  '54000', 'document nested deeper than 128 levels', 'editor cannot save a ~1 MB draft 10,000 levels deep');
+select cmp_ok(clock_timestamp() - current_setting('tests.t0')::timestamptz, '<', interval '1 second',
+  'the 10,000-level draft is rejected in under a second');
+-- Wide and shallow: 15,000 references in one list, about 1 MB. About 0.2 s
+-- locally, with the inserts and foreign-key checks; 2 s is a wide margin.
+select set_config('tests.t0', clock_timestamp()::text, true);
+select lives_ok($$ update cms.drafts
+  set data = jsonb_build_object('list', (select jsonb_agg(tests.ref(tests.entry('c101'), 'entry')) from generate_series(1, 15000)))
+  where entry_id = tests.entry('c108') $$, 'editor saves a ~1 MB draft with 15,000 references');
+select cmp_ok(clock_timestamp() - current_setting('tests.t0')::timestamptz, '<', interval '2 seconds',
+  'the 15,000-reference draft is saved in under two seconds');
+select cmp_ok((select octet_length(data::text) from cms.drafts where entry_id = tests.entry('c108')), '>', 1000000,
+  'the wide document is over 1,000,000 bytes');
+select set_eq($$ select path, target_entry_id from cms.draft_refs where entry_id = tests.entry('c108') $$,
+  $$ select '$."list"[' || i || ']', tests.entry('c101') from generate_series(0, 14999) as i $$,
+  'every one of the 15,000 references is in draft_refs at its own path');
+
+-- Revision inserts, as the worker (no role statement timeout in production).
+select tests.act_as_service();
+select lives_ok($$ insert into cms.revisions (id, tenant_id, entry_id, draft_version, schema_version, data, requested_by)
+  values (tests.revision('d103'), tests.tenant('labak'), tests.entry('c108'), 2, 1,
+          tests.nest(127, tests.ref(tests.entry('c101'), 'entry')), tests.persona('editor_labak')) $$,
+  'service_role appends a revision 128 levels deep');
+select results_eq($$ select path, target_entry_id from cms.revision_refs where revision_id = tests.revision('d103') $$,
+  $$ values ('$' || repeat('."a"', 127), tests.entry('c101')) $$, 'the reference at level 128 is in revision_refs');
+select throws_ok($$ insert into cms.revisions (tenant_id, entry_id, draft_version, schema_version, data, requested_by)
+  values (tests.tenant('labak'), tests.entry('c108'), 2, 1,
+          tests.nest(128, tests.ref(tests.entry('c101'), 'entry')), tests.persona('editor_labak')) $$,
+  '54000', 'document nested deeper than 128 levels', 'service_role cannot append a revision 129 levels deep');
+select set_config('tests.t0', clock_timestamp()::text, true);
+select throws_ok($$ insert into cms.revisions (tenant_id, entry_id, draft_version, schema_version, data, requested_by)
+  values (tests.tenant('labak'), tests.entry('c108'), 2, 1,
+          (repeat('{"' || repeat('a', 90) || '":', 10000) || '1' || repeat('}', 10000))::jsonb,
+          tests.persona('editor_labak')) $$,
+  '54000', 'document nested deeper than 128 levels', 'service_role cannot append a ~1 MB revision 10,000 levels deep');
+select cmp_ok(clock_timestamp() - current_setting('tests.t0')::timestamptz, '<', interval '1 second',
+  'the 10,000-level revision is rejected in under a second');
 
 select * from finish();
 rollback;

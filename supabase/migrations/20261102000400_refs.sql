@@ -1,5 +1,5 @@
 -- Reference extraction (spec §4.1 rules 3 and 5, §4.3 "References inside JSON",
--- §4.5; plan Task 7, decisions 3, 25 and 26).
+-- §4.5; plan Task 7, decisions 3, 25, 26 and 27).
 --
 -- Every reference in a document, at any depth, is an object
 -- { "_ref": "<uuid>", "_kind": "entry" | "asset", ... }. Triggers extract them
@@ -51,6 +51,18 @@ create table cms.revision_refs (
 -- version or variant check (the same rule as packages/schema and
 -- packages/rich-text), else 22P02. _kind must be exactly "entry" or "asset",
 -- else invalid_reference (decision 3). _ref is checked first.
+--
+-- Nesting limit (§4.3, decision 27): a document nested deeper than 128 levels
+-- raises 54000 before anything is walked or validated. Levels count objects and
+-- arrays: the document is level 1, a container directly inside a level-n
+-- container is level n + 1, and scalars are not levels. Every draft and revision
+-- write of data reaches this function through its trigger, so the limit holds
+-- for both. (A CHECK constraint would report 23514, not 54000, and would run the
+-- same check a second time.)
+--
+-- The walk is lean (decision 27): it enters only containers with a reference
+-- below them, never a reference-free subtree, and a row carries its location
+-- (needed for the result), never a subtree.
 create function private.extract_refs(p_data jsonb)
 returns table (path text, ref uuid, kind text)
 language plpgsql
@@ -59,26 +71,57 @@ security invoker
 set search_path = ''
 as $$
 declare
+  v_doc jsonb;
   r record;
 begin
+  -- p_data may be a TOAST pointer (a trigger's NEW.data). #> '{}' returns the
+  -- document itself, detoasted, so the checks and the walk below do not each
+  -- detoast it again.
+  v_doc := p_data #> '{}';
+  -- $.**{128} is jsonpath depth 128, where the level-129 containers sit (the
+  -- document is depth 0). The scan never descends below that depth and stops at
+  -- the first match: at most one visit per node, so linear in the document.
+  if pg_catalog.jsonb_path_exists(v_doc, 'strict $.**{128} ? (@.type() == "object" || @.type() == "array")') then
+    raise exception 'document nested deeper than 128 levels' using errcode = '54000';
+  end if;
+  if not pg_catalog.jsonb_path_exists(v_doc, 'strict $.**._ref') then
+    return;
+  end if;
+  -- One row per reference object and per container on the way to one: loc is
+  -- the jsonpath text; nested says whether a reference sits strictly below, and
+  -- only those rows are entered, through steps (the same location as a #> path,
+  -- null on rows not entered); ref_value and kind_value are set on reference
+  -- objects only. Rows come out level by level, in document order within a level.
   for r in
-    with recursive walk (loc, node) as (
-      select '$'::text, p_data
+    with recursive walk (loc, steps, nested, ref_value, kind_value) as (
+      select '$'::text, '{}'::text[],
+             pg_catalog.jsonb_path_exists(v_doc, 'strict $.**{1 to last}._ref'),
+             v_doc -> '_ref',
+             case when v_doc -> '_ref' is not null then v_doc -> '_kind' end
       union all
-      select w.loc || c.step, c.child
+      select w.loc || c.step, case when f.nested then w.steps || c.key end, f.nested, f.ref_value,
+             case when f.ref_value is not null then c.value -> '_kind' end
       from walk w
+      cross join lateral (select v_doc #> w.steps offset 0) as n (node)
       cross join lateral (
-        select '.' || pg_catalog.to_jsonb(e.key)::text, e.value
-        from pg_catalog.jsonb_each(case when pg_catalog.jsonb_typeof(w.node) = 'object' then w.node end) as e
+        select '.' || pg_catalog.to_jsonb(e.key)::text, e.key, e.value
+        from pg_catalog.jsonb_each(case when pg_catalog.jsonb_typeof(n.node) = 'object' then n.node end) as e
         union all
-        select '[' || (a.ord - 1)::text || ']', a.value
-        from pg_catalog.jsonb_array_elements(case when pg_catalog.jsonb_typeof(w.node) = 'array' then w.node end)
+        select '[' || (a.ord - 1)::text || ']', (a.ord - 1)::text, a.value
+        from pg_catalog.jsonb_array_elements(case when pg_catalog.jsonb_typeof(n.node) = 'array' then n.node end)
           with ordinality as a (value, ord)
-      ) as c (step, child)
+      ) as c (step, key, value)
+      -- Scalars are dropped; -> '_ref' is null except on an object with a _ref key.
+      cross join lateral (
+        select c.value -> '_ref', pg_catalog.jsonb_path_exists(c.value, 'strict $.**{1 to last}._ref')
+        where pg_catalog.jsonb_typeof(c.value) in ('object', 'array')
+        offset 0
+      ) as f (ref_value, nested)
+      where w.nested and (f.ref_value is not null or f.nested)
     )
-    select w.loc, w.node -> '_ref' as ref_value, w.node -> '_kind' as kind_value
+    select w.loc, w.ref_value, w.kind_value
     from walk w
-    where pg_catalog.jsonb_typeof(w.node) = 'object' and w.node ? '_ref'
+    where w.ref_value is not null
   loop
     if pg_catalog.jsonb_typeof(r.ref_value) <> 'string'
        or (r.ref_value #>> '{}') !~ ('^[0123456789abcdef]{8}-[0123456789abcdef]{4}-[0123456789abcdef]{4}'
