@@ -218,26 +218,30 @@ Expected: `signup_disabled` (HTTP 422), and `select count(*) from auth.users whe
 | Site URL, redirect URLs | G3.7 | `https://<cms-staging-host>`; `https://<cms-staging-host>/auth/callback` | `site_url`, `additional_redirect_urls` (localhost) | Magic links land on the staging CMS only | G3.7 |
 | Email templates | Task 22 (not this runbook) | Icelandic, Litljómi-branded | Task 22 | §4.4 | Task 22 and A11 |
 
-**Secure password change through the Management API (Einar only).** Used only if the dashboard does not offer the setting (the row above). The Management API (`PATCH /v1/projects/<project-ref>/config/auth`) needs a Supabase personal access token, a secret, so Einar runs it in his own terminal, never an agent. He creates a token for this step (Supabase account settings, Access Tokens; confirm at execution time) and revokes it once the setting is verified. `<field-name>` is the Management API's name for the setting, taken from Supabase's current Management API reference at execution time, never guessed. The token is entered as in G2.5 ("Entering a token"): at a hidden prompt (`read -rs`), in a subshell, never exported, never on a command line (curl reads its headers from a configuration on standard input, written by the builtin `printf`, as in section 7.2), then unset. The commands print only an HTTP code and the setting's value:
+**Secure password change through the Management API (Einar only).** Used only if the dashboard does not offer the setting (the row above). The Management API (`PATCH /v1/projects/<project-ref>/config/auth`) needs a Supabase personal access token, a secret, so Einar runs it in his own terminal, never an agent. He creates a token for this step (Supabase account settings, Access Tokens; confirm at execution time) with the shortest expiry or the narrowest scope Supabase offers (a personal access token is probably account-wide, so a wrong project reference would change another project; confirm the options at execution time), and **revokes it whatever the outcome**, success or failure. `<field-name>` is the Management API's name for the setting, taken from Supabase's current Management API reference at execution time, never guessed. The token is entered as in G2.5 ("Entering a token"): at a hidden prompt (`read -rs`), in a subshell, never exported, never on a command line (curl reads its headers from a configuration on standard input, written by the builtin `printf`, as in section 7.2), then unset. `REF` is the staging project's reference, the same dashboard value Einar passes as `EXPECT_REF` in section 7.2; it is typed once, checked against `^[a-z0-9]{20}$`, used in both URLs and printed before anything is sent. The commands print only the target, an HTTP code and whether the setting is `true`:
 
 ```sh
 (
+  REF='<project-ref>'   # the dashboard value used for EXPECT_REF
+  printf '%s\n' "$REF" | grep -Eqx '[a-z0-9]{20}' \
+    || { echo 'REF is not a 20-character project reference: stop' >&2; exit 1; }
+  printf 'target project: %s\n' "$REF"
   printf 'Supabase personal access token: '; read -rs SUPABASE_PAT; echo
   {
     printf 'header = "Authorization: Bearer %s"\nheader = "Content-Type: application/json"\n' "$SUPABASE_PAT"
-    printf 'request = "PATCH"\nurl = "https://api.supabase.com/v1/projects/%s/config/auth"\n' '<project-ref>'
+    printf 'request = "PATCH"\nurl = "https://api.supabase.com/v1/projects/%s/config/auth"\n' "$REF"
     printf 'silent\nshow-error\noutput = "/dev/null"\nwrite-out = "PATCH: %%{http_code}\\n"\n'
     jq -nr '{"<field-name>": true} | tojson | "data = \(tojson)"'
   } | curl -q --config -
   {
     printf 'header = "Authorization: Bearer %s"\n' "$SUPABASE_PAT"
-    printf 'url = "https://api.supabase.com/v1/projects/%s/config/auth"\nsilent\nshow-error\n' '<project-ref>'
-  } | curl -q --config - | jq '.["<field-name>"]' 2>/dev/null
+    printf 'url = "https://api.supabase.com/v1/projects/%s/config/auth"\nsilent\nshow-error\n' "$REF"
+  } | curl -q --config - | jq '.["<field-name>"] == true' 2>/dev/null
   unset SUPABASE_PAT
 )
 ```
 
-Expected: `PATCH: 200`, then `true`. Anything else: stop and report (the response body is never printed, since the Auth configuration can hold secret settings). Einar confirms the token is revoked. It is an Auth configuration change: if it is made after section 7.1, section 7.2 is run again (section 7.2, "When to run it").
+Expected: the target line, `PATCH: 200`, then `true`. Anything else: stop and report, and **revoke the token anyway** (the response body is never printed, since the Auth configuration can hold secret settings). The check prints the comparison `== true`, never the field's raw value, on purpose: a wrong field name could otherwise print a secret setting, and the PATCH would have overwritten it with `true`; do not paste the output into chat. Einar revokes the token whatever the outcome and confirms it is gone from the Access Tokens list. It is an Auth configuration change: if it is made after section 7.1, section 7.2 is run again (section 7.2, "When to run it").
 
 **Secure password change: verified behaviour** (Supabase Auth v2.197.0, `internal/api/user.go`, verified locally on 2026-11-02 in `docs/verification/decision-21-secure-password-change.md`):
 - A session **less than 24 hours old** changes the password with no reauthentication (200).
@@ -409,7 +413,7 @@ URL="$(env_value NEXT_PUBLIC_SUPABASE_URL "$URL_RE")"
 PK="$(env_value NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY "$KEY_RE")"
 SK="$(env_value SUPABASE_SECRET_KEY "$KEY_RE")"
 if [ "$URL" != "https://$REF.supabase.co" ]; then
-  echo "FAILED: .env.local points at ${URL#https://}, not $REF.supabase.co; nothing was sent"; exit 1
+  echo "FAILED: .env.local points at ${URL#https://}, not $REF.supabase.co; nothing was sent" >&2; exit 1
 fi
 printf 'target: %s\n' "${URL#https://}"
 EXPECT_REDIRECT="${EXPECT_REDIRECT:-}"
@@ -552,7 +556,7 @@ env_value() {
 
 USER_ID="${1:-}"
 case "$USER_ID" in
-  '' | *[!0-9a-f-]*) echo 'FAILED: usage: bash hook-check-2.sh <test-account-id>; nothing was sent'; exit 1 ;;
+  '' | *[!0-9a-f-]*) echo 'FAILED: usage: bash hook-check-2.sh <test-account-id>; nothing was sent' >&2; exit 1 ;;
 esac
 REF="${EXPECT_REF:-}"
 if ! [[ $REF =~ $REF_RE ]]; then
@@ -562,7 +566,7 @@ fi
 URL="$(env_value NEXT_PUBLIC_SUPABASE_URL "$URL_RE")"
 SK="$(env_value SUPABASE_SECRET_KEY "$KEY_RE")"
 if [ "$URL" != "https://$REF.supabase.co" ]; then
-  echo "FAILED: .env.local points at ${URL#https://}, not $REF.supabase.co; nothing was sent"; exit 1
+  echo "FAILED: .env.local points at ${URL#https://}, not $REF.supabase.co; nothing was sent" >&2; exit 1
 fi
 printf 'target: %s\n' "${URL#https://}"
 # curl reads headers and URL as a config on stdin (--config -), so the secret key is on no command line.
@@ -688,7 +692,7 @@ All records are in the **litljomi.is** zone only. **`labak.is` DNS is off-limits
 ### G6.2 Environment variables
 - **Owner:** Executor sets non-secret values; **Einar enters secret values** (section 12) in the project's Environment Variables settings or from his own terminal, so no secret passes through an agent session. Production environment only (the staging hostnames are the projects' production domains); secret values marked sensitive if the option is offered (confirm at execution time).
 - **Settings:** the variables in section 13 for each project, **except `CMS_WEBHOOK_SECRETS`** on the two site projects, plus the GitHub Packages read token on `labak-hub-staging`. `CMS_WEBHOOK_SECRETS` holds the site's webhook secret, which is created with the site in P-2 (section 11), after G6.5; P-2 sets and verifies it. A secret that Einar generates here (`CMS_INTERNAL_SECRET`, `CRON_SECRET`) is carried without a file, the clipboard or shell history, as in P-2: generated into a shell variable, piped to where it is stored, then unset. The GitHub Packages read token is entered as in G2.5 ("Entering a token"): at a hidden prompt in a subshell, piped to `vercel env add NODE_AUTH_TOKEN production --cwd ~/vercel-link/labak-hub-staging` (the name the `hub-integration` `.npmrc` reads; confirm at execution time), then unset.
-- **Selecting the Vercel project.** `vercel env` acts on the project linked to its working directory, so a wrong directory would put a value, possibly a secret, on the wrong project (for example one site's webhook secret on the other site). Each project therefore gets its own empty directory outside the repository, `~/vercel-link/<project>` (`<project>` is a name from G6.1's table), linked once by Einar: `mkdir -p ~/vercel-link/<project>`, then `vercel link --cwd ~/vercel-link/<project> --project <project> --scope <team>` (`<team>` is his Vercel team). Every `vercel env` command in this runbook names that directory with `--cwd ~/vercel-link/<project>` and never relies on the current directory. Before the first value is added to a project, the executor compares the project ID in `~/vercel-link/<project>/.vercel/project.json` (not secret) with the one on that project's Settings page and records the match. Confirm the flags and the file at execution time (`vercel link --help`, `vercel env --help`); if the project cannot be selected and checked this way, stop and report.
+- **Selecting the Vercel project.** `vercel env` acts on the project linked to its working directory, so a wrong directory would put a value, possibly a secret, on the wrong project (for example one site's webhook secret on the other site). Each project therefore gets its own empty directory outside the repository, `~/vercel-link/<project>` (`<project>` is a name from G6.1's table), linked once by Einar: `mkdir -p ~/vercel-link/<project>`, then `vercel link --cwd ~/vercel-link/<project> --project <project> --scope <team>` (`<team>` is his Vercel team). If `vercel link` offers to pull environment variables (for example into `.env.local`), Einar declines; the executor reads only `.vercel/project.json` there (confirm the prompts at execution time). Every `vercel env` command in this runbook names that directory with `--cwd ~/vercel-link/<project>` and never relies on the current directory. Before the first value is added to a project, the executor compares the project ID in `~/vercel-link/<project>/.vercel/project.json` (not secret) with the one on that project's Settings page and records the match. Confirm the flags and the file at execution time (`vercel link --help`, `vercel env --help`); if the project cannot be selected and checked this way, stop and report.
 - **Verify:** for each project, `vercel env ls production --cwd ~/vercel-link/<project>` lists exactly the names in section 13 for that project (values are not shown), except `CMS_WEBHOOK_SECRETS` on the two site projects (P-2 adds it), plus `NODE_AUTH_TOKEN` on `labak-hub-staging`; no other Supabase variable is present on a site project.
 
 ### G6.3 Deployment protection: Standard Protection on all three projects
@@ -723,13 +727,14 @@ The CLI (`tools/cli`) reads the staging URL and secret key from Einar's local en
 - **P-1 Tenants.** Owner: Einar runs `cms provision tenant labak`, `cms provision tenant demo`; the executor verifies. Verify: SQL editor `select slug from cms.tenants order by slug;` lists `demo` and `labak` (confirm the table and column names against the migrations at execution time).
 - **P-2 Sites.** Owner: Einar (the CLI and the webhook secret); the executor verifies. `cms provision site …` once per staging site, with base URL `https://<demo-staging-host>` or `https://<labak-staging-host>` and the site's revalidate route (`/api/cms/revalidate` on the demo site; the LABAK branch's route, confirm at execution time). The secret is stored in Supabase Vault (`api.admin_create_site` keeps only its ID), and the same value becomes that site's `CMS_WEBHOOK_SECRETS` (set here, not in G6.2); the site is then redeployed. **Carrying the secret without a file, the clipboard or shell history**, in one terminal session per site:
   ```sh
+  SITE_PROJECT='<site-project>'   # set once per site, next to its base URL: litljomi-demo-site for https://<demo-staging-host>, labak-hub-staging for https://<labak-staging-host>
   WEBHOOK_SECRET="$(openssl rand -base64 32)"          # never echoed; the command line holds only the variable's name
   printf '%s' "$WEBHOOK_SECRET" | cms provision site …  # the CLI reads it on stdin (confirm its input method at execution time)
   printf '%s' "$WEBHOOK_SECRET" \
-    | vercel env add CMS_WEBHOOK_SECRETS production --cwd ~/vercel-link/'<site-project>'  # the project: G6.2
-  unset WEBHOOK_SECRET
+    | vercel env add CMS_WEBHOOK_SECRETS production --cwd ~/vercel-link/"$SITE_PROJECT"
+  unset WEBHOOK_SECRET SITE_PROJECT
   ```
-  `vercel env add` reads the value from stdin when piped (confirm at execution time); if it cannot, stop: Einar decides how the value is entered without a file, and the choice is recorded. To enter an existing value instead of generating one (for example during rotation), `read -rs WEBHOOK_SECRET` reads it without echo. `<site-project>` is `litljomi-demo-site` or `labak-hub-staging`, matching the base URL just provisioned. Verify: `select count(*) from vault.secrets;` increased by one per site (never select decrypted values); `vercel env ls production --cwd ~/vercel-link/<site-project>` now lists exactly section 13's names for that site (G6.2's list plus `CMS_WEBHOOK_SECRETS`); the site's redeployment is Ready.
+  `vercel env add` reads the value from stdin when piped (confirm at execution time); if it cannot, stop: Einar decides how the value is entered without a file, and the choice is recorded. To enter an existing value instead of generating one (for example during rotation), `read -rs WEBHOOK_SECRET` reads it without echo. `SITE_PROJECT` (`<site-project>` below) is set once per site, with that site's base URL, so the two sites cannot be swapped: `litljomi-demo-site` for the demo URL, `labak-hub-staging` for the LABAK URL. Verify: `select count(*) from vault.secrets;` increased by one per site (never select decrypted values); `vercel env ls production --cwd ~/vercel-link/<site-project>` now lists section 13's names for that site (G6.2's list, which for `labak-hub-staging` includes `NODE_AUTH_TOKEN`, plus `CMS_WEBHOOK_SECRETS`); the site's redeployment is Ready.
 - **P-3 Test editor.** Owner: Einar runs `cms provision editor … --email <Einar's test address>` for each tenant used in Task 29; the executor verifies. Real LABAK editors are not invited in M1. Verify: G4.3.
 - **Record** every created resource (names, regions, domains, project references; no secrets) in `docs/verification/m1-report.md` (Task 28 Step 6). Owner: executor. Verify: `git grep -nE 'sb_(secret|publishable)_[A-Za-z0-9]|eyJ[A-Za-z0-9_-]{10,}' -- docs/verification/m1-report.md` finds nothing.
 
@@ -747,7 +752,7 @@ No secret is ever committed, logged, printed in an agent session, pasted into ch
 | SMTP credentials (provider API key) | The email provider (G4.2) | Supabase Auth SMTP settings (G3.6) | Supabase Auth. §8.2 also lists the CMS environment; M1 code sends no email itself, so no variable is defined (section 16) |
 | Supabase database password | Einar at project creation (G3.1) | Einar's password manager | Einar, typed at the `supabase link`/`db push` prompt only |
 | Supabase CLI access token | `supabase login` by Einar | The Supabase CLI's local credential store | Einar's machine only |
-| Supabase personal access token for the Management API (only if section 6's Management API route for secure password change is used) | Einar, in his Supabase account settings, for that step only | Not stored: entered at a hidden prompt in a subshell (section 6); **revoked by Einar once the setting is verified** | Einar's machine only |
+| Supabase personal access token for the Management API (only if section 6's Management API route for secure password change is used) | Einar, in his Supabase account settings, for that step only | Not stored: entered at a hidden prompt in a subshell (section 6); **revoked by Einar whatever the outcome (success or failure)** | Einar's machine only |
 | JWT signing secret or keys | Supabase (managed) | Supabase | Nobody exports it; holders could issue tokens without the hook (section 15) |
 | GitHub Packages publish token | Einar (type, scope and expiry: G2.5, "Tokens") | Entered by Einar at a hidden prompt, in a subshell, for the publish commands only (G2.5, "Entering a token"); revoked by Einar once G2.5 is verified (G2.5) | Einar's machine only |
 | GitHub Packages read token | Einar (type, scope and expiry: G2.5, "Tokens") | `labak-hub-staging` environment, under the variable name the `hub-integration` `.npmrc` reads (Task 28 Step 1; confirm at execution time), entered by Einar at a hidden prompt (G6.2); for the G2.5 check, a hidden prompt in a subshell only | Vercel's install step for that project, and also the site's server code at runtime (why its scope is limited: G2.5) |
