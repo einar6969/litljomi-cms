@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T04:31:28.439Z",
+  "updatedAt": "2026-11-02T04:37:03.159Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -317,9 +317,15 @@
           "at": "2026-11-02T04:29:57.266Z",
           "previousStatus": "in_progress",
           "resolvedAt": "2026-11-02T04:31:28.439Z"
+        },
+        {
+          "text": "Second stop: the refs triggers run as the invoking role (§4.5) but cannot call private.extract_refs: authenticated and service_role have no USAGE on private (Tasks 4-5 tests assert that). Proven with a rolled-back probe (permission denied for schema private). Waiting for Einar's ruling on grants or placement.",
+          "at": "2026-11-02T04:34:26.370Z",
+          "previousStatus": "in_progress",
+          "resolvedAt": "2026-11-02T04:37:03.159Z"
         }
       ],
-      "notes": "Blocked 2026-11-02 before any edit: plan interface could not work as written (jsonb_path_query returns no locations). Einar ruled in chat: \"Recursive walk + cross-check\", \"AFTER on every update\", \"Canonical UUID strings only\" and \"Make sure packages/schema’s refSchema also requires the canonical lowercase 8-4-4-4-12 form, so all three layers reject the same references.\" (decision 25; spec §4.3 revised). Unblocked; the same implementer continues.",
+      "notes": "Blocked 2026-11-02 before any edit: plan interface could not work as written (jsonb_path_query returns no locations). Einar ruled in chat: \"Recursive walk + cross-check\", \"AFTER on every update\", \"Canonical UUID strings only\" and \"Make sure packages/schema’s refSchema also requires the canonical lowercase 8-4-4-4-12 form, so all three layers reject the same references.\" (decision 25; spec §4.3 revised). Unblocked; the same implementer continues. Second stop (before any edit): refs triggers cannot call private.extract_refs as the invoking role (no USAGE on private). Einar ruled in chat: \"Grant usage + one function\" (decision 26; spec §4.5 revised). Unblocked again; the same implementer continues.",
       "startedAt": "2026-11-02T04:26:10.172Z"
     },
     {
@@ -472,7 +478,9 @@
     {
       "id": 16,
       "status": "in_progress",
-      "commits": [],
+      "commits": [
+        "11b7c93"
+      ],
       "reviews": {},
       "gatesUsed": [
         "G0",

@@ -4,7 +4,7 @@
 |---|---|
 | Status | **Approved** by Einar on 2026-11-01 as the implementation baseline, subject to validating the assumptions in §11 and the security boundaries during development. Not yet implemented |
 | Date | 2026-11-01 |
-| Revisions | 2026-11-02 (Einar): passwordless sign-in is enforced by an Auth hook, and email changes need confirmation from both addresses (§4.2, §4.4, §4.5, §11.2; plan decisions 18 and 19); 2026-11-02 (Einar): `packages/rich-text` may depend on Zod and the MIT Tiptap core packages, with the editor configuration on a separate entry point that sites do not import (§3.1; plan decision 23); 2026-11-02 (Einar): `packages/schema` may also depend on `@litljomi/rich-text`'s main entry point, never its editor entry (§3.1; plan decision 24); 2026-11-02 (Einar): references are extracted by a recursive walk with jsonpath locations, cross-checked against `strict $.**._ref`, and `_ref` must be a canonical lowercase UUID in every layer (§4.3; plan decision 25) |
+| Revisions | 2026-11-02 (Einar): passwordless sign-in is enforced by an Auth hook, and email changes need confirmation from both addresses (§4.2, §4.4, §4.5, §11.2; plan decisions 18 and 19); 2026-11-02 (Einar): `packages/rich-text` may depend on Zod and the MIT Tiptap core packages, with the editor configuration on a separate entry point that sites do not import (§3.1; plan decision 23); 2026-11-02 (Einar): `packages/schema` may also depend on `@litljomi/rich-text`'s main entry point, never its editor entry (§3.1; plan decision 24); 2026-11-02 (Einar): references are extracted by a recursive walk with jsonpath locations, cross-checked against `strict $.**._ref`, and `_ref` must be a canonical lowercase UUID in every layer (§4.3; plan decision 25); 2026-11-02 (Einar): `authenticated` and `service_role` may use `private` only to execute `private.extract_refs(jsonb)` (§4.5; plan decision 26) |
 | Owner | Einar Zoega, Litljómi ehf. |
 | Audience | Einar, and any future implementation session (human or Claude Code) |
 | Location | Written in the LABAK workspace (`project/`). Moves to `docs/architecture.md` in the CMS monorepo at milestone M0 and is maintained there |
@@ -275,6 +275,8 @@ Column lists are the v1 minimum; implementation may add timestamps and indexes.
 `anon` has no privileges on `cms`. `service_role` is granted what the worker and CLI need, **except** `UPDATE`/`DELETE` on `revisions` and `audit_log`. Operations that must remove history (tenant offboarding, §8.3) run as an owner-run SQL procedure through a direct migration connection, never through the API. `EXECUTE` is revoked from `PUBLIC` globally (default privileges, not per schema) and granted per function.
 
 **Auth hook grant.** `supabase_auth_admin` (Supabase's Auth role) has `USAGE` on `private` and `EXECUTE` on `private.passwordless_access_token(jsonb)`, and nothing else in `api`, `cms` or `private`. `EXECUTE` on the hook is revoked from `PUBLIC`, `anon` and `authenticated`. The hook is `SECURITY INVOKER` with `search_path = ''` and reads no tables (§4.4).
+
+**Reference-extraction grant.** The reference triggers run as the invoking role (§4.3), so `authenticated` and `service_role` have `USAGE` on `private` and `EXECUTE` on `private.extract_refs(jsonb)` only, and nothing else in `private`. `anon` has nothing. `extract_refs` is `SECURITY INVOKER`, reads no tables, and is not reachable through the Data API (plan decision 26).
 
 ### 4.6 Functions in `api`
 
