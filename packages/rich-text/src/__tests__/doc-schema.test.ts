@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RICH_TEXT_MAX_DEPTH, richTextDocSchema } from '../doc-schema.ts';
+import { RICH_TEXT_MAX_DEPTH, isSafeHref, richTextDocSchema } from '../doc-schema.ts';
 
 const A = '11111111-1111-4111-8111-111111111111';
 const p = (text: string, marks?: unknown[]) => ({
@@ -37,6 +37,20 @@ describe('richTextDocSchema', () => {
   it('rejects a javascript: link', () => {
     const d = doc(p('x', [{ type: 'link', attrs: { href: 'javascript:alert(1)' } }]));
     expect(richTextDocSchema.safeParse(d).success).toBe(false);
+  });
+
+  it.each(['https://labak.is@evil.com', 'https://u:p@x.is', 'http://user@x.is/a', 'https://:secret@x.is', 'HTTPS://U@X.IS'])(
+    'rejects a link with credentials: %s (decision 32)',
+    (href) => {
+      expect(isSafeHref(href)).toBe(false);
+      const d = doc(p('x', [{ type: 'link', attrs: { href } }]));
+      expect(richTextDocSchema.safeParse(d).success).toBe(false);
+    },
+  );
+
+  it('accepts an empty userinfo and mailto addresses (no credentials)', () => {
+    expect(isSafeHref('https://@x.is')).toBe(true);
+    expect(isSafeHref('mailto:u:p@x.is')).toBe(true);
   });
 
   it('rejects an image without alt', () => {

@@ -21,7 +21,9 @@ const ALLOWED_PROTOCOLS = new Set(['https:', 'http:', 'mailto:']);
 function isSafeHref(s: string): boolean {
   if (s !== s.trim()) return false;
   try {
-    return ALLOWED_PROTOCOLS.has(new URL(s).protocol);
+    const u = new URL(s);
+    // No credentials (decision 32): `https://labak.is@evil.com` goes to evil.com.
+    return ALLOWED_PROTOCOLS.has(u.protocol) && u.username === '' && u.password === '';
   } catch {
     return false;
   }
@@ -30,7 +32,7 @@ function isSafeHref(s: string): boolean {
 export function link(o: LinkOptions): LinkField {
   const required = o.required ?? false;
   const base = z.union([
-    z.strictObject({ href: z.string().refine(isSafeHref, 'href must be https:, http: or mailto:').transform((s) => new URL(s).href) }),
+    z.strictObject({ href: z.string().refine(isSafeHref, 'href must be https:, http: or mailto:, without credentials').transform((s) => new URL(s).href) }),
     z.strictObject({ entry: refSchema('entry') }),
   ]) as unknown as z.ZodType<LinkValue>;
   return {

@@ -38,14 +38,17 @@ export interface RichTextDoc {
 
 // Same rule as the schema package's link field (packages/schema/src/fields/link.ts); keep the two
 // copies identical, because §3.1 forbids rich-text from depending on schema.
-// https:, http: and mailto: only. Valid hrefs are stored in canonical form, new URL(s).href, so
-// consumers can classify them by prefix (upper-case schemes, tabs and newlines are removed).
+// https:, http: and mailto: only, with no user name or password. Valid hrefs are stored in
+// canonical form, new URL(s).href, so consumers can classify them by prefix (upper-case schemes,
+// tabs and newlines are removed).
 const ALLOWED_PROTOCOLS = new Set(['https:', 'http:', 'mailto:']);
 
 export function isSafeHref(s: string): boolean {
   if (s !== s.trim()) return false;
   try {
-    return ALLOWED_PROTOCOLS.has(new URL(s).protocol);
+    const u = new URL(s);
+    // No credentials (decision 32): `https://labak.is@evil.com` goes to evil.com.
+    return ALLOWED_PROTOCOLS.has(u.protocol) && u.username === '' && u.password === '';
   } catch {
     return false;
   }
@@ -72,7 +75,7 @@ const markSchema = z.discriminatedUnion('type', [
   z.strictObject({
     type: z.literal('link'),
     attrs: z.union([
-      z.strictObject({ href: z.string().refine(isSafeHref, 'href must be https:, http: or mailto:').transform(canonicalHref), entry: unset }),
+      z.strictObject({ href: z.string().refine(isSafeHref, 'href must be https:, http: or mailto:, without credentials').transform(canonicalHref), entry: unset }),
       z.strictObject({ entry: ref('entry'), href: unset }),
     ]),
   }),

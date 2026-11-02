@@ -77,6 +77,14 @@ it('round-trips entry links and images through the extensions against the schema
   expect(text).toContain('A caption');
 });
 
+it('drops a pasted link with credentials (decision 32)', () => {
+  const json = generateJSON('<p><a href="https://labak.is@evil.com/x">bad</a></p>', richTextExtensions());
+  const text = JSON.stringify(json);
+  expect(text).not.toContain('evil.com');
+  expect(text).not.toContain('"link"');
+  expect(richTextDocSchema.safeParse(json).success).toBe(true);
+});
+
 it('drops a pasted <img>', () => {
   const json = generateJSON('<p>a</p><img src="https://example.com/x.png" alt="x">', richTextExtensions());
   expect(JSON.stringify(json)).not.toContain('"image"');

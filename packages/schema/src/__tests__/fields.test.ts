@@ -36,6 +36,16 @@ describe('link', () => {
     expect(s.safeParse({ href: 'data:text/html,x' }).success).toBe(false);
     expect(s.safeParse({ href: '/relative' }).success).toBe(false);
   });
+  it.each(['https://labak.is@evil.com', 'https://u:p@x.is', 'http://user@x.is/a', 'https://:secret@x.is', 'HTTPS://U@X.IS'])(
+    'rejects a URL with credentials: %s (decision 32)',
+    (href) => {
+      expect(s.safeParse({ href }).success).toBe(false);
+    },
+  );
+  it('accepts an empty userinfo and mailto addresses (no credentials)', () => {
+    expect(s.safeParse({ href: 'https://@x.is' }).data).toEqual({ href: 'https://x.is/' });
+    expect(s.safeParse({ href: 'mailto:u:p@x.is' }).success).toBe(true);
+  });
   it('accepts https, http, mailto and entry references', () => {
     expect(s.safeParse({ href: 'https://example.is/a?b=1' }).success).toBe(true);
     expect(s.safeParse({ href: 'http://example.is' }).success).toBe(true);
