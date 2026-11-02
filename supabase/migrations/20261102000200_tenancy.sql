@@ -37,7 +37,10 @@ create table cms.platform_admins (
 
 -- Tenant slugs are immutable once provisioned (§4.1 rule 7): they appear in
 -- public storage paths and site configuration. Fires for every writer,
--- including service_role and the owner.
+-- including service_role and the owner. The trigger is on every UPDATE, not
+-- column-specific (UPDATE OF slug, which looks only at the SET list), so the
+-- WHEN clause also catches a slug change made by another BEFORE UPDATE trigger
+-- that fires earlier (BEFORE triggers fire in name order).
 create function private.tenants_lock_slug()
 returns trigger
 language plpgsql
@@ -50,7 +53,7 @@ end;
 $$;
 
 create trigger tenants_lock_slug
-  before update of slug on cms.tenants
+  before update on cms.tenants
   for each row
   when (old.slug is distinct from new.slug)
   execute function private.tenants_lock_slug();

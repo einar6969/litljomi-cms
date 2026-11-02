@@ -2,7 +2,7 @@
 -- Tenancy tables and RLS (spec §4.1 rules 3 and 7, §4.3, §4.5; plan Task 5).
 begin;
 \ir _helpers.sql
-select plan(42);
+select plan(44);
 
 select has_table('cms', 'tenants', 'cms.tenants exists');
 select has_table('cms', 'memberships', 'cms.memberships exists');
@@ -62,6 +62,13 @@ select results_eq($$ select user_id from cms.platform_admins $$, array[tests.per
 select tests.act_as(tests.persona('platform_admin'), 'aal2');
 select results_eq($$ select count(*)::int from cms.tenants $$, array[2], 'platform admin with aal2 sees all tenants');
 select is_empty($$ select 1 from cms.memberships $$, 'platform admin with aal2 sees no other user''s membership');
+
+-- Non-admins at aal2: the console policy also needs platform_admins membership (§4.5),
+-- so aal2 alone (any user can enrol TOTP) grants no extra tenants.
+select tests.act_as(tests.persona('editor_labak'), 'aal2');
+select results_eq($$ select slug from cms.tenants $$, array['labak'], 'editor with aal2 still sees only own tenant');
+select tests.act_as(tests.persona('outsider'), 'aal2');
+select is_empty($$ select 1 from cms.tenants $$, 'user without membership at aal2 sees no tenant');
 
 -- Tenant slug immutable (§4.1 rule 7), for the owner and for service_role (the CLI's writer).
 select tests.act_as_owner();
