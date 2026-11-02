@@ -28,11 +28,13 @@ select throws_ok($$select tests.revision('c001')$$, 'P0001', 'unknown revision k
 -- column_privs(): table-level and per-column INSERT/UPDATE/REFERENCES
 select is_empty($$ select * from tests.column_privs('authenticated', 'cms.tenants') $$,
   'column_privs: nothing for a select-only grant');
+-- service_role holds table-level INSERT and, since decision 33 (Task 19),
+-- UPDATE on (name, status) only.
 select set_eq($$ select * from tests.column_privs('service_role', 'cms.tenants') $$,
-  $$ select a.attname::text, p.priv from pg_catalog.pg_attribute a
-     cross join (values ('INSERT'), ('UPDATE')) as p(priv)
-     where a.attrelid = 'cms.tenants'::regclass and a.attnum > 0 and not a.attisdropped $$,
-  'column_privs: table-level insert and update expand to every column');
+  $$ select a.attname::text, 'INSERT' from pg_catalog.pg_attribute a
+     where a.attrelid = 'cms.tenants'::regclass and a.attnum > 0 and not a.attisdropped
+     union all values ('name', 'UPDATE'), ('status', 'UPDATE') $$,
+  'column_privs: a table-level insert expands to every column; a column grant lists only its columns');
 
 -- probe_set_column() and probe_keep_column(): BEFORE-trigger probes
 create table tests.probe_target (id int primary key, n int, s text);

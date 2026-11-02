@@ -464,6 +464,25 @@ describe('worker and cron route exception', () => {
   });
 });
 
+// Decision 35 (Task 19): triggerWorker lives outside privileged/, in lib/, so the editor's publish
+// action can call it. It needs no Supabase credentials, and lib/ (outside lib/supabase) gets no
+// exception: privileged/, the secret key and Supabase libraries stay forbidden there.
+describe('lib/worker-trigger.ts', () => {
+  const PATH = 'apps/cms/src/lib/worker-trigger.ts';
+  it('lints clean as written', async () => {
+    const code = readFileSync(join(root, PATH), 'utf8');
+    expect(await ruleIds(PATH, code)).toEqual([]);
+  });
+  it.each([
+    [`import { createAdminClient } from '@/privileged/admin-client'`, IMPORT],
+    [`import { processRequestById } from '../privileged/worker/process-request'`, IMPORT],
+    [`import { createClient } from '@supabase/supabase-js'`, IMPORT],
+    [`const k = process.env.SUPABASE_SECRET_KEY`, RESTRICTED_SYNTAX],
+  ])('forbids %s there', async (code, ruleId) => {
+    expect(await ruleIds(PATH, code)).toEqual([ruleId]);
+  });
+});
+
 describe('admin client from editor routes', () => {
   it.each([
     'apps/cms/src/app/(editor)/t/[tenant]/actions.ts',

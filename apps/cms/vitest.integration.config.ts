@@ -1,8 +1,7 @@
 // The CMS app's tests against the local Supabase stack (*.integration.test.ts), run by
 // `pnpm test:integration` after tests/integration. They reuse its global setup (the fixed
 // identities) and its one-process settings, because they share the same database and Auth server.
-// Until the first such test exists (Task 19), the run passes with no files; Vitest runs the global
-// setup only when there are files to run.
+// Vitest runs the global setup only when there are files to run.
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 

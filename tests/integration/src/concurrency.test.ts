@@ -123,6 +123,24 @@ describe('exactness under concurrency (consideration 1)', () => {
     });
   });
 
+  it('a tenant suspension waits for an in-flight commit (decision 33: the commit holds the tenant FOR SHARE)', async () => {
+    const { id: entryId, version } = await entryWithDraft([{ title: 'tenant lock' }]);
+    const requestId = await claimedRequest(entryId, 'publish', version);
+
+    const w = await pgAs('service');
+    const s = await pgAs('service'); // the CLI's suspension, as service_role (UPDATE (name, status))
+    expect(await one(w, `select api.worker_commit_publish($1, $2, 1, 'T', now())`, [requestId, version])).toBe('committed');
+    const pending = s.query(`update cms.tenants set status = 'suspended' where id = $1`, [TENANT.labak]);
+    await expectBlocked(s); // without the tenant lock the update would not wait
+    await w.query('commit');
+    expect((await pending).rowCount).toBe(1);
+    await s.query('rollback'); // labak stays active for the other tests
+
+    expect(await publishedRev(entryId)).not.toBeNull();
+    const [tenant] = await ownerQuery<{ status: string }>('select status from cms.tenants where id = $1', [TENANT.labak]);
+    expect(tenant?.status).toBe('active');
+  });
+
   it('a draft saved between worker_read_request and commit makes the request superseded', async () => {
     const { id: entryId, version } = await entryWithDraft([{ title: 'read' }]);
     const requestId = await claimedRequest(entryId, 'publish', version);
