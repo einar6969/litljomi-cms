@@ -8,4 +8,10 @@ export default defineWorkspace([
       exclude: ['**/fixtures/**', '**/node_modules/**'],
     },
   },
+  {
+    test: {
+      name: 'schema',
+      include: ['packages/schema/src/__tests__/**/*.test.ts'],
+    },
+  },
 ]);
