@@ -27,6 +27,10 @@ describe('supabase/config.toml security settings', () => {
     expect(config.auth.email.double_confirm_changes).toBe(true);
   });
 
+  it('[auth.email] secure_password_change is true (decision 21)', () => {
+    expect(config.auth.email.secure_password_change).toBe(true);
+  });
+
   it('[auth.mfa.totp] enroll_enabled and verify_enabled are true', () => {
     expect(config.auth.mfa.totp.enroll_enabled).toBe(true);
     expect(config.auth.mfa.totp.verify_enabled).toBe(true);
