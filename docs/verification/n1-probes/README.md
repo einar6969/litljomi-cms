@@ -1,5 +1,7 @@
 # N1 investigation probes (evidence only)
 
+> **Do not run these against anything but a throwaway local Supabase stack.** The scripts take `API_URL` and keys from the environment and do not check that the target is local: pointed at another project they would create users, set passwords, ban a user and generate sign-up links there. They are kept byte-identical to what ran, so they are not edited to add such a check; the tests Tasks 4 and 12 build from them are the code to run.
+
 Copied unchanged on 2026-11-02 from the throwaway local project used in the N1 investigation (`docs/verification/n1-passwordless-investigation.md`), so the evidence survives the session. They are not part of the build or the test suites, and they ran against a throwaway local Supabase stack, never against the repository's database or a hosted project. Keys were read from the environment (`supabase status -o env`) and are not in these files.
 
 - `hook-as-tested.sql`: the hardened hook exactly as tested (it adds an evidence-only `probe_method` claim that the production hook must not have; decision 18).
