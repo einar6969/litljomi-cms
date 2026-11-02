@@ -12,14 +12,17 @@ This runbook sets up the M1 staging environment: the GitHub repository, the host
 - Every step names its **Owner**, the **Settings** to apply and the **Verify** check that shows it worked. A step whose check fails stops the gate: record the result and report to the controller, who reports to Einar.
 - **Einar** acts in his own accounts (sign-ups, payment, DNS, provider keys). **Executor** means the agent the controller dispatches, acting only after the gate is recorded.
 - **Who runs a step that needs a secret.** Every step that needs the Supabase secret key, the database password, a provider API key, a GitHub token or any other secret value is **Einar's**, run in his own terminal or dashboard session. Agents cannot read `.env.local` (the project's permission settings and the sandbox deny it) and never receive a secret value. The executor owns the steps that need no secret; the two public values it needs for checks (`NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, public by design) are given to it by Einar, never read from `.env.local`.
+- **The dashboard and the SQL editor reach secret values.** The Supabase dashboard's API keys page can reveal the secret key, Vault (`vault.decrypted_secrets`) holds the per-site webhook secrets in clear, and the SQL editor runs as `postgres`, which can read both. The executor **never reveals a secret value** there: it does not reveal or copy a key on the API keys page or any other settings page (database password, SMTP password, JWT secret), never selects from `vault.decrypted_secrets`, and never selects token, password-hash or secret columns. In the SQL editor it runs **only the queries this runbook gives**, as written apart from the placeholders. A query that seems needed but is not here is reported to the controller first, never improvised.
 - "§" numbers refer to the spec (`docs/architecture.md`); "section N" refers to this runbook.
 - "**Confirm at execution time**" marks a value or screen this runbook could not verify when it was written (dashboard menu paths, provider record values, CLI details). The executor checks it against the live screen or the provider's current documentation and records what was found; it never guesses.
 - Placeholders are in angle brackets: `<cms-staging-host>`, `<demo-staging-host>`, `<labak-staging-host>` (the three staging hostnames in the litljomi.is zone, chosen by Einar at G5), `<project-ref>` (the Supabase staging project's reference), `<hook-test-address>` and `<signup-test-address>` (throwaway addresses Einar controls, used only by the checks in sections 6 and 7), `<test-account-id>` (the id that section 7.2 part 1 prints; not secret).
-- **No secret, key or token value is ever written** to this repository, a commit, a chat message, a log or a report. Commands read secrets from the environment (`.env.local`, never committed), never print them and never put them on a command line (section 7.2 shows how). See section 12.
+- **No secret, key or token value is ever written** to this repository, a commit, a chat message, a log or a report. Commands read secrets from `.env.local` (never committed) without executing it, or from a hidden prompt, never print them and never put them on a command line (sections 4 and 7.2 show how). `.env.local` is **never sourced** (`. ./.env.local`): that would run its lines as shell code in a shell that holds the secret key. See section 12.
 
 **Off-limits.** `labak.is` DNS, the existing Vercel project `landssamband-bakarameistara`, the hostnames `labak.litljomi.is` and `labak.is`, and the LABAK repository's `main` branch are never touched by this runbook.
 
 **The LABAK repository and Vercel (G6 and G7).** Creating `labak-hub-staging` (G6.1) connects the LABAK repository to Vercel. That installs the Vercel GitHub integration on the LABAK repository (or adds the repository to an existing installation), after which Vercel can build any branch, including `main`, and post deployment statuses and comments there. This goes beyond creating and pushing `hub-integration`, so it needs **Einar's explicit approval at G6 and at G7**, named as such, before the project is connected; the controller records both. When approved, builds are limited to `hub-integration` (G6.1) and every deployment other than the production domain stays protected (G6.3).
+
+**The existing Vercel project and `hub-integration` (G7 and G6).** The existing project `landssamband-bakarameistara` may already be connected to the LABAK repository through the Vercel GitHub integration. If it is, a push of `hub-integration` could build a preview deployment inside that project, with its environment variables, and post statuses on the branch: that would touch the existing project, which is off-limits. So **before the first push of `hub-integration`** (at Task 27 under G7, or in G2.5), Einar checks the existing project's Git connection (G6.0); if it would build that branch, the push does not happen: stop and report. The controller raises this check when it requests G7 at Task 27 and again at G6.
 
 ## 2. Prerequisites
 
@@ -27,7 +30,7 @@ This runbook sets up the M1 staging environment: the GitHub repository, the host
 |---|---|---|---|
 | P1 | Tasks 0–27 complete and green locally (`pnpm lint && pnpm typecheck && pnpm check:slugs && pnpm test && pnpm db:reset && pnpm db:test && pnpm test:integration`) | Executor | Every command exits 0; the controller's `state.json` shows Tasks 0–27 done |
 | P2 | Task 4's migration (creating `api`, `cms`, `private` and `private.passwordless_access_token`) and its `[api] schemas = ["api"]` are committed | Executor | `git log --oneline -- supabase/migrations` lists it; `grep -n 'schemas = \["api"\]' supabase/config.toml` matches |
-| P3 | The LABAK branch `hub-integration` exists (Task 27, G7) | Controller | G7 recorded in `gates.json`; Task 27 done in `state.json` |
+| P3 | The LABAK branch `hub-integration` exists (Task 27, G7), and if it was pushed, G6.0 passed before that push | Controller | G7 recorded in `gates.json`; Task 27 done in `state.json`; the G6.0 result recorded |
 | P4 | Einar has accounts he controls at GitHub (`einar6969`), Supabase, Vercel and the chosen email provider, and access to the litljomi.is DNS zone | Einar | Einar confirms in chat at each gate |
 | P5 | The hosts each gate needs are allowed for the session: adding a host to `allowedDomains` is a `.claude/**` change that Einar approves, limited to that gate's hosts and removed afterwards unless he decides otherwise | Einar approves; controller applies | The approved diff is recorded; a sandbox refusal is reported, never worked around |
 | P6 | Local tools: `git`, `gh`, `supabase` (2.121.0, as in CI), `vercel`, `curl`, `jq`, `openssl`, `dig` | Einar (any install is G1) | `<tool> --version` for each |
@@ -38,9 +41,10 @@ Task 28 follows this order. Each step lists what it depends on.
 
 | Order | Step | Gate | Depends on |
 |---|---|---|---|
+| 0 | G6.0: the existing Vercel project `landssamband-bakarameistara` would not build `hub-integration`; **before the first push of `hub-integration`** (at Task 27 if G7 includes the push, otherwise before G2.5 pushes it) | G7 (raised with the G7 request), repeated under G6 | none |
 | 1 | G2.1–G2.3: private repository, push `main`, CI green | G2 | P1 |
 | 2 | G2.4: pin GitHub Actions to commit SHAs | G2 | G2.1 |
-| 3 | G2.5: publish `@litljomi/cms-sdk` and `@litljomi/rich-text` 0.1.0; update `hub-integration` dependencies | G2 (and G7 for the LABAK branch) | G2.3, P3 |
+| 3 | G2.5: publish `@litljomi/cms-sdk` and `@litljomi/rich-text` 0.1.0; update `hub-integration` dependencies | G2 (and G7 for the LABAK branch) | G2.3, P3, G6.0 (before any push of `hub-integration`) |
 | 4 | G3.1: Supabase organisation and EU staging project | G3 | P4 |
 | 5 | G3.4: Auth settings (section 6), except SMTP and the Site URL; **right after G3.1**, because sign-up is open on a new project until it is turned off | G3 | G3.1 |
 | 6 | G3.2: `supabase link`, `supabase db push` (includes the hook function) | G3 | G3.4, P2 |
@@ -49,7 +53,7 @@ Task 28 follows this order. Each step lists what it depends on.
 | 9 | G4.1–G4.2: email provider account, sending domain, API key | G4 | DECISION-SMTP made by Einar |
 | 10 | G5.1: email authentication records (SPF, DKIM, DMARC) in litljomi.is | G5 | G4.1 (values come from the provider) |
 | 11 | G3.6: custom SMTP in Supabase Auth; raise the email rate limit | G3 (G4 credentials) | G4.2, G5.1 verified |
-| 12 | G6.1: three Vercel projects (connecting the LABAK repository needs Einar's explicit approval at G6 and G7, section 1); Pro plan for per-minute cron, **Einar: upgrade when needed** | G6 (and G7 for the LABAK repository) | G2.3, G2.5, P3 |
+| 12 | G6.0 again, then G6.1: three Vercel projects (connecting the LABAK repository needs Einar's explicit approval at G6 and G7, section 1); Pro plan for per-minute cron, **Einar: upgrade when needed** | G6 (and G7 for the LABAK repository) | G2.3, G2.5, P3, G6.0 |
 | 13 | G5.2: staging hostnames in litljomi.is, added to the Vercel projects | G5 and G6 | G6.1 |
 | 14 | G3.7: Auth Site URL and redirect URLs set to `https://<cms-staging-host>` | G3 | G5.2 (hostname chosen) |
 | 15 | G6.2–G6.4: environment variables (section 13), deployment protection, cron | G6 | G3.1, G5.2 |
@@ -83,14 +87,33 @@ Task 28 follows this order. Each step lists what it depends on.
 ### G2.5 Publish the SDK packages; update the LABAK branch
 - **Owner:** Einar publishes (the publish token is a secret, so it stays in his terminal); the executor prepares the packages for publishing and, after G7, edits the `hub-integration` branch. Einar creates both tokens; the executor never sees a token value.
 - **Settings:**
-  - Publish `@litljomi/cms-sdk` and `@litljomi/rich-text` version `0.1.0` to GitHub Packages under `einar6969` (Task 28 Step 1), with the publish token in Einar's environment for that command only.
+  - Publish `@litljomi/cms-sdk` and `@litljomi/rich-text` version `0.1.0` to GitHub Packages under `einar6969` (Task 28 Step 1), with the publish token entered as shown below ("Entering a token"), for those commands only.
   - **Tokens** (GitHub personal access tokens, classic; GitHub Packages' npm registry authenticates with them; confirm at execution time whether a fine-grained token is accepted instead):
     - publish token: scope `write:packages` only, the shortest expiry GitHub offers that covers G2.5 (for example 7 days), **revoked by Einar as soon as G2.5 is verified**;
     - read token: scope `read:packages` only, an expiry Einar chooses for the M1 staging period, used only by `labak-hub-staging` (section 12). Vercel environment variables are available to the build and also at runtime, so the site's server code can read it too; that is why it is limited to `read:packages`.
     - If GitHub requires a further scope for packages of a private repository, stop and report (Einar decides).
-  - On `hub-integration`, replace the `link:` dependencies with `0.1.0` and add an `.npmrc` that reads the registry token from an environment variable, never a committed token.
+  - On `hub-integration`, replace the `link:` dependencies with `0.1.0` and add an `.npmrc` that reads the registry token from an environment variable, never a committed token. Before that branch is pushed for the first time, G6.0 must have passed (section 1).
+  - **Entering a token** (the same pattern as P-2 in section 11). Einar types or pastes the token at a hidden prompt (`read -rs`, no echo, nothing in shell history); it lives in a variable of a subshell only, is exported only to the commands inside it (never on a command line, never in a file), and is unset at the end; leaving the subshell drops it too. If he pasted it, he clears the clipboard afterwards. The variable is the one the `.npmrc` reads, as `//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}` (`NODE_AUTH_TOKEN` here; confirm the name and the `.npmrc` that applies at execution time). Publishing, in Einar's terminal from the repository root:
+    ```sh
+    (
+      printf 'GitHub Packages publish token: '; read -rs NODE_AUTH_TOKEN; echo
+      export NODE_AUTH_TOKEN
+      # The publish command for each package, as the executor prepared it (no token in it).
+      unset NODE_AUTH_TOKEN
+    )
+    ```
   - **Confirm at execution time:** GitHub Packages' npm registry ties a package's scope to the owning account; if `@litljomi/*` cannot be published under `einar6969`, stop and report (Einar decides on a `litljomi` organisation or another scope). Free allowances for Actions minutes and Packages storage on a private repository: confirm at execution time; **Einar: upgrade when needed**.
-- **Verify:** Einar runs `npm view @litljomi/cms-sdk@0.1.0 version --registry=https://npm.pkg.github.com` and the same for `@litljomi/rich-text` with the read token in his environment; both print `0.1.0`. The executor runs `git grep -nE '_authToken=[^$]' hub-integration` in the LABAK checkout and finds nothing (the token is read from a variable). Einar confirms the publish token is revoked (GitHub's token list shows it gone).
+- **Verify:** Einar, with the **read** token entered the same way, where an `.npmrc` with the line above applies:
+  ```sh
+  (
+    printf 'GitHub Packages read token: '; read -rs NODE_AUTH_TOKEN; echo
+    export NODE_AUTH_TOKEN
+    npm view @litljomi/cms-sdk@0.1.0 version --registry=https://npm.pkg.github.com
+    npm view @litljomi/rich-text@0.1.0 version --registry=https://npm.pkg.github.com
+    unset NODE_AUTH_TOKEN
+  )
+  ```
+  Both print `0.1.0`. The executor runs `git grep -nE '_authToken=[^$]' hub-integration` in the LABAK checkout and finds nothing (the token is read from a variable). Einar confirms the publish token is revoked (GitHub's token list shows it gone).
 
 ## 5. G3: Hosted Supabase
 
@@ -110,7 +133,7 @@ Task 28 follows this order. Each step lists what it depends on.
 ### G3.3 Data API: expose `api` only (decision 16)
 - **Owner:** Executor (with the public URL and publishable key from Einar).
 - **Settings:** exposed schemas = `api` only, matching `[api] schemas = ["api"]` in `supabase/config.toml` (Data API settings page; confirm the menu path at execution time). Remove `public` and `graphql_public` if listed. **Never** run Supabase's custom-schema `GRANT ALL` recipe for any schema; grants come only from the migrations (§4.2, §4.5).
-- **Verify:** with the publishable key, `curl -s -o /dev/null -w '%{http_code}' "$NEXT_PUBLIC_SUPABASE_URL/rest/v1/" -H "apikey: $NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY" -H "Accept-Profile: <schema>"` returns `406` for `public`, `cms`, `private` and `graphql_public`; a call that Task 4's local verification makes against `api` succeeds the same way on staging (use Task 4's request; confirm at execution time).
+- **Verify:** after checking that the URL is the staging project's (the URL check in section 6), with the publishable key, `curl -s -o /dev/null -w '%{http_code}' "$NEXT_PUBLIC_SUPABASE_URL/rest/v1/" -H "apikey: $NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY" -H "Accept-Profile: <schema>"` returns `406` for `public`, `cms`, `private` and `graphql_public`; a call that Task 4's local verification makes against `api` succeeds the same way on staging (use Task 4's request; confirm at execution time).
 
 ### G3.4 Auth settings
 - **Owner:** Executor.
@@ -138,7 +161,14 @@ Applied on the hosted project by hand (G3.4, G3.6, G3.7). Local equivalents are 
 
 `$PK` below is `$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `$URL` is `$NEXT_PUBLIC_SUPABASE_URL`, both public values that Einar gives the executor (section 1). `GET $URL/auth/v1/settings -H "apikey: $PK"` returns public settings only.
 
-**Sign-up check, safely.** Owner: executor. It uses `<signup-test-address>`, a throwaway address Einar controls, never a real editor's, and a random password that is piped, never on a command line, and never used again:
+**URL check.** Before any request in this section or in G3.3, the executor checks that `$URL` is a hosted project URL and is the staging project's, and prints the target host (a local-stack URL such as `http://127.0.0.1:54321` is refused; `<project-ref>` is the reference recorded at G3.1):
+
+```sh
+if [ "$URL" = 'https://<project-ref>.supabase.co' ] && printf '%s\n' "$URL" | grep -Eqx 'https://[a-z0-9]{20}\.supabase\.co'
+then printf 'target: %s (ok)\n' "${URL#https://}"; else echo 'URL is not the staging project: stop'; fi
+```
+
+**Sign-up check, safely.** Owner: executor. After the URL check above prints `(ok)`. It uses `<signup-test-address>`, a throwaway address Einar controls, never a real editor's, and a random password that is piped, never on a command line, and never used again:
 
 ```sh
 openssl rand -hex 16 | jq -Rc '{email: "<signup-test-address>", password: .}' \
@@ -198,12 +228,19 @@ The hook `private.passwordless_access_token(event jsonb) returns jsonb` (Task 4)
    select p.oid::regprocedure from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname in ('api', 'cms', 'private')
      and has_function_privilege('supabase_auth_admin', p.oid, 'execute');
-   -- ... and tables, views and sequences.
+   -- ... and tables, views, their columns and sequences.
    select c.oid::regclass, priv
    from pg_class c join pg_namespace n on n.oid = c.relnamespace
    cross join unnest(array['select', 'insert', 'update', 'delete', 'truncate', 'references', 'trigger']) priv
    where n.nspname in ('api', 'cms', 'private') and c.relkind in ('r', 'p', 'v', 'm', 'f')
      and has_table_privilege('supabase_auth_admin', c.oid, priv)
+   union all
+   -- Column-level grants, which has_table_privilege does not see.
+   select c.oid::regclass, 'column ' || priv
+   from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   cross join unnest(array['select', 'insert', 'update', 'references']) priv
+   where n.nspname in ('api', 'cms', 'private') and c.relkind in ('r', 'p', 'v', 'm', 'f')
+     and has_any_column_privilege('supabase_auth_admin', c.oid, priv)
    union all
    select c.oid::regclass, priv
    from pg_class c join pg_namespace n on n.oid = c.relnamespace
@@ -211,7 +248,7 @@ The hook `private.passwordless_access_token(event jsonb) returns jsonb` (Task 4)
    where n.nspname in ('api', 'cms', 'private') and c.relkind = 'S'
      and has_sequence_privilege('supabase_auth_admin', c.oid, priv);
    ```
-   Success: `proacl` grants `EXECUTE` only to the owner and `supabase_auth_admin`; `prosecdef` is `false`; `search_path_empty` is `true`; `can_execute` is `true` for `supabase_auth_admin` only; `usage` is `true` for `private` only and `can_create` is `false` for all three schemas; the functions query returns exactly one row, `private.passwordless_access_token(jsonb)`; the tables-and-sequences query returns no rows. Anything else: stop and report; do not change grants on the hosted project by hand.
+   Success: `proacl` grants `EXECUTE` only to the owner and `supabase_auth_admin`; `prosecdef` is `false`; `search_path_empty` is `true`; `can_execute` is `true` for `supabase_auth_admin` only; `usage` is `true` for `private` only and `can_create` is `false` for all three schemas; the functions query returns exactly one row, `private.passwordless_access_token(jsonb)`; the last query (tables, views, columns and sequences) returns no rows. Anything else: stop and report; do not change grants on the hosted project by hand.
 3. **Enable the hook.** Owner: executor. Settings: Authentication hooks page (confirm the menu path at execution time): Custom Access Token hook → enabled, type Postgres, schema `private`, function `passwordless_access_token`. If the page cannot select a function in `private`, **stop and report**; do not move the function or change its grants. Verify: the page shows the hook enabled with that schema and function.
 4. **Revoke all sessions** (immediately after step 3, still before any editor exists; again in step 3 of section 7.2's failure handling). Owner: executor, in the SQL editor:
    ```sql
@@ -236,32 +273,73 @@ The hook `private.passwordless_access_token(event jsonb) returns jsonb` (Task 4)
 | # | Check | Owner | Expected |
 |---|---|---|---|
 | H1 | Authentication hooks page | Executor | Custom Access Token hook **enabled**, Postgres, `private.passwordless_access_token` |
-| H2 | Function and grants (section 7.1 step 2 queries) | Executor | As in section 7.1 step 2: execute only for the owner and `supabase_auth_admin`, which has nothing else in `api`, `cms` or `private`; not `SECURITY DEFINER`; `search_path` empty |
+| H2 | Function and grants (section 7.1 step 2 queries) | Executor | As in section 7.1 step 2: execute only for the owner and `supabase_auth_admin`, which has nothing else in `api`, `cms` or `private` (no schema, function, table, column or sequence privilege beyond `usage` on `private` and the hook); not `SECURITY DEFINER`; `search_path` empty |
 | H3 | Part 1 script: creates the test account (with a password) and tries a password sign-in with its real password | Einar | HTTP **403** with the hook's message ("Only email sign-in is allowed") |
 | H4 | Part 1 script: magic-link sign-in for the same account, then a refresh | Einar | Sign-in HTTP **200** with an access token and `expires_in` **3600**; refresh HTTP **200**; `redirect_to` as expected once G3.7 is done |
 | H5 | SQL editor, **while the test account still exists**, with the id part 1 printed | Executor | **0** `password` rows on the project; for the test account, **0** `password` rows and **at least 1** row in all (its H4 session, so the check is not vacuous) |
 | H6 | Part 2 script deletes the test account (the Auth admin API cannot clear a password, so the account is never reused); then the SQL check | Einar (deletion), executor (SQL) | Deletion HTTP **200**; the account is gone (both counts below **0**) |
 
-**Keeping secrets off command lines.** A command line is visible to every user of the machine (`ps`) and to process auditing; a pipe is not. So in both scripts curl reads its headers, URL and body as a configuration on standard input (`curl --config -`), written by `printf`, a shell builtin, so its arguments never become a program's command line; request bodies are built by `jq` from values it reads on standard input; responses stay in shell variables. (The values loaded from `.env.local` are in the environment of the script's processes, which only Einar's own user and root can read.) The secret key, the generated password, the token hash and the refresh token therefore never appear on any command line, and nothing is written to a file (pipes only: no temporary files and no here-documents). Never run the scripts with `bash -x` or `set -x`. They print only HTTP codes, `true`/`false` results, `redirect_to` and the test account's id (not a secret).
+**Keeping secrets off command lines.** A command line is visible to every user of the machine (`ps`) and to process auditing; a pipe is not. So in both scripts curl reads its headers, URL and body as a configuration on standard input (`curl --config -`), written by `printf`, a shell builtin, so its arguments never become a program's command line; request bodies are built by `jq` from values it reads on standard input; responses stay in shell variables. The values read from `.env.local` stay in the script's own shell variables and are never exported, so no process's environment holds them either. The secret key, the generated password, the token hash and the refresh token therefore never appear on any command line, and nothing is written to a file (pipes only: no temporary files and no here-documents). Never run the scripts with `bash -x` or `set -x`. They print only the target host, HTTP codes (or a curl error number), `true`/`false` results, `redirect_to` and the test account's id (not a secret).
 
-**How Einar runs them.** He copies each script, as shown, into a file outside the repository (the scripts hold no secret; for example `~/hook-check-1.sh` and `~/hook-check-2.sh`) and runs it from the repository root with `.env.local` loaded into a subshell only, so the values never stay in his interactive shell (confirm at execution time that `.env.local` holds plain `NAME=value` lines that the shell can read):
+**Reading `.env.local` without executing it.** The scripts never source `.env.local` (`. ./.env.local` runs every line as shell code in a shell that holds the secret key, and a later duplicate line silently wins, which could send the key to another host). Each script reads only the names it needs, line by line, and refuses to send anything when:
+- a name is assigned zero times or more than once, or not on a plain `NAME=value` line (an `export NAME=…` line or spaces around `=` count as assignments and are refused; comment lines are ignored);
+- a value contains characters that cannot occur in it: `NEXT_PUBLIC_SUPABASE_URL` must be exactly `https://`, 20 lowercase letters or digits (the project reference) and `.supabase.co`, with nothing before or after; the keys may contain only letters, digits, `.`, `_` and `-` (this also keeps quotes, spaces, `$`, `%`, `\` and a stray carriage return out of the curl configuration);
+- the URL is not the staging project's: Einar passes the project reference recorded at G3.1 as `EXPECT_REF`, and the URL must be `https://$EXPECT_REF.supabase.co`.
+
+A refusal prints a `FAILED:` line naming the variable, never its value. Before its first request, each script prints the target host (`target: <project-ref>.supabase.co`). A local-stack URL (for example `http://127.0.0.1:54321`, as `.env.local` holds for local work) is refused, so the checks can never run against, or delete an account on, the local stack by mistake; for these runs `.env.local` holds the staging values (how Einar keeps the local and staging values apart is his choice; confirm at execution time). **Confirm at execution time** that the staging project's reference has 20 characters and that the publishable and secret keys contain only the characters above. If the hosted URL or a key has another shape, stop and report; do not loosen the check.
+
+**How Einar runs them.** He copies each script, as shown, into a file outside the repository (the scripts hold no secret; for example `~/hook-check-1.sh` and `~/hook-check-2.sh`) and runs it with `bash`. The scripts read `/Users/einarzoega/litljomi-cms/.env.local` by its full path, so the directory he runs them from does not matter; nothing is loaded into his interactive shell:
 
 ```sh
-( set -a; . ./.env.local; set +a; EXPECT_REDIRECT='https://<cms-staging-host>' bash ~/hook-check-1.sh )
-( set -a; . ./.env.local; set +a; bash ~/hook-check-2.sh '<test-account-id>' )
+EXPECT_REF='<project-ref>' EXPECT_REDIRECT='https://<cms-staging-host>' bash ~/hook-check-1.sh
+EXPECT_REF='<project-ref>' bash ~/hook-check-2.sh '<test-account-id>'
 ```
 
 Before G3.7 is done, leave out `EXPECT_REDIRECT=…`; part 1 then prints `redirect_to` without asserting it. Confirm at execution time that the hosted Auth admin endpoints accept the secret key in the `apikey` and `Authorization` headers as below.
 
-**Part 1 (H3, H4).** It creates the test account and **does not delete it**. It checks every expected result and exits non-zero on any mismatch.
+**Part 1 (H3, H4).** It creates the test account and **does not delete it**. It checks every expected result and exits non-zero on any mismatch; a curl transport error or a failed sign-in is a mismatch too, so every failure ends with the `FAILED:` line and its hint.
 
 ```bash
 #!/usr/bin/env bash
 # Section 7.2, part 1 (H3, H4). Run by Einar only. Never with `bash -x` or `set -x`.
-# Prints only HTTP codes, true/false results, redirect_to and the test account's id.
+# Prints only the target host, HTTP codes, true/false results, redirect_to and the test account's id.
 set -eu
-: "${NEXT_PUBLIC_SUPABASE_URL:?}" "${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:?}" "${SUPABASE_SECRET_KEY:?}"
-URL="$NEXT_PUBLIC_SUPABASE_URL"; PK="$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"; SK="$SUPABASE_SECRET_KEY"
+ENV_FILE='/Users/einarzoega/litljomi-cms/.env.local'
+REF_RE='^[a-z0-9]{20}$'; URL_RE='^https://[a-z0-9]{20}\.supabase\.co$'; KEY_RE='^[A-Za-z0-9._-]+$'
+
+# env_value NAME ERE: prints NAME's value from ENV_FILE without executing the file. Refuses, naming
+# only NAME, unless NAME is assigned exactly once, on a plain NAME=value line, with a value matching
+# ERE. Never prints a refused value.
+env_value() {
+  local assigned="^[[:space:]]*(export[[:space:]]+)?$1[[:space:]]*=" allowed="$2" line value='' n=0 plain=0
+  [ -f "$ENV_FILE" ] || { echo "FAILED: $ENV_FILE not found; nothing was sent" >&2; return 1; }
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [[ $line =~ $assigned ]]; then
+      n=$((n + 1))
+      case "$line" in "$1="*) plain=1; value="${line#*=}" ;; *) plain=0 ;; esac
+    fi
+  done < "$ENV_FILE"
+  if [ "$n" -ne 1 ] || [ "$plain" -ne 1 ]; then
+    echo "FAILED: $1 must be on exactly one plain $1=value line in .env.local (found $n); nothing was sent" >&2
+    return 1
+  fi
+  if ! [[ $value =~ $allowed ]]; then
+    echo "FAILED: $1 in .env.local has an unexpected form (value not shown); nothing was sent" >&2; return 1
+  fi
+  printf '%s' "$value"
+}
+
+REF="${EXPECT_REF:-}"
+if ! [[ $REF =~ $REF_RE ]]; then
+  echo "FAILED: set EXPECT_REF to the staging project's reference (G3.1); nothing was sent"; exit 1
+fi
+URL="$(env_value NEXT_PUBLIC_SUPABASE_URL "$URL_RE")"
+PK="$(env_value NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY "$KEY_RE")"
+SK="$(env_value SUPABASE_SECRET_KEY "$KEY_RE")"
+if [ "$URL" != "https://$REF.supabase.co" ]; then
+  echo "FAILED: .env.local points at ${URL#https://}, not $REF.supabase.co; nothing was sent"; exit 1
+fi
+printf 'target: %s\n' "${URL#https://}"
 EXPECT_REDIRECT="${EXPECT_REDIRECT:-}"
 EMAIL='<hook-test-address>'
 PW="$(openssl rand -base64 24)"
@@ -269,9 +347,10 @@ FAILED=0
 
 # call KEY METHOD PATH [DATA_LINE]: one request. curl reads headers, URL and body as a config on
 # stdin (--config -), written by printf (a builtin), so no secret is on a command line.
-# KEY is "secret" (Auth admin endpoints) or "public". Sets CODE and BODY; prints nothing.
+# KEY is "secret" (Auth admin endpoints) or "public". Sets CODE and BODY; prints nothing itself.
+# A transport error does not stop the script: CODE becomes "curl error <n>" and BODY is empty.
 call() {
-  local resp
+  local resp rc=0
   resp="$(
     {
       if [ "$1" = secret ]; then
@@ -283,12 +362,14 @@ call() {
       printf 'silent\nshow-error\nwrite-out = "\\n%%{http_code}"\n'
       if [ -n "${4:-}" ]; then printf '%s\n' "$4"; fi
     } | curl --config -
-  )"
+  )" || rc=$?
+  if [ "$rc" -ne 0 ]; then CODE="curl error $rc"; BODY=''; return 0; fi
   CODE="${resp##*$'\n'}"
   BODY="${resp%$'\n'*}"
 }
 # body FILTER: builds a JSON body with jq from values on stdin; prints it as a curl config line.
-body() { jq -nr "$1"' | tojson | "data = \(tojson)"'; }
+# jq's error messages can quote its input, so they are discarded (a missing body fails the request).
+body() { jq -nr "$1"' | tojson | "data = \(tojson)"' 2>/dev/null; }
 # check FILTER: applies a jq filter to a response on stdin; prints its result, or false.
 check() { jq -r "$1" 2>/dev/null || echo false; }
 # expect LABEL ACTUAL EXPECTED: prints the result; a mismatch marks the run as failed.
@@ -301,9 +382,12 @@ expect() {
 call secret POST /auth/v1/admin/users \
   "$(printf '%s\n%s\n' "$EMAIL" "$PW" | jq -R . | body '[inputs] | {email: .[0], password: .[1], email_confirm: true}')"
 USER_ID="$(printf '%s' "$BODY" | check '.id // ""')"
-if [ "$CODE" != 200 ] || [ -z "$USER_ID" ] || [ "$USER_ID" = false ]; then
-  echo "test account not created (HTTP $CODE): stop; see 'If any check fails'"; exit 1
-fi
+if [ "$CODE" != 200 ]; then USER_ID=''; fi
+case "$USER_ID" in
+  '' | *[!0-9a-f-]*)
+    echo "test account: HTTP $CODE, no valid id"
+    echo "FAILED: the account may exist anyway; run 'If any check fails' from step 1 (look it up by email)"; exit 1 ;;
+esac
 echo "test account id: $USER_ID (keep it for H5 and part 2)"
 
 # H3: a password sign-in with the account's real password must be refused by the hook.
@@ -327,12 +411,18 @@ if [ "$CODE" = 200 ]; then
   expect 'H4 magic-link sign-in, HTTP' "$CODE" 200
   expect 'H4 access token issued, expires_in 3600' \
     "$(printf '%s' "$BODY" | check '(.access_token | type == "string" and length > 0) and .expires_in == 3600')" true
-  SESSION="$BODY"
-  call public POST '/auth/v1/token?grant_type=refresh_token' \
-    "$(printf '%s' "$SESSION" | body 'input | {refresh_token: .refresh_token}')"
-  expect 'H4 refresh, HTTP' "$CODE" 200
+  if [ "$CODE" = 200 ]; then
+    SESSION="$BODY"
+    call public POST '/auth/v1/token?grant_type=refresh_token' \
+      "$(printf '%s' "$SESSION" | body 'input | {refresh_token: .refresh_token}')"
+    expect 'H4 refresh, HTTP' "$CODE" 200
+  else
+    echo 'H4 refresh: skipped (the magic-link sign-in failed)'
+  fi
+else
+  echo 'H4 magic-link sign-in and refresh: skipped (generate_link failed)'
 fi
-unset PW LINK SESSION BODY
+unset PW LINK SESSION BODY PK SK
 
 if [ "$FAILED" -ne 0 ]; then
   echo "FAILED: keep the test account ($USER_ID) as evidence; run H5, then 'If any check fails'"; exit 1
@@ -359,22 +449,58 @@ Run H5 even when part 1 failed: its counts are part of the evidence.
 ```bash
 #!/usr/bin/env bash
 # Section 7.2, part 2 (H6): deletes the test account by its id. Run by Einar only, after H5 is
-# recorded. Never with `bash -x` or `set -x`. Prints only the HTTP code.
+# recorded. Never with `bash -x` or `set -x`. Prints only the target host and the HTTP code.
 set -eu
-: "${NEXT_PUBLIC_SUPABASE_URL:?}" "${SUPABASE_SECRET_KEY:?}"
-USER_ID="${1:?usage: bash hook-check-2.sh <test-account-id>}"
+ENV_FILE='/Users/einarzoega/litljomi-cms/.env.local'
+REF_RE='^[a-z0-9]{20}$'; URL_RE='^https://[a-z0-9]{20}\.supabase\.co$'; KEY_RE='^[A-Za-z0-9._-]+$'
+
+# env_value NAME ERE: as in part 1 (reads ENV_FILE without executing it; never prints a refused value).
+env_value() {
+  local assigned="^[[:space:]]*(export[[:space:]]+)?$1[[:space:]]*=" allowed="$2" line value='' n=0 plain=0
+  [ -f "$ENV_FILE" ] || { echo "FAILED: $ENV_FILE not found; nothing was sent" >&2; return 1; }
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [[ $line =~ $assigned ]]; then
+      n=$((n + 1))
+      case "$line" in "$1="*) plain=1; value="${line#*=}" ;; *) plain=0 ;; esac
+    fi
+  done < "$ENV_FILE"
+  if [ "$n" -ne 1 ] || [ "$plain" -ne 1 ]; then
+    echo "FAILED: $1 must be on exactly one plain $1=value line in .env.local (found $n); nothing was sent" >&2
+    return 1
+  fi
+  if ! [[ $value =~ $allowed ]]; then
+    echo "FAILED: $1 in .env.local has an unexpected form (value not shown); nothing was sent" >&2; return 1
+  fi
+  printf '%s' "$value"
+}
+
+USER_ID="${1:-}"
 case "$USER_ID" in
-  *[!0-9a-f-]*) echo 'not a user id: stop'; exit 1 ;;
+  '' | *[!0-9a-f-]*) echo 'FAILED: usage: bash hook-check-2.sh <test-account-id>; nothing was sent'; exit 1 ;;
 esac
+REF="${EXPECT_REF:-}"
+if ! [[ $REF =~ $REF_RE ]]; then
+  echo "FAILED: set EXPECT_REF to the staging project's reference (G3.1); nothing was sent"; exit 1
+fi
+URL="$(env_value NEXT_PUBLIC_SUPABASE_URL "$URL_RE")"
+SK="$(env_value SUPABASE_SECRET_KEY "$KEY_RE")"
+if [ "$URL" != "https://$REF.supabase.co" ]; then
+  echo "FAILED: .env.local points at ${URL#https://}, not $REF.supabase.co; nothing was sent"; exit 1
+fi
+printf 'target: %s\n' "${URL#https://}"
 # curl reads headers and URL as a config on stdin (--config -), so the secret key is on no command line.
+# A transport error does not stop the script before its FAILED line.
 CODE="$(
   {
-    printf 'header = "apikey: %s"\nheader = "Authorization: Bearer %s"\n' "$SUPABASE_SECRET_KEY" "$SUPABASE_SECRET_KEY"
-    printf 'request = "DELETE"\nurl = "%s/auth/v1/admin/users/%s"\n' "$NEXT_PUBLIC_SUPABASE_URL" "$USER_ID"
+    printf 'header = "apikey: %s"\nheader = "Authorization: Bearer %s"\n' "$SK" "$SK"
+    printf 'request = "DELETE"\nurl = "%s/auth/v1/admin/users/%s"\n' "$URL" "$USER_ID"
     printf 'silent\nshow-error\noutput = "/dev/null"\nwrite-out = "%%{http_code}"\n'
   } | curl --config -
-)"
-if [ "$CODE" = 200 ]; then echo "H6 delete: $CODE (ok)"; else echo "H6 delete: $CODE (expected 200) FAILED"; exit 1; fi
+)" || CODE="curl error $?"
+unset SK
+if [ "$CODE" = 200 ]; then echo "H6 delete: $CODE (ok)"; exit 0; fi
+echo "H6 delete: $CODE (expected 200) FAILED"
+echo "FAILED: the account may still exist; run the H6 query, record both, then 'If any check fails'"; exit 1
 ```
 
 **H6 query (executor, SQL editor), after part 2:**
@@ -384,7 +510,7 @@ select count(*) from auth.users where id = '<test-account-id>';         -- 0
 select count(*) from auth.users where email = '<hook-test-address>';    -- 0
 ```
 
-**Success:** part 1 exits 0 with every line `(ok)`; H5 returns `0`, then `0` and at least `1`; part 2 prints `200`; both H6 counts are `0`. A wrong password would get 400 instead of 403 (a known limitation, section 15), so H3 uses the account's real password.
+**Success:** part 1 prints the staging host as `target:` and exits 0 with every check line `(ok)`; H5 returns `0`, then `0` and at least `1`; part 2 prints `200`; both H6 counts are `0`. A wrong password would get 400 instead of 403 (a known limitation, section 15), so H3 uses the account's real password.
 
 **If any check fails:** stop; do not provision or invite anyone and do not continue the gate or the acceptance. **Keep the test account**: it is evidence until step 4 below.
 1. **Record the evidence** (executor, in `m1-report.md`, no secrets): which checks failed and what they printed, the test account's id, the time, the H5 counts, and the test account's sessions and their methods:
@@ -454,6 +580,12 @@ All records are in the **litljomi.is** zone only. **`labak.is` DNS is off-limits
 
 ## 10. Vercel projects, domains, deployment protection and cron (G6)
 
+### G6.0 The existing project `landssamband-bakarameistara` must not build `hub-integration` (G7 and G6)
+- **Owner:** Einar, in his own Vercel dashboard, **read only** (the existing project is off-limits: nothing in it is changed, by anyone, under this runbook). The controller raises this check with the G7 request at Task 27 and again at G6, and records the result (no secrets).
+- **When:** **before the first push of `hub-integration`** to GitHub, whether that push is at Task 27 (if G7 includes it) or in G2.5; and again just before G6.1 connects the LABAK repository to `labak-hub-staging`. Nothing is pushed to `hub-integration` until this check has passed and been recorded.
+- **Settings:** none; nothing is changed. Einar reads, in the existing project's Settings → Git (confirm the menu path at execution time): whether a Git repository is connected, and which. If it is the LABAK repository: the production branch, and whether anything keeps a push of another branch from being built (an Ignored Build Step, or a setting that turns off builds or preview deployments for branches other than the production branch). By default Vercel builds a preview deployment for every branch pushed to a connected repository (confirm at execution time).
+- **Verify:** passes when the existing project has no Git connection, is connected to a different repository, or is connected to the LABAK repository with a setting that skips every branch except its production branch (so `hub-integration` would not be built). Otherwise, or if Einar cannot tell, **stop and report**: `hub-integration` is not pushed, and the existing project is not changed; Einar decides what happens. After the first push, Einar checks the existing project's Deployments list: it shows no deployment of `hub-integration`. If one appears, stop and report; Einar decides about it (the executor never deletes or changes anything in the existing project).
+
 ### G6.1 Projects and plan
 - **Owner:** Einar (team plan); executor creates and configures the projects after G6.
 - **Settings:**
@@ -466,14 +598,14 @@ All records are in the **litljomi.is** zone only. **`labak.is` DNS is off-limits
 
   - Node.js 22 for every project; pnpm is detected from the lockfile (confirm both at execution time in project Settings).
   - `labak-hub-staging` is a **new** project. **Never** the existing `landssamband-bakarameistara` project, never `main` of the LABAK repository, never `labak.litljomi.is` or `labak.is`. It also gets the GitHub Packages read token (section 12).
-  - **Connecting the LABAK repository** installs the Vercel GitHub integration on it (section 1). It is done only after **Einar's explicit approval at G6 and at G7**, each recorded by the controller. If the integration is installed for the first time, it is limited to the selected repositories, never all of Einar's repositories (confirm the option at execution time).
+  - **Connecting the LABAK repository** installs the Vercel GitHub integration on it (section 1). It is done only after **Einar's explicit approval at G6 and at G7**, each recorded by the controller, and after G6.0 has passed again. If the integration is installed for the first time, it is limited to the selected repositories, never all of Einar's repositories (confirm the option at execution time).
   - **Builds on `labak-hub-staging` are limited to `hub-integration`.** Production branch `hub-integration`, and a project setting that skips every other branch, including `main`, so no other LABAK branch is built or deployed. The intended setting is the project's Git settings, Ignored Build Step, with a command that skips the build unless the branch is `hub-integration` (for example `[ "$VERCEL_GIT_COMMIT_REF" != "hub-integration" ]`; Vercel skips the build when the command exits 0). **Confirm the exact setting at execution time** (an equivalent Git setting that disables builds for other branches is also acceptable); if neither exists, stop and report.
   - Plan: Vercel Hobby allows cron at most once a day (a more frequent schedule fails the deployment), and Hobby is for non-commercial use (§2.2). Per-minute cron (A8) needs Pro. **Einar: upgrade when needed** (before G6.4 is deployed).
 - **Verify:** `vercel project ls` (in Einar's team scope) lists the three projects; each project's settings show the root directory, Node 22 and production branch above; `labak-hub-staging` shows the build restriction above, and after the next push to any LABAK branch other than `hub-integration` (if one happens) the project lists that deployment as skipped or shows none; the GitHub integration's repository access lists only the approved repositories; the team shows the Pro plan before the cron deploys.
 
 ### G6.2 Environment variables
 - **Owner:** Executor sets non-secret values; **Einar enters secret values** (section 12) in the project's Environment Variables settings or from his own terminal, so no secret passes through an agent session. Production environment only (the staging hostnames are the projects' production domains); secret values marked sensitive if the option is offered (confirm at execution time).
-- **Settings:** exactly the variables in section 13 for each project, plus the GitHub Packages read token on `labak-hub-staging`. A secret that Einar generates (`CMS_INTERNAL_SECRET`, `CRON_SECRET`, each `CMS_WEBHOOK_SECRETS`) is carried without a file, the clipboard or shell history, as in P-2 (section 11): generated into a shell variable, piped to where it is stored, then unset.
+- **Settings:** exactly the variables in section 13 for each project, plus the GitHub Packages read token on `labak-hub-staging`. A secret that Einar generates (`CMS_INTERNAL_SECRET`, `CRON_SECRET`, each `CMS_WEBHOOK_SECRETS`) is carried without a file, the clipboard or shell history, as in P-2 (section 11): generated into a shell variable, piped to where it is stored, then unset. The GitHub Packages read token is entered as in G2.5 ("Entering a token"): at a hidden prompt in a subshell, piped to `vercel env add NODE_AUTH_TOKEN production` in `labak-hub-staging` (the name the `hub-integration` `.npmrc` reads; confirm at execution time), then unset.
 - **Verify:** `vercel env ls production` in each project lists exactly the names in section 13 for that project (values are not shown); no other Supabase variable is present on a site project.
 
 ### G6.3 Deployment protection: Standard Protection on all three projects
@@ -519,7 +651,7 @@ The CLI (`tools/cli`) reads the staging URL and secret key from Einar's local en
 
 ## 12. Secrets
 
-No secret is ever committed, logged, printed in an agent session, pasted into chat or written into a report. `.env*` files other than `.env.example` are never committed. Rotation: the SDK accepts two webhook secrets during rotation (§8.2).
+No secret is ever committed, logged, printed in an agent session, pasted into chat or written into a report. `.env*` files other than `.env.example` are never committed, and `.env.local` is never sourced (section 7.2, "Reading `.env.local` without executing it"). The executor never reveals a secret value in the dashboard or the SQL editor and runs only the queries this runbook gives (section 1). Rotation: the SDK accepts two webhook secrets during rotation (§8.2).
 
 | Secret | Created where | Stored where | Who may read it |
 |---|---|---|---|
@@ -532,8 +664,8 @@ No secret is ever committed, logged, printed in an agent session, pasted into ch
 | Supabase database password | Einar at project creation (G3.1) | Einar's password manager | Einar, typed at the `supabase link`/`db push` prompt only |
 | Supabase CLI access token | `supabase login` by Einar | The Supabase CLI's local credential store | Einar's machine only |
 | JWT signing secret or keys | Supabase (managed) | Supabase | Nobody exports it; holders could issue tokens without the hook (section 15) |
-| GitHub Packages publish token | Einar (GitHub personal access token, classic; scope `write:packages` only; shortest expiry that covers G2.5) | Einar's local environment while publishing (G2.5); **revoked by Einar once G2.5 is verified** | Einar's machine only |
-| GitHub Packages read token | Einar (GitHub personal access token, classic; scope `read:packages` only; expiry chosen by Einar for the M1 staging period) | `labak-hub-staging` environment, under the variable name the `hub-integration` `.npmrc` reads (Task 28 Step 1; confirm at execution time) | Vercel's install step for that project, and also the site's server code at runtime (Vercel environment variables are available at build and at runtime), hence `read:packages` only |
+| GitHub Packages publish token | Einar (GitHub personal access token, classic; scope `write:packages` only; shortest expiry that covers G2.5) | Entered by Einar at a hidden prompt, in a subshell, for the publish commands only (G2.5, "Entering a token"); **revoked by Einar once G2.5 is verified** | Einar's machine only |
+| GitHub Packages read token | Einar (GitHub personal access token, classic; scope `read:packages` only; expiry chosen by Einar for the M1 staging period) | `labak-hub-staging` environment, under the variable name the `hub-integration` `.npmrc` reads (Task 28 Step 1; confirm at execution time), entered by Einar at a hidden prompt (G6.2); for the G2.5 check, a hidden prompt in a subshell only | Vercel's install step for that project, and also the site's server code at runtime (Vercel environment variables are available at build and at runtime), hence `read:packages` only |
 | Vercel and GitHub sessions | `vercel login`, `gh auth login` by Einar | The CLIs' local credential stores | Einar's machine only |
 
 ## 13. Environment variables
@@ -602,6 +734,8 @@ The full list is decision 18's (plan, "Implementation-level decisions") and deci
 | Steps that need the secret key or another secret value are Einar's (section 1), including the section 7.2 scripts and every `cms provision` command | Einar confirms | G3 |
 | Task 29's acceptance spec uses "the staging secret key from the local environment only"; agents cannot read `.env.local`, so that part must be run by Einar in his own terminal, the same way as section 7.2 (section 14) | Controller raises the Task 29 wording with Einar | Before Task 29 |
 | Connecting the LABAK repository to Vercel for `labak-hub-staging` installs the Vercel GitHub integration on it (deployment statuses and comments; builds limited to `hub-integration`, G6.1); needs Einar's explicit approval at G6 and at G7 | Einar | G6, G7 |
+| When G7 is requested at Task 27, the controller raises with Einar both the Vercel connection above (Task 28 connects the LABAK repository to `labak-hub-staging`, approval at G6 and G7) and the G6.0 check that the existing project `landssamband-bakarameistara` would not build `hub-integration`, which runs before the first push of that branch (the matching note is in the plan's Task 27) | Controller raises with Einar | G7 request at Task 27; again at G6 |
+| A `deny` rule for agent Edit and Write of `.env` and `.env.local`: the project settings deny only Read of them, and the repository root is writable for agents, so an agent could change `.env.local` (for example add a second `NEXT_PUBLIC_SUPABASE_URL`). The section 7.2 scripts refuse a duplicate name, a malformed value and another project's URL, but other tools that read the file may not; adding the rule is a `.claude/**` change for Einar to approve | Controller raises with Einar | Before G3 (before staging values go into `.env.local`) |
 | `ask` rules for risky hosted Supabase commands (`supabase config push`, `supabase db reset --linked`, `supabase migration repair`): today the project settings have no `ask` rule for them, so G3.2's "do not use `supabase config push`" is behavioural only; adding the rules is a `.claude/**` change for Einar to approve | Controller raises with Einar | Before G3 |
 | The email rate limit value (proposed 100 per hour) | Einar confirms | G3 |
 | SMTP credentials in the CMS environment (§8.2): no M1 code needs them, so no variable is defined; to be named when code that sends email is planned | Controller raises with Einar | When such code is planned |
