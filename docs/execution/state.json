@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T03:51:59.867Z",
+  "updatedAt": "2026-11-02T04:02:32.387Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -227,17 +227,32 @@
     },
     {
       "id": 5,
-      "status": "in_review",
+      "status": "done",
       "commits": [
-        "5ec57b4"
+        "5ec57b4",
+        "feb8734"
       ],
       "reviews": {
         "spec": {
           "status": "pass",
+          "round": 2,
+          "report": "docs/execution/reviews/task-05-r2-spec.md",
+          "at": "2026-11-02T03:58:52.035Z",
+          "atCommits": 2
+        },
+        "security": {
+          "status": "pass",
+          "round": 2,
+          "report": "docs/execution/reviews/task-05-r2-security.md",
+          "at": "2026-11-02T04:00:15.795Z",
+          "atCommits": 2
+        },
+        "quality": {
+          "status": "pass",
           "round": 1,
-          "report": "docs/execution/reviews/task-05-r1-spec.md",
-          "at": "2026-11-02T03:51:38.773Z",
-          "atCommits": 1
+          "report": "docs/execution/reviews/task-05-r1-quality.md",
+          "at": "2026-11-02T04:01:13.721Z",
+          "atCommits": 2
         }
       },
       "gatesUsed": [
@@ -245,8 +260,9 @@
         "G1"
       ],
       "blockers": [],
-      "notes": "",
-      "startedAt": "2026-11-02T03:44:22.286Z"
+      "notes": "Phase 1 Lane A, high tier (Opus). Commits: 5ec57b4 (implementation, clears Task 4 deferred Minors: default-revoke assertion and 010 comments/positive schema-usage checks), feb8734 (round 2: aal2 cases for non-admin personas, proven to fail against a policy without the platform_admins clause; slug trigger on every update). Reviews: spec r1 pass, r2 pass (fix diff); security r1 FAIL (Major: no test caught losing the console policy platform_admins clause), r2 pass (fix diff, mutation verified by the reviewer); quality r1 pass. Deferred: service_role can update tenants.id (C1); trigger-order gap and quality Minors (Task 6); fixture UUID cross-check (Task 12). Controller follow-up 153eda0 (ESLint ignores .worktrees/**, render appends progress-notes.md) reviewed in security r1: no finding. Full local suite on m1/phase-1 after feb8734 and the Task 13 merge (controller): harness 27/27; lint, typecheck, check:slugs exit 0; Vitest 7 files 145 passed; db:reset ok; db:test Files=5 Tests=185 PASS. Process note: two reviewers running pnpm db:test at once collided on pgTAP setup (rerun clean); parallel reviewers are now told not to run it concurrently.",
+      "startedAt": "2026-11-02T03:44:22.286Z",
+      "doneAt": "2026-11-02T04:02:32.387Z"
     },
     {
       "id": 6,
@@ -337,12 +353,26 @@
     },
     {
       "id": 14,
-      "status": "pending",
-      "commits": [],
-      "reviews": {},
-      "gatesUsed": [],
+      "status": "in_review",
+      "commits": [
+        "8452545"
+      ],
+      "reviews": {
+        "specQuality": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-14-r1-spec-quality.md",
+          "at": "2026-11-02T03:58:29.088Z",
+          "atCommits": 1
+        }
+      },
+      "gatesUsed": [
+        "G0",
+        "G1"
+      ],
       "blockers": [],
-      "notes": ""
+      "notes": "",
+      "startedAt": "2026-11-02T03:52:35.058Z"
     },
     {
       "id": 15,
