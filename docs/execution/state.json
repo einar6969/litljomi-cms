@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T04:02:32.387Z",
+  "updatedAt": "2026-11-02T04:03:10.149Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -353,7 +353,7 @@
     },
     {
       "id": 14,
-      "status": "in_review",
+      "status": "blocked",
       "commits": [
         "8452545"
       ],
@@ -364,13 +364,27 @@
           "report": "docs/execution/reviews/task-14-r1-spec-quality.md",
           "at": "2026-11-02T03:58:29.088Z",
           "atCommits": 1
+        },
+        "security": {
+          "status": "fail",
+          "round": 1,
+          "report": "docs/execution/reviews/task-14-r1-security.md",
+          "at": "2026-11-02T04:03:10.098Z",
+          "atCommits": 1
         }
       },
       "gatesUsed": [
         "G0",
         "G1"
       ],
-      "blockers": [],
+      "blockers": [
+        {
+          "text": "Contradiction: spec §3.1 says packages/rich-text may depend on none (React as peer); plan Task 14 (and commit 8452545) adds zod and @tiptap/core, pm, starter-kit, extension-link, extension-image, and sites import the same entry point. Spec wins; waiting for Einar's ruling. Also open: security r1 Major (rel missing on upper-case/odd-scheme external links) and the ordered-list defect.",
+          "at": "2026-11-02T04:03:10.149Z",
+          "previousStatus": "in_review",
+          "resolvedAt": null
+        }
+      ],
       "notes": "",
       "startedAt": "2026-11-02T03:52:35.058Z"
     },
