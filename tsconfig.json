@@ -1,6 +1,6 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": { "types": ["node"] },
-  "include": ["tools/checks/**/*.ts", "vitest.workspace.ts"],
+  "include": ["tools/checks/**/*.ts", "packages/schema/src/**/*.ts", "vitest.workspace.ts"],
   "exclude": ["**/__tests__/fixtures/**", "node_modules"]
 }
