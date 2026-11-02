@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T04:17:18.495Z",
+  "updatedAt": "2026-11-02T04:26:09.670Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -266,16 +266,41 @@
     },
     {
       "id": 6,
-      "status": "in_progress",
-      "commits": [],
-      "reviews": {},
+      "status": "done",
+      "commits": [
+        "bcbc955"
+      ],
+      "reviews": {
+        "spec": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-06-r1-spec.md",
+          "at": "2026-11-02T04:20:36.132Z",
+          "atCommits": 1
+        },
+        "security": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-06-r1-security.md",
+          "at": "2026-11-02T04:24:31.208Z",
+          "atCommits": 1
+        },
+        "quality": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-06-r1-quality.md",
+          "at": "2026-11-02T04:26:09.437Z",
+          "atCommits": 1
+        }
+      },
       "gatesUsed": [
         "G0",
         "G1"
       ],
       "blockers": [],
-      "notes": "",
-      "startedAt": "2026-11-02T04:06:25.142Z"
+      "notes": "Phase 1 Lane A, high tier (Opus). Commit bcbc955 (entries, drafts, revisions; AFTER-trigger slug locks for tenants and entries, clearing the trigger-order Minor; Task 5 quality Minors cleared; mutation proofs M1-M15). Reviews: spec r1 pass (3 plan-text differences accepted: AFTER triggers, deterministic actor test, extra not null); security r1 pass (3 Minors deferred: drafts_pkey oracle -> Task 10/8, BEFORE-trigger order of version bump and force_actor -> Task 7, first_published_at write-once -> Task 11); quality r1 pass (10 Minors -> Task 7). Full suite on m1/phase-1 after bcbc955 and the Task 14 merge 3810375 (controller): harness 27/27; lint, typecheck, check:slugs exit 0; Vitest 13 files 175; db:reset ok; db:test Files=6 Tests=282 PASS.",
+      "startedAt": "2026-11-02T04:06:25.142Z",
+      "doneAt": "2026-11-02T04:26:09.670Z"
     },
     {
       "id": 7,
@@ -397,9 +422,19 @@
     },
     {
       "id": 15,
-      "status": "in_progress",
-      "commits": [],
-      "reviews": {},
+      "status": "in_review",
+      "commits": [
+        "e97329c"
+      ],
+      "reviews": {
+        "specQuality": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-15-r1-spec-quality.md",
+          "at": "2026-11-02T04:24:58.797Z",
+          "atCommits": 1
+        }
+      },
       "gatesUsed": [
         "G0",
         "G1"
