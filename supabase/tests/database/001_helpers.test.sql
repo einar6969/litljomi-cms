@@ -26,9 +26,10 @@ select is((select count(distinct id)::int from auth.users
 select ok(not has_function_privilege('anon', 'tests.seed()', 'execute'), 'anon cannot execute seed');
 select ok(not has_function_privilege('authenticated', 'tests.seed()', 'execute'), 'authenticated cannot execute seed');
 select ok(not has_function_privilege('service_role', 'tests.seed()', 'execute'), 'service_role cannot execute seed');
--- Behavioural proof of the privilege checks above, run as an explicit authenticated persona.
+-- Behavioural proof of the privilege checks above: as an authenticated persona, calling
+-- seed() fails with the missing-EXECUTE error itself, not with any other 42501.
 select tests.act_as(tests.persona('outsider'));
-select throws_ok($$select tests.seed()$$, '42501', null, 'authenticated cannot call seed');
+select throws_ok($$select tests.seed()$$, '42501', 'permission denied for function seed', 'authenticated cannot call seed');
 select tests.act_as_owner();
 select ok(
   (select bool_and(has_function_privilege(r, f, 'execute'))

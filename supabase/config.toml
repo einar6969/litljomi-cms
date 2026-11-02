@@ -10,7 +10,8 @@ enabled = true
 port = 54321
 # Schemas to expose in your API. Tables, views and stored procedures in this schema will get API
 # endpoints. `public` and `graphql_public` schemas are included by default.
-schemas = ["graphql_public"]
+# Litljómi: exactly `api` (spec §4.2; decisions 16 and 17). Never `public`, `cms` or `private`.
+schemas = ["api"]
 # Extra schemas to add to the search_path of every request.
 extra_search_path = ["extensions"]
 # The maximum number of rows returns from a view, table, or stored procedure. Limits payload size
@@ -282,9 +283,11 @@ max_frequency = "5s"
 # uri = "pg-functions://postgres/auth/before-user-created-hook"
 
 # This hook runs before a token is issued and allows you to add additional claims based on the authentication method used.
-# [auth.hook.custom_access_token]
-# enabled = true
-# uri = "pg-functions://<database>/<schema>/<hook_name>"
+# Litljómi: the passwordless hook refuses every non-email sign-in, passwords included
+# (spec §4.4; decision 18). Must stay enabled here and on every hosted project.
+[auth.hook.custom_access_token]
+enabled = true
+uri = "pg-functions://postgres/private/passwordless_access_token"
 
 # Configure one of the supported SMS providers: `twilio`, `twilio_verify`, `messagebird`, `textlocal`, `vonage`.
 [auth.sms.twilio]
