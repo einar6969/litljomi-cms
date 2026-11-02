@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T04:40:13.494Z",
+  "updatedAt": "2026-11-02T04:52:59.314Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -305,7 +305,9 @@
     {
       "id": 7,
       "status": "in_progress",
-      "commits": [],
+      "commits": [
+        "0f7ca02"
+      ],
       "reviews": {},
       "gatesUsed": [
         "G0",
@@ -508,16 +510,35 @@
     },
     {
       "id": 18,
-      "status": "in_progress",
-      "commits": [],
-      "reviews": {},
+      "status": "done",
+      "commits": [
+        "5313a5b",
+        "41515f0"
+      ],
+      "reviews": {
+        "specQuality": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-18-r1-spec-quality.md",
+          "at": "2026-11-02T04:47:01.601Z",
+          "atCommits": 2
+        },
+        "security": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-18-r1-security.md",
+          "at": "2026-11-02T04:52:34.910Z",
+          "atCommits": 2
+        }
+      },
       "gatesUsed": [
         "G0",
         "G1"
       ],
       "blockers": [],
-      "notes": "",
-      "startedAt": "2026-11-02T04:40:13.494Z"
+      "notes": "Phase 1 Lane B, medium tier (Sonnet implementer; security Opus + combined Sonnet). Commits 5313a5b (SDK: bundle types, webhook sign/verify with timingSafeEqual and two-secret rotation, markers and parsers, client with exact cache options, revalidate handler; Task 16 schema Minors cleared) and 41515f0 (controller ruling: next declared as a peer ^15 || ^16 per the plan; next@16.4.3 tree in the lockfile, no install scripts). Reviews: specQuality r1 pass; security r1 pass (8 Minors -> Tasks 20, 21, 26, C1; rows for the Task 13 href note and Task 14 resolver output confirmed closed). Worktree suite on 41515f0: harness 27/27; lint, typecheck, check:slugs exit 0; Vitest 25 files 327 passed.",
+      "startedAt": "2026-11-02T04:40:13.494Z",
+      "doneAt": "2026-11-02T04:52:59.314Z"
     },
     {
       "id": 17,
