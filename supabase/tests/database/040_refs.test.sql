@@ -17,8 +17,8 @@
 --   entry c108  labak  news  draft {}                      the nesting-limit draft
 --   entry c109  labak  news  draft {}                      the key- and reference-limit and cost-regression draft
 --   entry c110  labak  news  no draft                      refused draft inserts (last section)
---   assets f001, f002: plain UUIDs; cms.assets and the asset foreign keys come
---   in Task 8, so asset references are not checked against a table yet.
+--   asset f001  labak  <labak>/f001/a.jpg       a reference target (cms.assets, Task 8)
+--   asset f002  labak  <labak>/f002/b.png       a reference target
 --
 -- Later assertions depend on earlier mutations, in this order: c104's draft is
 -- saved with references (version 2), gets a stray draft_refs row, a title-only
@@ -264,6 +264,13 @@ insert into cms.entries (id, tenant_id, type, created_by) values
   (tests.entry('c105'), tests.tenant('labak'), 'news', tests.persona('editor_labak')),
   (tests.entry('c106'), tests.tenant('labak'), 'news', tests.persona('editor_labak')),
   (tests.entry('c107'), tests.tenant('labak'), 'news', tests.persona('editor_labak'));
+-- Asset reference targets: draft_refs and revision_refs reference cms.assets
+-- (Task 8), so the assets the drafts below reference must exist.
+insert into cms.assets (id, tenant_id, original_path, filename, mime, bytes, width, height, sha256, created_by)
+  select a, tests.tenant('labak'), tests.tenant('labak') || '/' || a || '/' || f, f, m, 1000, 800, 600,
+         repeat('a', 64), tests.persona('editor_labak')
+  from (values ('00000000-0000-4000-8000-00000000f001'::uuid, 'a.jpg', 'image/jpeg'),
+               ('00000000-0000-4000-8000-00000000f002'::uuid, 'b.png', 'image/png')) as v(a, f, m);
 insert into cms.drafts (entry_id, tenant_id, schema_version, data, updated_by)
   select e, t, 1, '{}'::jsonb, p from (values
     (tests.entry('c101'), tests.tenant('labak'), tests.persona('editor_labak')),
