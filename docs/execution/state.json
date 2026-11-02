@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T09:55:53.098Z",
+  "updatedAt": "2026-11-02T10:28:02.150Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -739,8 +739,48 @@
     },
     {
       "id": 17,
+      "status": "done",
+      "commits": [
+        "8577cfb"
+      ],
+      "reviews": {
+        "spec": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-17-r1-spec.md",
+          "at": "2026-11-02T10:01:36.171Z",
+          "atCommits": 1
+        },
+        "security": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-17-r1-security.md",
+          "at": "2026-11-02T10:05:21.919Z",
+          "atCommits": 1
+        },
+        "quality": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-17-r1-quality.md",
+          "at": "2026-11-02T10:06:35.052Z",
+          "atCommits": 1
+        }
+      },
+      "gatesUsed": [
+        "G0",
+        "G1"
+      ],
+      "blockers": [],
+      "notes": "Phase 3 Lane A, high tier (Opus). Implemented in .worktrees/lane-a-alt from 51681c9: commit 8577cfb (apps/cms package `cms`; editor and admin clients with db schema 'api'; constant-time internal and cron secrets; worker and cron routes with maxDuration 300 and pipeline stubs; module registry; Vitest/typecheck/integration wiring; ESLint rebuilt from boundary blocks with the decision 35 route exemption limited to privileged/worker/pipeline and privileged/internal-auth; cleared every Task 17 deferred row). Controller accepted: `SupabaseClient` redefined as BaseSupabaseClient<any,'api'> (the bare type rejects an api-schema client); routes may import internal-auth as well as the pipeline. New packages @supabase/ssr 0.12.7 and cookie 1.1.1 (no install scripts). Controller merged m1/phase-1 (Task 26) into the branch as 00d7830 (conflicts in .gitignore, vitest.workspace.ts, pnpm-lock.yaml; lockfile the exact union). Reviews r1: spec pass, security pass (ESLint probed with ~100 cases; sentinel build found no secret), quality pass; Minors deferred (C2, Task 21). Merged into m1/phase-1 as 4cc8af4 (--no-ff, clean). Full suite by the controller after the merge: harness 32/32; lint, typecheck, check:slugs exit 0; Vitest 32 files 518 tests; demo-site test:e2e 6/6; db:reset ok, db:test Files=13 Tests=1252 PASS; test:integration 6 files 67 tests (cms project: no files yet). The database half ran after Task 19's implementer released the stack.",
+      "startedAt": "2026-11-02T09:44:14.778Z",
+      "doneAt": "2026-11-02T10:28:02.097Z"
+    },
+    {
+      "id": 19,
       "status": "in_progress",
-      "commits": [],
+      "commits": [
+        "53606bd"
+      ],
       "reviews": {},
       "gatesUsed": [
         "G0",
@@ -748,16 +788,7 @@
       ],
       "blockers": [],
       "notes": "",
-      "startedAt": "2026-11-02T09:44:14.778Z"
-    },
-    {
-      "id": 19,
-      "status": "pending",
-      "commits": [],
-      "reviews": {},
-      "gatesUsed": [],
-      "blockers": [],
-      "notes": ""
+      "startedAt": "2026-11-02T10:01:36.200Z"
     },
     {
       "id": 20,
