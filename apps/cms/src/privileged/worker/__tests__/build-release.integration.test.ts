@@ -14,35 +14,24 @@ import { editorClient, publicUrl, secretClient } from '../../../../../../tests/i
 import { env } from '../../../../../../tests/integration/src/env.ts';
 import { PERSONAS, TENANT } from '../../../../../../tests/integration/src/fixtures.ts';
 import { closeAll, ownerQuery, withTx } from '../../../../../../tests/integration/src/sql.ts';
-import { BUNDLE_CACHE_CONTROL, POINTER_CACHE_CONTROL, buildRelease, supabaseReleaseStorage, type ReleaseStorage } from '../build-release';
+import { createAdminClient } from '../../admin-client';
+import {
+  BUNDLE_CACHE_CONTROL,
+  POINTER_CACHE_CONTROL,
+  POINTER_DEADLINE_MS,
+  buildRelease,
+  supabaseReleaseStorage,
+  type BuildOptions,
+  type ReleaseStorage,
+} from '../build-release';
 import { processRequestById } from '../process-request';
+import { failStaleReleases } from '../sweep';
+import { failAsStale, prepareLabak } from './labak-setup';
 
 let editor: SupabaseClient;
 let secret: SupabaseClient;
 
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0xff, 0xd9]);
-
-/** Uploads a placeholder original to media-private; an existing object is fine. */
-async function putOriginal(path: string) {
-  const { error } = await secret.storage.from('media-private').upload(path, JPEG, { contentType: 'image/jpeg' });
-  if (error && String((error as { statusCode?: unknown }).statusCode) !== '409') throw error;
-}
-
-/** Leftovers of earlier runs: a building release blocks the tenant, and published originals must exist to be copied. */
-async function prepareLabak() {
-  const building = await ownerQuery<{ id: string }>(`select id from cms.releases where tenant_id = $1 and status = 'building'`, [TENANT.labak]);
-  for (const { id } of building) {
-    await withTx('service', (w) => w.query(`select api.worker_finish_release($1, 'failed', null, '{"test":"cleanup"}', null, null)`, [id]));
-  }
-  const originals = await ownerQuery<{ original_path: string }>(
-    `select distinct a.original_path from cms.assets a
-     join cms.revision_refs rr on rr.tenant_id = a.tenant_id and rr.target_asset_id = a.id
-     join cms.entries e on e.tenant_id = rr.tenant_id and e.published_rev_id = rr.revision_id
-     where a.tenant_id = $1 and a.public_path is null and a.archived_at is null and e.archived_at is null`,
-    [TENANT.labak],
-  );
-  for (const { original_path } of originals) await putOriginal(original_path);
-}
 
 beforeAll(async () => {
   vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', env.apiUrl);
@@ -62,12 +51,18 @@ const rpc = async <T>(fn: string, args: Record<string, unknown>): Promise<T> => 
   return data as T;
 };
 
-/** A labak asset registered by editor_labak, with its original uploaded to media-private. */
-async function labakAsset(): Promise<string> {
+/**
+ * A labak asset registered by editor_labak, with its original uploaded to media-private (unless
+ * `upload` is false: an asset row registered without its upload, the only way an original can be
+ * missing, since editors cannot delete objects in media-private).
+ */
+async function labakAsset(o: { upload?: boolean } = {}): Promise<string> {
   const id = randomUUID();
   const path = `${TENANT.labak}/${id}/mynd.jpg`;
-  const { error } = await editor.storage.from('media-private').upload(path, JPEG, { contentType: 'image/jpeg' });
-  if (error) throw error;
+  if (o.upload !== false) {
+    const { error } = await editor.storage.from('media-private').upload(path, JPEG, { contentType: 'image/jpeg' });
+    if (error) throw error;
+  }
   await rpc('register_asset', {
     p_asset_id: id,
     p_tenant_id: TENANT.labak,
@@ -118,10 +113,7 @@ async function unpublished(entryId: string): Promise<string> {
   return requestId;
 }
 
-const build = async (storage?: ReleaseStorage) => {
-  const result = await buildRelease(TENANT.labak, storage ? { storage } : {});
-  return result;
-};
+const build = (o: Pick<BuildOptions, 'storage' | 'clock'> = {}) => buildRelease(TENANT.labak, o);
 const delivered = async () => {
   const result = await build();
   expect(result.status, JSON.stringify(result)).toBe('delivered');
@@ -145,6 +137,13 @@ const releaseRow = async (id: string) =>
   ))[0]!;
 const releaseOf = async (requestId: string) =>
   (await ownerQuery<{ release_id: string | null }>('select release_id from cms.publish_requests where id = $1', [requestId]))[0]!.release_id;
+const alertsFor = async (event: string, key: string, value: string) =>
+  ownerQuery<{ tenant_id: string; actor_id: string | null; details: Record<string, unknown> }>(
+    `select tenant_id, actor_id, details from cms.audit_log where action = $1 and details ->> $2 = $3`,
+    [`system.alert.${event}`, key, value],
+  );
+/** The labak pointer's raw bytes, to restore after a test that replaces it. */
+const pointerBytes = async () => new Uint8Array(await (await secret.storage.from('delivery').download('labak/current.json')).data!.arrayBuffer());
 
 describe('buildRelease (labak)', () => {
   it('two consecutive builds are n and n+1; the pointer shows n+1; both are written with §7.2 cache headers', async () => {
@@ -186,6 +185,11 @@ describe('buildRelease (labak)', () => {
     expect(await inMediaPublic(image)).toBe(true);
     expect(await publicPath(image)).toBe(`labak/${image}/mynd.jpg`);
     expect(await releaseOf(entry.requestId)).toBe(result.releaseId);
+    // Task 20 quality r1, Minor 9: what the database stored. Other files' partial commits may be
+    // omitted from every labak build (see above), so error is null or omits none of this test's.
+    const row = await releaseRow(result.releaseId);
+    expect(row.status).toBe('delivered');
+    if (row.error !== null) expect(JSON.stringify(row.error)).not.toContain(entry.id);
   });
 
   it('withdrawal wins: after unpublishing X the next bundle has no X, though the previous one had it', async () => {
@@ -270,6 +274,26 @@ describe('buildRelease (labak)', () => {
     }
   });
 
+  it('a release with no omissions stores error null', async () => {
+    // Other files' partial commits (see the first test) are withdrawn for this one build.
+    const omittedBefore = await delivered();
+    const withdrawn = omittedBefore.omitted.map((o) => o.entryId);
+    const saved = await ownerQuery<{ id: string; published_rev_id: string; published_draft_version: number }>(
+      'select id, published_rev_id, published_draft_version from cms.entries where id = any($1::uuid[])',
+      [withdrawn],
+    );
+    await ownerQuery('update cms.entries set published_rev_id = null, published_draft_version = null where id = any($1::uuid[])', [withdrawn]);
+    try {
+      const clean = await delivered();
+      expect(clean.omitted).toEqual([]);
+      expect((await releaseRow(clean.releaseId)).error).toBeNull();
+    } finally {
+      for (const e of saved) {
+        await ownerQuery('update cms.entries set published_rev_id = $2, published_draft_version = $3 where id = $1', [e.id, e.published_rev_id, e.published_draft_version]);
+      }
+    }
+  });
+
   it('never copies the assets of drafts that were never published', async () => {
     const image = await labakAsset();
     const d = await draft(news(image, 'Drög'));
@@ -306,7 +330,7 @@ describe('buildRelease (labak)', () => {
       },
     };
 
-    const failed = await build(failing);
+    const failed = await build({ storage: failing });
 
     expect(failed.status).toBe('failed');
     expect((await currentPointer()).release).toBe(before.number);
@@ -326,5 +350,188 @@ describe('buildRelease (labak)', () => {
     expect(next.previousBundle).toEqual(before.bundle);
     expect(await releaseOf(pending.requestId)).toBe(next.releaseId);
     expect(await publicPath(image)).toBe(`labak/${image}/mynd.jpg`);
+  });
+});
+
+// Plan Task 30 (decisions 36.2 and 37.1): stale releases, a late worker, and a pointer that only
+// moves forward. Each test makes its own release stale by moving its created_at back as owner.
+describe('worker recovery (labak)', () => {
+  const real = () => supabaseReleaseStorage(secret);
+
+  it('the sweep step fails a stale building release, a late finish of it is refused, and the next build is n+1', async () => {
+    const before = await delivered();
+    const stale = await withTx('service', async (w) => (await w.query('select r.id, r.number from api.worker_begin_release($1) as r', [TENANT.labak])).rows[0] as { id: string; number: number });
+    expect(stale.number).toBe(before.number + 1);
+    await ownerQuery(`update cms.releases set created_at = now() - interval '421 seconds' where id = $1`, [stale.id]);
+
+    const failed = await failStaleReleases(createAdminClient());
+
+    expect(failed.map((r) => r.release_id)).toContain(stale.id);
+    expect(await releaseRow(stale.id)).toMatchObject({ status: 'failed', bundle_path: null, error: { code: 'stale_building', maxAgeSeconds: 420 } });
+    expect(await alertsFor('release.stale_failed', 'releaseId', stale.id)).toEqual([
+      { tenant_id: TENANT.labak, actor_id: null, details: expect.objectContaining({ releaseId: stale.id, number: stale.number, maxAgeSeconds: 420 }) },
+    ]);
+
+    // A late worker's finish is refused and changes nothing.
+    const pending = await published(news(await labakAsset(), 'Seinn'));
+    await expect(
+      withTx('service', (w) =>
+        w.query(`select api.worker_finish_release($1, 'delivered', $2, null, $3::uuid[], null)`, [stale.id, `labak/releases/${stale.number}.json`, [pending.requestId]]),
+      ),
+    ).rejects.toThrow(/forbidden/);
+    await expect(withTx('service', (w) => w.query(`select api.worker_finish_release($1, 'failed', null, '{}', null, null)`, [stale.id]))).rejects.toThrow(/forbidden/);
+    expect(await releaseRow(stale.id)).toMatchObject({ status: 'failed', bundle_path: null, error: { code: 'stale_building', maxAgeSeconds: 420 } });
+    expect(await releaseOf(pending.requestId)).toBeNull();
+
+    const next = await delivered();
+    expect(next.number).toBe(stale.number + 1);
+    expect((await currentPointer()).release).toBe(next.number);
+    expect(ids(next.bundle)).toContain(pending.id);
+    expect(await releaseOf(pending.requestId)).toBe(next.releaseId);
+  });
+
+  it('a build whose release the sweep failed before the pointer write writes no pointer (current.json unchanged)', async () => {
+    const before = await delivered();
+    const pending = await published(news(await labakAsset(), 'Úrelt'));
+    const storage: ReleaseStorage = {
+      ...real(),
+      upload: async (bucket, path, body, o) => {
+        await real().upload(bucket, path, body, o);
+        // The bundle is written; the sweep now fails the release as stale.
+        if (path.endsWith(`/releases/${before.number + 1}.json`)) {
+          const [row] = await ownerQuery<{ id: string }>(`select id from cms.releases where tenant_id = $1 and status = 'building'`, [TENANT.labak]);
+          await failAsStale(row!.id);
+        }
+      },
+    };
+
+    const result = await build({ storage });
+
+    expect(result.status).toBe('failed');
+    expect(await currentPointer()).toMatchObject({ release: before.number });
+    expect(await releaseRow(result.releaseId!)).toMatchObject({ status: 'failed', error: { code: 'stale_building' } });
+    expect(await alertsFor('release.failed', 'releaseId', result.releaseId!)).toEqual([
+      expect.objectContaining({ details: expect.objectContaining({ code: 'pointer_refused', step: 'pointer_check', pointerWritten: false }) }),
+    ]);
+    expect(await releaseOf(pending.requestId)).toBeNull();
+
+    const next = await delivered();
+    expect(next.number).toBe(result.number! + 1);
+    expect(ids(next.bundle)).toContain(pending.id);
+  });
+
+  it('a finish refused after the pointer was written: failed, alerted, the pointer left as it is; the next build moves it on', async () => {
+    const before = await delivered();
+    const pending = await published(news(await labakAsset(), 'Of seint'));
+    let pointerReads = 0;
+    const storage: ReleaseStorage = {
+      ...real(),
+      download: async (bucket, path) => {
+        const bytes = await real().download(bucket, path);
+        // The read-back after the pointer write (the first read is the check before it): the sweep
+        // fails the release before the worker finishes it.
+        if (path === 'labak/current.json' && ++pointerReads === 2) {
+          const [row] = await ownerQuery<{ id: string }>(`select id from cms.releases where tenant_id = $1 and status = 'building'`, [TENANT.labak]);
+          await failAsStale(row!.id);
+        }
+        return bytes;
+      },
+    };
+
+    const result = await build({ storage });
+
+    expect(result).toMatchObject({ status: 'failed', number: before.number + 1 });
+    // Decision 37.1 (d): no repair. The pointer names the failed release until a newer one.
+    expect((await currentPointer()).release).toBe(result.number);
+    expect(await releaseRow(result.releaseId!)).toMatchObject({ status: 'failed', bundle_path: null, error: { code: 'stale_building' } });
+    expect(await alertsFor('release.finish_refused', 'releaseId', result.releaseId!)).toEqual([
+      expect.objectContaining({ details: expect.objectContaining({ code: 'finish_refused', step: 'finish', pointerWritten: true }) }),
+    ]);
+    expect(await releaseOf(pending.requestId)).toBeNull();
+
+    const next = await delivered();
+    expect(next.number).toBe(result.number! + 1);
+    expect((await currentPointer()).release).toBe(next.number);
+    expect(await releaseOf(pending.requestId)).toBe(next.releaseId);
+  });
+
+  it(`a build past the ${POINTER_DEADLINE_MS} ms deadline writes no pointer`, async () => {
+    const before = await delivered();
+    let reads = 0;
+    const result = await build({ clock: () => (reads++ === 0 ? 0 : POINTER_DEADLINE_MS) });
+
+    expect(result.status).toBe('failed');
+    expect(await currentPointer()).toMatchObject({ release: before.number });
+    expect((await releaseRow(result.releaseId!)).error).toMatchObject({ code: 'pointer_refused', step: 'pointer_deadline', pointerWritten: false });
+  });
+
+  it('a current pointer that already names a newer release is not replaced', async () => {
+    const before = await delivered();
+    const original = await pointerBytes();
+    const newer: Pointer = { ...(await currentPointer()), release: before.number + 100, bundle: `releases/${before.number + 100}.json` };
+    await real().upload('delivery', 'labak/current.json', new TextEncoder().encode(JSON.stringify(newer)), {
+      cacheControl: POINTER_CACHE_CONTROL,
+      contentType: 'application/json',
+      upsert: true,
+    });
+    try {
+      const result = await build();
+
+      expect(result.status).toBe('failed');
+      expect(await currentPointer()).toEqual(newer);
+      expect((await releaseRow(result.releaseId!)).error).toMatchObject({ code: 'pointer_refused', step: 'pointer_current', pointerWritten: false });
+    } finally {
+      await real().upload('delivery', 'labak/current.json', original, { cacheControl: POINTER_CACHE_CONTROL, contentType: 'application/json', upsert: true });
+    }
+    expect((await delivered()).number).toBeGreaterThan(before.number);
+  });
+});
+
+// Plan Task 30 (decision 36.4): a missing private original fails the request that needs it, before
+// commit, and the entry stays live at its published revision.
+describe('missing private originals (labak)', () => {
+  it('a draft referencing an asset whose original is missing fails with asset_missing and an alert; the live revision stays; others are unaffected', async () => {
+    // P is live with a good image.
+    const p = await draft(news(await labakAsset(), 'Lifandi'));
+    const firstRequest = await rpc<string>('request_publish', { p_entry_id: p.id, p_expected_draft_version: p.version });
+    expect((await processRequestById(firstRequest)).status).toBe('committed');
+    const live = await delivered();
+    const liveRevision = entriesOf(live.bundle).find((e) => e.id === p.id)!.revisionId;
+
+    // P's next draft references an asset registered without its upload.
+    const missing = await labakAsset({ upload: false });
+    const version = await rpc<number>('save_draft', {
+      p_entry_id: p.id,
+      p_expected_version: p.version,
+      p_data: news(missing, 'Lifandi, ný mynd'),
+      p_schema_version: 1,
+      p_title: null,
+      p_sort_at: null,
+    });
+    const request = await rpc<string>('request_publish', { p_entry_id: p.id, p_expected_draft_version: version });
+    const other = await published(news(await labakAsset(), 'Annað'));
+
+    const outcome = await processRequestById(request);
+
+    expect(outcome).toMatchObject({ status: 'failed_validation', errors: { code: 'asset_missing', assetIds: [missing] } });
+    const [row] = await ownerQuery<{ status: string; error: unknown; revision_id: string | null }>(
+      'select status, error, revision_id from cms.publish_requests where id = $1',
+      [request],
+    );
+    expect(row).toEqual({ status: 'failed_validation', error: { code: 'asset_missing', assetIds: [missing] }, revision_id: null });
+    expect(await alertsFor('publish_request.asset_missing', 'requestId', request)).toEqual([
+      { tenant_id: TENANT.labak, actor_id: null, details: { tenantId: TENANT.labak, requestId: request, entryId: p.id, assetIds: [missing] } },
+    ]);
+    const [entry] = await ownerQuery<{ published_rev_id: string }>('select published_rev_id from cms.entries where id = $1', [p.id]);
+    expect(entry!.published_rev_id).toBe(liveRevision);
+
+    // The next bundle still has P at its old revision, and the other entry.
+    const next = await delivered();
+    const inNext = entriesOf(next.bundle).find((e) => e.id === p.id);
+    expect(inNext?.revisionId).toBe(liveRevision);
+    expect(inNext?.title).toBe('Lifandi');
+    expect(ids(next.bundle)).toContain(other.id);
+    expect(next.omitted.map((o) => o.entryId)).not.toContain(p.id);
+    expect(await publicPath(missing)).toBeNull();
   });
 });

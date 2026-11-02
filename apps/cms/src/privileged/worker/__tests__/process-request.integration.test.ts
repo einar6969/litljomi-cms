@@ -5,7 +5,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { editorClient } from '../../../../../../tests/integration/src/clients.ts';
+import { editorClient, secretClient } from '../../../../../../tests/integration/src/clients.ts';
 import { env } from '../../../../../../tests/integration/src/env.ts';
 import { PERSONAS, TENANT } from '../../../../../../tests/integration/src/fixtures.ts';
 import { closeAll, ownerQuery } from '../../../../../../tests/integration/src/sql.ts';
@@ -30,9 +30,18 @@ const rpc = async <T>(fn: string, args: Record<string, unknown>): Promise<T> => 
   return data as T;
 };
 
-/** An asset of labak, registered as the owner (no file needed: the worker reads only the row). */
+const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0xff, 0xd9]);
+
+/**
+ * An asset of labak, registered as the owner, with a placeholder original in media-private: the
+ * worker checks that the original exists before it commits a publish (Task 30, decision 36.4).
+ */
 async function labakAsset(): Promise<string> {
   const id = randomUUID();
+  const { error } = await secretClient()
+    .storage.from('media-private')
+    .upload(`${TENANT.labak}/${id}/a.jpg`, JPEG, { contentType: 'image/jpeg' });
+  if (error) throw error;
   await ownerQuery(
     `insert into cms.assets (id, tenant_id, original_path, filename, mime, bytes, width, height, sha256, created_by)
      values ($1::uuid, $2::uuid, $2::text || '/' || $1::text || '/a.jpg', 'a.jpg', 'image/jpeg', 1000, 800, 600,

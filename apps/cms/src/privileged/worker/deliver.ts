@@ -233,13 +233,27 @@ export function mediaPrefix(): string {
   return publicMediaUrl(supabaseUrl(), '');
 }
 
-/** Notifies and live-checks every active site of the tenant for a delivered release, concurrently. */
-export async function confirmRelease(db: SupabaseClient, release: DeliveredRelease, options: DeliveryOptions): Promise<void> {
+/**
+ * Notifies and live-checks the tenant's active sites for a delivered release, concurrently: the
+ * fast path confirms every active site; the sweep's retry passes `retry`, the sites to confirm with
+ * each one's notify attempts so far, and a site deactivated since it was listed is skipped. Every
+ * site's confirmation settles before this returns; one site's error does not stop the others, and
+ * the errors are thrown together as an AggregateError.
+ */
+export async function confirmRelease(
+  db: SupabaseClient,
+  release: DeliveredRelease,
+  options: DeliveryOptions,
+  retry?: ReadonlyMap<string, number>,
+): Promise<void> {
   const module = getModule(release.tenantSlug);
   if (!module) throw new Error(`no module for tenant ${release.tenantSlug}`);
   const targets = liveTargets(module, release, mediaPrefix());
-  const sites = (await callRpc<WorkerSite[] | null>(db, 'worker_sites', { p_tenant_id: release.tenantId })) ?? [];
-  await Promise.all(sites.map((site) => confirmSite(db, release, site, targets, options)));
+  const active = (await callRpc<WorkerSite[] | null>(db, 'worker_sites', { p_tenant_id: release.tenantId })) ?? [];
+  const sites = retry ? active.filter((site) => retry.has(site.id)) : active;
+  const results = await Promise.allSettled(sites.map((site) => confirmSite(db, release, site, targets, options, retry?.get(site.id) ?? 0)));
+  const errors = results.flatMap((r) => (r.status === 'rejected' ? [r.reason] : []));
+  if (errors.length > 0) throw new AggregateError(errors, `release ${release.number}: ${errors.length} site confirmation(s) failed`);
 }
 
 /**

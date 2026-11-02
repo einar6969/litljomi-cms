@@ -86,7 +86,8 @@ vi.mock('@/modules/registry', () => ({
   getType: (slug: string, type: string) => (slug === 'prufa' ? testModule.types.find((t) => t.name === type) : undefined),
 }));
 
-const { buildRelease, BUNDLE_CACHE_CONTROL, POINTER_CACHE_CONTROL, supabaseReleaseStorage } = await import('../build-release');
+const { buildRelease, BUNDLE_CACHE_CONTROL, MAX_STORED_OMISSION_DETAILS, POINTER_CACHE_CONTROL, POINTER_DEADLINE_MS, supabaseReleaseStorage } =
+  await import('../build-release');
 type ReleaseStorage = import('../build-release').ReleaseStorage;
 
 const TENANT = '00000000-0000-4000-8000-00000000a009';
@@ -185,12 +186,18 @@ function memoryStorage() {
 }
 
 let mem: ReturnType<typeof memoryStorage>;
-const build = () => buildRelease(TENANT, { storage: mem.storage, mediaUrl, now });
+/** The worker's clock (ms): begin_release succeeds at 0; `clockAt` is what it reads after that. */
+let clockAt: number;
+let clockReads: number;
+const clock = () => (clockReads++ === 0 ? 0 : clockAt);
+const build = () => buildRelease(TENANT, { storage: mem.storage, mediaUrl, now, clock });
 const finishCalls = () => calls.filter((c) => c.fn === 'worker_finish_release').map((c) => c.args);
 
 beforeEach(() => {
   calls.length = 0;
   alertMock.mockClear();
+  clockAt = 1_000;
+  clockReads = 0;
   mem = memoryStorage();
   mem.objects.set(`media-private/${TENANT}/${A1}/a.jpg`, { body: new Uint8Array([1]) });
   mem.objects.set(`media-private/${TENANT}/${A2}/a.jpg`, { body: new Uint8Array([2]) });
@@ -216,9 +223,18 @@ beforeEach(() => {
     worker_release_snapshot: () => ({
       data: { release: { id: RELEASE, tenant_id: TENANT, number: 3, status: 'building' }, tenant: { id: TENANT, slug: 'prufa' }, ...snapshot },
     }),
+    worker_pointer_check: () => ({ data: [{ building: true, latest_delivered: null }] }),
     worker_finish_release: () => ({ data: null }),
   };
 });
+
+const OLD_POINTER: Pointer = { format: 1, tenant: 'prufa', release: 2, bundle: 'releases/2.json', generatedAt: STAMP };
+/** A delivered release 2 whose bundle and pointer are in storage. */
+const withPreviousRelease = () => {
+  mem.put('delivery/prufa/releases/2.json', { format: 1, tenant: 'prufa', release: 2, generatedAt: STAMP, entries: {} });
+  mem.put('delivery/prufa/current.json', OLD_POINTER);
+  previous = { id: 'prev', number: 2, bundle_path: 'prufa/releases/2.json', status: 'delivered' };
+};
 
 describe('buildRelease: delivery', () => {
   it('writes the bundle, reads it back, writes the pointer, reads it back, then finishes delivered', async () => {
@@ -236,6 +252,8 @@ describe('buildRelease: delivery', () => {
       `copy media-private/${TENANT}/${A1}/a.jpg -> media-public/prufa/${A1}/a.jpg`,
       'upload delivery/prufa/releases/3.json',
       'download delivery/prufa/releases/3.json',
+      // The current pointer is read before it is replaced (decision 37.1 (c)); none yet here.
+      'download delivery/prufa/current.json',
       'upload delivery/prufa/current.json',
       'download delivery/prufa/current.json',
     ]);
@@ -265,8 +283,10 @@ describe('buildRelease: delivery', () => {
       'worker_begin_release',
       'worker_previous_release',
       'worker_release_snapshot',
+      'worker_pointer_check',
       'worker_finish_release',
     ]);
+    expect(calls.find((c) => c.fn === 'worker_pointer_check')!.args).toEqual({ p_release_id: RELEASE });
     expect(alertMock).not.toHaveBeenCalled();
   });
 
@@ -301,14 +321,14 @@ describe('buildRelease: delivery', () => {
 
   it('reads the previous release right after beginning and returns its bundle', async () => {
     const old: Bundle = { format: 1, tenant: 'prufa', release: 2, generatedAt: STAMP, entries: {} };
-    mem.put('delivery/prufa/releases/2.json', old);
-    previous = { id: 'prev', number: 2, bundle_path: 'prufa/releases/2.json', status: 'delivered' };
+    withPreviousRelease();
 
     const result = await build();
 
     expect(result.status).toBe('delivered');
     expect(result.previousBundle).toEqual(old);
     expect(mem.ops[0]).toBe('download delivery/prufa/releases/2.json');
+    expect(mem.json<Pointer>('delivery/prufa/current.json').release).toBe(3);
     expect(calls.map((c) => c.fn).slice(0, 3)).toEqual(['worker_begin_release', 'worker_previous_release', 'worker_release_snapshot']);
   });
 
@@ -439,23 +459,44 @@ describe('buildRelease: busy and failures', () => {
     expect(mem.ops).toEqual([]);
   });
 
-  const expectFailed = async (step: string, pointerWritten: boolean | null) => {
+  const expectFailed = async (step: string, pointerWritten: boolean | null, code = 'build_failed') => {
     const result = await build();
     expect(result).toMatchObject({ status: 'failed', releaseId: RELEASE, number: 3 });
     const finish = finishCalls();
     expect(finish).toHaveLength(1);
     expect(finish[0]).toMatchObject({ p_status: 'failed', p_bundle_path: null, p_request_ids: null, p_public_assets: null });
-    expect(finish[0]!.p_error).toMatchObject({ code: 'build_failed', step, pointerWritten });
-    expect(alertMock).toHaveBeenCalledWith('release.failed', expect.objectContaining({ tenantId: TENANT, releaseId: RELEASE, step }));
+    expect(finish[0]!.p_error).toMatchObject({ code, step, pointerWritten });
+    expect(alertMock).toHaveBeenCalledWith('release.failed', expect.objectContaining({ tenantId: TENANT, releaseId: RELEASE, code, step, pointerWritten }));
     return result;
   };
 
   it('a pointer upload failure leaves the pointer at the old release and fails the release', async () => {
-    mem.put('delivery/prufa/current.json', { format: 1, tenant: 'prufa', release: 2, bundle: 'releases/2.json', generatedAt: STAMP });
+    mem.put('delivery/prufa/current.json', OLD_POINTER);
     mem.fail.upload = (p) => p.endsWith('current.json');
 
     await expectFailed('pointer_upload', false);
     expect(mem.json<Pointer>('delivery/prufa/current.json').release).toBe(2);
+  });
+
+  // Task 20 quality r1, Minor 1: the other two states of pointerWritten.
+  it('a pointer upload that throws after the object was stored records the pointer as written', async () => {
+    const upload = mem.storage.upload;
+    mem.storage.upload = async (bucket, path, body, o) => {
+      await upload(bucket, path, body, o);
+      if (path.endsWith('current.json')) throw new Error('connection reset after the write');
+    };
+
+    await expectFailed('pointer_upload', true);
+    expect(mem.json<Pointer>('delivery/prufa/current.json').release).toBe(3);
+  });
+
+  it('a pointer upload failure whose read-back also fails records pointerWritten as unknown (null)', async () => {
+    mem.put('delivery/prufa/current.json', OLD_POINTER);
+    mem.fail.upload = (p) => p.endsWith('current.json');
+    let pointerReads = 0;
+    mem.fail.download = (p) => p.endsWith('current.json') && ++pointerReads > 1;
+
+    await expectFailed('pointer_upload', null);
   });
 
   it('a bundle that reads back different fails before the pointer is written', async () => {
@@ -483,7 +524,7 @@ describe('buildRelease: busy and failures', () => {
     await expectFailed('bundle_upload', false);
   });
 
-  it('a previous bundle that cannot be read fails the release', async () => {
+  it('a previous bundle that cannot be read fails the release (an alert, as before Task 30)', async () => {
     previous = { id: 'prev', number: 2, bundle_path: 'prufa/releases/2.json', status: 'delivered' };
     await expectFailed('previous_bundle', false);
     expect(mem.ops).toEqual(['download delivery/prufa/releases/2.json']);
@@ -496,7 +537,8 @@ describe('buildRelease: busy and failures', () => {
     await expectFailed('module', false);
   });
 
-  it('a finish that fails after the pointer moved marks the release failed, recording the pointer as written', async () => {
+  it('a finish that fails after the pointer moved marks the release failed and leaves the pointer as it is (no repair)', async () => {
+    withPreviousRelease();
     let first = true;
     handlers.worker_finish_release = () => {
       if (first) {
@@ -510,6 +552,151 @@ describe('buildRelease: busy and failures', () => {
     const finish = finishCalls();
     expect(finish.map((f) => f.p_status)).toEqual(['delivered', 'failed']);
     expect(finish[1]!.p_error).toMatchObject({ code: 'build_failed', step: 'finish', pointerWritten: true });
+    // Decision 37.1 (d): the pointer stays at 3; it is never written back to 2.
+    expect(mem.json<Pointer>('delivery/prufa/current.json').release).toBe(3);
+    expect(mem.ops.filter((o) => o === 'upload delivery/prufa/current.json')).toHaveLength(1);
+    expect(alertMock).toHaveBeenCalledWith('release.failed', expect.objectContaining({ step: 'finish', pointerWritten: true }));
+  });
+});
+
+// Decisions 36.2 and 37.1: the pointer only ever moves forward, and a release the sweep failed as
+// stale is never revived.
+describe('buildRelease: the pointer only moves forward', () => {
+  const expectRefused = async (step: string) => {
+    const result = await build();
+    expect(result).toMatchObject({ status: 'failed', releaseId: RELEASE, number: 3 });
+    // current.json is unchanged: never uploaded.
+    expect(mem.ops).not.toContain('upload delivery/prufa/current.json');
+    expect(mem.json<Pointer>('delivery/prufa/current.json')).toEqual(OLD_POINTER);
+    expect(finishCalls()).toEqual([
+      expect.objectContaining({ p_status: 'failed', p_request_ids: null, p_public_assets: null }),
+    ]);
+    expect(finishCalls()[0]!.p_error).toMatchObject({ code: 'pointer_refused', step, pointerWritten: false });
+    expect(alertMock).toHaveBeenCalledWith(
+      'release.failed',
+      expect.objectContaining({ tenantId: TENANT, releaseId: RELEASE, number: 3, code: 'pointer_refused', step, pointerWritten: false }),
+    );
+    return result;
+  };
+
+  beforeEach(() => withPreviousRelease());
+
+  it(`(a) once ${POINTER_DEADLINE_MS} ms have passed since begin_release, no pointer is written`, async () => {
+    expect(POINTER_DEADLINE_MS).toBe(270_000);
+    clockAt = POINTER_DEADLINE_MS;
+    await expectRefused('pointer_deadline');
+  });
+
+  it('(a) just before the deadline the pointer is written', async () => {
+    clockAt = POINTER_DEADLINE_MS - 1;
+    expect((await build()).status).toBe('delivered');
+    expect(mem.json<Pointer>('delivery/prufa/current.json').release).toBe(3);
+  });
+
+  it('(b) a release that is no longer building (the sweep failed it) writes no pointer', async () => {
+    handlers.worker_pointer_check = () => ({ data: [{ building: false, latest_delivered: 2 }] });
+    await expectRefused('pointer_check');
+  });
+
+  it.each([3, 4])('(b) a delivered release numbered %i (≥ 3) writes no pointer', async (n) => {
+    handlers.worker_pointer_check = () => ({ data: [{ building: true, latest_delivered: n }] });
+    await expectRefused('pointer_check');
+  });
+
+  it('(b) a check that cannot be made writes no pointer', async () => {
+    handlers.worker_pointer_check = () => ({ error: { code: '57014', message: 'canceling statement due to statement timeout' } });
+    const result = await build();
+    expect(result.status).toBe('failed');
+    expect(mem.json<Pointer>('delivery/prufa/current.json')).toEqual(OLD_POINTER);
+    expect(finishCalls()[0]!.p_error).toMatchObject({ code: 'build_failed', step: 'pointer_check', pointerWritten: false });
+  });
+
+  it.each([3, 9])('(c) a current pointer that already names release %i (≥ 3) is not replaced', async (n) => {
+    const newer = { ...OLD_POINTER, release: n, bundle: `releases/${n}.json` };
+    mem.put('delivery/prufa/current.json', newer);
+    const result = await build();
+    expect(result.status).toBe('failed');
+    expect(mem.ops).not.toContain('upload delivery/prufa/current.json');
+    expect(mem.json<Pointer>('delivery/prufa/current.json')).toEqual(newer);
+    expect(finishCalls()[0]!.p_error).toMatchObject({ code: 'pointer_refused', step: 'pointer_current', pointerWritten: false });
+  });
+
+  it('(c) a current pointer that cannot be read, while a delivered release exists, is not replaced', async () => {
+    mem.objects.delete('delivery/prufa/current.json');
+    const result = await build();
+    expect(result.status).toBe('failed');
+    expect(mem.ops).not.toContain('upload delivery/prufa/current.json');
+    expect(finishCalls()[0]!.p_error).toMatchObject({ code: 'build_failed', step: 'pointer_current', pointerWritten: false });
+  });
+
+  it('(c) a current pointer of another tenant is not replaced', async () => {
+    mem.put('delivery/prufa/current.json', { ...OLD_POINTER, tenant: 'onnur' });
+    expect((await build()).status).toBe('failed');
+    expect(mem.ops).not.toContain('upload delivery/prufa/current.json');
+    expect(finishCalls()[0]!.p_error).toMatchObject({ step: 'pointer_current' });
+  });
+
+  it('a finish refused after the pointer was written (the sweep failed the release) is a failed build with its own alert; the pointer stays', async () => {
+    handlers.worker_finish_release = () => ({ error: { code: 'P0001', message: 'forbidden' } });
+
+    const result = await build();
+
+    expect(result).toMatchObject({ status: 'failed', releaseId: RELEASE, number: 3 });
+    // The release is not building any more: nothing tries to finish it again.
+    expect(finishCalls().map((f) => f.p_status)).toEqual(['delivered']);
+    // Decision 37.1 (d): no repair. The pointer stays at 3; the requests stay unlinked, so the
+    // next sweep builds a newer release.
+    expect(mem.json<Pointer>('delivery/prufa/current.json').release).toBe(3);
+    expect(mem.ops.filter((o) => o === 'upload delivery/prufa/current.json')).toHaveLength(1);
+    expect(alertMock).toHaveBeenCalledTimes(1);
+    expect(alertMock).toHaveBeenCalledWith(
+      'release.finish_refused',
+      expect.objectContaining({ tenantId: TENANT, releaseId: RELEASE, number: 3, code: 'finish_refused', step: 'finish', pointerWritten: true }),
+    );
+  });
+
+  it('a finish refused before any pointer write (step failed earlier) is not retried either', async () => {
+    mem.fail.copy = () => true;
+    handlers.worker_finish_release = () => ({ error: { code: 'P0001', message: 'forbidden' } });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = await build();
+
+    expect(result.status).toBe('failed');
+    expect(finishCalls().map((f) => f.p_status)).toEqual(['failed']);
+    expect(alertMock).toHaveBeenCalledWith('release.failed', expect.objectContaining({ step: 'copy_media', pointerWritten: false }));
+  });
+});
+
+describe('buildRelease: what is stored', () => {
+  // Task 20 quality r1, Minor 6: a mass-invalid tenant does not bloat releases.error.
+  it(`keeps the details of the first ${MAX_STORED_OMISSION_DETAILS} omitted entries, and only the code of the rest`, async () => {
+    const id = (i: number) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
+    snapshot.entries = Array.from({ length: MAX_STORED_OMISSION_DETAILS + 5 }, (_, i) => entry(id(i), { title: 'x' }, { type: 'gone' }));
+    snapshot.requests = [];
+
+    const result = await build();
+
+    expect(result.status).toBe('delivered');
+    expect(result.omitted).toHaveLength(MAX_STORED_OMISSION_DETAILS + 5);
+    const stored = (finishCalls()[0]!.p_error as { omitted: Array<{ entryId: string; error: unknown }> }).omitted;
+    // Every omitted entry is stored (publication status needs each), the details only for the first ones.
+    expect(stored.map((o) => o.entryId)).toEqual(result.omitted.map((o) => o.entryId));
+    expect(stored[0]!.error).toEqual({ code: 'unknown_type', type: 'gone' });
+    expect(stored[MAX_STORED_OMISSION_DETAILS - 1]!.error).toEqual({ code: 'unknown_type', type: 'gone' });
+    expect(stored[MAX_STORED_OMISSION_DETAILS]!.error).toEqual({ code: 'unknown_type' });
+    expect((alertMock.mock.calls[0]![1] as { omitted: unknown }).omitted).toEqual(stored);
+  });
+
+  // Task 20 quality r1, Minor 7.
+  it('throws before beginning when no mediaUrl is given and NEXT_PUBLIC_SUPABASE_URL is empty', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', '');
+    try {
+      await expect(buildRelease(TENANT, { storage: mem.storage, now })).rejects.toThrow(/NEXT_PUBLIC_SUPABASE_URL/);
+      expect(calls).toEqual([]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 

@@ -111,7 +111,10 @@ select set_eq($$ select p.proname::text, pg_catalog.pg_get_function_result(p.oid
             ('worker_record_alert', 'void'),
             -- Task 21 (097_worker_sweep).
             ('worker_tenants_to_release', 'TABLE(tenant_id uuid)'),
-            ('worker_deliveries_to_retry', 'TABLE(release_id uuid, tenant_id uuid, tenant_slug text, release_number integer, bundle_path text, previous_bundle_path text, site_id uuid, notify_status text, notify_attempts integer, live_status text, requests jsonb)') $$,
+            ('worker_deliveries_to_retry', 'TABLE(release_id uuid, tenant_id uuid, tenant_slug text, release_number integer, bundle_path text, previous_bundle_path text, site_id uuid, notify_status text, notify_attempts integer, live_status text, requests jsonb)'),
+            -- Task 30 (098_worker_recovery).
+            ('worker_fail_stale_releases', 'TABLE(release_id uuid, tenant_id uuid, number integer, created_at timestamp with time zone)'),
+            ('worker_pointer_check', 'TABLE(building boolean, latest_delivered integer)') $$,
   'worker and admin functions: return types, and no others');
 select is((select pg_catalog.pg_get_function_arguments('api.worker_claim_requests(integer)'::regprocedure)),
   'p_limit integer DEFAULT 10', 'worker_claim_requests: p_limit defaults to 10');
@@ -653,7 +656,12 @@ select is(array(select (x ->> 'id')::uuid from snap, jsonb_array_elements(j -> '
 select throws_ok($$ select api.worker_release_snapshot(gen_random_uuid()) $$, 'P0001', 'not_found',
   'worker_release_snapshot: an unknown release is not_found');
 
--- worker_finish_release: everything scoped to the release's tenant.
+-- worker_finish_release: everything scoped to the release's tenant. Task 20
+-- replaced the function (20261102001200_release_build.sql): 'delivered' needs a
+-- bundle path, and 'failed' links no requests and no assets (both 22023, pinned
+-- in 096_release_build), so a failed build's requests wait for the next build.
+-- Only a building release can be finished, so a release the sweep failed as
+-- stale cannot be revived by a late worker (Task 30, 098_worker_recovery).
 select throws_ok($$ select api.worker_finish_release((select id from ids where name = 'labak3'), 'building', null, null, null, null) $$,
   '22023', 'p_status must be delivered or failed', 'finish: status must be delivered or failed');
 select throws_ok($$ select api.worker_finish_release((select id from ids where name = 'labak3'), 'delivered', null, null, null, '{}') $$,
