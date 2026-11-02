@@ -64,6 +64,14 @@ alter table cms.revisions
   add constraint revisions_data_check
   check (jsonb_typeof(data) = 'object' and octet_length(data::text) <= 1048576);
 
+-- Plan decision 31 (Einar, 2026-11-02, "Grant one column"): a row lock needs
+-- UPDATE privilege on at least one column of the table, and Task 6 gave
+-- service_role SELECT only on drafts. This grant exists only so that
+-- worker_commit_publish can lock the draft FOR UPDATE (§6.2 step 1); the worker
+-- never updates drafts. updated_at is the column whose value the draft
+-- triggers own anyway (drafts_bump_version sets it to now()).
+grant update (updated_at) on cms.drafts to service_role;
+
 -- ---------------------------------------------------------------------------
 -- Claim (§6.1, §6.3): pending requests, and validating requests whose claim is
 -- older than 5 minutes (a worker that died mid-request), oldest first, up to
@@ -256,6 +264,8 @@ begin
   end if;
 
   -- Step 5: extract once, lock the targets, then check them in a new statement.
+  -- (unnest with several arrays is special FROM syntax and cannot be
+  -- schema-qualified; with search_path = '' it still resolves to pg_catalog.)
   select pg_catalog.array_agg(x.path order by x.path), pg_catalog.array_agg(x.ref order by x.path),
          pg_catalog.array_agg(x.kind order by x.path)
     into v_paths, v_refs, v_kinds
@@ -263,7 +273,7 @@ begin
   select pg_catalog.array_agg(x.ref) filter (where x.kind = 'entry'),
          pg_catalog.array_agg(x.ref) filter (where x.kind = 'asset')
     into v_entry_ids, v_asset_ids
-  from pg_catalog.unnest(v_refs, v_kinds) as x (ref, kind);
+  from unnest(v_refs, v_kinds) as x (ref, kind);
   perform 1 from cms.entries t
   where t.tenant_id = v_request.tenant_id and t.id = any (v_entry_ids)
   order by t.id
@@ -282,7 +292,7 @@ begin
                      end)
          order by x.path)
     into v_bad
-  from pg_catalog.unnest(v_paths, v_refs, v_kinds) as x (path, ref, kind)
+  from unnest(v_paths, v_refs, v_kinds) as x (path, ref, kind)
   left join cms.entries te on x.kind = 'entry' and te.tenant_id = v_request.tenant_id and te.id = x.ref
   left join cms.assets ta on x.kind = 'asset' and ta.tenant_id = v_request.tenant_id and ta.id = x.ref
   where case
