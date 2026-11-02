@@ -137,8 +137,9 @@ select is_empty($$ select c.relname from pg_class c join pg_namespace n on n.oid
 -- checks above cannot pass because a table is missing.
 select set_eq($$ select c.relname::text from pg_class c join pg_namespace n on n.oid = c.relnamespace
   where n.nspname = 'cms' and c.relkind in ('r', 'p') and c.relname = any (tests.tenant_tables()) $$,
-  array['memberships', 'entries', 'drafts', 'revisions', 'draft_refs', 'revision_refs', 'assets'],
-  'tenant tables created so far: memberships, entries, drafts, revisions, draft_refs, revision_refs, assets');
+  array['memberships', 'entries', 'drafts', 'revisions', 'draft_refs', 'revision_refs', 'assets',
+        'publish_requests', 'releases', 'sites', 'site_deliveries'],
+  'tenant tables created so far: all eleven of the §4.3 list');
 -- Every foreign key between two tenant tables (§4.1 rule 3, the §4.3 list) pairs
 -- tenant_id with tenant_id, so a cross-tenant reference cannot exist.
 select is_empty($$ select c.conname from pg_constraint c
