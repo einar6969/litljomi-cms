@@ -159,3 +159,49 @@ describe('scanEntryMarkers: complete', () => {
     expect(performance.now() - started).toBeLessThan(1000);
   });
 });
+
+// Task 21 security r2, Major: a search whose result is discarded and repeated from a later start, once
+// per construct, makes the scan quadratic. Each repeated construct is timed at four sizes up to ~2 MB
+// (best of three runs, against pauses under parallel test load): every step must stay under the
+// bound, and 4× the input must take under 10× the time (with a floor, so millisecond timings do not
+// make the ratio noisy). The sizes grow only while the scan stays linear, so a quadratic scan fails
+// at a small size instead of running for minutes.
+describe('linear scan on repeated constructs (Task 21 security r2)', () => {
+  const sizes = [31_250, 125_000, 500_000, 2_000_000];
+  const once = (html: string) => {
+    const started = performance.now();
+    scanEntryMarkers(html);
+    parseReleaseMarker(html);
+    return performance.now() - started;
+  };
+  const timeOf = (html: string) => {
+    const first = once(html);
+    return first >= 1500 ? first : Math.min(first, once(html), once(html));
+  };
+  const build = (unit: string, size: number, tail: string) => unit.repeat(Math.ceil(size / unit.length)) + tail;
+  it.each([
+    ['comments closed by --!>, no -->', '<!--x--!>', ''],
+    ['comments closed by --!>, one --> at the end', '<!--x--!>', '-->'],
+    ['comments closed by -->, no --!>', '<!--x-->', ''],
+    ['comments closed by -->, one --!> at the end', '<!--x-->', '--!>'],
+    ['comments closed by both kinds in turn', '<!--x--><!--y--!>', ''],
+    ['doctypes', '<!x>', ''],
+    ['processing instructions', '<?x>', ''],
+    ['end tags', '</x>', ''],
+    ['stray "<" in text', '< a', ''],
+    ['quoted attributes', `<a b="x" c='y' d=z>`, ''],
+    ['attributes with entities', '<a b="&amp;&#x41;&#65;&lt">', ''],
+    ['skipped elements', '<title>x</title>', ''],
+    ['skipped elements holding end tags', '<script></p></b></script>', ''],
+    ['skipped elements closed by an upper-case end tag', '<textarea></a></TEXTAREA >', ''],
+  ])('stays linear on %s', (_, unit, tail) => {
+    timeOf(build(unit, sizes[0]!, tail)); // warm-up
+    let previous = 0;
+    for (const size of sizes) {
+      const t = timeOf(build(unit, size, tail));
+      expect(t, `${size} chars`).toBeLessThan(1500);
+      if (previous !== 0) expect(t, `${size} chars after ${previous.toFixed(1)} ms`).toBeLessThan(10 * Math.max(previous, 20));
+      previous = t;
+    }
+  });
+});

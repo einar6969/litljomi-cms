@@ -93,19 +93,31 @@ function closingTagEnd(html: string, name: string, from: number): number {
   }
 }
 
+/** The position of the next occurrence of a needle, remembered between searches (-1: none). */
+type NextAt = { at?: number };
+
+/**
+ * `html.indexOf(needle, from)`, searching again only when the remembered occurrence lies before
+ * `from`: callers pass a `from` that never decreases, so each search starts past the previous
+ * result and all searches together read the page once (Task 21 security r2).
+ */
+function nextAt(html: string, needle: string, from: number, next: NextAt): number {
+  if (next.at === undefined || (next.at !== -1 && next.at < from)) next.at = html.indexOf(needle, from);
+  return next.at;
+}
+
 /**
  * Index just after the comment that starts at `lt` (`<!--`), or -1 when it never ends. Ends where a
  * browser ends it: `<!-->` and `<!--->` are empty comments, and `--!>` closes one like `-->`.
- * `bang` carries the position of the next `--!>` (-1: none) from one call to the next.
+ * `closers` carries the positions of the next `-->` and `--!>` from one call to the next, so a page
+ * of comments closed by one kind is not rescanned for the other kind per comment (linear).
  */
-function commentEnd(html: string, lt: number, bang: { at?: number }): number {
+function commentEnd(html: string, lt: number, closers: { dash: NextAt; bang: NextAt }): number {
   const body = lt + 4;
   if (html[body] === '>') return body + 1;
   if (html.startsWith('->', body)) return body + 2;
-  const a = html.indexOf('-->', body);
-  // The next `--!>` is remembered between comments, so a page without one is searched once (linear).
-  if (bang.at === undefined || (bang.at !== -1 && bang.at < body)) bang.at = html.indexOf('--!>', body);
-  const b = bang.at;
+  const a = nextAt(html, '-->', body, closers.dash);
+  const b = nextAt(html, '--!>', body, closers.bang);
   if (a === -1 && b === -1) return -1;
   if (b === -1 || (a !== -1 && a < b)) return a + 3;
   return b + 4;
@@ -120,13 +132,13 @@ function commentEnd(html: string, lt: number, bang: { at?: number }): number {
 function scan(html: string): { tags: Tag[]; complete: boolean } {
   const out: Tag[] = [];
   const n = html.length;
-  const bang: { at?: number } = {};
+  const closers = { dash: {}, bang: {} };
   let i = 0;
   while (i < n) {
     const lt = html.indexOf('<', i);
     if (lt === -1) break;
     if (html.startsWith('<!--', lt)) {
-      const end = commentEnd(html, lt, bang);
+      const end = commentEnd(html, lt, closers);
       if (end === -1) return { tags: out, complete: false };
       i = end;
       continue;
