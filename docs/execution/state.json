@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T04:03:10.149Z",
+  "updatedAt": "2026-11-02T04:06:25.002Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -353,7 +353,7 @@
     },
     {
       "id": 14,
-      "status": "blocked",
+      "status": "in_review",
       "commits": [
         "8452545"
       ],
@@ -382,10 +382,10 @@
           "text": "Contradiction: spec §3.1 says packages/rich-text may depend on none (React as peer); plan Task 14 (and commit 8452545) adds zod and @tiptap/core, pm, starter-kit, extension-link, extension-image, and sites import the same entry point. Spec wins; waiting for Einar's ruling. Also open: security r1 Major (rel missing on upper-case/odd-scheme external links) and the ordered-list defect.",
           "at": "2026-11-02T04:03:10.149Z",
           "previousStatus": "in_review",
-          "resolvedAt": null
+          "resolvedAt": "2026-11-02T04:06:25.002Z"
         }
       ],
-      "notes": "",
+      "notes": "Blocked 2026-11-02 on a spec/plan contradiction (§3.1 rich-text deps). Ruled by Einar in chat: \"Amend spec, split entry\" and \"Rule now; continue both\" (decision 23; spec §3.1 revised). Unblocked for fix round 2.",
       "startedAt": "2026-11-02T03:52:35.058Z"
     },
     {
