@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T11:00:26.385Z",
+  "updatedAt": "2026-11-02T11:53:52.304Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -816,19 +816,42 @@
     },
     {
       "id": 20,
-      "status": "in_progress",
+      "status": "done",
       "commits": [
         "6129288",
         "2803b63"
       ],
-      "reviews": {},
+      "reviews": {
+        "spec": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-20-r1-spec.md",
+          "at": "2026-11-02T11:03:00.373Z",
+          "atCommits": 2
+        },
+        "security": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-20-r1-security.md",
+          "at": "2026-11-02T11:06:18.266Z",
+          "atCommits": 2
+        },
+        "quality": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-20-r1-quality.md",
+          "at": "2026-11-02T11:08:15.375Z",
+          "atCommits": 2
+        }
+      },
       "gatesUsed": [
         "G0",
         "G1"
       ],
       "blockers": [],
-      "notes": "",
-      "startedAt": "2026-11-02T10:29:54.585Z"
+      "notes": "Phase 3 Lane A, high tier (Opus). Implemented in .worktrees/lane-a-alt from Task 19's head 7c90242: WIP 6129288, paused for Task 19's fix (merged as 6ffb4b2), final 2803b63. buildRelease(tenantId, options?) per §7.1 and decision 35; storage-paths; entryContentHash in packages/schema; canonicalHttpsUrl and credential refusal; canonicalJson hardening; migration 20261102001200_release_build.sql (delivered needs a bundle path; failed links no requests or assets) with pgTAP 096; demo-site fixture regenerated with the §7.2 hash; cleared rows 51, 57, 72 (copy), 79, 89, 99, 104. Decision 34.4 probe: Storage serves the bundle with `public, max-age=31536000, immutable` and the pointer with `public, max-age=30` (headers option), so no spec amendment; recorded in docs/verification/m1-gates.md. Controller ratified: release.failed alert on every failed build; optional BuildOptions argument. Reviews r1: spec pass, security pass (verified headers with curl, media path safety, withdrawal; availability Minors to C2), quality pass. Merged into m1/phase-1 as 342d42d (--no-ff, clean). Full suite by the controller after the merge: harness 32/32; lint, typecheck, check:slugs exit 0; Vitest 38 files 622 tests; demo-site test:e2e 6/6; db:reset ok, db:test Files=15 Tests=1313 PASS; test:integration 7 files 70 tests + cms 3 files 22 tests. Process notes: the implementer once ran `supabase test db` directly on one file (CLAUDE.md forbids it; stack reset since); a sandboxed `supabase --version` was refused a write to ~/.supabase (not needed, not retried).",
+      "startedAt": "2026-11-02T10:29:54.585Z",
+      "doneAt": "2026-11-02T11:53:52.277Z"
     },
     {
       "id": 26,
@@ -863,12 +886,18 @@
     },
     {
       "id": 21,
-      "status": "pending",
-      "commits": [],
+      "status": "in_progress",
+      "commits": [
+        "49336e7"
+      ],
       "reviews": {},
-      "gatesUsed": [],
+      "gatesUsed": [
+        "G0",
+        "G1"
+      ],
       "blockers": [],
-      "notes": ""
+      "notes": "",
+      "startedAt": "2026-11-02T11:03:00.401Z"
     },
     {
       "id": 22,
