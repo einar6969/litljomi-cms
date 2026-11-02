@@ -9,7 +9,8 @@
   },
   "dependencies": {
     "@litljomi/cms-schema": "workspace:*",
-    "@litljomi/module-demo": "workspace:*"
+    "@litljomi/module-demo": "workspace:*",
+    "@litljomi/module-labak": "workspace:*"
   },
   "devDependencies": {
     "vite-node": "^3.2.4"

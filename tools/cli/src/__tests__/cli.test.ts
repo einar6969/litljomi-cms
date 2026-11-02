@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import demo from '@litljomi/module-demo';
+import labak from '@litljomi/module-labak';
 import { renderTypes, runCli } from '../cli.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
@@ -35,6 +36,13 @@ describe('runCli gen-types', () => {
     expect(code).toBe(0);
     expect(readFileSync(out, 'utf8')).toBe(renderTypes(demo));
     expect(lines.join('\n')).toContain(out);
+  });
+  it('generates the labak module types', async () => {
+    const out = join(tmp(), 'labak.ts');
+    expect(await runCli(['gen-types', '--module', 'labak', '--out', out], { log: () => {} })).toBe(0);
+    const text = readFileSync(out, 'utf8');
+    expect(text).toBe(renderTypes(labak));
+    expect(text).toContain('export interface NewsEntry {');
   });
   it('fails with usage on an unknown command, a missing flag or a bad module name', async () => {
     const errors: string[] = [];

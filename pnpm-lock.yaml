@@ -233,6 +233,9 @@ importers:
       '@litljomi/module-demo':
         specifier: workspace:*
         version: link:../../modules/demo
+      '@litljomi/module-labak':
+        specifier: workspace:*
+        version: link:../../modules/labak
     devDependencies:
       vite-node:
         specifier: ^3.2.4
