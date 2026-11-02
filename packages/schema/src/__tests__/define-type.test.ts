@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { date, defineType, extendType, link, text } from '../index.ts';
+import { date, defineType, extendType, image, link, text } from '../index.ts';
 
 const t = defineType({
   name: 't',
@@ -65,5 +65,38 @@ describe('extendType', () => {
   it('rejects unknown overrides and duplicate extra fields', () => {
     expect(() => extendType(t, { fieldOverrides: { nope: { label: 'x' } } })).toThrow();
     expect(() => extendType(t, { extraFields: { title: link({ label: 'x' }) } })).toThrow();
+  });
+});
+
+describe('type metadata', () => {
+  const A = '11111111-1111-4111-8111-111111111111';
+  const withMedia = defineType({
+    name: 'm',
+    version: 3,
+    label: 'M',
+    fields: { title: text({ label: 'T' }), pic: image({ label: 'I' }), when: date({ label: 'D' }) },
+    preview: { title: 'title', media: 'pic' },
+    orderBy: 'when',
+    transforms: { 2: (d) => ({ ...(d as object), upgraded: true }) },
+  });
+
+  it('keeps preview.media', () => {
+    expect(withMedia.preview).toEqual({ title: 'title', media: 'pic' });
+    expect(withMedia.draftValidator().safeParse({ pic: { _ref: A, _kind: 'asset', alt: '' } }).success).toBe(true);
+  });
+
+  it('extendType keeps name, version, preview, orderBy and transforms', () => {
+    const ext = extendType(withMedia, { label: 'M2', fieldOverrides: { pic: { label: 'Mynd' } } });
+    expect(ext.name).toBe('m');
+    expect(ext.version).toBe(3);
+    expect(ext.preview).toEqual({ title: 'title', media: 'pic' });
+    expect(ext.orderBy).toBe('when');
+    expect(ext.transforms).toBe(withMedia.transforms);
+    expect(ext.transforms?.[2]?.({})).toEqual({ upgraded: true });
+  });
+
+  it('draft date rejects the empty string (empty is stored as null)', () => {
+    expect(withMedia.draftValidator().safeParse({ when: '' }).success).toBe(false);
+    expect(withMedia.draftValidator().safeParse({ when: null }).success).toBe(true);
   });
 });

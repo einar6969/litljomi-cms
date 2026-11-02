@@ -109,7 +109,32 @@ const listItemSchema: z.ZodType<RichTextListItem> = z.lazy(() =>
   z.strictObject({ type: z.literal('listItem'), content: z.array(blockSchema).min(1) }),
 ) as z.ZodType<RichTextListItem>;
 
-export const richTextDocSchema: z.ZodType<RichTextDoc> = z.strictObject({
+/**
+ * Maximum nesting depth of a document: the `doc` node is level 1, each `content` level adds one.
+ * Real documents stay below about 10; Zod's recursive parser overflows the stack at a few
+ * thousand levels, so deeper documents are rejected up front instead of throwing.
+ */
+export const RICH_TEXT_MAX_DEPTH = 50;
+
+/** Iterative (no recursion), so it is safe on arbitrarily deep input. */
+function exceedsMaxDepth(root: unknown): boolean {
+  const stack: Array<[unknown, number]> = [[root, 1]];
+  while (stack.length > 0) {
+    const [node, depth] = stack.pop()!;
+    if (typeof node !== 'object' || node === null) continue;
+    if (depth > RICH_TEXT_MAX_DEPTH) return true;
+    const content = (node as { content?: unknown }).content;
+    if (Array.isArray(content)) for (const child of content) stack.push([child, depth + 1]);
+  }
+  return false;
+}
+
+const docShape = z.strictObject({
   type: z.literal('doc'),
   content: z.array(blockSchema).min(1),
-}) as unknown as z.ZodType<RichTextDoc>;
+});
+
+export const richTextDocSchema: z.ZodType<RichTextDoc> = z
+  .unknown()
+  .refine((v) => !exceedsMaxDepth(v), `nesting deeper than ${RICH_TEXT_MAX_DEPTH} levels`)
+  .pipe(docShape) as unknown as z.ZodType<RichTextDoc>;

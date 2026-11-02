@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { richTextDocSchema } from '../doc-schema.ts';
+import { RICH_TEXT_MAX_DEPTH, richTextDocSchema } from '../doc-schema.ts';
 
 const A = '11111111-1111-4111-8111-111111111111';
 const p = (text: string, marks?: unknown[]) => ({
@@ -78,5 +78,28 @@ describe('richTextDocSchema', () => {
     const bad = { type: 'orderedList', attrs: { start: 0 }, content: [li] };
     expect(richTextDocSchema.safeParse(doc(bad)).success).toBe(false);
     expect(richTextDocSchema.safeParse(doc({ ...bad, attrs: { start: 1, type: 'a' } })).success).toBe(false);
+  });
+});
+
+describe('nesting depth cap', () => {
+  const nest = (n: number) => {
+    let node: unknown = p('x');
+    for (let i = 0; i < n; i++) node = { type: 'blockquote', content: [node] };
+    return doc(node);
+  };
+  it('accepts nesting up to the cap and rejects deeper nesting without throwing', () => {
+    expect(RICH_TEXT_MAX_DEPTH).toBe(50);
+    // doc + n blockquotes + paragraph + text node = n + 3 levels
+    expect(richTextDocSchema.safeParse(nest(RICH_TEXT_MAX_DEPTH - 3)).success).toBe(true);
+    expect(richTextDocSchema.safeParse(nest(RICH_TEXT_MAX_DEPTH - 2)).success).toBe(false);
+  });
+  it('returns success: false for 3,000 nested blockquotes instead of throwing', () => {
+    const r = richTextDocSchema.safeParse(nest(3000));
+    expect(r.success).toBe(false);
+  });
+  it('counts list nesting too', () => {
+    let node: unknown = p('x');
+    for (let i = 0; i < 30; i++) node = { type: 'bulletList', content: [{ type: 'listItem', content: [node] }] };
+    expect(richTextDocSchema.safeParse(doc(node)).success).toBe(false);
   });
 });

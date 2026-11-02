@@ -13,18 +13,18 @@ export interface TypeDefinition<F extends Record<string, AnyFieldKind>> {
   transforms?: Record<number, (data: unknown) => unknown>;
 }
 
-export interface ContentType<F extends Record<string, AnyFieldKind> = Record<string, AnyFieldKind>> {
-  name: string;
-  version: number;
-  label: string;
-  fields: F;
-  preview: { title: keyof F & string; media?: keyof F & string };
-  orderBy: keyof F & string;
-  transforms?: Record<number, (data: unknown) => unknown>;
+// F defaults to `any`, not `Record<string, AnyFieldKind>`: `keyof F` in `preview` and `orderBy` makes
+// F invariant, so a type built with specific field names would not be assignable to the bare
+// `ContentType` that projectEntry, generateDeliveryTypes and module manifests take.
+export interface ContentType<F extends Record<string, AnyFieldKind> = any> extends TypeDefinition<F> {
   /** Every field optional, types checked, unknown keys stripped. */
   draftValidator(): z.ZodObject<any>;
   /** Required fields enforced, unknown keys stripped. */
   publishValidator(): z.ZodObject<any>;
+  /**
+   * The `title` and `sort_at` columns. Each is the named field's value when it is a non-empty
+   * string and null otherwise, so a non-string field (a number, an image) yields null.
+   */
   queryColumns(data: unknown): { title: string | null; sortAt: string | null };
 }
 

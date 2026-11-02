@@ -5,5 +5,7 @@ export type Ref<K extends RefKind> = { _ref: string; _kind: K };
 
 /** `{ _ref: <uuid>, _kind }` as stored inside JSON (spec §4.3). Extra keys are rejected. */
 export function refSchema<K extends RefKind>(kind: K): z.ZodType<Ref<K>> {
+  // z.strictObject infers `_kind` as the literal `K`, but TypeScript cannot relate a generic literal
+  // to `Ref<K>`, hence the cast through `unknown`; the runtime shape is exactly `Ref<K>`.
   return z.strictObject({ _ref: z.guid(), _kind: z.literal(kind) }) as unknown as z.ZodType<Ref<K>>;
 }

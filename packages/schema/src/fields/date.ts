@@ -15,6 +15,7 @@ function isCalendarDate(s: string): boolean {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
 }
 
+// An empty date is stored as null: the draft schema rejects '' like any other non-date string.
 export function date(o: DateOptions): FieldKind<string, string> {
   const required = o.required ?? false;
   const base = z.string().refine(isCalendarDate, 'expected YYYY-MM-DD');

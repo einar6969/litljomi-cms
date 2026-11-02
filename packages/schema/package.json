@@ -9,6 +9,7 @@
     "test": "vitest run --project schema --root ../.."
   },
   "dependencies": {
+    "@litljomi/rich-text": "workspace:*",
     "zod": "^4"
   }
 }

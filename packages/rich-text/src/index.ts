@@ -1,4 +1,5 @@
-export { richTextDocSchema } from './doc-schema.ts';
+export { RICH_TEXT_MAX_DEPTH, richTextDocSchema } from './doc-schema.ts';
+export { isHttpsUrl, isRootRelativePath } from './safe-url.ts';
 export type {
   RichTextBlock,
   RichTextDoc,

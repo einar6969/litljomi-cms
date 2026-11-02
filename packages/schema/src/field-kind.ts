@@ -1,10 +1,5 @@
 import type { z } from 'zod';
-
-/**
- * Declared here, implemented in Task 15 (asset and entry lookups).
- */
-// Task 15 adds `asset()` and `entry()`; until then it is an empty contract.
-export interface ProjectionContext {}
+import type { ProjectionContext } from './projection.ts';
 
 export interface FieldOptionOverrides {
   label?: string;
