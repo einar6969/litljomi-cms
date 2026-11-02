@@ -274,7 +274,8 @@ describe('processRequestById (unpublish)', () => {
 describe('processPendingRequests', () => {
   it('claims and processes pending requests, each with its own outcome', async () => {
     // Leftover pending requests from other suites would be claimed too; clear them first so the
-    // assertion is about this test's requests only.
+    // assertion is about this test's requests only. This changes shared state: it relies on no
+    // other suite running a claim concurrently (the integration suites run one file at a time).
     await ownerQuery(`update cms.publish_requests set status = 'failed' where status in ('pending', 'validating')`);
     const image = await labakAsset();
     const good = await newsEntry(validNews(image));
@@ -285,6 +286,7 @@ describe('processPendingRequests', () => {
 
     const outcomes = await processPendingRequests();
 
+    // worker_claim_requests claims oldest first, so good (requested first) comes before bad.
     expect(outcomes.map((o) => [o.requestId, o.status])).toEqual([
       [goodId, 'committed'],
       [badId, 'failed_validation'],

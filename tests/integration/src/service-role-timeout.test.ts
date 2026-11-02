@@ -66,7 +66,9 @@ describe('service_role statement timeout over REST (decision 34.1)', () => {
       const [waiting] = await waitForRestBackend();
       expect(waiting).toBeDefined();
       await sleep(6000 - (Date.now() - started));
-      await closeClient(holdRequest); // releases the request row; the call now waits on the entry row
+      // Releases the request row; the call now waits on the entry row. closeClient does nothing
+      // for a connection it already closed, so the finally below is safe.
+      await closeClient(holdRequest);
       const { error } = await call;
       const elapsed = Date.now() - started;
 
@@ -74,20 +76,21 @@ describe('service_role statement timeout over REST (decision 34.1)', () => {
       expect(error?.message).toBe('canceling statement due to statement timeout');
       expect(elapsed).toBeGreaterThanOrEqual(9_500);
       expect(elapsed).toBeLessThan(12_000);
+
+      // The cancelled call changed nothing: the request is still validating, with no revision.
+      const [after] = await ownerQuery<{ status: string; revision_id: string | null }>(
+        'select status, revision_id from cms.publish_requests where id = $1',
+        [request!.id],
+      );
+      expect(after).toEqual({ status: 'validating', revision_id: null });
     } finally {
       await closeClient(holdRequest);
       await closeClient(holdEntry);
+      // Leave no validating request for the other suites' claims, even when an assertion failed.
+      await ownerQuery(`update cms.publish_requests set status = 'failed', error = '{"code": "timeout_probe"}' where id = $1`, [
+        request!.id,
+      ]);
     }
-
-    // The cancelled call changed nothing: the request is still validating, with no revision.
-    const [after] = await ownerQuery<{ status: string; revision_id: string | null }>(
-      'select status, revision_id from cms.publish_requests where id = $1',
-      [request!.id],
-    );
-    expect(after).toEqual({ status: 'validating', revision_id: null });
-    await ownerQuery(`update cms.publish_requests set status = 'failed', error = '{"code": "timeout_probe"}' where id = $1`, [
-      request!.id,
-    ]);
   }, 30_000);
 });
 
