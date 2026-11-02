@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T02:33:35.694Z",
+  "updatedAt": "2026-11-02T02:35:36.725Z",
   "branch": "m1/phase-0",
   "tasks": [
     {
@@ -517,9 +517,9 @@
   },
   "checkpoints": {
     "C0": {
-      "status": "pending",
-      "report": null,
-      "at": null,
+      "status": "reported",
+      "report": "docs/execution/checkpoints/C0.md",
+      "at": "2026-11-02T02:35:36.725Z",
       "approvedByEinar": false
     },
     "C1": {
