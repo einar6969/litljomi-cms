@@ -104,7 +104,7 @@ describe('displayState: live (decision 35)', () => {
   it('never "Birt á vef ✓" for a tenant without an active site (no proof exists)', () => {
     const state = displayState(row({ site_count: 0, sites_notified: 0, sites_live_ok: 0 }));
     expect(state.label).not.toBe('Birt á vef ✓');
-    expect(state.tone).toBe('pending');
+    expect(state.tone).not.toBe('ok');
   });
 
   it('every combination maps to one of the §7.4 labels', () => {
@@ -222,6 +222,28 @@ describe('displayState: failed_validation, "Ekki hægt að birta: …"', () => {
   it('labels without options use the field keys', () => {
     const state = displayState(row({ status: 'failed_validation', error: { code: 'invalid_data', issues: [{ path: ['title'] }] } }));
     expect(state.label).toBe('Ekki hægt að birta: title');
+  });
+});
+
+describe('displayState: no active site (decision 39.3)', () => {
+  it('a delivered release in a tenant without an active site is "Enginn vefur tengdur", final, never a success', () => {
+    for (const action of ['publish', 'unpublish'] as const) {
+      const state = displayState(row({ action, site_count: 0, sites_notified: 0, sites_live_ok: 0, sites_not_confirmed: 0 }));
+      expect(state).toEqual({ label: 'Enginn vefur tengdur', tone: 'error' });
+      expect(isFinal(state)).toBe(true);
+    }
+  });
+
+  it('before delivery it is still "Í birtingu…", and an omitted publish is still "Birting á vef mistókst"', () => {
+    for (const release_status of [null, 'building', 'failed'] as const) {
+      expect(displayState(row({ site_count: 0, sites_notified: 0, sites_live_ok: 0, release_status })).label).toBe('Í birtingu…');
+    }
+    expect(displayState(row({ status: 'pending', site_count: 0, sites_notified: 0, sites_live_ok: 0 })).label).toBe('Í birtingu…');
+    expect(displayState(row({ omitted: true, site_count: 0, sites_notified: 0, sites_live_ok: 0 })).label).toBe('Birting á vef mistókst');
+  });
+
+  it('a tenant with an active site never shows it', () => {
+    for (const r of deliveredCombinations()) expect(displayState(r).label).not.toBe('Enginn vefur tengdur');
   });
 });
 

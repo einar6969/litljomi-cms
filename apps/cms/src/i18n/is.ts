@@ -121,6 +121,7 @@ export const is = {
     deliveryFailedDetail: 'Kerfisstjóra hefur verið gert viðvart.',
     notConfirmed: 'Ekki staðfest á vef',
     notConfirmedDetail: 'Færslan var send á vefinn en ekki tókst að staðfesta að hún birtist þar.',
+    noSite: 'Enginn vefur tengdur',
     requestFailed: 'Ekki tókst að senda beiðnina. Reyndu aftur.',
     statusUnavailable: 'Ekki tókst að sækja stöðu birtingar.',
   },

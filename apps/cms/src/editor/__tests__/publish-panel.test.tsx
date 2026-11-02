@@ -127,6 +127,22 @@ describe('PublishPanel', () => {
     expect(button(t.publish.unpublish)).toBeUndefined();
   });
 
+  it('shows "Enginn vefur tengdur" and stops polling when the tenant has no active site (decision 39.3)', async () => {
+    const noSite = live({ site_count: 0, sites_notified: 0, sites_live_ok: 0 });
+    const answers = [null, row({ site_count: 0 }), noSite];
+    const loadStatus = vi.fn(async () => answers.shift() ?? noSite);
+    await renderPanel({ loadStatus });
+    await act(async () => button(t.publish.publish)!.click());
+    await advance(0);
+    expect(stateText()).toBe(t.publish.inProgress);
+    await advance(POLL_MS);
+    expect(stateText()).toBe('Enginn vefur tengdur');
+    const calls = loadStatus.mock.calls.length;
+    await advance(POLL_MS * 5);
+    expect(loadStatus).toHaveBeenCalledTimes(calls);
+    expect(button(t.publish.publish)!.disabled).toBe(false);
+  });
+
   it('names the failing fields by their labels', async () => {
     const loadStatus = vi.fn(async () => row({ status: 'failed_validation', error: { code: 'invalid_data', issues: [{ path: ['title'] }] } }));
     await renderPanel({ loadStatus });

@@ -132,6 +132,37 @@ describe('SlugField', () => {
     expect($('[data-testid="slug-notice"]')?.textContent).toBe(text);
   });
 
+  it('shows the suggestion as a placeholder, so typing gives exactly what was typed (decision 39.3)', async () => {
+    const setSlug = vi.fn(async (_id: string, slug: string) => ({ ok: true as const, slug }));
+    await render(<SlugField entryId={ENTRY} initialSlug={null} title="Brauð ársins 2025" locked={false} setSlug={setSlug} />);
+    const input = $<HTMLInputElement>('#slug')!;
+    expect(input.value).toBe('');
+    expect(input.placeholder).toBe('braud-arsins-2025');
+    await type(input, 'minn-texti');
+    expect(input.value).toBe('minn-texti');
+    await act(async () => $<HTMLButtonElement>('button')!.click());
+    expect(setSlug).toHaveBeenCalledWith(ENTRY, 'minn-texti');
+    expect(input.value).toBe('minn-texti');
+  });
+
+  it('saves the suggestion when the field is left empty, and shows a saved slug as the value', async () => {
+    const setSlug = vi.fn(async (_id: string, slug: string) => ({ ok: true as const, slug }));
+    await render(<SlugField entryId={ENTRY} initialSlug="eldri" title="Nýr titill" locked={false} setSlug={setSlug} />);
+    const input = $<HTMLInputElement>('#slug')!;
+    expect(input.value).toBe('eldri');
+    expect($<HTMLButtonElement>('button')!.disabled).toBe(true);
+    await type(input, '');
+    expect(input.placeholder).toBe('nyr-titill');
+    await act(async () => $<HTMLButtonElement>('button')!.click());
+    expect(setSlug).toHaveBeenCalledWith(ENTRY, 'nyr-titill');
+    expect(input.value).toBe('nyr-titill');
+  });
+
+  it('cannot save an empty field without a suggestion', async () => {
+    await render(<SlugField entryId={ENTRY} initialSlug={null} title="" locked={false} setSlug={vi.fn()} />);
+    expect($<HTMLButtonElement>('button')!.disabled).toBe(true);
+  });
+
   it('shows the generic error when the action throws', async () => {
     const setSlug = vi.fn(async () => {
       throw new Error('network');
@@ -256,6 +287,17 @@ describe('RichTextField', () => {
     const r = t.editor.richText;
     expect(labels).toEqual([r.bold, r.italic, r.heading2, r.heading3, r.bulletList, r.orderedList, r.blockquote, r.hardBreak, r.link]);
     expect(container.querySelector('[role="textbox"]')?.getAttribute('aria-labelledby')).toBe('field-x-label');
+  });
+
+  it('gives the contenteditable its field label as its accessible name (decision 39.3)', async () => {
+    await render(<RichTextField {...field} value={undefined} onChange={vi.fn()} />);
+    await flush();
+    const textbox = container.querySelector('[role="textbox"]')!;
+    expect(textbox.getAttribute('contenteditable')).toBe('true');
+    // aria-labelledby names it in browsers; aria-label carries the same text for tools that only
+    // read the element's own attributes.
+    expect(container.querySelector(`#${textbox.getAttribute('aria-labelledby')}`)?.textContent).toBe('Reitur');
+    expect(textbox.getAttribute('aria-label')).toBe('Reitur');
   });
 
   it('cleans pasted Word-like HTML and saves a document that validates (review focus 2)', async () => {
