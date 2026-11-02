@@ -16,6 +16,18 @@ export default defineWorkspace([
   },
   {
     test: {
+      name: 'labak',
+      include: ['modules/labak/src/__tests__/**/*.test.ts'],
+    },
+  },
+  {
+    test: {
+      name: 'demo',
+      include: ['modules/demo/src/__tests__/**/*.test.ts'],
+    },
+  },
+  {
+    test: {
       name: 'rich-text',
       include: ['packages/rich-text/src/__tests__/**/*.test.{ts,tsx}'],
       environment: 'jsdom',

@@ -1,3 +1,4 @@
+import { isHttpsUrl, isRootRelativePath } from './safe-url.ts';
 import type { RichTextBlock, RichTextDoc, RichTextInline, RichTextListItem } from './doc-schema.ts';
 
 export interface RichTextResolver {
@@ -46,7 +47,7 @@ function projectInline(n: RichTextInline, r: RichTextResolver): ProjectedInline 
       marks.push({ type: 'link', attrs: { href: m.attrs.href } });
     } else {
       const path = r.entryPath(m.attrs.entry._ref);
-      if (path !== null) marks.push({ type: 'link', attrs: { href: path } });
+      if (path !== null && isRootRelativePath(path)) marks.push({ type: 'link', attrs: { href: path } });
     }
   }
   return marks.length > 0 ? { type: 'text', text: n.text, marks } : { type: 'text', text: n.text };
@@ -60,20 +61,25 @@ function projectBlock(b: RichTextBlock, r: RichTextResolver): ProjectedBlock | n
       return b.content
         ? { type: 'heading', attrs: b.attrs, content: b.content.map((n) => projectInline(n, r)) }
         : { type: 'heading', attrs: b.attrs };
-    case 'bulletList':
-      return { type: 'bulletList', content: b.content.map((i) => projectItem(i, r)) };
+    case 'bulletList': {
+      const content = projectItems(b.content, r);
+      return content.length > 0 ? { type: 'bulletList', content } : null;
+    }
     case 'orderedList': {
       // `start` is kept whenever present (even 1); `type` is always null and is dropped.
-      const content = b.content.map((i) => projectItem(i, r));
+      const content = projectItems(b.content, r);
+      if (content.length === 0) return null;
       return b.attrs?.start !== undefined
         ? { type: 'orderedList', attrs: { start: b.attrs.start }, content }
         : { type: 'orderedList', content };
     }
-    case 'blockquote':
-      return { type: 'blockquote', content: projectBlocks(b.content, r) };
+    case 'blockquote': {
+      const content = projectBlocks(b.content, r);
+      return content.length > 0 ? { type: 'blockquote', content } : null;
+    }
     case 'image': {
       const asset = r.asset(b.attrs.asset._ref);
-      if (asset === null) return null;
+      if (asset === null || !isHttpsUrl(asset.url)) return null;
       return {
         type: 'image',
         attrs: { src: asset.url, width: asset.width, height: asset.height, alt: b.attrs.alt, caption: b.attrs.caption },
@@ -85,14 +91,23 @@ function projectBlock(b: RichTextBlock, r: RichTextResolver): ProjectedBlock | n
 const projectBlocks = (bs: RichTextBlock[], r: RichTextResolver): ProjectedBlock[] =>
   bs.flatMap((b) => projectBlock(b, r) ?? []);
 
-const projectItem = (i: RichTextListItem, r: RichTextResolver): ProjectedListItem => ({
-  type: 'listItem',
-  content: projectBlocks(i.content, r),
-});
+const projectItems = (items: RichTextListItem[], r: RichTextResolver): ProjectedListItem[] =>
+  items.flatMap((i) => {
+    const content = projectBlocks(i.content, r);
+    return content.length > 0 ? [{ type: 'listItem' as const, content }] : [];
+  });
 
 /**
- * Resolves references: images get their delivery URL and size (or are dropped when the asset is
- * missing); entry links become path links (or lose the link mark when the entry has no path).
+ * Resolves references: images get their delivery URL and size; entry links become path links.
+ *
+ * Resolver output is checked, not trusted: an entry path must be root-relative (`/x`, not `//x`
+ * or `/\x`) and an asset URL must be `https:`. Anything else counts as unresolved: the image is
+ * dropped, the link mark is removed.
+ *
+ * Pruning rule: a container left with no content after that (a list item, a list, a blockquote,
+ * including ones emptied by a dropped child) is removed too, so the output never holds an empty
+ * `listItem`, list or `blockquote`. Paragraphs and headings may stay empty, as in the source. A
+ * document that loses all its blocks projects to `{ type: 'doc', content: [] }`.
  */
 export function projectRichText(doc: RichTextDoc, r: RichTextResolver): ProjectedRichTextDoc {
   return { type: 'doc', content: projectBlocks(doc.content, r) };

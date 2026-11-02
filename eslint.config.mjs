@@ -17,6 +17,15 @@ const modulePaths = [
   { regex: '^@litljomi/module-', message: MODULE_MESSAGE },
   { regex: '^(([@~]|\\.{1,2})/(.*/)?|#)?modules/(?!registry(\\.[^/]*)?$)', message: MODULE_MESSAGE },
 ];
+// Only the CMS app may import the Tiptap editor entry (decision 23).
+const EDITOR_MESSAGE = 'The rich-text editor entry (@litljomi/rich-text/editor) may only be imported by apps/cms.';
+const editorPaths = [{ regex: '^@litljomi/rich-text/editor(/|$)|(^|/)rich-text/src/tiptap(\\.[^/]*)?$', message: EDITOR_MESSAGE }];
+// A module reaches other code only through @litljomi/cms-schema, never another module (spec §3.1).
+const MODULE_TO_MODULE_MESSAGE = 'A module must not import another module.';
+const otherModulePaths = [
+  { regex: '^@litljomi/module-', message: MODULE_TO_MODULE_MESSAGE },
+  { regex: '(^|/)modules/', message: MODULE_TO_MODULE_MESSAGE },
+];
 const appPaths = [{ regex: '(^|/)apps/', message: APPS_MESSAGE }];
 
 // esquery regex literals cannot contain "/", so it is rewritten as the escape \x2f, which also
@@ -77,6 +86,8 @@ const syntax = (...entries) => ({ 'no-restricted-syntax': ['error', ...entries.f
 const privilegedSyntax = dynamicSyntax(privilegedPaths);
 const moduleSyntax = dynamicSyntax(modulePaths);
 const appSyntax = dynamicSyntax(appPaths);
+const editorSyntax = dynamicSyntax(editorPaths);
+const otherModuleSyntax = dynamicSyntax(otherModulePaths);
 
 export default tseslint.config(
   {
@@ -111,13 +122,16 @@ export default tseslint.config(
   {
     files: ['packages/**'],
     rules: {
-      ...imports(privilegedPaths, modulePaths, appPaths),
-      ...syntax(secretSyntax, privilegedSyntax, moduleSyntax, appSyntax),
+      ...imports(privilegedPaths, modulePaths, appPaths, editorPaths),
+      ...syntax(secretSyntax, privilegedSyntax, moduleSyntax, appSyntax, editorSyntax),
     },
   },
   {
     files: ['modules/**'],
-    rules: { ...imports(privilegedPaths, appPaths), ...syntax(secretSyntax, privilegedSyntax, appSyntax) },
+    rules: {
+      ...imports(privilegedPaths, appPaths, editorPaths, otherModulePaths),
+      ...syntax(secretSyntax, privilegedSyntax, appSyntax, editorSyntax, otherModuleSyntax),
+    },
   },
   // Same rules as the base block: undoes the apps/** module restriction for the registry only.
   {

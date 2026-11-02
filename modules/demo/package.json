@@ -1,0 +1,11 @@
+{
+  "name": "@litljomi/module-demo",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@litljomi/cms-schema": "workspace:*"
+  }
+}

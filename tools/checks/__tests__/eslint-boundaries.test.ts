@@ -341,3 +341,46 @@ describe('lint script', () => {
     }
   }, 30_000);
 });
+
+describe('rich-text editor entry', () => {
+  it.each([
+    [`import { x } from '@litljomi/rich-text/editor'`, IMPORT],
+    [`import { x } from '@litljomi/rich-text/editor/extra'`, IMPORT],
+    [`import { x } from '../../rich-text/src/tiptap'`, IMPORT],
+    [`import('@litljomi/rich-text/editor')`, RESTRICTED_SYNTAX],
+    [`require('@litljomi/rich-text/editor')`, RESTRICTED_SYNTAX],
+    ['import(`@litljomi/rich-text/editor`)', RESTRICTED_SYNTAX],
+  ])('forbids %s in packages and modules', async (code, ruleId) => {
+    expect(await ruleIds('packages/schema/src/x.ts', code)).toEqual([ruleId]);
+    expect(await ruleIds('modules/labak/src/x.ts', code)).toEqual([ruleId]);
+  });
+  it('allows the CMS app to import the editor entry', async () => {
+    expect(await ruleIds('apps/cms/src/editor/x.ts', `import { x } from '@litljomi/rich-text/editor'; import('@litljomi/rich-text/editor')`)).toEqual([]);
+  });
+  it('allows the main entry from packages and modules', async () => {
+    expect(await ruleIds('packages/schema/src/x.ts', `import { x } from '@litljomi/rich-text'`)).toEqual([]);
+    expect(await ruleIds('modules/labak/src/x.ts', `import { x } from '@litljomi/rich-text'`)).toEqual([]);
+  });
+  it('lets the rich-text package import its own files', async () => {
+    expect(await ruleIds('packages/rich-text/src/x.ts', `import { x } from './tiptap.ts'; import { y } from '../tiptap'`)).toEqual([]);
+  });
+});
+
+describe('module-to-module imports', () => {
+  it.each([
+    [`import m from '@litljomi/module-demo'`, IMPORT],
+    [`import m from '@litljomi/module-demo/src/index'`, IMPORT],
+    [`import m from '../../../modules/demo/src/index'`, IMPORT],
+    [`import m from 'modules/demo'`, IMPORT],
+    [`import('@litljomi/module-demo')`, RESTRICTED_SYNTAX],
+    [`require('../../../modules/demo/src/index')`, RESTRICTED_SYNTAX],
+    ['import(`@litljomi/module-demo`)', RESTRICTED_SYNTAX],
+  ])('forbids %s inside a module', async (code, ruleId) => {
+    expect(await ruleIds('modules/labak/src/x.ts', code)).toEqual([ruleId]);
+  });
+  it('allows a module to import the schema package, its own files and its fixtures', async () => {
+    expect(
+      await ruleIds('modules/labak/src/x.ts', `import { x } from '@litljomi/cms-schema'; import { y } from './y.ts'; import f from '../fixtures/news.json'`),
+    ).toEqual([]);
+  });
+});

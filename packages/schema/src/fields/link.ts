@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { definedOnly, draftOf, publishOf, type FieldKind } from '../field-kind.ts';
 import { refSchema, type Ref } from '../ref.ts';
+import { resolveEntry, type EntrySummary } from '../projection.ts';
 
 export interface LinkOptions {
   label: string;
@@ -9,7 +10,9 @@ export interface LinkOptions {
 }
 
 export type LinkValue = { href: string } | { entry: Ref<'entry'> };
-export type LinkField = FieldKind<LinkValue, LinkValue> & { entryTypes: string[] | undefined };
+/** Delivered form: external links keep their canonical href; entry links carry the target's summary (null when unpublished). */
+export type LinkProjected = { href: string } | { entry: EntrySummary | null };
+export type LinkField = FieldKind<LinkValue, LinkProjected> & { entryTypes: string[] | undefined };
 
 // Same rule as packages/rich-text/src/doc-schema.ts (isSafeHref, canonicalHref); keep the two
 // copies identical. Valid hrefs are stored as new URL(s).href.
@@ -37,9 +40,10 @@ export function link(o: LinkOptions): LinkField {
     entryTypes: o.entryTypes,
     draftSchema: () => draftOf(base),
     publishSchema: () => publishOf(base, required),
-    // Entry links are resolved to a path through ProjectionContext in Task 15; until then the
-    // stored value is passed through unchanged.
-    project: (v) => v ?? null,
+    project: (v, ctx) => {
+      if (v == null) return null;
+      return 'href' in v ? { href: v.href } : { entry: resolveEntry(ctx, v.entry._ref) };
+    },
     tsType: () => '{ href: string } | { entry: EntrySummary | null } | null',
     withOptions: (x) => link({ ...o, ...definedOnly(x) }),
   };

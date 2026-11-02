@@ -1,0 +1,11 @@
+{
+  "title": "Opið hús",
+  "startDate": "2026-12-01",
+  "endDate": "2026-12-02",
+  "location": "Reykjavík",
+  "description": {
+    "type": "doc",
+    "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Allir velkomnir." }] }]
+  },
+  "registration": { "href": "https://example.is/skraning" }
+}

@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { richTextDocSchema } from '../doc-schema.ts';
 import { projectRichText, type RichTextResolver } from '../project.ts';
 
@@ -59,4 +59,66 @@ it('keeps an ordered list start through projection', () => {
   });
   const out = projectRichText(d, resolver({}));
   expect(out.content[0]).toMatchObject({ type: 'orderedList', attrs: { start: 3 } });
+});
+
+describe('pruning containers emptied by dropped images', () => {
+  const img = { type: 'image', attrs: { asset: { _ref: A, _kind: 'asset' }, alt: 'x' } };
+  const para = (t: string) => ({ type: 'paragraph', content: [{ type: 'text', text: t }] });
+  const li = (...content: unknown[]) => ({ type: 'listItem', content });
+  const project = (...content: unknown[]) =>
+    projectRichText(richTextDocSchema.parse({ type: 'doc', content }), resolver({}));
+
+  it('drops a blockquote, list item and list that become empty; keeps the rest', () => {
+    const out = project(
+      { type: 'blockquote', content: [img] },
+      { type: 'bulletList', content: [li(img), li(para('keep'))] },
+      { type: 'orderedList', content: [li(img)] },
+      { type: 'blockquote', content: [{ type: 'blockquote', content: [img] }] },
+      para('end'),
+    );
+    expect(out.content.map((b) => b.type)).toEqual(['bulletList', 'paragraph']);
+    expect((out.content[0] as { content: unknown[] }).content).toHaveLength(1);
+  });
+
+  it('keeps empty paragraphs and may return an empty document', () => {
+    expect(project({ type: 'paragraph' }).content).toEqual([{ type: 'paragraph' }]);
+    expect(project({ type: 'blockquote', content: [img] }).content).toEqual([]);
+  });
+});
+
+describe('resolver output is checked', () => {
+  const linked = richTextDocSchema.parse({
+    type: 'doc',
+    content: [
+      { type: 'paragraph', content: [{ type: 'text', text: 'x', marks: [{ type: 'link', attrs: { entry: { _ref: E, _kind: 'entry' } } }] }] },
+      { type: 'image', attrs: { asset: { _ref: A, _kind: 'asset' }, alt: 'a' } },
+    ],
+  });
+  const marksOf = (d: ReturnType<typeof projectRichText>) =>
+    (d.content[0] as { content: { marks?: unknown[] }[] }).content[0]!.marks;
+
+  it.each(['//evil.com', '/\\evil.com', '/\t/evil.com', 'https://evil.com', 'javascript:alert(1)', 'frettir/x', '', '/a b'])(
+    'treats entry path %j as unresolved',
+    (path) => {
+      expect(marksOf(projectRichText(linked, resolver({ entryPath: () => path })))).toBeUndefined();
+    },
+  );
+  it('accepts root-relative paths', () => {
+    for (const path of ['/', '/frettir/x', '/a?b=1#c']) {
+      expect(marksOf(projectRichText(linked, resolver({ entryPath: () => path })))).toEqual([
+        { type: 'link', attrs: { href: path } },
+      ]);
+    }
+  });
+  it.each(['data:image/png;base64,AA', 'javascript:alert(1)', 'http://m.test/a.jpg', '//m.test/a.jpg', '/a.jpg', 'https://', ' https://m.test/a.jpg'])(
+    'drops an image whose asset url is %j',
+    (url) => {
+      const out = projectRichText(linked, resolver({ asset: () => ({ url, width: 1, height: 1 }) }));
+      expect(out.content.map((b) => b.type)).toEqual(['paragraph']);
+    },
+  );
+  it('keeps an https asset url', () => {
+    const out = projectRichText(linked, resolver({ asset: () => ({ url: 'https://m.test/a.jpg', width: 1, height: 1 }) }));
+    expect(out.content.map((b) => b.type)).toEqual(['paragraph', 'image']);
+  });
 });
