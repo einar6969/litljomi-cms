@@ -956,7 +956,9 @@
       "status": "reported",
       "report": "docs/execution/checkpoints/C1.md",
       "at": "2026-11-02T08:37:01.997Z",
-      "approvedByEinar": false
+      "approvedByEinar": true,
+      "approvedAt": "2026-11-02",
+      "approval": "Einar in chat, 2026-11-02: \"I approve checkpoint C1 (Einar, 2026-11-02). Fast-forward `main` to `m1/phase-1` (local only).\""
     },
     "C2": {
       "status": "pending",
