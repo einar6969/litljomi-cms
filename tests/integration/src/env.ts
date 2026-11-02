@@ -21,7 +21,9 @@ function loadEnv(): Env {
       cwd: repoRoot,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
-      env: { ...process.env, SUPABASE_TELEMETRY_DISABLED: '1' },
+      // No telemetry and no GitHub release check: the CMS's e2e run, which loads this file, runs
+      // outside the Bash sandbox and must reach only loopback (decision 37.3).
+      env: { ...process.env, SUPABASE_TELEMETRY_DISABLED: '1', SUPABASE_NO_UPDATE_NOTIFIER: '1' },
     });
   } catch (e) {
     throw new Error('`supabase status -o json` failed; is the Supabase CLI installed and the local stack running (pnpm db:start)?', {

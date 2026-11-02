@@ -5,6 +5,16 @@ export const CMS_URL = 'http://localhost:3100';
 export const SUPABASE_URL = 'http://127.0.0.1:54321';
 export const MAILPIT_URL = 'http://127.0.0.1:54324';
 
+/**
+ * Turns off the network calls of the CLIs the run starts (the Supabase CLI's GitHub release check
+ * and telemetry, Next.js telemetry). Set on every child process of the e2e run.
+ */
+export const NO_CLI_NETWORK_ENV = {
+  SUPABASE_NO_UPDATE_NOTIFIER: '1',
+  SUPABASE_TELEMETRY_DISABLED: '1',
+  NEXT_TELEMETRY_DISABLED: '1',
+} as const;
+
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 /** True for an http(s) URL on a loopback host; anything else, including a malformed URL, is false. */

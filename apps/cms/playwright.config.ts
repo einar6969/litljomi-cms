@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { defineConfig, devices } from '@playwright/test';
-import { CMS_URL } from './e2e/support/local';
+import { CMS_URL, NO_CLI_NETWORK_ENV } from './e2e/support/local';
 
 // Browser tests of the CMS (decision 37.3). They run outside the Bash sandbox (Einar's
 // `sandbox.excludedCommands` for `pnpm --filter cms e2e`), so they reach only loopback addresses
@@ -39,7 +39,7 @@ export default defineConfig({
       CMS_PUBLIC_URL: CMS_URL,
       CMS_INTERNAL_SECRET: randomBytes(24).toString('hex'),
       CRON_SECRET: randomBytes(24).toString('hex'),
-      NEXT_TELEMETRY_DISABLED: '1',
+      ...NO_CLI_NETWORK_ENV,
     },
   },
   projects: [

@@ -3,6 +3,7 @@
 // fetched; Einar, 2026-11-02). The script refuses a stack that is not on loopback.
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
+import { NO_CLI_NETWORK_ENV } from './support/local';
 
 const repoRoot = join(import.meta.dirname, '..', '..', '..');
 const seedScript = join(repoRoot, 'tests', 'integration', 'scripts', 'seed-local.ts');
@@ -10,7 +11,8 @@ const seedScript = join(repoRoot, 'tests', 'integration', 'scripts', 'seed-local
 export default async function globalSetup(): Promise<void> {
   const child = spawn(process.execPath, [seedScript], {
     cwd: repoRoot,
-    env: { ...process.env, SUPABASE_TELEMETRY_DISABLED: '1' },
+    // The seed reads the stack through `supabase status` (tests/integration/src/env.ts).
+    env: { ...process.env, ...NO_CLI_NETWORK_ENV },
     stdio: ['ignore', 'inherit', 'inherit'],
   });
   const code = await new Promise<number>((resolve, reject) => {
