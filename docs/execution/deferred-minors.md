@@ -146,6 +146,9 @@
 | 25 | spec r1 | A tenant with no active site stays "Í birtingu…" and the panel polls forever (fail closed; display to decide); `displayState` optional `{ fieldLabels }` and the panel's `aria-live`/`data-testid` state line ratified by the controller (`task-25-r1-spec.md`) | C3 (Einar: site-less tenant display) | open |
 | 25 | security r1 | `e2e/demo-site-server.ts:78` passes the whole parent environment to the demo site (no key there today; allowlist as defence in depth); a superseded release's entries can stay "Í birtingu…"/"Bíður eftir vefnum" (fails closed) (`task-25-r1-security.md`) | C3 | open |
 | 25 | quality r1 | `displayState` `default:` duplicates `case 'failed'`; the in-progress state built in both `status.ts` and `PublishPanel.tsx` (`task-25-r1-quality.md`) | C3 | open |
+| P4 follow-up | spec r1 | spec §7.4 does not list "Enginn vefur tengdur" (decision 39.3 addition) (`p4-followup-r1-spec.md`) | C3 | open |
+| P4 follow-up | security r1 | Tenant status checked without a `FOR SHARE` lock in `register_asset`/`update_asset` (millisecond race, own tenant, publishes nothing); `media_private_insert_member` lets a suspended tenant's member upload an object `register_asset` then refuses (orphan) (`p4-followup-r1-security.md`) | C3 | open |
+| P4 follow-up | quality r1 | Unclosed "plain" pages and a duplicated finding log in the date e2e; unscoped status locator; SlugField `value` comment; site-less state precedes `notify_attempts`; redundant weakened status assertion (`p4-followup-r1-quality.md`) | C3 | open |
 
 ## Carried from Phase 0 before ratings existed
 
