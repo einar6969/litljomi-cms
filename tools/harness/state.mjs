@@ -17,6 +17,8 @@ import { fileURLToPath } from 'node:url';
 const STATE_FILE = 'docs/execution/state.json';
 const SCHEMA_FILE = 'docs/execution/state.schema.json';
 const PROGRESS_FILE = 'docs/execution/progress.md';
+// Hand-written by the controller; render appends it to the generated progress.md.
+const NOTES_FILE = 'docs/execution/progress-notes.md';
 const GATES_FILE = 'docs/execution/gates.json';
 const PLAN_INDEX_FILE = 'tools/harness/plan-index.json';
 
@@ -151,7 +153,12 @@ function save(root, ctx, now) {
   const errors = validateAgainstSchema(ctx.schema, ctx.state);
   if (errors.length) throw new Refusal(`refusing to write an invalid state:\n  ${errors.join('\n  ')}`, 70);
   fs.writeFileSync(path.join(root, STATE_FILE), `${JSON.stringify(ctx.state, null, 2)}\n`);
-  fs.writeFileSync(path.join(root, PROGRESS_FILE), renderProgress(ctx.state, ctx.planIndex));
+  fs.writeFileSync(path.join(root, PROGRESS_FILE), renderProgress(ctx.state, ctx.planIndex, readNotes(root)));
+}
+
+function readNotes(root) {
+  const file = path.join(root, NOTES_FILE);
+  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
 }
 
 function readGates(root) {
@@ -194,7 +201,7 @@ function reviewSummary(task) {
   return parts.length ? parts.join(', ') : '—';
 }
 
-export function renderProgress(state, planIndex) {
+export function renderProgress(state, planIndex, notes = '') {
   const next = state.tasks.find((t) => t.status !== 'done');
   const nextPlan = next && planIndex.find((p) => p.id === next.id);
   const lines = [
@@ -226,6 +233,7 @@ export function renderProgress(state, planIndex) {
     const after = planIndex.find((p) => p.checkpointAfter === id)?.id ?? '—';
     lines.push(`| ${id} | ${after} | ${c.status} | ${c.report ? cell(c.report) : '—'} | ${c.approvedByEinar ? 'yes' : 'no'} |`);
   }
+  if (notes.trim()) lines.push('', '## Controller notes', '', notes.trim());
   return `${lines.join('\n')}\n`;
 }
 
@@ -382,7 +390,7 @@ export function run(argv, { root = defaultRoot(), now = new Date().toISOString()
     const ctx = load(root);
     if (command === 'show') return { code: 0, stdout: renderShow(ctx, root), stderr: '' };
     if (command === 'render') {
-      fs.writeFileSync(path.join(root, PROGRESS_FILE), renderProgress(ctx.state, ctx.planIndex));
+      fs.writeFileSync(path.join(root, PROGRESS_FILE), renderProgress(ctx.state, ctx.planIndex, readNotes(root)));
       return { code: 0, stdout: `wrote ${PROGRESS_FILE}`, stderr: '' };
     }
     const message = COMMANDS[command](ctx, root, args, now);

@@ -86,6 +86,8 @@ export default tseslint.config(
       '**/dist/**',
       '**/.turbo/**',
       '.pnpm-store/**',
+      // Lane B's git worktree is linted in place and again after each merge (plan, lanes).
+      '.worktrees/**',
       'docs/**',
       'tools/checks/__tests__/fixtures/**',
     ],

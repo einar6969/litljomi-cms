@@ -365,6 +365,13 @@ test('render writes progress.md containing every task', withRoot((root) => {
   assert.match(md, /generated/i);
 }));
 
+test('render appends the controller notes file when it exists', withRoot((root) => {
+  fs.writeFileSync(path.join(root, 'docs/execution/progress-notes.md'), 'First Lane B merge: clean.\n');
+  assert.equal(run(['render'], { root }).code, 0);
+  const md = fs.readFileSync(path.join(root, 'docs/execution/progress.md'), 'utf8');
+  assert.match(md, /## Controller notes\n\nFirst Lane B merge: clean\./);
+}));
+
 test('show prints the next task', withRoot((root) => {
   const r = run(['show'], { root });
   assert.equal(r.code, 0);
