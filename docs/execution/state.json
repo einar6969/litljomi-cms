@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T03:16:58.338Z",
+  "updatedAt": "2026-11-02T03:19:14.500Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -185,7 +185,7 @@
     },
     {
       "id": 4,
-      "status": "in_review",
+      "status": "done",
       "commits": [
         "c6ad33f"
       ],
@@ -201,6 +201,12 @@
           "round": 1,
           "report": "docs/execution/reviews/task-04-r1-security.md",
           "at": "2026-11-02T03:16:58.338Z"
+        },
+        "quality": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-04-r1-quality.md",
+          "at": "2026-11-02T03:18:14.581Z"
         }
       },
       "gatesUsed": [
@@ -215,8 +221,9 @@
           "resolvedAt": "2026-11-02T02:59:35.243Z"
         }
       ],
-      "notes": "Authorized by Einar on 2026-11-02 (G0 extension in gates.json). Implementer round 1 (Opus, fresh) stopped at Step 4b before writing any file: postgres (pgTAP role, rolsuper false) is not a member of supabase_auth_admin; set local role supabase_auth_admin -> permission denied; grant supabase_auth_admin to postgres -> reserved membership (supautils.reserved_memberships). Verified by the controller on the local stack. Other findings from the implementer: pg_graphql is not installed locally (drop is a no-op locally, still needed on hosted); no default ACL exists for api/cms/private; possible risk that pgTAP functions lose PUBLIC execute after the global revoke (to verify on first db:test). A controller probe of a supabase_admin/supabase_auth_admin login was denied by the auto-mode classifier and not retried (environment.md). Blocked pending Einar. Ruling 2026-11-02: Einar chose \"Static grants + HTTP (Recommended)\" (decision 22; Step 4b amended). Unblocked; fresh implementer round 2.",
-      "startedAt": "2026-11-02T02:53:25.436Z"
+      "notes": "Authorized by Einar on 2026-11-02 (G0 extension in gates.json). Implementer round 1 (Opus, fresh) stopped at Step 4b before writing any file: postgres (pgTAP role, rolsuper false) is not a member of supabase_auth_admin; set local role supabase_auth_admin -> permission denied; grant supabase_auth_admin to postgres -> reserved membership (supautils.reserved_memberships). Verified by the controller on the local stack. Other findings from the implementer: pg_graphql is not installed locally (drop is a no-op locally, still needed on hosted); no default ACL exists for api/cms/private; possible risk that pgTAP functions lose PUBLIC execute after the global revoke (to verify on first db:test). A controller probe of a supabase_admin/supabase_auth_admin login was denied by the auto-mode classifier and not retried (environment.md). Blocked pending Einar. Ruling 2026-11-02: Einar chose \"Static grants + HTTP (Recommended)\" (decision 22; Step 4b amended). Unblocked; fresh implementer round 2. Round 2 implementer (Opus, fresh): commit c6ad33f (both migrations, config [api] schemas=[\"api\"] and the hook in the same commit, tests 010 and 012, carried Minors cleared). Deviation from the N1 evidence, required by decision 18: the evidence hook let token_refresh/totp through with an absent amr key (SQL NULL fall-through); the production hook refuses it (tests 43, 64); correction noted in docs/verification/n1-passwordless-investigation.md. Additions beyond the literal text, accepted by spec and security reviews: hook EXECUTE also revoked from service_role; revoke all on schemas api, cms, private from public. Step 4a (local, controller and spec reviewer re-checked): Accept-Profile api 200; cms, private, public, graphql_public 406 PGRST106; /graphql/v1 406. Step 4b (local): magic link 303 with tokens (amr otp), refresh 200, password set 200, password sign-in 403 \"Only email sign-in is allowed\", wrong password 400; GoTrue logs show the hook ran as supabase_auth_admin (security r1); no password amr rows; db:reset afterwards. Reviews: spec r1 PASS, security r1 PASS (2 Minors deferred to Tasks 5 and 8), quality r1 PASS (7 Minors deferred to Tasks 5, 12 and C1); no fix rounds. Final local suite by the controller on c6ad33f: harness 17/17; pnpm lint, typecheck, check:slugs exit 0; pnpm test 4 files 129 passed; pnpm db:start, db:reset ok; pnpm db:test Files=4 Tests=132 PASS. pnpm test:integration does not exist yet (Task 12).",
+      "startedAt": "2026-11-02T02:53:25.436Z",
+      "doneAt": "2026-11-02T03:19:14.500Z"
     },
     {
       "id": 5,
