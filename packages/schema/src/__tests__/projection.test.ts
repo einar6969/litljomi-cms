@@ -172,3 +172,12 @@ describe('link projection', () => {
     expect(link({ label: 'L' }).tsType()).toBe('{ href: string } | { entry: EntrySummary | null } | null');
   });
 });
+
+describe('ProjectionError messages', () => {
+  it('names an issue path that contains a symbol instead of throwing (Task 19 fix r2 note)', () => {
+    const sym = Symbol('k');
+    const e = new ProjectionError('news', [{ code: 'custom', path: ['a', sym, 0], message: 'bad', input: undefined }] as never);
+    expect(e.message).toBe('cannot project news: a.Symbol(k).0: bad');
+    expect(e.issues).toHaveLength(1);
+  });
+});

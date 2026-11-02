@@ -20,8 +20,9 @@ const NOT_SEP = '[^/\\\\]';
 const privilegedPaths = [{ regex: `(^#?|${SEP})privileged(${SEP}|$)`, message: PRIVILEGED_MESSAGE }];
 // Decision 35: the worker and cron route handlers may import their job from
 // `privileged/worker/pipeline` and their secret check from `privileged/internal-auth` (optionally
-// `.ts`), written with `/` and as the last segments. Anything else under privileged/ (the admin
-// client above all), including a path that continues after either, is still forbidden.
+// `.ts`), written with `/` and as the last segments; a backslash after `privileged` is always
+// forbidden. Anything else under privileged/ (the admin client above all), including a path that
+// continues after either, is still forbidden.
 const privilegedExceptPipelinePaths = [
   { regex: `(^#?|${SEP})privileged($|\\\\|/(?!(worker/pipeline|internal-auth)(\\.ts)?$))`, message: PIPELINE_ONLY_MESSAGE },
 ];
@@ -87,13 +88,25 @@ const supabasePaths = [{ regex: `^@supabase(${SEP}|$)`, message: SUPABASE_MESSAG
 // (secretClient(), read from `supabase status`), under no variable name the secret-key rule could
 // match. App code may therefore reach those helpers only from test files.
 const INTEGRATION_MESSAGE = 'tests/integration helpers may only be imported by test files.';
+// Spec §3.1 (Task 26 security r1 F3; Task 17 security r1): a site imports only the SDK, the
+// rich-text main entry (exact names, no subpaths) and its own generated types, never other
+// @litljomi packages (the schema package, the editor entry, modules) and never the CMS app, by
+// package name, through an `apps` segment, or by climbing out of the site (`../` segments then
+// `cms`); nor modules or packages by path. Limit, as for modules: specifiers are read, not
+// resolved paths.
+const SITE_MESSAGE = 'A site may import only @litljomi/cms-sdk, @litljomi/rich-text and its own files (spec §3.1).';
+const sitePaths = [
+  { regex: `^@litljomi${SEP}(?!(cms-sdk|rich-text)$)`, message: SITE_MESSAGE },
+  { regex: `^(\\.\\.${SEP})+cms(${SEP}|$)|(^|${SEP})(apps|modules|packages)${SEP}|^cms(${SEP}|$)`, message: SITE_MESSAGE },
+];
 const integrationTestPaths = [
   { regex: `(^|${SEP})tests${SEP}integration(${SEP}|$)|^@litljomi/integration-tests(${SEP}|$)`, message: INTEGRATION_MESSAGE },
 ];
 
 // esquery regex literals cannot contain "/", so it is rewritten as the escape \x2f, which also
-// works inside a character class such as [^/].
-const esqueryRegex = (regex) => `/${regex.replaceAll('/', '\\x2f')}/`;
+// works inside a character class such as [^/]. The `i` flag matches the way no-restricted-imports
+// compares (case-insensitive), so `import('@/Privileged/x')` is caught too (Task 17 security r1).
+const esqueryRegex = (regex) => `/${regex.replaceAll('/', '\\x2f')}/i`;
 
 // Dynamic forms: import('x'), import(`x`), require('x'), require(`x`).
 const dynamicSyntax = (paths) =>
@@ -161,6 +174,7 @@ const richText = boundary(richTextPaths);
 const otherModules = boundary(otherModulePaths);
 const supabase = boundary(supabasePaths);
 const integrationTests = boundary(integrationTestPaths);
+const site = boundary(sitePaths);
 const rulesOf = (...boundaries) => ({
   ...imports(...boundaries.map((b) => b.paths)),
   ...syntax(...boundaries.map((b) => b.selectors)),
@@ -201,7 +215,15 @@ export default tseslint.config(
     files: ['eslint.config.mjs'],
     rules: rulesOf(privileged),
   },
+  // Order matters below: a later block replaces an earlier block's rule options entirely (see
+  // `boundary`), so each block lists every boundary that applies to its files.
   ...appZone('apps', secret, privileged, modules, supabase),
+  // A site's source (the demo site; spec §3.1). Its e2e harness may use the schema package to
+  // build fixtures, so only src/ is limited.
+  {
+    files: ['apps/demo-site/src/**'],
+    rules: rulesOf(secret, privileged, supabase, tiptap, site, integrationTests),
+  },
   // The editor clients (publishable key): Supabase libraries are allowed, the secret key is not.
   ...appZone('apps/cms/src/lib/supabase', secret, privileged, modules),
   // The secret key, the admin client and Supabase libraries are allowed here; module imports are not.

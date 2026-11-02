@@ -17,6 +17,9 @@ export async function triggerWorker(requestId: string): Promise<void> {
     headers: { 'content-type': 'application/json', 'x-cms-internal-secret': secret },
     body: JSON.stringify({ requestId }),
     cache: 'no-store',
+    // A redirect would carry the secret header to its target; it is a failure instead (the 3xx
+    // response is returned as is and fails the check below).
+    redirect: 'manual',
   });
   if (!response.ok) throw new Error(`worker trigger failed: HTTP ${response.status}`);
 }

@@ -78,7 +78,9 @@ export function resolveEntry(ctx: ProjectionContext, id: string): EntrySummary |
 export class ProjectionError extends Error {
   readonly issues: z.core.$ZodIssue[];
   constructor(typeName: string, issues: z.core.$ZodIssue[]) {
-    super(`cannot project ${typeName}: ${issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ')}`);
+    // String() names a symbol path segment; Array.join would throw a TypeError on it.
+    const where = (path: ReadonlyArray<PropertyKey>) => path.map((p) => String(p)).join('.') || '(root)';
+    super(`cannot project ${typeName}: ${issues.map((i) => `${where(i.path)}: ${i.message}`).join('; ')}`);
     this.name = 'ProjectionError';
     this.issues = issues;
   }

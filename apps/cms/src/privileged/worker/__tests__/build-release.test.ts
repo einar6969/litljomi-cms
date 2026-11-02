@@ -226,6 +226,12 @@ describe('buildRelease: delivery', () => {
 
     expect(result.status).toBe('delivered');
     expect(result).toMatchObject({ releaseId: RELEASE, number: 3, omitted: [], previousBundle: null });
+    // Every linked request is returned for the live checks (Task 21).
+    expect(result.requests).toEqual([
+      { id: 'r1', entryId: E1, action: 'publish' },
+      { id: 'r2', entryId: E2, action: 'publish' },
+      { id: 'r3', entryId: E3, action: 'unpublish' },
+    ]);
     expect(mem.ops).toEqual([
       `copy media-private/${TENANT}/${A1}/a.jpg -> media-public/prufa/${A1}/a.jpg`,
       'upload delivery/prufa/releases/3.json',

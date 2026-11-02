@@ -64,4 +64,10 @@ describe('createCmsClient', () => {
     await expect(setup(pointer, { ...bundle, release: 6 }).client.getBundle()).rejects.toThrow(/release/);
     await expect(setup(pointer, { ...bundle, release: undefined }).client.getBundle()).rejects.toThrow(/release/);
   });
+  it('requires a safe-integer release in the pointer, and the bundle path of that release (Task 26 F4)', async () => {
+    for (const release of [undefined, '5', 5.5, -1, Number.MAX_SAFE_INTEGER + 1]) {
+      await expect(setup({ ...pointer, release }, { ...bundle, release }).client.getBundle()).rejects.toThrow(/release/);
+    }
+    await expect(setup({ ...pointer, bundle: 'releases/4.json' }).client.getBundle()).rejects.toThrow(/bundle/);
+  });
 });

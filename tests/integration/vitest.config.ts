@@ -8,6 +8,8 @@ export default defineConfig({
     name: 'integration',
     root: import.meta.dirname,
     include: ['src/**/*.test.ts'],
+    // Opt-in only: `pnpm test:e2e-local` (vitest.e2e-local.config.ts).
+    exclude: ['src/end-to-end-local.test.ts', '**/node_modules/**'],
     globalSetup: ['src/global-setup.ts'],
     fileParallelism: false,
     pool: 'forks',

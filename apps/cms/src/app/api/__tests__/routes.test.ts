@@ -113,9 +113,13 @@ describe('POST /api/internal/worker', () => {
     ['an upper-case UUID', JSON.stringify({ requestId: REQUEST_ID.toUpperCase() })],
     ['an extra key', JSON.stringify({ requestId: REQUEST_ID, tenantId: REQUEST_ID })],
   ])('returns 400 for %s and schedules nothing', async (_label, body) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const res = await worker.POST(workerRequest(body));
     expect(res.status).toBe(400);
     expect(after).not.toHaveBeenCalled();
+    // Logged without the body (Task 17 quality r1).
+    expect(warn).toHaveBeenCalledOnce();
+    if (body !== '') expect(JSON.stringify(warn.mock.calls)).not.toContain(body);
   });
   it('checks the secret before reading the body', async () => {
     const res = await worker.POST(workerRequest('{"requestId":', 'wrong'));

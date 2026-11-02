@@ -635,3 +635,58 @@ describe('module-to-module relative imports', () => {
     expect(await ruleIds('modules/labak/src/x.ts', `import m from '/repo/modules-copy/x'`)).toEqual([]);
   });
 });
+
+// Spec §3.1: a site imports only the SDK, the rich-text main entry and its generated types (Task 26
+// security r1 F3; Task 17 security r1). Checked on the demo site's source.
+describe('site imports', () => {
+  const SITE = 'apps/demo-site/src/app/events/x.ts';
+  it.each([
+    [`import '@litljomi/rich-text/editor'`, IMPORT],
+    [`import { text } from '@litljomi/cms-schema'`, IMPORT],
+    [`import x from '@litljomi/cms-sdk/src/client'`, IMPORT],
+    [`import x from '@litljomi/module-demo'`, IMPORT],
+    [`import x from '@tiptap/core'`, IMPORT],
+    [`import x from '@supabase/supabase-js'`, IMPORT],
+    [`import x from '../../../../cms/src/lib/supabase/server'`, IMPORT],
+    [`import x from '../../../../../apps/cms/src/x'`, IMPORT],
+    [`import x from 'cms/src/x'`, IMPORT],
+    [`import x from '../../../../../modules/demo/src/index'`, IMPORT],
+    [`import x from '../../../../../packages/schema/src/index'`, IMPORT],
+    [`import('@litljomi/module-demo')`, RESTRICTED_SYNTAX],
+    [`import('@litljomi/cms-schema')`, RESTRICTED_SYNTAX],
+    [`import('../../../../cms/src/x')`, RESTRICTED_SYNTAX],
+    [`require('@litljomi/rich-text/editor')`, RESTRICTED_SYNTAX],
+  ])('forbids %s', async (code, ruleId) => {
+    expect(await ruleIds(SITE, code)).toEqual([ruleId]);
+  });
+  it('allows the SDK, the rich-text main entry, Next.js, React and the site’s own files', async () => {
+    const code = [
+      `import { createCmsClient } from '@litljomi/cms-sdk'`,
+      `import { RichText } from '@litljomi/rich-text'`,
+      `import { notFound } from 'next/navigation'`,
+      `import { revalidateTag } from 'next/cache'`,
+      `import type { ReactNode } from 'react'`,
+      `import { cms } from '../../lib/cms'`,
+      `import type { EventEntry } from '../../types/cms'`,
+      `import { EventDetail } from './event'`,
+    ].join('\n');
+    expect(await ruleIds(SITE, code)).toEqual([]);
+  });
+  it('does not apply to the site’s test harness, which builds fixtures with the schema package', async () => {
+    expect(await ruleIds('apps/demo-site/e2e/fixtures/generate.ts', `import { text } from '@litljomi/cms-schema'`)).toEqual([]);
+  });
+});
+
+// Task 17 security r1: the dynamic selectors match case-insensitively, as no-restricted-imports does.
+describe('dynamic imports in another letter case', () => {
+  it.each([
+    [`import('@/Privileged/admin-client')`],
+    [`require('@/PRIVILEGED/admin-client')`],
+    ['import(`@/Privileged/admin-client`)'],
+  ])('forbids %s outside privileged/', async (code) => {
+    expect(await ruleIds('apps/cms/src/editor/x.ts', code)).toEqual([RESTRICTED_SYNTAX]);
+  });
+  it('forbids a module import in another case', async () => {
+    expect(await ruleIds('apps/cms/src/editor/x.ts', `import('@litljomi/Module-labak')`)).toEqual([RESTRICTED_SYNTAX]);
+  });
+});

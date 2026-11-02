@@ -109,4 +109,39 @@ describe('createRevalidateHandler', () => {
     const { handler } = setup([]);
     expect((await handler(req())).status).toBe(401);
   });
+  it('413 on a declared content-length above 64 KiB, before reading the body or the secrets (Task 26 F2)', async () => {
+    const secrets = vi.fn(() => ['s1']);
+    const revalidate = vi.fn();
+    const handler = createRevalidateHandler({ secrets, revalidate, now: () => NOW * 1000 });
+    const big = 'x'.repeat(64 * 1024 + 1);
+    const headers = new Headers(req({ body: big }).headers);
+    headers.set('content-length', String(big.length));
+    const res = await handler(new Request('https://s/x', { method: 'POST', body: big, headers }));
+    expect(res.status).toBe(413);
+    expect(secrets).not.toHaveBeenCalled();
+    expect(revalidate).not.toHaveBeenCalled();
+  });
+  it('413 on a streamed body that passes 64 KiB without a content-length, and stops reading it', async () => {
+    const { revalidate, handler } = setup();
+    let pulled = 0;
+    const chunk = new Uint8Array(16 * 1024);
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled++;
+        if (pulled > 1000) controller.close();
+        else controller.enqueue(chunk);
+      },
+    });
+    const ts = NOW;
+    const headers = { 'x-cms-timestamp': String(ts), 'x-cms-signature': 'a'.repeat(64) };
+    const res = await handler(new Request('https://s/x', { method: 'POST', body: stream, headers, duplex: 'half' } as RequestInit));
+    expect(res.status).toBe(413);
+    expect(pulled).toBeLessThan(10);
+    expect(revalidate).not.toHaveBeenCalled();
+  });
+  it('still accepts a body of exactly 64 KiB', async () => {
+    const { handler } = setup();
+    const exact = '"' + 'x'.repeat(64 * 1024 - 2) + '"';
+    expect((await handler(req({ body: exact }))).status).toBe(200);
+  });
 });

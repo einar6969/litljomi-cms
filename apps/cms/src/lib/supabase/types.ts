@@ -6,4 +6,7 @@ import type { SupabaseClient as BaseSupabaseClient } from '@supabase/supabase-js
  * not accept an `api` client. App code outside lib/supabase and privileged/ imports this type, not
  * supabase-js (ESLint).
  */
+//
+// `any` stands in for generated database types until codegen exists; do not replace it with a
+// hand-written type. The same `<any, 'api'>` is used where the clients are created.
 export type SupabaseClient = BaseSupabaseClient<any, 'api'>;

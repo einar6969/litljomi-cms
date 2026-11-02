@@ -4,7 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "test": "vitest run --config vitest.config.ts"
+    "test": "vitest run --config vitest.config.ts",
+    "test:e2e-local": "vitest run --config vitest.e2e-local.config.ts"
   },
   "devDependencies": {
     "@supabase/supabase-js": "^2",

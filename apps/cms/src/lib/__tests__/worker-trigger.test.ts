@@ -29,7 +29,14 @@ describe('triggerWorker', () => {
       headers: { 'content-type': 'application/json', 'x-cms-internal-secret': 'innri-leynd' },
       body: JSON.stringify({ requestId: '9b2f0a52-3c1e-4c8e-9a43-5f1d2e3b4c5d' }),
       cache: 'no-store',
+      redirect: 'manual',
     });
+  });
+
+  it('never follows a redirect with the secret: a 3xx answer is a failed trigger (Task 19 security r1)', async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 307, headers: { location: 'https://elsewhere.example/' } }));
+    await expect(triggerWorker('r')).rejects.toThrow('worker trigger failed: HTTP 307');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('joins the URL without a doubled slash when CMS_PUBLIC_URL ends with one', async () => {
