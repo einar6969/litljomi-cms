@@ -9,6 +9,7 @@
     "test": "vitest run --project sdk --root ../.."
   },
   "peerDependencies": {
+    "next": "^15 || ^16",
     "react": "^19"
   },
   "devDependencies": {
