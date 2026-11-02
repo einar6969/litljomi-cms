@@ -24,6 +24,11 @@
           "at": "2026-11-02",
           "scope": "Task 3: hosted environments runbook, documentation only, under G0. Includes the local configuration for decision 21 (secure_password_change, verified locally). G2–G7 stay unauthorized: the hosted setup is documented, not executed.",
           "note": "Einar in chat, 2026-11-02: \"I approve starting Task 3: Hosted Environments Runbook, strictly as a documentation-only task.\" and \"Preserve the existing G2–G7 approval boundaries. Document the hosted setup, but do not execute it.\""
+        },
+        {
+          "at": "2026-11-02",
+          "scope": "Phase 1, Task 4: schemas, privileges and the first catalog tests, under G0 and G1 (local only; OrbStack). G2–G7 stay unauthorized; no remote, push, hosted service, connector or browser action. Stop before Task 5.",
+          "note": "Einar in chat, 2026-11-02: \"You are the controller for Litljómi CMS Hub, Phase 1, in /Users/einarzoega/litljomi-cms. Today is 2026-11-02. Work locally only.\" and \"G0 and G1 are approved (OrbStack only). G2–G7 are NOT authorised.\" and \"Do not start Task 5 without my explicit approval.\""
         }
       ]
     },
