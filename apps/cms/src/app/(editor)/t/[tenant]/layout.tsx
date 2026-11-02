@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { t } from '@/i18n/is';
 import { requireUserId } from '@/lib/auth/session';
 import { createEditorClient } from '@/lib/supabase/server';
-import { currentTenant } from '@/lib/tenant';
+import { currentTenant, isActive } from '@/lib/tenant';
 
 type Props = { children: ReactNode; params: Promise<{ tenant: string }> };
 
@@ -16,7 +16,7 @@ export default async function TenantLayout({ children, params }: Props) {
   await requireUserId(await createEditorClient());
   const tenant = await currentTenant(slug);
   if (!tenant) notFound();
-  if (tenant.status !== 'active') {
+  if (!isActive(tenant)) {
     return (
       <main>
         <h1>{t.tenant.inactive}</h1>

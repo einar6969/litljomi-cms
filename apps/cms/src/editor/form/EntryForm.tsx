@@ -8,8 +8,11 @@ import { useAutosave } from '../autosave';
 import type { FieldDescriptor } from './descriptors';
 import { fieldRegistry } from './field-registry';
 import { SlugField } from './SlugField';
+import { EditorTenantProvider, type EditorTenant } from './tenant-context';
 
 type Props = {
+  /** The entry's tenant, as the page resolved it through `api.my_tenants`. */
+  tenant: EditorTenant;
   entryId: string;
   fields: FieldDescriptor[];
   /** The field the slug suggestion and the list title come from. */
@@ -32,7 +35,7 @@ async function sessionIsValid(): Promise<boolean> {
  * edit yet is never touched, so it is sent back exactly as it was loaded. Every edit schedules an
  * autosave; local values stay on the screen whatever the save answers.
  */
-export function EntryForm({ entryId, fields, titleKey, initialData, initialVersion, initialSlug, slugLocked }: Props) {
+export function EntryForm({ tenant, entryId, fields, titleKey, initialData, initialVersion, initialSlug, slugLocked }: Props) {
   const [data, setData] = useState<Record<string, unknown>>(initialData);
   const latest = useRef(data);
   const autosave = useAutosave({ entryId, initialVersion, save: saveDraftAction, sessionIsValid });
@@ -52,34 +55,36 @@ export function EntryForm({ entryId, fields, titleKey, initialData, initialVersi
   const title = useMemo(() => (typeof titleValue === 'string' ? titleValue : ''), [titleValue]);
 
   return (
-    <form onSubmit={(e) => e.preventDefault()}>
-      {fields.map((field) => {
-        const Component = fieldRegistry[field.kind];
-        const id = `field-${field.key}`;
-        if (!Component) {
+    <EditorTenantProvider value={tenant}>
+      <form onSubmit={(e) => e.preventDefault()}>
+        {fields.map((field) => {
+          const Component = fieldRegistry[field.kind];
+          const id = `field-${field.key}`;
+          if (!Component) {
+            return (
+              <div key={field.key}>
+                <span>{field.label}</span>
+                <p role="note">{t.editor.unsupportedField}</p>
+              </div>
+            );
+          }
           return (
-            <div key={field.key}>
-              <span>{field.label}</span>
-              <p role="note">{t.editor.unsupportedField}</p>
-            </div>
+            <Component
+              key={field.key}
+              id={id}
+              label={field.label}
+              required={field.required}
+              max={field.max}
+              multiline={field.multiline}
+              value={data[field.key]}
+              onChange={(value) => change(field.key, value)}
+            />
           );
-        }
-        return (
-          <Component
-            key={field.key}
-            id={id}
-            label={field.label}
-            required={field.required}
-            max={field.max}
-            multiline={field.multiline}
-            value={data[field.key]}
-            onChange={(value) => change(field.key, value)}
-          />
-        );
-      })}
-      <SlugField entryId={entryId} initialSlug={initialSlug} title={title} locked={slugLocked} setSlug={setSlugAction} />
-      <SaveStatus state={autosave.state} retry={autosave.retry} />
-    </form>
+        })}
+        <SlugField entryId={entryId} initialSlug={initialSlug} title={title} locked={slugLocked} setSlug={setSlugAction} />
+        <SaveStatus state={autosave.state} retry={autosave.retry} />
+      </form>
+    </EditorTenantProvider>
   );
 }
 

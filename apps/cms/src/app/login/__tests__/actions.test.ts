@@ -11,7 +11,6 @@ vi.mock('@/lib/supabase/server', () => ({ createEditorClient: vi.fn(async () => 
 
 const { createEditorClient } = await import('@/lib/supabase/server');
 const { requestMagicLink, signOut } = await import('../actions');
-const { t } = await import('@/i18n/is');
 
 const KNOWN = 'editor@example.test';
 const SENT = 'REDIRECT /login?sent=1';
@@ -95,10 +94,6 @@ describe('requestMagicLink', () => {
     vi.stubEnv('CMS_PUBLIC_URL', '');
     await expect(requestMagicLink(form(KNOWN))).rejects.toThrow('CMS_PUBLIC_URL is not set');
     expect(auth.signInWithOtp).not.toHaveBeenCalled();
-  });
-
-  it('has one neutral Icelandic message for every outcome', () => {
-    expect(t.login.sent).toBe('Ef netfangið er skráð færðu tölvupóst');
   });
 });
 

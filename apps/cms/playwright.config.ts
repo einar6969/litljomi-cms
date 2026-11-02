@@ -1,10 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import { defineConfig, devices } from '@playwright/test';
-import { CMS_URL, NO_CLI_NETWORK_ENV } from './e2e/support/local';
+import { CMS_PORT, CMS_URL, NO_CLI_NETWORK_ENV } from './e2e/support/local';
 
 // Browser tests of the CMS (decision 37.3). They run outside the Bash sandbox (Einar's
 // `sandbox.excludedCommands` for `pnpm --filter cms e2e`), so they reach only loopback addresses
-// and this repository (Einar, 2026-11-02): the CMS on 3100, Supabase on 54321, Mailpit on 54324.
+// and this repository (Einar, 2026-11-02): the CMS on CMS_PORT, Supabase on 54321, Mailpit on 54324.
 //
 // The CMS is built and started through tests/integration/scripts/cms-next.sh, which reads the
 // local stack's URL and keys from `supabase status` at run time and refuses a non-loopback stack;
@@ -29,8 +29,8 @@ export default defineConfig({
   },
   webServer: {
     // `next start` listens on loopback only; the browser reaches it as localhost (the Auth site URL).
-    command: `${cmsNext} build && ${cmsNext} start -p 3100 -H 127.0.0.1`,
-    url: 'http://127.0.0.1:3100/login',
+    command: `${cmsNext} build && ${cmsNext} start -p ${CMS_PORT} -H 127.0.0.1`,
+    url: `http://127.0.0.1:${CMS_PORT}/login`,
     reuseExistingServer: false,
     timeout: 300_000,
     stdout: 'pipe',

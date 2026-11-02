@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/test';
 
 // Probe: Chromium starts and loads a page from a loopback server (decision 37.3).
 const PAGE = '<!doctype html><html lang="is"><head><title>Prófun</title></head><body><p id="probe">Playwright virkar</p></body></html>';

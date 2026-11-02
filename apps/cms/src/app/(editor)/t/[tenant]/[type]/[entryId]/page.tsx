@@ -5,7 +5,7 @@ import { describeFields } from '@/editor/form/descriptors';
 import { EntryForm } from '@/editor/form/EntryForm';
 import { t } from '@/i18n/is';
 import { createEditorClient } from '@/lib/supabase/server';
-import { currentTenant } from '@/lib/tenant';
+import { currentTenant, isActive } from '@/lib/tenant';
 import { getType } from '@/modules/registry';
 
 type Props = { params: Promise<{ tenant: string; type: string; entryId: string }> };
@@ -26,7 +26,7 @@ export default async function EntryPage({ params }: Props) {
   if (!z.uuid().safeParse(entryId).success) notFound();
   const tenant = await currentTenant(slug);
   if (!tenant) notFound();
-  if (tenant.status !== 'active') return null;
+  if (!isActive(tenant)) return null;
   const type = getType(tenant.slug, typeName);
   if (!type) notFound();
   const { data, error } = await (await createEditorClient())
@@ -46,6 +46,7 @@ export default async function EntryPage({ params }: Props) {
       </p>
       <h1>{type.label}</h1>
       <EntryForm
+        tenant={{ id: tenant.id, slug: tenant.slug }}
         entryId={entryId}
         fields={describeFields(type)}
         titleKey={type.preview.title}

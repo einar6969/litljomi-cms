@@ -6,3 +6,5 @@ packages:
   - "tests/*"
 allowBuilds:
   esbuild: false
+updateNotifier: false
+verifyDepsBeforeRun: error

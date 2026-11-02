@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { NewEntryButton } from '@/editor/NewEntryButton';
 import { t } from '@/i18n/is';
 import { createEditorClient } from '@/lib/supabase/server';
-import { currentTenant } from '@/lib/tenant';
+import { currentTenant, isActive } from '@/lib/tenant';
 import { getType } from '@/modules/registry';
 
 type Props = { params: Promise<{ tenant: string; type: string }> };
@@ -19,7 +19,7 @@ export default async function EntryListPage({ params }: Props) {
   const { tenant: slug, type: typeName } = await params;
   const tenant = await currentTenant(slug);
   if (!tenant) notFound();
-  if (tenant.status !== 'active') return null;
+  if (!isActive(tenant)) return null;
   const type = getType(tenant.slug, typeName);
   if (!type) notFound();
   const { data, error } = await (await createEditorClient())

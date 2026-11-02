@@ -10,7 +10,8 @@ vi.mock('@/lib/supabase/server', () => ({ createEditorClient: vi.fn(async () => 
 const session = vi.hoisted(() => ({ requireUserId: vi.fn(async () => 'user-id') }));
 vi.mock('@/lib/auth/session', () => session);
 const tenants = vi.hoisted(() => ({ currentTenant: vi.fn() }));
-vi.mock('@/lib/tenant', () => tenants);
+// Only the tenant lookup is replaced; the `isActive` rule is the real one.
+vi.mock('@/lib/tenant', async (importOriginal) => ({ ...(await importOriginal<typeof import('@/lib/tenant')>()), ...tenants }));
 
 const { default: TenantLayout } = await import('../layout');
 const { t } = await import('@/i18n/is');

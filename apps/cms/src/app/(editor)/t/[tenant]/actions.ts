@@ -3,7 +3,7 @@
 import { z } from 'zod';
 import { failureOf, hasSession, loadEntryContext } from '@/editor/server/entry-context';
 import { createEditorClient } from '@/lib/supabase/server';
-import { resolveTenant } from '@/lib/tenant';
+import { isActive, resolveTenant } from '@/lib/tenant';
 import { getType } from '@/modules/registry';
 
 // Every export here is an endpoint any signed-in user can call with any arguments. Each action
@@ -33,7 +33,7 @@ export async function createEntryAction(tenantSlug: string, type: string): Promi
   if (typeof tenantSlug !== 'string' || typeof type !== 'string' || type.length > MAX_NAME_LENGTH) throw new Error('create_entry: invalid arguments');
   const client = await createEditorClient();
   const tenant = await resolveTenant(client, tenantSlug);
-  const contentType = tenant?.status === 'active' ? getType(tenant.slug, type) : undefined;
+  const contentType = tenant && isActive(tenant) ? getType(tenant.slug, type) : undefined;
   if (!tenant || !contentType) throw new Error('create_entry: unknown tenant or type');
   const { data, error } = await client.rpc('create_entry', {
     p_tenant_id: tenant.id,

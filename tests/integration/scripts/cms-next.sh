@@ -13,6 +13,8 @@
 # read denial does not apply. Checked by tools/checks/__tests__/e2e-loopback.test.ts.
 set -eu
 root=$(cd "$(dirname "$0")/../../.." && pwd)
+# An unmatched glob stays the literal pattern, so a file is reported when the name is not the pattern
+# itself, or when it is but such a file really exists (a file literally named `.env*`).
 for f in "$root"/apps/cms/.env*; do
   if [ "$f" != "$root/apps/cms/.env*" ] || [ -e "$f" ]; then
     echo "cms-next.sh: refusing to run: apps/cms/${f##*/} exists, and Next.js would load it; remove it (the stack's values come from supabase status)" >&2

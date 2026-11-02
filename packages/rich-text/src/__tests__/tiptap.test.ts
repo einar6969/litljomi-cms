@@ -101,3 +101,58 @@ it('keeps safe pasted links, drops javascript: links, and round-trips through JS
   expect(richTextDocSchema.safeParse(json).success).toBe(true);
   expect(richTextDocSchema.safeParse(JSON.parse(text)).success).toBe(true);
 });
+
+// Deferred Task 14 rows (owner Task 24): a pasted list's own numbering must not make the whole
+// pasted document invalid, and odd link attributes must not break or bypass the editor.
+it.each([
+  ['start="0"', '<ol start="0"><li><p>x</p></li></ol>', 1],
+  ['start="-3"', '<ol start="-3"><li><p>x</p></li></ol>', 1],
+  ['start="abc"', '<ol start="abc"><li><p>x</p></li></ol>', 1],
+  ['start="1e30"', '<ol start="99999999999999999999999999999"><li><p>x</p></li></ol>', 1],
+  ['type="a" start="4"', '<ol type="a" start="4"><li><p>x</p></li></ol>', 4],
+])('a pasted <ol %s> keeps the list and validates', (_name, html, start) => {
+  const json = generateJSON(html, richTextExtensions());
+  const list = (json.content as { type: string; attrs?: { start?: number; type?: unknown } }[])[0]!;
+  expect(list.type).toBe('orderedList');
+  expect(list.attrs?.start).toBe(start);
+  expect(list.attrs?.type ?? null).toBeNull();
+  expect(richTextDocSchema.safeParse(json).success).toBe(true);
+});
+
+it('a pasted <ol start="0"> into a live editor validates (the paste path, not only generateJSON)', () => {
+  // jsdom has no ClipboardEvent; ProseMirror's pasteHTML only needs the event object.
+  globalThis.ClipboardEvent ??= class extends Event {
+    clipboardData = null;
+  } as unknown as typeof ClipboardEvent;
+  const editor = new Editor({ extensions: richTextExtensions(), element: document.createElement('div') });
+  editor.view.pasteHTML('<ol type="i" start="0"><li><p>x</p></li></ol>');
+  const out = editor.getJSON();
+  editor.destroy();
+  expect(JSON.stringify(out)).toContain('orderedList');
+  expect(richTextDocSchema.safeParse(out).success).toBe(true);
+});
+
+it.each([null, 5, ['javascript:alert(1)'], { href: 'x' }])('an editor loaded with a non-string href %j mounts and renders no href', (href) => {
+  const doc = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 't', marks: [{ type: 'link', attrs: { href } }] }] }] };
+  const element = document.createElement('div');
+  const editor = new Editor({ extensions: richTextExtensions(), content: doc, element });
+  const anchor = element.querySelector('a');
+  editor.destroy();
+  expect(anchor?.getAttribute('href') ?? '').toBe('');
+});
+
+it('setLink and toggleLink refuse a link with neither href nor entry', () => {
+  const editor = new Editor({
+    extensions: richTextExtensions(),
+    content: '<p>text</p>',
+    element: document.createElement('div'),
+  });
+  editor.commands.selectAll();
+  expect(editor.commands.setLink({} as { href: string })).toBe(false);
+  expect(editor.commands.toggleLink({} as { href: string })).toBe(false);
+  expect(editor.commands.setLink({ href: 'javascript:alert(1)' })).toBe(false);
+  expect(JSON.stringify(editor.getJSON())).not.toContain('"link"');
+  expect(editor.commands.setLink({ href: 'https://example.com/' })).toBe(true);
+  expect(JSON.stringify(editor.getJSON())).toContain('https://example.com/');
+  editor.destroy();
+});
