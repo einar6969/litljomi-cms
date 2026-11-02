@@ -1,5 +1,5 @@
 export { RICH_TEXT_MAX_DEPTH, canonicalUuid, richTextDocSchema } from './doc-schema.ts';
-export { isHttpsUrl, isRootRelativePath } from './safe-url.ts';
+export { canonicalHttpsUrl, isHttpsUrl, isRootRelativePath } from './safe-url.ts';
 export type {
   RichTextBlock,
   RichTextDoc,

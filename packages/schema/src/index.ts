@@ -9,7 +9,7 @@ export {
   type ProjectionContext,
   type PublicAsset,
 } from './projection.ts';
-export { canonicalJson, contentHash } from './content-hash.ts';
+export { canonicalJson, contentHash, entryContentHash } from './content-hash.ts';
 export { generateDeliveryTypes } from './codegen.ts';
 export { defineType, type ContentType, type TypeDefinition, type AnyFieldKind } from './define-type.ts';
 export { extendType, type ExtendOptions } from './extend-type.ts';

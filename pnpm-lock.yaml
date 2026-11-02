@@ -32,6 +32,9 @@ importers:
       '@litljomi/cms-schema':
         specifier: workspace:*
         version: link:../../packages/schema
+      '@litljomi/cms-sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
       '@litljomi/module-demo':
         specifier: workspace:*
         version: link:../../modules/demo

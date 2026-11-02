@@ -121,4 +121,12 @@ describe('resolver output is checked', () => {
     const out = projectRichText(linked, resolver({ asset: () => ({ url: 'https://m.test/a.jpg', width: 1, height: 1 }) }));
     expect(out.content.map((b) => b.type)).toEqual(['paragraph', 'image']);
   });
+  it('drops an image whose asset url carries credentials', () => {
+    const out = projectRichText(linked, resolver({ asset: () => ({ url: 'https://u:p@m.test/a.jpg', width: 1, height: 1 }) }));
+    expect(out.content.map((b) => b.type)).toEqual(['paragraph']);
+  });
+  it('delivers the asset url in its canonical form', () => {
+    const out = projectRichText(linked, resolver({ asset: () => ({ url: 'https:m.test/a.jpg', width: 1, height: 1 }) }));
+    expect((out.content[1] as { attrs: { src: string } }).attrs.src).toBe('https://m.test/a.jpg');
+  });
 });

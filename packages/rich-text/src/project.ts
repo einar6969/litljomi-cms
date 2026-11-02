@@ -1,4 +1,4 @@
-import { isHttpsUrl, isRootRelativePath } from './safe-url.ts';
+import { canonicalHttpsUrl, isRootRelativePath } from './safe-url.ts';
 import type { RichTextBlock, RichTextDoc, RichTextInline, RichTextListItem } from './doc-schema.ts';
 
 export interface RichTextResolver {
@@ -79,10 +79,11 @@ function projectBlock(b: RichTextBlock, r: RichTextResolver): ProjectedBlock | n
     }
     case 'image': {
       const asset = r.asset(b.attrs.asset._ref);
-      if (asset === null || !isHttpsUrl(asset.url)) return null;
+      const src = asset === null ? null : canonicalHttpsUrl(asset.url);
+      if (asset === null || src === null) return null;
       return {
         type: 'image',
-        attrs: { src: asset.url, width: asset.width, height: asset.height, alt: b.attrs.alt, caption: b.attrs.caption },
+        attrs: { src, width: asset.width, height: asset.height, alt: b.attrs.alt, caption: b.attrs.caption },
       };
     }
   }
