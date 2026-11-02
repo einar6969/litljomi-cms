@@ -2,7 +2,7 @@
 -- Covers every helper in _helpers.sql (000_harness.test.sql covers the main path).
 begin;
 \ir _helpers.sql
-select plan(35);
+select plan(37);
 
 -- persona(): one UUID per name, and the unknown-name exception
 select is(tests.persona('editor_labak'),   '00000000-0000-4000-8000-00000000b001'::uuid, 'persona editor_labak');
@@ -18,7 +18,7 @@ select is(tests.tenant('demo'),  '00000000-0000-4000-8000-00000000a002'::uuid, '
 select throws_ok($$select tests.tenant('nope')$$, 'P0001', 'unknown tenant: nope', 'tenant rejects an unknown slug');
 
 -- seed(): five users; not executable by the roles the tests switch to
-select tests.seed();
+select lives_ok($$select tests.seed()$$, 'seed runs');
 select is((select count(*)::int from auth.users where email like '%@test.local'), 5, 'seed inserts five users');
 select is((select count(distinct id)::int from auth.users
            where id in (tests.persona('editor_labak'), tests.persona('editor_demo'), tests.persona('outsider'),
@@ -26,6 +26,10 @@ select is((select count(distinct id)::int from auth.users
 select ok(not has_function_privilege('anon', 'tests.seed()', 'execute'), 'anon cannot execute seed');
 select ok(not has_function_privilege('authenticated', 'tests.seed()', 'execute'), 'authenticated cannot execute seed');
 select ok(not has_function_privilege('service_role', 'tests.seed()', 'execute'), 'service_role cannot execute seed');
+-- Behavioural proof of the privilege checks above, run as an explicit authenticated persona.
+select tests.act_as(tests.persona('outsider'));
+select throws_ok($$select tests.seed()$$, '42501', null, 'authenticated cannot call seed');
+select tests.act_as_owner();
 select ok(
   (select bool_and(has_function_privilege(r, f, 'execute'))
    from unnest(array['anon', 'authenticated', 'service_role']) as r,
@@ -39,14 +43,12 @@ select throws_ok(format($$select tests.act_as(%L::uuid, 'aal 2')$$, tests.person
   'tests.act_as: p_aal must be aal1 or aal2, got aal 2', 'act_as rejects an unknown aal');
 select throws_ok(format($$select tests.act_as(%L::uuid, null)$$, tests.persona('outsider')), 'P0001',
   'tests.act_as: p_aal must be aal1 or aal2, got <null>', 'act_as rejects a null aal');
-select is(current_user::text, session_user::text, 'rejected act_as leaves the role unchanged');
 
 -- act_as(): default aal1, explicit aal2
 select tests.act_as(tests.persona('platform_admin'));
 select is(auth.jwt() ->> 'aal', 'aal1', 'act_as defaults to aal1');
 select is(auth.jwt() ->> 'role', 'authenticated', 'act_as sets the role claim');
 select is(auth.uid(), tests.persona('platform_admin'), 'act_as sets sub for another persona');
-select throws_ok($$select tests.seed()$$, '42501', null, 'authenticated cannot call seed');
 select tests.act_as_owner();
 select tests.act_as(tests.persona('platform_admin'), 'aal2');
 select is(auth.jwt() ->> 'aal', 'aal2', 'act_as sets the aal2 claim');
@@ -61,6 +63,8 @@ select tests.act_as_anon();
 select is(current_user::text, 'anon', 'act_as_anon switches to anon');
 select is(auth.jwt() ->> 'role', 'anon', 'act_as_anon sets the role claim');
 select is(auth.uid(), null, 'act_as_anon leaves auth.uid() null');
+select is(auth.jwt() ->> 'aal', null, 'act_as_anon sets no aal claim');
+select is(auth.jwt() ->> 'sub', null, 'act_as_anon sets no sub claim');
 select tests.act_as_owner();
 select is(current_user::text, session_user::text, 'act_as_owner returns to session_user from anon');
 

@@ -7,8 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 // Resolved from the script location, so it works from any working directory.
-// DB_TEST_DIR overrides it only so the empty-list guard can be exercised.
-const dir = process.env.DB_TEST_DIR ?? fileURLToPath(new URL('../../supabase/tests/database', import.meta.url));
+const dir = fileURLToPath(new URL('../../supabase/tests/database', import.meta.url));
 const files = readdirSync(dir)
   .filter((f) => f.endsWith('.test.sql'))
   .sort()

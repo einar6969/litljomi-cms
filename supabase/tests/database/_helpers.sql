@@ -108,6 +108,8 @@ $$;
 
 grant usage on schema tests to anon, authenticated, service_role;
 -- Not seed(): it is for the owner context only.
+-- These explicit grants are needed once Task 4 revokes PUBLIC's default EXECUTE
+-- on functions; until then PUBLIC still has it, so they are redundant today.
 grant execute on function
   tests.persona(text), tests.tenant(text), tests.act_as(uuid, text),
   tests.act_as_anon(), tests.act_as_service(), tests.act_as_owner()
