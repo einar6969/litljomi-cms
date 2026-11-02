@@ -10,3 +10,6 @@ coverage/
 .pnpm-store/
 .worktrees/
 next-env.d.ts
+test-results/
+playwright-report/
+apps/cms/e2e/.auth/
