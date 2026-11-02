@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T12:32:37.460Z",
+  "updatedAt": "2026-11-02T12:34:05.720Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -1103,9 +1103,9 @@
       "approval": "Einar in chat, 2026-11-02: \"I approve checkpoint C1 (Einar, 2026-11-02). Fast-forward `main` to `m1/phase-1` (local only).\""
     },
     "C2": {
-      "status": "pending",
-      "report": null,
-      "at": null,
+      "status": "reported",
+      "report": "docs/execution/checkpoints/C2.md",
+      "at": "2026-11-02T12:34:05.720Z",
       "approvedByEinar": false
     },
     "C3": {
