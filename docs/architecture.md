@@ -4,7 +4,7 @@
 |---|---|
 | Status | **Approved** by Einar on 2026-11-01 as the implementation baseline, subject to validating the assumptions in §11 and the security boundaries during development. Not yet implemented |
 | Date | 2026-11-01 |
-| Revisions | 2026-11-02 (Einar): passwordless sign-in is enforced by an Auth hook, and email changes need confirmation from both addresses (§4.2, §4.4, §4.5, §11.2; plan decisions 18 and 19); 2026-11-02 (Einar): `packages/rich-text` may depend on Zod and the MIT Tiptap core packages, with the editor configuration on a separate entry point that sites do not import (§3.1; plan decision 23) |
+| Revisions | 2026-11-02 (Einar): passwordless sign-in is enforced by an Auth hook, and email changes need confirmation from both addresses (§4.2, §4.4, §4.5, §11.2; plan decisions 18 and 19); 2026-11-02 (Einar): `packages/rich-text` may depend on Zod and the MIT Tiptap core packages, with the editor configuration on a separate entry point that sites do not import (§3.1; plan decision 23); 2026-11-02 (Einar): `packages/schema` may also depend on `@litljomi/rich-text`'s main entry point, never its editor entry (§3.1; plan decision 24) |
 | Owner | Einar Zoega, Litljómi ehf. |
 | Audience | Einar, and any future implementation session (human or Claude Code) |
 | Location | Written in the LABAK workspace (`project/`). Moves to `docs/architecture.md` in the CMS monorepo at milestone M0 and is maintained there |
@@ -125,7 +125,7 @@ Out of scope as a principle: **application data**. Bookings, member portals, for
 
 | Package | Contains | May depend on |
 |---|---|---|
-| `packages/schema` | Schema DSL (`defineType`, field kinds' definitions), the shared content-type library, Zod generation, projection rules | Zod |
+| `packages/schema` | Schema DSL (`defineType`, field kinds' definitions), the shared content-type library, Zod generation, projection rules | Zod; `@litljomi/rich-text`'s main entry point (document schema and rich-text projection), never `@litljomi/rich-text/editor` |
 | `apps/cms` (core) | Editor shell, field components, form generation, console, worker, preview endpoint | `schema`, `rich-text`, module registry |
 | `modules/<tenant>` | One tenant's manifest, content types, fixtures | `schema`, core extension-point types only |
 | `packages/rich-text` | ProseMirror node schema for v1, React renderer, plain-text extraction; the Tiptap editor configuration on its own entry point (`@litljomi/rich-text/editor`), used only by the CMS app | Zod; the MIT Tiptap core packages, used only by the editor entry point (React as peer). Sites import only the main entry point |

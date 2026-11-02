@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T04:14:42.592Z",
+  "updatedAt": "2026-11-02T04:17:18.495Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -404,8 +404,15 @@
         "G0",
         "G1"
       ],
-      "blockers": [],
-      "notes": "",
+      "blockers": [
+        {
+          "text": "Contradiction: spec §3.1 says packages/schema may depend on Zod only; plan Task 15 has schema consume @litljomi/rich-text (richTextDocSchema, projectRichText). Implementer stopped before writing anything. Waiting for Einar's ruling.",
+          "at": "2026-11-02T04:16:04.735Z",
+          "previousStatus": "in_progress",
+          "resolvedAt": "2026-11-02T04:17:18.495Z"
+        }
+      ],
+      "notes": "Blocked 2026-11-02 before any work on a spec/plan contradiction (§3.1: schema may depend on Zod only; Task 15 consumes rich-text). Einar ruled in chat: \"Allow rich-text main entry\" (decision 24; spec §3.1 revised). Unblocked; the same implementer continues.",
       "startedAt": "2026-11-02T04:14:42.592Z"
     },
     {
