@@ -43,7 +43,13 @@ function setup({ approved = ['G0'], planIndex = PLAN_INDEX } = {}) {
 const readState = (root) => JSON.parse(fs.readFileSync(path.join(root, 'docs/execution/state.json'), 'utf8'));
 const writeState = (root, s) => fs.writeFileSync(path.join(root, 'docs/execution/state.json'), JSON.stringify(s, null, 2));
 const task = (s, id) => s.tasks.find((t) => t.id === id);
-const pass = (round = 1) => ({ status: 'pass', round, report: 'docs/execution/reviews/r.md', at: '2026-11-01T00:00:00.000Z' });
+const pass = (round = 1, atCommits = 1) => ({ status: 'pass', round, report: 'docs/execution/reviews/r.md', at: '2026-11-01T00:00:00.000Z', atCommits });
+
+function approveCheckpoints(root, ids) {
+  const s = readState(root);
+  for (const id of ids) Object.assign(s.checkpoints[id], { status: 'reported', report: 'docs/execution/checkpoints/C0.md', approvedByEinar: true });
+  writeState(root, s);
+}
 
 function markDone(root, ids) {
   const s = readState(root);
@@ -192,6 +198,7 @@ const twoLaneIndex = PLAN_INDEX.map((t) => (t.id === 6 ? { ...t, dependsOn: [4] 
 
 test('start allows one active task per lane', withRoot((root) => {
   markDone(root, [0, 1, 2, 3, 4]);
+  approveCheckpoints(root, ['C0']);
   assert.equal(run(['start', '5'], { root }).code, 0);
   const r = run(['start', '6'], { root });
   assert.notEqual(r.code, 0);
@@ -201,15 +208,52 @@ test('start allows one active task per lane', withRoot((root) => {
   assert.equal(task(readState(root), 13).status, 'in_progress');
 }, { planIndex: twoLaneIndex, approved: ['G0', 'G1'] }));
 
-test('start refuses while any dependency is not done', withRoot((root) => {
-  markDone(root, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+test('start refuses while any dependency is not done (Task 17 waits for both 12 and 16)', withRoot((root) => {
+  markDone(root, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 18]);
+  approveCheckpoints(root, ['C0', 'C1']);
   let r = run(['start', '17'], { root });
   assert.notEqual(r.code, 0);
+  assert.match(r.stderr, /Task 12/);
+  const s = readState(root);
+  task(s, 12).status = 'done';
+  task(s, 16).status = 'in_review';
+  writeState(root, s);
+  r = run(['start', '17'], { root });
+  assert.notEqual(r.code, 0);
   assert.match(r.stderr, /Task 16/);
-  markDone(root, [13, 14, 15, 16]);
+  markDone(root, [16]);
   r = run(['start', '17'], { root });
   assert.equal(r.code, 0, r.stderr);
 }, { approved: ['G0', 'G1'] }));
+
+test('start refuses a task placed after a checkpoint Einar has not approved', withRoot((root) => {
+  markDone(root, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18]);
+  approveCheckpoints(root, ['C0']);
+  let r = run(['start', '17'], { root });
+  assert.notEqual(r.code, 0);
+  assert.match(r.stderr, /C1/);
+  approveCheckpoints(root, ['C1']);
+  r = run(['start', '17'], { root });
+  assert.equal(r.code, 0, r.stderr);
+}, { approved: ['G0', 'G1'] }));
+
+test('state.mjs refuses a plan index with a security-sensitive low-tier task', withRoot((root) => {
+  const r = run(['show'], { root });
+  assert.notEqual(r.code, 0);
+  assert.match(r.stderr, /Task 13.*sensitive.*low/);
+}, { planIndex: PLAN_INDEX.map((t) => (t.id === 13 ? { ...t, sensitive: true } : t)) }));
+
+test('done refuses when a security review is older than the latest commit', withRoot((root) => {
+  reviewed(root, 5, { spec: pass(), security: pass(), quality: pass() });
+  assert.equal(run(['commit', '5', 'def5678'], { root }).code, 0);
+  let r = run(['done', '5'], { root });
+  assert.notEqual(r.code, 0);
+  assert.match(r.stderr, /security review .*older than the latest commit/);
+  assert.equal(run(['review', '5', 'security', 'pass', 'docs/execution/reviews/r.md'], { root }).code, 0);
+  assert.equal(task(readState(root), 5).reviews.security.atCommits, 2);
+  r = run(['done', '5'], { root });
+  assert.equal(r.code, 0, r.stderr);
+}));
 
 function reviewed(root, id, reviews) {
   const s = readState(root);

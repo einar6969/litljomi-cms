@@ -6,7 +6,9 @@
 //   done <task> | checkpoint C<n> <report> | render
 // "waived" is accepted only for V-HARNESS and V-CONNECTORS.
 // start: every task in dependsOn done, and at most one active task per lane (Einar, 2026-11-02).
-// done: the reviews the task's tier requires have passed, and no recorded review failed.
+// start: also refuses a task placed after a checkpoint Einar has not approved.
+// done: the reviews the task's tier requires have passed, no recorded review failed, and every
+// security review covers the latest recorded commit (atCommits).
 // The root is HARNESS_ROOT if set (tests), otherwise the repository holding this file.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -136,6 +138,10 @@ function load(root) {
   const errors = validateAgainstSchema(schema, state);
   const ids = state.tasks?.map((t) => t.id).join(',');
   if (ids !== planIndex.map((t) => t.id).join(',')) errors.push('tasks: ids and order must match plan-index.json');
+  for (const t of planIndex) {
+    if (!TIER_REVIEWS[t.tier]) errors.push(`${PLAN_INDEX_FILE}: Task ${t.id} has unknown tier ${t.tier}`);
+    if (t.sensitive && t.tier === 'low') errors.push(`${PLAN_INDEX_FILE}: Task ${t.id} is security-sensitive but has tier low`);
+  }
   if (errors.length) throw new Refusal(`${STATE_FILE} is invalid:\n  ${errors.join('\n  ')}`, 65);
   return { planIndex, schema, state };
 }
@@ -251,6 +257,7 @@ const ACTIVE = ['in_progress', 'in_review', 'blocked'];
 
 function cmdStart(ctx, root, args, now) {
   const t = taskArg(ctx, args[0]);
+  // An open blocker anywhere stops every start, in both lanes: the controller stops and asks Einar.
   const blocked = ctx.state.tasks.find((x) => openBlockers(x).length);
   if (blocked) throw new Refusal(`Task ${blocked.id} has an open blocker: ${openBlockers(blocked)[0].text}`);
   if (t.task.status !== 'pending') throw new Refusal(`Task ${t.id} is already ${t.task.status}`);
@@ -258,6 +265,11 @@ function cmdStart(ctx, root, args, now) {
   if (notDone.length) throw new Refusal(`Task ${t.id} depends on Task ${notDone.join(', Task ')}, not done`);
   const busy = ctx.state.tasks.find((x, i) => ACTIVE.includes(x.status) && ctx.planIndex[i].lane === t.plan.lane);
   if (busy) throw new Refusal(`lane ${t.plan.lane} already has an active task: Task ${busy.id} (${busy.status})`);
+  const unapproved = ctx.planIndex
+    .slice(0, t.index)
+    .filter((p) => p.checkpointAfter && !ctx.state.checkpoints[p.checkpointAfter].approvedByEinar)
+    .map((p) => p.checkpointAfter);
+  if (unapproved.length) throw new Refusal(`Task ${t.id} comes after checkpoint ${unapproved.join(', ')}, not approved by Einar`);
   const gates = readGates(root);
   if (!gates) throw new Refusal(`${GATES_FILE} could not be read`);
   const missing = t.plan.requiredGates.filter((g) => gates[g]?.status !== 'approved');
@@ -283,7 +295,7 @@ function cmdReview(ctx, root, args, now) {
   existingFile(root, report, 'report');
   if (!ACTIVE.includes(t.task.status)) throw new Refusal(`Task ${t.id} is ${t.task.status}; reviews are recorded on an active task`);
   const round = (t.task.reviews[kind]?.round ?? 0) + 1;
-  t.task.reviews[kind] = { status: result, round, report, at: now };
+  t.task.reviews[kind] = { status: result, round, report, at: now, atCommits: t.task.commits.length };
   if (t.task.status === 'in_progress') t.task.status = 'in_review';
   return `Task ${t.id}: ${kind} review round ${round} ${result}`;
 }
@@ -328,7 +340,11 @@ function cmdDone(ctx, root, args, now) {
     if (t.task.reviews[kind]?.status !== 'pass') missing.push(`a passing ${kind} review (${t.plan.tier} tier)`);
   }
   for (const [kind, review] of Object.entries(t.task.reviews)) {
-    if (review.status !== 'pass' && !TIER_REVIEWS[t.plan.tier].includes(kind)) missing.push(`the failed ${kind} review to pass`);
+    if (review.status !== 'pass' && !TIER_REVIEWS[t.plan.tier].includes(kind)) missing.push(`a passing ${kind} review (recorded as failed)`);
+  }
+  const security = t.task.reviews.security;
+  if (security && (security.atCommits ?? -1) < t.task.commits.length) {
+    missing.push(`a security review of the latest commit (the security review is older than the latest commit)`);
   }
   if (missing.length) throw new Refusal(`Task ${t.id} cannot be marked done; it needs: ${missing.join('; ')}`);
   Object.assign(t.task, { status: 'done', doneAt: now });
