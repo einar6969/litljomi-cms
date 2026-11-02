@@ -655,16 +655,18 @@ describe('buildRelease: the pointer only moves forward', () => {
     );
   });
 
-  it('a finish refused before any pointer write (step failed earlier) is not retried either', async () => {
+  it('when the failed marking is refused as well (the release was failed as stale), the build logs it and is not retried', async () => {
     mem.fail.copy = () => true;
     handlers.worker_finish_release = () => ({ error: { code: 'P0001', message: 'forbidden' } });
-    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const result = await build();
 
     expect(result.status).toBe('failed');
     expect(finishCalls().map((f) => f.p_status)).toEqual(['failed']);
     expect(alertMock).toHaveBeenCalledWith('release.failed', expect.objectContaining({ step: 'copy_media', pointerWritten: false }));
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining('could not be marked failed'), expect.anything());
+    logged.mockRestore();
   });
 });
 

@@ -56,7 +56,7 @@ const deepType = defineType({
 });
 // Fields that validate but whose projection throws: a ProjectionError (as projectEntry raises when
 // its own validation fails) and a RangeError (a projection recursing past the stack).
-const projectionIssue = { code: 'custom', path: ['title', 0], message: 'cannot project', input: 'x' };
+const projectionIssue: z.core.$ZodIssue = { code: 'custom', path: ['title', 0], message: 'cannot project', input: 'x' };
 const throwingProjection = (thrown: () => Error): FieldKind<unknown, unknown> => {
   const field: FieldKind<unknown, unknown> = {
     ...overflowing,
@@ -72,7 +72,7 @@ const unprojectableType = defineType({
   name: 'unprojectable',
   version: 1,
   label: 'Unprojectable',
-  fields: { title: throwingProjection(() => new ProjectionError('unprojectable', [projectionIssue] as never)) },
+  fields: { title: throwingProjection(() => new ProjectionError('unprojectable', [projectionIssue])) },
   preview: { title: 'title' },
   orderBy: 'title',
 });
@@ -538,6 +538,36 @@ describe('processRequestById: private originals', () => {
     await expect(processRequestById('r1', { originalExists })).rejects.toThrow('storage unavailable');
     expect(called('worker_reject_request')).toEqual([]);
     expect(called('worker_commit_publish')).toEqual([]);
+  });
+
+  it('an exists() answer that is neither true nor false (an error without a verdict) fails instead of counting as missing', async () => {
+    vi.spyOn(fakeClient.storage, 'from').mockReturnValue({
+      exists: async () => ({ data: null, error: { message: 'storage down' } }),
+    } as unknown as ReturnType<typeof fakeClient.storage.from>);
+
+    await expect(processRequestById('r1')).rejects.toThrow(/storage down/);
+    expect(called('worker_reject_request')).toEqual([]);
+  });
+
+  it('checks the originals with bounded parallelism and reports the missing ones in reference order', async () => {
+    const id = (i: number) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
+    const many = Array.from({ length: 21 }, (_, i) => assetRef(id(i + 1)));
+    handlers.worker_read_request = () => ({ data: { ...readWithRefs(), refs: many } });
+    let inFlight = 0;
+    let peak = 0;
+    const originalExists = async (path: string) => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 2));
+      inFlight -= 1;
+      return !path.includes(id(3)) && !path.includes(id(20));
+    };
+
+    const outcome = await processRequestById('r1', { originalExists });
+
+    expect(outcome).toMatchObject({ status: 'failed_validation', errors: { code: 'asset_missing', assetIds: [id(3), id(20)] } });
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(8);
   });
 
   it('a request whose draft moved on is not checked (the commit records superseded)', async () => {

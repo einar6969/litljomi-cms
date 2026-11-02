@@ -98,6 +98,8 @@ async function viaSql(c: Case, ctx: Context): Promise<Outcome> {
     // A set-returning function is read as rows, a scalar one as its value: the
     // same shapes PostgREST returns.
     const { rows } = await db.query(`select to_jsonb(r) as v from api."${c.rpc}"(${named}) r`, values);
+    // A scalar function answers exactly one row; anything else is a clear failure, not a TypeError.
+    if (!c.setof && rows.length !== 1) throw new Error(`${c.rpc}: expected exactly one row, got ${rows.length}`);
     const value = c.setof ? rows.map((r) => r.v) : unwrap(rows[0].v);
     return { ok: true, value: c.shape ? c.shape(value) : value };
   } catch (e) {

@@ -70,11 +70,13 @@ export async function startSite(): Promise<RunningSite> {
       await new Promise((r) => setTimeout(r, 250));
     }
     const started = child;
+    const exited = start.done;
     return {
       url,
       fixtures,
       async stop() {
         started.kill('SIGTERM');
+        await exited; // the port and the .next handles are released before the run ends
         await fixtures.close();
       },
     };

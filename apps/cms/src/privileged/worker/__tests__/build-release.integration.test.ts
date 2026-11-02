@@ -25,7 +25,7 @@ import {
   type ReleaseStorage,
 } from '../build-release';
 import { processRequestById } from '../process-request';
-import { failStaleReleases } from '../sweep';
+import { STALE_RELEASE_SECONDS, failStaleReleases } from '../sweep';
 import { failAsStale, prepareLabak } from './labak-setup';
 
 let editor: SupabaseClient;
@@ -367,9 +367,9 @@ describe('worker recovery (labak)', () => {
     const failed = await failStaleReleases(createAdminClient());
 
     expect(failed.map((r) => r.release_id)).toContain(stale.id);
-    expect(await releaseRow(stale.id)).toMatchObject({ status: 'failed', bundle_path: null, error: { code: 'stale_building', maxAgeSeconds: 420 } });
+    expect(await releaseRow(stale.id)).toMatchObject({ status: 'failed', bundle_path: null, error: { code: 'stale_building', maxAgeSeconds: STALE_RELEASE_SECONDS } });
     expect(await alertsFor('release.stale_failed', 'releaseId', stale.id)).toEqual([
-      { tenant_id: TENANT.labak, actor_id: null, details: expect.objectContaining({ releaseId: stale.id, number: stale.number, maxAgeSeconds: 420 }) },
+      { tenant_id: TENANT.labak, actor_id: null, details: expect.objectContaining({ releaseId: stale.id, number: stale.number, maxAgeSeconds: STALE_RELEASE_SECONDS }) },
     ]);
 
     // A late worker's finish is refused and changes nothing.
@@ -380,7 +380,7 @@ describe('worker recovery (labak)', () => {
       ),
     ).rejects.toThrow(/forbidden/);
     await expect(withTx('service', (w) => w.query(`select api.worker_finish_release($1, 'failed', null, '{}', null, null)`, [stale.id]))).rejects.toThrow(/forbidden/);
-    expect(await releaseRow(stale.id)).toMatchObject({ status: 'failed', bundle_path: null, error: { code: 'stale_building', maxAgeSeconds: 420 } });
+    expect(await releaseRow(stale.id)).toMatchObject({ status: 'failed', bundle_path: null, error: { code: 'stale_building', maxAgeSeconds: STALE_RELEASE_SECONDS } });
     expect(await releaseOf(pending.requestId)).toBeNull();
 
     const next = await delivered();

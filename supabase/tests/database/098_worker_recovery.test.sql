@@ -6,6 +6,11 @@
 -- highest delivered release number. A release the sweep failed can never be finished (revived) by a
 -- late worker. Their grants are also counted in 010_catalog, 090_api_worker and 100_escalation.
 --
+-- Wording correction for 20261102001400_worker_recovery.sql (an applied migration, so its comment
+-- cannot be edited): there, "UPDATE of status and error" names the columns the two functions use.
+-- The grant service_role holds on cms.releases (20261102000600_publishing.sql line 223) is UPDATE of
+-- status, bundle_path, delivered_at and error.
+--
 -- Fixtures (owner context): two more tenants, gamla and fjordi, next to labak and demo.
 --   labak   a981 #1 delivered, a982 #2 failed (both an hour old), a983 #3 building, 421 s old
 --   demo    a984 #1 building, 419 s old

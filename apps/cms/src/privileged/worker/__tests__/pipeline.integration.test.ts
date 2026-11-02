@@ -5,6 +5,7 @@
 // correctly signed webhook arrives, as a site's revalidation would. Earlier labak content is in
 // every build, so assertions are about the entries each test creates.
 import { randomUUID } from 'node:crypto';
+import { createServer } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { SIGNATURE_HEADER, TIMESTAMP_HEADER, verifyWebhook, type Bundle, type BundleEntry, type Pointer } from '@litljomi/cms-sdk';
@@ -14,6 +15,7 @@ import { TENANT } from '../../../../../../tests/integration/src/fixtures.ts';
 import { closeAll, ownerQuery, withTx } from '../../../../../../tests/integration/src/sql.ts';
 import { buildRelease } from '../build-release';
 import { processAndDeliver, sweep } from '../pipeline';
+import { STALE_RELEASE_SECONDS } from '../sweep';
 import { processPendingRequests } from '../process-request';
 import { entryMarker, html, releaseMeta, startFakeSite, type FakeSite } from './fake-site';
 import { prepareLabak } from './labak-setup';
@@ -72,7 +74,19 @@ async function startLabakSite(): Promise<FakeSite> {
   return s;
 }
 
+/** Fails with a clear message when something already listens on the fixed fake-site port. */
+async function assertPortFree(port: number): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const probe = createServer();
+    probe.once('error', (e: NodeJS.ErrnoException) =>
+      reject(new Error(e.code === 'EADDRINUSE' ? `port ${port} (the pipeline tests' fake site) is already in use; stop whatever runs there first` : `cannot probe port ${port}: ${e.message}`)),
+    );
+    probe.listen(port, '127.0.0.1', () => probe.close(() => resolve()));
+  });
+}
+
 beforeAll(async () => {
+  await assertPortFree(PORT); // before any setup writes to the database
   vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', env.apiUrl);
   vi.stubEnv('SUPABASE_SECRET_KEY', env.secretKey);
   editor = await editorClient('editor_labak');
@@ -269,7 +283,7 @@ describe('sweep', () => {
     await sweep(fast);
 
     const [row] = await ownerQuery<{ status: string; error: unknown }>('select status, error from cms.releases where id = $1', [stale.id]);
-    expect(row).toEqual({ status: 'failed', error: { code: 'stale_building', maxAgeSeconds: 420 } });
+    expect(row).toEqual({ status: 'failed', error: { code: 'stale_building', maxAgeSeconds: STALE_RELEASE_SECONDS } });
     const alerts = await ownerQuery('select 1 from cms.audit_log where action = $1 and details ->> $2 = $3', ['system.alert.release.stale_failed', 'releaseId', stale.id]);
     expect(alerts).toHaveLength(1);
     const d = await deliveryOf(r.requestId);

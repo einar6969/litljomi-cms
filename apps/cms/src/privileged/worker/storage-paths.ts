@@ -6,6 +6,9 @@
 // also refuses backslashes and control characters (Task 8 security r1 Minor 2, Task 10 security r1
 // Minor 3), so the worker never copies to or from such a name.
 
+/** The private bucket holding asset originals; shared by the build and the request check. */
+export const MEDIA_PRIVATE = 'media-private';
+
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/; // decision 2
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/; // canonical text form
 // Control characters (C0 and DEL).

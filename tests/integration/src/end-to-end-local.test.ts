@@ -37,6 +37,19 @@ const SITE_URL = DEMO_SITE.baseUrl; // http://localhost:3101
 const MEDIA_HOST = 'media.example.test';
 const INTERNAL_SECRET = randomBytes(24).toString('hex');
 
+// Insurance for an interrupted run (SIGINT, SIGTERM, a crashed worker) where afterAll never runs:
+// the spawned servers would otherwise keep ports 3100/3101 and fail the next run's guard.
+function killStarted(): void {
+  for (const child of started) if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+}
+process.once('exit', killStarted);
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.once(signal, () => {
+    killStarted();
+    process.exit(signal === 'SIGINT' ? 130 : 143);
+  });
+}
+
 type Proc = { child: ChildProcess; output: () => string; done: Promise<number> };
 const started: ChildProcess[] = [];
 
@@ -191,7 +204,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await stop(cms);
   await stop(site);
-  for (const child of started) if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+  killStarted();
   await closeAll();
 });
 

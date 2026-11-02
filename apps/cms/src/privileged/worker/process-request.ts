@@ -17,7 +17,7 @@ import { createAdminClient } from '../admin-client';
 import { alert } from './alerts';
 import { contextFromRead, publicMediaUrl, type ReadRef } from './projection-context';
 import { callRpc, isApiError } from './rpc';
-import { privateMediaPath } from './storage-paths';
+import { MEDIA_PRIVATE, privateMediaPath } from './storage-paths';
 
 export type RequestStatus = 'committed' | 'failed_validation' | 'superseded' | 'rejected' | 'failed' | 'skipped';
 
@@ -111,19 +111,22 @@ export async function processPendingRequests(limit = 10, options: ProcessOptions
   return outcomes;
 }
 
+/** Concurrent Storage `exists` requests while checking a request's private originals. */
+const ORIGINAL_CHECKS_AT_A_TIME = 8;
+
 type OriginalExists = (path: string) => Promise<boolean>;
 
 /** The lookup of private originals: the given one, or media-private through the admin client. */
 function originalLookup(db: SupabaseClient, options: ProcessOptions): OriginalExists {
   if (options.originalExists) return options.originalExists;
   return async (path) => {
-    // storage-js answers false for 400 and 404 (with the error) and throws on anything else.
-    const { data } = await db.storage.from(MEDIA_PRIVATE).exists(path);
+    // storage-js answers `data: false` with an error for 400 and 404 and throws on anything else.
+    // An answer that is neither (no `true`, no `false`) is not read as "missing": it fails.
+    const { data, error } = await db.storage.from(MEDIA_PRIVATE).exists(path);
+    if (typeof data !== 'boolean') throw new Error(`media-private exists(${path}): ${error?.message ?? 'no answer'}`);
     return data;
   };
 }
-
-const MEDIA_PRIVATE = 'media-private';
 
 function outcomeOf(read: WorkerRead): Omit<RequestOutcome, 'status'> {
   return {
@@ -259,21 +262,27 @@ async function publish(db: SupabaseClient, read: WorkerRead, originalExists: Ori
  * there, so it counts as missing.
  */
 async function missingOriginals(read: WorkerRead, originalExists: OriginalExists): Promise<string[]> {
-  const missing: string[] = [];
+  // In reference order; `path` is null when it cannot be built (counted as missing without a lookup).
+  const assets: Array<{ id: string; path: string | null }> = [];
   const seen = new Set<string>();
   for (const r of read.refs) {
     if (r.kind !== 'asset' || r.archived || r.public_path !== null || r.filename === null || seen.has(r.id)) continue;
     seen.add(r.id);
-    let path: string;
+    let path: string | null;
     try {
       path = privateMediaPath(read.tenant.id, r.id, r.filename);
     } catch {
-      missing.push(r.id);
-      continue;
+      path = null;
     }
-    if (!(await originalExists(path))) missing.push(r.id);
+    assets.push({ id: r.id, path });
   }
-  return missing;
+  // At most ORIGINAL_CHECKS_AT_A_TIME Storage requests in flight (up to 1,000 references, decision 28).
+  const present: boolean[] = [];
+  for (let i = 0; i < assets.length; i += ORIGINAL_CHECKS_AT_A_TIME) {
+    const batch = assets.slice(i, i + ORIGINAL_CHECKS_AT_A_TIME);
+    present.push(...(await Promise.all(batch.map((a) => (a.path === null ? false : originalExists(a.path))))));
+  }
+  return assets.filter((_, i) => !present[i]).map((a) => a.id);
 }
 
 type Failure = Record<string, unknown> | null;
