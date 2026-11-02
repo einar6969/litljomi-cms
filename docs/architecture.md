@@ -4,7 +4,7 @@
 |---|---|
 | Status | **Approved** by Einar on 2026-11-01 as the implementation baseline, subject to validating the assumptions in §11 and the security boundaries during development. Not yet implemented |
 | Date | 2026-11-01 |
-| Revisions | 2026-11-02 (Einar): passwordless sign-in is enforced by an Auth hook, and email changes need confirmation from both addresses (§4.2, §4.4, §4.5, §11.2; plan decisions 18 and 19); 2026-11-02 (Einar): `packages/rich-text` may depend on Zod and the MIT Tiptap core packages, with the editor configuration on a separate entry point that sites do not import (§3.1; plan decision 23); 2026-11-02 (Einar): `packages/schema` may also depend on `@litljomi/rich-text`'s main entry point, never its editor entry (§3.1; plan decision 24); 2026-11-02 (Einar): references are extracted by a recursive walk with jsonpath locations, cross-checked against `strict $.**._ref`, and `_ref` must be a canonical lowercase UUID in every layer (§4.3; plan decision 25); 2026-11-02 (Einar): `authenticated` and `service_role` may use `private` only to execute `private.extract_refs(jsonb)` (§4.5; plan decision 26); 2026-11-02 (Einar): document data is limited to 128 JSON nesting levels, and the reference walk skips reference-free subtrees (§4.3; plan decision 27) |
+| Revisions | 2026-11-02 (Einar): passwordless sign-in is enforced by an Auth hook, and email changes need confirmation from both addresses (§4.2, §4.4, §4.5, §11.2; plan decisions 18 and 19); 2026-11-02 (Einar): `packages/rich-text` may depend on Zod and the MIT Tiptap core packages, with the editor configuration on a separate entry point that sites do not import (§3.1; plan decision 23); 2026-11-02 (Einar): `packages/schema` may also depend on `@litljomi/rich-text`'s main entry point, never its editor entry (§3.1; plan decision 24); 2026-11-02 (Einar): references are extracted by a recursive walk with jsonpath locations, cross-checked against `strict $.**._ref`, and `_ref` must be a canonical lowercase UUID in every layer (§4.3; plan decision 25); 2026-11-02 (Einar): `authenticated` and `service_role` may use `private` only to execute `private.extract_refs(jsonb)` (§4.5; plan decision 26); 2026-11-02 (Einar): document data is limited to 128 JSON nesting levels, and the reference walk skips reference-free subtrees (§4.3; plan decision 27); 2026-11-02 (Einar, C3): sites get the SDK and renderer as vendored `npm pack` files until a second site arrives (§9.1), and the staging project runs on Supabase Free until the production project is created (§2.2; plan decision 42) |
 | Owner | Einar Zoega, Litljómi ehf. |
 | Audience | Einar, and any future implementation session (human or Claude Code) |
 | Location | Written in the LABAK workspace (`project/`). Moves to `docs/architecture.md` in the CMS monorepo at milestone M0 and is maintained there |
@@ -114,7 +114,7 @@ Out of scope as a principle: **application data**. Bookings, member portals, for
 ### 2.2 Hosting and environments
 
 - **CMS app:** Vercel, on a **Pro** team (the Hub is commercial use; Vercel Cron at the needed frequency is required, §8.4). Domain `cms.litljomi.is`. Staging deployment at a separate domain against the staging Supabase project.
-- **Supabase:** one Litljómi organisation on the Pro plan, with **one production project and one staging project**, both in an EU region.
+- **Supabase:** one Litljómi organisation on the Pro plan, with **one production project and one staging project**, both in an EU region. *Deferral (Einar, 2026-11-02, plan decision 42):* during M1 the staging project runs on the Free plan; the organisation moves to Pro when the production project is created.
 - **Sites:** each in its own Vercel project and repository, owned per client arrangement. A site's own hosting plan is a separate decision per client (note: Vercel Hobby is for non-commercial use).
 
 ---
@@ -594,7 +594,7 @@ supabase/                 migrations, pgTAP tests, seed for fixture tenants
 docs/                     this document, runbooks
 ```
 
-**Client sites** stay in their own repositories (e.g. the LABAK site). They depend on `@litljomi/cms-sdk` and `@litljomi/rich-text`, published to a private package registry (GitHub Packages), and on their tenant's delivery types, generated from the module by the CLI and committed in the site repository. Each site's CI parses the fixture bundle of its tenant with its SDK version.
+**Client sites** stay in their own repositories (e.g. the LABAK site). They depend on `@litljomi/cms-sdk` and `@litljomi/rich-text` and on their tenant's delivery types, generated from the module by the CLI and committed in the site repository. Each site's CI parses the fixture bundle of its tenant with its SDK version. Until a second site arrives, the two packages reach a site as vendored `npm pack` files committed in the site repository (`file:vendor/…`), updated by hand with each SDK release; a private package registry (GitHub Packages, which needs a `litljomi` GitHub organisation for the `@litljomi` scope) replaces them then (Einar, 2026-11-02, plan decision 42).
 
 ### 9.2 Onboarding a new client
 
