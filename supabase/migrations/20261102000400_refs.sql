@@ -67,7 +67,7 @@ create table cms.revision_refs (
 -- reference count. A reference is an object with a _ref key, what strict
 -- $.**._ref matches. Keys come from schema field names and the fixed rich-text
 -- format, so no stored path contains an escaped character, and a path step is at
--- most 68 characters (."key" with a 64-character key).
+-- most 67 characters (."key" with a 64-character key).
 --
 -- The walk (decisions 27 and 28) takes one level of the document per
 -- statement, so at most 128 statements, and enters only containers with a
@@ -86,7 +86,7 @@ create table cms.revision_refs (
 -- their rows on one at a time instead of storing them in a tuplestore. The
 -- state of the walk is in memory, at most about the size of the document in
 -- its jsonb form. The one temp file is the result itself: at most 1,000 paths
--- of at most about 8.6 KB (127 steps of at most 68 characters), which spill once
+-- of at most about 8.5 KB (127 steps of at most 67 characters), which spill once
 -- they pass work_mem (4 MB). That is the documented worst case: about 10 MB of
 -- temp files per statement (decision 29). Measured locally on documents inside
 -- all three limits (040_refs.test.sql, "Cost regressions" and "Adversarial
@@ -262,6 +262,9 @@ begin
                 as p (i, node, below)
               where p.below > 0
             ) as e (parent, below, parent_node, parent_size, k, idx)
+            -- offset 0, here and below, is an optimization fence: it keeps the planner
+            -- from flattening the subquery, so the set-returning functions pass their
+            -- rows on one at a time (the memory and temp-file claims above rely on it).
             offset 0
           ) as c (parent, below, parent_size, k, idx, node)
           where pg_catalog.jsonb_typeof(c.node) in ('object', 'array')

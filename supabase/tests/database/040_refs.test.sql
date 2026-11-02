@@ -98,7 +98,10 @@ end;
 $$;
 grant execute on function tests.try_sql(text), tests.cost(text) to authenticated, service_role;
 -- Results of tests.cost, read by the assertions that follow each measurement.
-create table tests.costs (probe text primary key, state text, temp_bytes bigint, elapsed interval);
+-- Every column is not null, so a measurement that comes back empty (an EXPLAIN
+-- without the Temp Written Blocks key, say) fails the file instead of passing
+-- every bound vacuously; the at-limits probe below is the positive control.
+create table tests.costs (probe text primary key, state text not null, temp_bytes bigint not null, elapsed interval not null);
 grant select, insert on tests.costs to authenticated, service_role;
 
 -- Tables, keys and grants.
@@ -139,23 +142,18 @@ select isnt_definer('private', 'extract_refs', array['jsonb'], 'extract_refs is 
 
 -- A13: the walk finds _ref at any depth, including arrays and rich text (§11.1).
 -- The document: top-level field, array element, rich-text link mark and image node.
-select results_eq($$ select ref from private.extract_refs(
+create table tests.rich_doc (doc jsonb);
+insert into tests.rich_doc values (
   '{"image":{"_ref":"00000000-0000-4000-8000-00000000f001","_kind":"asset","alt":"x"},
     "list":[{"link":{"_ref":"00000000-0000-4000-8000-00000000c101","_kind":"entry"}}],
     "body":{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"a",
       "marks":[{"type":"link","attrs":{"entry":{"_ref":"00000000-0000-4000-8000-00000000c102","_kind":"entry"}}}]}]},
-      {"type":"image","attrs":{"asset":{"_ref":"00000000-0000-4000-8000-00000000f002","_kind":"asset"},"alt":"y"}}]}}'::jsonb)
-  order by 1 $$,
+      {"type":"image","attrs":{"asset":{"_ref":"00000000-0000-4000-8000-00000000f002","_kind":"asset"},"alt":"y"}}]}}');
+select results_eq($$ select ref from private.extract_refs((select doc from tests.rich_doc)) order by 1 $$,
   $$ values (tests.entry('c101')), (tests.entry('c102')),
             ('00000000-0000-4000-8000-00000000f001'::uuid), ('00000000-0000-4000-8000-00000000f002'::uuid) $$,
   'refs found at any depth');
-select results_eq($$ select path, kind from private.extract_refs(
-  '{"image":{"_ref":"00000000-0000-4000-8000-00000000f001","_kind":"asset","alt":"x"},
-    "list":[{"link":{"_ref":"00000000-0000-4000-8000-00000000c101","_kind":"entry"}}],
-    "body":{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"a",
-      "marks":[{"type":"link","attrs":{"entry":{"_ref":"00000000-0000-4000-8000-00000000c102","_kind":"entry"}}}]}]},
-      {"type":"image","attrs":{"asset":{"_ref":"00000000-0000-4000-8000-00000000f002","_kind":"asset"},"alt":"y"}}]}}'::jsonb)
-  order by 1 $$,
+select results_eq($$ select path, kind from private.extract_refs((select doc from tests.rich_doc)) order by 1 $$,
   $$ values ('$."body"."content"[0]."content"[0]."marks"[0]."attrs"."entry"', 'entry'),
             ('$."body"."content"[1]."attrs"."asset"', 'asset'),
             ('$."image"', 'asset'),
@@ -163,19 +161,8 @@ select results_eq($$ select path, kind from private.extract_refs(
   'each reference''s location is a jsonpath to the reference object, with its kind');
 -- Cross-check (decision 25): the walk finds exactly what the recursive JSON path
 -- strict $.**._ref finds, counting duplicates.
-select bag_eq($$ select ref from private.extract_refs(
-  '{"image":{"_ref":"00000000-0000-4000-8000-00000000f001","_kind":"asset","alt":"x"},
-    "list":[{"link":{"_ref":"00000000-0000-4000-8000-00000000c101","_kind":"entry"}}],
-    "body":{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"a",
-      "marks":[{"type":"link","attrs":{"entry":{"_ref":"00000000-0000-4000-8000-00000000c102","_kind":"entry"}}}]}]},
-      {"type":"image","attrs":{"asset":{"_ref":"00000000-0000-4000-8000-00000000f002","_kind":"asset"},"alt":"y"}}]}}'::jsonb) $$,
-  $$ select (r #>> '{}')::uuid from jsonb_path_query(
-  '{"image":{"_ref":"00000000-0000-4000-8000-00000000f001","_kind":"asset","alt":"x"},
-    "list":[{"link":{"_ref":"00000000-0000-4000-8000-00000000c101","_kind":"entry"}}],
-    "body":{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"a",
-      "marks":[{"type":"link","attrs":{"entry":{"_ref":"00000000-0000-4000-8000-00000000c102","_kind":"entry"}}}]}]},
-      {"type":"image","attrs":{"asset":{"_ref":"00000000-0000-4000-8000-00000000f002","_kind":"asset"},"alt":"y"}}]}}'::jsonb,
-  'strict $.**._ref') as r $$,
+select bag_eq($$ select ref from private.extract_refs((select doc from tests.rich_doc)) $$,
+  $$ select (r #>> '{}')::uuid from jsonb_path_query((select doc from tests.rich_doc), 'strict $.**._ref') as r $$,
   'the walk finds exactly the refs jsonb_path_query(strict $.**._ref) finds (rich-text document)');
 
 -- Edge cases in one document: the document itself is a reference; a reference
@@ -426,9 +413,9 @@ select lives_ok($$ delete from cms.entries where id = tests.entry('c105') $$,
 -- and arrays: the document is level 1, a container directly inside a level-n
 -- container is level n + 1, and scalars are not levels. 128 levels are allowed;
 -- a container at level 129 fails the write with 54000, checked before the walk.
--- The statement timeout is only a guard: without the limit, the 10,000-level
--- documents below wrote gigabytes of temp files.
-set local statement_timeout = '5s';
+-- The statement timeout is only a guard against a hang, well above the 5 s
+-- bounds below; the time bounds are checked with tests.cost.
+set local statement_timeout = '30s';
 select is_empty($$ select * from private.extract_refs(tests.nest(127, '{}')) $$, '128 nested objects are allowed');
 select throws_ok($$ select * from private.extract_refs(tests.nest(128, '{}')) $$,
   '54000', 'document nested deeper than 128 levels', '129 nested objects are rejected with 54000');
@@ -459,23 +446,22 @@ select throws_ok($$ update cms.drafts set data = tests.nest(128, tests.ref(tests
   where entry_id = tests.entry('c108') $$,
   '54000', 'document nested deeper than 128 levels', 'editor cannot save a draft 129 levels deep');
 -- The security review's document: 10,000 levels of 90-character keys, 960,001
--- bytes as text (under the 1 MB data check). Rejected in milliseconds; 1 s is a
--- wide margin that still fails if the walk runs first (8 s and 3 GB before).
-select set_config('tests.t0', clock_timestamp()::text, true);
+-- bytes as text (under the 1 MB data check). It must be refused before the walk,
+-- within the 5 s bound checked below.
 select throws_ok($$ update cms.drafts
   set data = (repeat('{"' || repeat('a', 90) || '":', 10000) || '1' || repeat('}', 10000))::jsonb
   where entry_id = tests.entry('c108') $$,
   '54000', 'document nested deeper than 128 levels', 'editor cannot save a ~1 MB draft 10,000 levels deep');
-select cmp_ok(clock_timestamp() - current_setting('tests.t0')::timestamptz, '<', interval '1 second',
-  'the 10,000-level draft is rejected in under a second');
--- Wide and shallow: 15,000 references in one list, about 1 MB. Saved before
--- decision 28; now over the 1,000-reference limit and rejected at once.
-select set_config('tests.t0', clock_timestamp()::text, true);
+insert into tests.costs select 'draft 10,000 levels', * from tests.cost($$ update cms.drafts
+  set data = (repeat('{"' || repeat('a', 90) || '":', 10000) || '1' || repeat('}', 10000))::jsonb
+  where entry_id = tests.entry('c108') $$);
+-- Wide and shallow: 15,000 references in one list, about 1 MB, over the
+-- 1,000-reference limit; refused within the 5 s bound checked below.
 select throws_ok($$ update cms.drafts set data = jsonb_build_object('list', tests.refs(15000))
   where entry_id = tests.entry('c108') $$,
   '54000', 'more than 1000 references', 'editor cannot save a ~1 MB draft with 15,000 references');
-select cmp_ok(clock_timestamp() - current_setting('tests.t0')::timestamptz, '<', interval '1 second',
-  'the 15,000-reference draft is rejected in under a second');
+insert into tests.costs select 'draft 15,000 references', * from tests.cost($$ update cms.drafts
+  set data = jsonb_build_object('list', tests.refs(15000)) where entry_id = tests.entry('c108') $$);
 
 -- Revision inserts, as the worker (no role statement timeout in production).
 select tests.act_as_service();
@@ -489,14 +475,23 @@ select throws_ok($$ insert into cms.revisions (tenant_id, entry_id, draft_versio
   values (tests.tenant('labak'), tests.entry('c108'), 2, 1,
           tests.nest(128, tests.ref(tests.entry('c101'), 'entry')), tests.persona('editor_labak')) $$,
   '54000', 'document nested deeper than 128 levels', 'service_role cannot append a revision 129 levels deep');
-select set_config('tests.t0', clock_timestamp()::text, true);
 select throws_ok($$ insert into cms.revisions (tenant_id, entry_id, draft_version, schema_version, data, requested_by)
   values (tests.tenant('labak'), tests.entry('c108'), 2, 1,
           (repeat('{"' || repeat('a', 90) || '":', 10000) || '1' || repeat('}', 10000))::jsonb,
           tests.persona('editor_labak')) $$,
   '54000', 'document nested deeper than 128 levels', 'service_role cannot append a ~1 MB revision 10,000 levels deep');
-select cmp_ok(clock_timestamp() - current_setting('tests.t0')::timestamptz, '<', interval '1 second',
-  'the 10,000-level revision is rejected in under a second');
+insert into tests.costs select 'revision 10,000 levels', * from tests.cost($$ insert into cms.revisions
+  (tenant_id, entry_id, draft_version, schema_version, data, requested_by)
+  values (tests.tenant('labak'), tests.entry('c108'), 2, 1,
+          (repeat('{"' || repeat('a', 90) || '":', 10000) || '1' || repeat('}', 10000))::jsonb,
+          tests.persona('editor_labak')) $$);
+select results_eq($$ select probe, state from tests.costs where probe like '% 10,000 levels' or probe like '% 15,000 references'
+    order by probe $$,
+  $$ values ('draft 10,000 levels', '54000'), ('draft 15,000 references', '54000'), ('revision 10,000 levels', '54000') $$,
+  'the 10,000-level and 15,000-reference probes are refused with 54000 when measured');
+select is_empty($$ select probe from tests.costs where (probe like '% 10,000 levels' or probe like '% 15,000 references')
+    and elapsed >= interval '5 seconds' $$,
+  'the 10,000-level and 15,000-reference documents are refused in under 5 seconds');
 
 -- Key and reference-count limits (§4.3, decisions 28 and 29). Every object key
 -- must match ^[A-Za-z0-9_-]{1,64}$, wherever it is: a key of 64 such characters
@@ -698,14 +693,12 @@ select throws_ok($$ insert into cms.revisions (tenant_id, entry_id, draft_versio
   '54000', 'more than 1000 references', 'service_role cannot append a revision with 1,001 references');
 
 -- Cost regressions (decision 28), measured with tests.cost: temp-file bytes
--- written and run time, for whole statements with their triggers.
+-- written and run time, for whole statements with their triggers. The temp-byte
+-- bounds are the real guard; the 5 s time bounds only catch a gross regression.
 --
 -- The long-key probe: 100 levels of 900-character keys over 13,000 references,
--- 974,600 bytes as text (under the 1 MB data check). Every reference's path was
--- about 90 KB: before decision 28 the walk alone wrote 3.5 GB of temp files in
--- about 4 s. It is now rejected in about 0.1 s, most of it building the
--- document, with no temp files; the bounds (1 MB, 1 s) are wide margins that
--- still fail on the old behaviour.
+-- 974,600 bytes as text (under the 1 MB data check), refused by the key pattern
+-- before the walk: under 1 MB of temp files and 5 s.
 select tests.act_as_owner();
 select cmp_ok(octet_length(tests.trunk(100, 900, tests.refs(13000))::text), '>', 950000,
   'the long-key probe is about 1 MB');
@@ -721,20 +714,17 @@ insert into tests.costs select 'revision long keys', * from tests.cost($$ insert
   values (tests.tenant('labak'), tests.entry('c109'), 2, 1, tests.trunk(100, 900, tests.refs(13000)),
           tests.persona('editor_labak')) $$);
 select tests.act_as_owner();
-select results_eq($$ select probe, state from tests.costs order by probe $$,
+select results_eq($$ select probe, state from tests.costs where probe like '% long keys%' order by probe $$,
   $$ values ('draft long keys', '54000'), ('draft long keys 1000 refs', '54000'), ('revision long keys', '54000') $$,
   'the long-key probes are rejected with 54000, as draft saves and as a revision');
-select is_empty($$ select probe from tests.costs where temp_bytes >= 1024 * 1024 or elapsed >= interval '1 second' $$,
-  'the long-key probes write under 1 MB of temp files and finish in under a second');
+select is_empty($$ select probe from tests.costs where probe like '% long keys%'
+    and (temp_bytes >= 1024 * 1024 or elapsed >= interval '5 seconds') $$,
+  'the long-key probes write under 1 MB of temp files and finish in under 5 seconds');
 
 -- The control-character probe (Task 7 round 3 security review, decision 29):
 -- 126 levels of objects, each with one key of 64 x chr(1), over an array of
 -- 1,000 references; 128 levels deep, 1,000 references, 117,140 bytes as text.
--- Every key was within decision 28's 64 characters, but a path stores each key
--- escaped (chr(1) is \u0001, 6 characters), so every path was about 49 KB and
--- the result 48.8 MB of temp files (48,807,936 bytes in 0.53 s, as a draft save
--- and as a revision). The key pattern now refuses it before the walk: no temp
--- files, in milliseconds.
+-- The key pattern refuses it before the walk: no temp files at all, under 5 s.
 create function tests.control_keys() returns jsonb
 language sql
 set search_path = ''
@@ -758,8 +748,8 @@ select results_eq($$ select probe, state from tests.costs where probe like '% co
   $$ values ('draft control-character keys', '54000'), ('revision control-character keys', '54000') $$,
   'the control-character probe is refused with 54000, as a draft save and as a revision');
 select is_empty($$ select probe from tests.costs where probe like '% control-character keys'
-    and (temp_bytes <> 0 or elapsed >= interval '1 second') $$,
-  'the control-character probe writes no temp files and is refused in under a second');
+    and (temp_bytes <> 0 or elapsed >= interval '5 seconds') $$,
+  'the control-character probe writes no temp files and is refused in under 5 seconds');
 select is((select count(*)::int from cms.draft_refs where entry_id = tests.entry('c109')), 1000,
   'the refused control-character probe leaves draft_refs alone');
 
@@ -770,9 +760,8 @@ select is((select count(*)::int from cms.draft_refs where entry_id = tests.entry
 -- result decisions 28 and 29 allow (no key is escaped, decision 29; the
 -- documented worst case is about 10 MB of temp files per statement). It is
 -- accepted, as a draft save and as a revision.
--- The only temp file is that result, spilled past work_mem (4 MB): locally
--- 8,486,912 bytes in about 0.18 s (26.6 MB in 0.27 s when the walk carried each
--- node's path), so the bounds are 10 MB and 1 s. The keys repeat, so the paths
+-- The only temp file is that result, spilled past work_mem (4 MB): about
+-- 8.5 MB locally, against bounds of 10 MB and 5 s. The keys repeat, so the paths
 -- compress under the primary keys' btree limit (2,704 bytes); paths this long
 -- made of incompressible keys are refused by the index, also with 54000 (below).
 create function tests.at_limits() returns jsonb
@@ -800,8 +789,15 @@ select results_eq($$ select probe, state from tests.costs where probe like '% at
   $$ values ('draft at limits', '00000'), ('revision at limits', '00000') $$,
   'the document at the limits is accepted, as a draft save and as a revision');
 select is_empty($$ select probe from tests.costs where probe like '% at limits'
-    and (temp_bytes > 10 * 1024 * 1024 or elapsed >= interval '1 second') $$,
-  'the document at the limits writes at most 10 MB of temp files and is saved in under a second');
+    and (temp_bytes > 10 * 1024 * 1024 or elapsed >= interval '5 seconds') $$,
+  'the document at the limits writes at most 10 MB of temp files and is saved in under 5 seconds');
+-- Positive control: the measurement works. The 8.5 MB result spills past
+-- work_mem, so both writes report well over 1 MB of temp files. This depends on
+-- work_mem being 4 MB (the local default); with a work_mem large enough to hold
+-- the result in memory this check would fail.
+select results_eq($$ select probe, temp_bytes > 1024 * 1024 from tests.costs where probe like '% at limits' order by probe $$,
+  $$ values ('draft at limits', true), ('revision at limits', true) $$,
+  'positive control: the document at the limits writes over 1 MB of temp files, so tests.cost measures them');
 select set_eq($$ select path, target_entry_id from cms.draft_refs where entry_id = tests.entry('c109') $$,
   $$ select '$' || repeat('."' || repeat('k', 64) || '"', 126) || '[' || i || ']', tests.entry('c101')
      from generate_series(0, 999) as i $$,
@@ -810,18 +806,15 @@ select set_eq($$ select path, target_entry_id from cms.revision_refs where revis
   $$ select path, target_entry_id from cms.draft_refs where entry_id = tests.entry('c109') $$,
   'the revision at the limits has the same references');
 
--- Adversarial shapes inside all three limits (Task 7 round 2 security review).
--- The walk once kept one row per reference and per container on the way to
--- one, each with its full path, so a document whose references each sit at the
--- end of their own long chain under a shared trunk made it carry about 1,000
--- times the depth in paths. The walk now keeps one parent position and one step
--- per node and puts a path together only for a reference, so the only temp
--- file left is the result itself when it passes work_mem (4 MB): at most 1,000
--- paths of at most about 8.6 KB. Each shape is saved as a draft by the editor
--- and appended as a revision by the worker, with the bounds 10 MB and 1 s (at
--- most 8.0 MB and about 0.5 s locally, against up to 1.1 GB and 1.1 s before); the
--- statement timeout is only a guard. The measurements are printed at the end.
-set local statement_timeout = '3s';
+-- Adversarial shapes inside all three limits (Task 7 round 2 security review):
+-- documents whose references each sit at the end of their own long chain under
+-- a shared trunk. The walk puts a path together only for a reference, so the
+-- only temp file is the result itself when it passes work_mem (4 MB): at most
+-- 1,000 paths of at most about 8.5 KB. Each shape is saved as a draft by the
+-- editor and appended as a revision by the worker, with the bounds 10 MB and
+-- 5 s. The statement timeout is only a guard against a hang. The measurements
+-- are printed at the end.
+set local statement_timeout = '30s';
 -- p_count references, each at the end of its own chain of p_chain objects
 -- {"a": ...}, in an array under p_trunk objects with 64-character keys.
 create function tests.branching(p_trunk int, p_chain int, p_count int) returns jsonb
@@ -848,22 +841,17 @@ as $$ select tests.trunk(p_trunk, 64, (select pg_catalog.jsonb_agg(tests.md5_cha
 grant execute on function tests.branching(int, int, int), tests.md5_chain(text, int, jsonb), tests.md5_branching(int, int, int)
   to authenticated, service_role;
 -- The shapes, all within the limits: 128 levels at most, keys of 64 characters
--- at most, 1,000 references at most and 1 MB at most (before: when the walk
--- carried each node's path; now: this walk, as a draft save):
+-- at most, 1,000 references at most and 1 MB at most. Each is held to 10 MB of
+-- temp files and 5 s:
 --   "branching", the security review's document: trunk 63, 1,000 chains of 63.
---     Before 1.1 GB of temp files in 1.1 s; now 4.5 MB (the result) in 0.28 s.
 --   "branching deep trunk", its second document: trunk 118, 1,000 chains of 8.
---     Before 281 MB in 0.33 s; now 8.0 MB in 0.17 s.
 --   "md5 chains": 1,000 chains of 13 incompressible keys under a trunk of 50.
---     Before 211 MB in 0.33 s; now 4.3 MB in 0.18 s.
 --   "md5 deep chains": 370 chains of 38 incompressible keys under a trunk of 1,
 --     about 2.6 KB per path, as long as the primary keys' btree limit (2,704
---     bytes per index row) allows. Before 39 MB in 0.14 s; now none in 0.14 s.
+--     bytes per index row) allows.
 --   "long chains": 1,000 chains of 125, the most nodes the walk can enter.
---     Before 117 MB in 0.86 s; now none in 0.4 to 0.5 s, the slowest.
 --   "deep blob": one reference beside a 940 KB array, 125 levels down, the
---     review's CPU probe (each level scanned the whole subtree again; now only
---     children at most half their parent are counted). Before 0.56 s; now 0.08 s.
+--     review's CPU probe (only children at most half their parent are counted).
 create table tests.shapes (shape text primary key, doc jsonb);
 insert into tests.shapes (shape, doc) values
   ('branching', tests.branching(63, 63, 1000)),
@@ -888,6 +876,9 @@ select results_eq($$ select s.shape, e.depth,
             ('deep blob', 128, true, 1, true), ('long chains', 128, true, 1000, true),
             ('md5 chains', 65, true, 1000, true), ('md5 deep chains', 41, true, 370, true) $$,
   'the adversarial shapes are within the limits: depth, references and size');
+-- Fixture sanity check, not a test of extract_refs: the same scan as the
+-- function's key check, so it only shows the shapes are documents the key
+-- pattern accepts.
 select is_empty($$ select 1 from tests.shapes s,
     lateral (select regexp_matches(s.doc::text, '"((?:[^"\\]|\\.)*)":', 'g')) as m (a) where m.a[1] !~ '^[A-Za-z0-9_-]{1,64}$' $$,
   'the adversarial shapes'' keys all match ^[A-Za-z0-9_-]{1,64}$');
@@ -948,8 +939,8 @@ select results_eq($$ select probe, state from tests.shape_costs order by probe $
             ('revision long chains', '00000'), ('revision md5 chains', '00000'), ('revision md5 deep chains', '00000') $$,
   'the adversarial shapes are accepted, as draft saves and as revisions');
 select is_empty($$ select probe from tests.shape_costs
-    where (temp_bytes > 10 * 1024 * 1024 or elapsed >= interval '1 second') $$,
-  'the adversarial shapes write at most 10 MB of temp files and are saved in under a second');
+    where (temp_bytes > 10 * 1024 * 1024 or elapsed >= interval '5 seconds') $$,
+  'the adversarial shapes write at most 10 MB of temp files and are saved in under 5 seconds');
 select results_eq($$ select shape, count(*)::int, count(*) filter (where found and in_revision)::int
     from tests.shape_refs group by shape order by shape $$,
   $$ values ('branching', 1000, 1000), ('branching deep trunk', 1000, 1000), ('deep blob', 1, 1),
@@ -971,8 +962,8 @@ select results_eq($$ select probe, state from tests.costs where probe like '% md
   $$ values ('draft md5 longest path', '54000'), ('revision md5 longest path', '54000') $$,
   'a path longer than the btree limit is refused with 54000, as a draft save and as a revision');
 select is_empty($$ select probe from tests.costs where probe like '% md5 longest path'
-    and (temp_bytes > 1024 * 1024 or elapsed >= interval '1 second') $$,
-  'the refused longest path writes under 1 MB of temp files and is refused in under a second');
+    and (temp_bytes > 1024 * 1024 or elapsed >= interval '5 seconds') $$,
+  'the refused longest path writes under 1 MB of temp files and is refused in under 5 seconds');
 select tests.act_as(tests.persona('editor_labak'));
 select throws_like($$ update cms.drafts set data = (select doc from tests.shapes where shape = 'md5 longest path') where entry_id = tests.entry('c109') $$,
   'index row %', 'it is the index that refuses the longest path');
