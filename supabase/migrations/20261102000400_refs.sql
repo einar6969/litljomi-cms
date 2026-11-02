@@ -1,5 +1,5 @@
 -- Reference extraction (spec §4.1 rules 3 and 5, §4.3 "References inside JSON",
--- §4.5; plan Task 7, decisions 3, 25, 26 and 27).
+-- §4.5; plan Task 7, decisions 3, 25, 26, 27 and 28).
 --
 -- Every reference in a document, at any depth, is an object
 -- { "_ref": "<uuid>", "_kind": "entry" | "asset", ... }. Triggers extract them
@@ -60,6 +60,15 @@ create table cms.revision_refs (
 -- for both. (A CHECK constraint would report 23514, not 54000, and would run the
 -- same check a second time.)
 --
+-- Key-length and reference-count limits (§4.3, decision 28): a document with an
+-- object key longer than 64 characters (characters, not bytes, of the key itself,
+-- not of its escaped JSON text) or with more than 1,000 references raises 54000,
+-- after the nesting check and before anything is walked or validated. A
+-- reference is an object with a _ref key, what strict $.**._ref matches. With
+-- all three limits a path is at most about 8.6 KB and the walk carries at most
+-- 1,000 of them, so its cost is bounded whatever the keys are (a ~1 MB document
+-- at all three limits: about 27 MB of temp files and 0.25 s locally).
+--
 -- The walk is lean (decision 27): it enters only containers with a reference
 -- below them, never a reference-free subtree, and a row carries its location
 -- (needed for the result), never a subtree.
@@ -72,6 +81,7 @@ set search_path = ''
 as $$
 declare
   v_doc jsonb;
+  v_refs bigint;
   r record;
 begin
   -- p_data may be a TOAST pointer (a trigger's NEW.data). #> '{}' returns the
@@ -84,7 +94,39 @@ begin
   if pg_catalog.jsonb_path_exists(v_doc, 'strict $.**{128} ? (@.type() == "object" || @.type() == "array")') then
     raise exception 'document nested deeper than 128 levels' using errcode = '54000';
   end if;
-  if not pg_catalog.jsonb_path_exists(v_doc, 'strict $.**._ref') then
+  -- Key length. jsonpath cannot read an object's keys without .keyvalue(),
+  -- which copies every value it pairs with a key, so on nested objects it copies
+  -- each subtree once per level above it. Instead one left-to-right regular
+  -- expression scan of the document's JSON text matches each string in turn: a
+  -- match starts at an opening quote and ends at the first unescaped quote, and
+  -- between strings the text has no quotes, so every match is exactly one string
+  -- of the document, and a string directly followed by ':' is an object key
+  -- (jsonb's text output writes "key": value). One pass over the text, linear in
+  -- the document. A key's escaped text is never shorter than the key, so only
+  -- matches over 64 characters are decoded and measured. regexp_matches is
+  -- called in the select list, so its rows reach the filter one at a time and
+  -- exists stops at the first long key; in FROM, every row would first be stored
+  -- in a tuplestore, which spills to temp files on a large document.
+  if exists (
+    select 1
+    from (select pg_catalog.regexp_matches(v_doc::text, '"((?:[^"\\]|\\.)*)"(:?)', 'g')) as m (a)
+    where case when m.a[2] = ':' and pg_catalog.char_length(m.a[1]) > 64
+               then pg_catalog.char_length(('"' || m.a[1] || '"')::jsonb #>> '{}') > 64
+               else false end
+  ) then
+    raise exception 'object key longer than 64 characters' using errcode = '54000';
+  end if;
+  -- Reference count. strict $.**._ref visits each node once (strict, so arrays
+  -- are not unwrapped a second time); .type() turns each match into a short
+  -- string, so no _ref value is copied. jsonb_path_query computes all its
+  -- matches before returning any, at most one per object, so the limit only
+  -- stops the counting.
+  select pg_catalog.count(*) into v_refs
+  from (select from pg_catalog.jsonb_path_query(v_doc, 'strict $.**._ref.type()') limit 1001) as x;
+  if v_refs > 1000 then
+    raise exception 'more than 1000 references' using errcode = '54000';
+  end if;
+  if v_refs = 0 then
     return;
   end if;
   -- One row per reference object and per container on the way to one: loc is
