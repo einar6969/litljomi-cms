@@ -144,3 +144,7 @@ Einar approved the exact diff in chat on 2026-11-02 (patch to `cms-security-revi
 - The Task 23 implementer ran `pnpm --filter cms e2e editing` once with its working directory reset to `.worktrees/lane-a-alt` (found no tests, built there, seeded the stack). It stopped and reported; the controller ran Task 23's e2e from `lane-a-next` itself.
 - The controller ran `pnpm --filter cms e2e auth 2>&1 | tail -7` and `… | head -40` on `m1/phase-1` after the Task 22 merge (piped, so not the approved form): both ran sandboxed and Chromium could not start (1 failed, 3 did not run). The exact form then passed 4/4. From now on the controller runs e2e only in the bare form.
 - In every case the deviation made the run more restricted (sandboxed), never less.
+
+## Controller walkthrough in the built-in browser pane (2026-11-02)
+
+- For Einar's requested walkthrough ("Run those steps yourself first"), the controller used the desktop app's browser pane against `http://localhost:3100` and the local Auth verify URL on `127.0.0.1:54321` only, signing in with the local test identity `editor-demo@test.local` (magic link from Mailpit). No other site was opened; no settings changed. The CMS and demo site were started as sandboxed background shell commands and stopped afterwards (ports 3100 and 3101 free).
