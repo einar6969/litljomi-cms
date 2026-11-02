@@ -3,6 +3,8 @@
 import { link } from '@litljomi/cms-schema/src/fields/link.ts';
 import { useState } from 'react';
 import { t } from '@/i18n/is';
+import { Field } from '@/ui/Field';
+import { Notice } from '@/ui/Notice';
 import type { FieldProps } from '../field-registry';
 
 // The field kind's own rule (https:, http: or mailto:, no credentials), so the form and the server
@@ -26,9 +28,9 @@ export function LinkField({ id, label, required, value, onChange }: FieldProps) 
   const [valid, setValid] = useState(true);
   if (isEntryLink(value)) {
     return (
-      <div>
-        <span>{label}</span>
-        <p role="note">{t.editor.entryLink}</p>
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[15px] font-medium">{label}</span>
+        <Notice role="note">{t.editor.entryLink}</Notice>
       </div>
     );
   }
@@ -44,10 +46,8 @@ export function LinkField({ id, label, required, value, onChange }: FieldProps) 
     if (parsed.success) onChange(parsed.data);
   };
   return (
-    <label htmlFor={id}>
-      {label}
+    <Field label={label} htmlFor={id} error={valid ? null : t.editor.invalidUrl}>
       <input type="text" inputMode="url" id={id} name={id} required={required} value={text} aria-invalid={!valid} onChange={(e) => change(e.target.value)} />
-      {valid ? null : <span role="alert">{t.editor.invalidUrl}</span>}
-    </label>
+    </Field>
   );
 }

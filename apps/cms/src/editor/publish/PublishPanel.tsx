@@ -4,6 +4,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { requestPublishAction, requestUnpublishAction, type PublishActionResult } from '@/app/(editor)/t/[tenant]/publish-actions';
 import { t } from '@/i18n/is';
 import { createBrowserEditorClient } from '@/lib/supabase/browser';
+import { Button } from '@/ui/Button';
+import { Notice } from '@/ui/Notice';
+import { StatusBadge } from '@/ui/StatusBadge';
 import { displayState, isFinal, PUBLICATION_STATUS_COLUMNS, type DisplayState, type PublicationStatusRow } from './status';
 
 /** The panel polls the entry's status this often while it is not final (plan Task 25). */
@@ -133,23 +136,35 @@ export function PublishPanel({
   const inFlight = busy || (state !== null && !isFinal(state));
 
   return (
-    <section aria-labelledby="publish-heading">
-      <h2 id="publish-heading">{t.publish.heading}</h2>
+    <section aria-labelledby="publish-heading" className="flex flex-col gap-4 rounded-lg border border-hairline bg-recessed p-5">
+      <h2 id="publish-heading" className="text-xs font-semibold uppercase leading-4 tracking-wider text-muted">
+        {t.publish.heading}
+      </h2>
       {/* Not role="status": the form's save status is the page's one status region. */}
-      <p data-testid="publish-state" data-tone={state?.tone ?? 'none'} aria-live="polite">
+      <StatusBadge tone={state?.tone ?? 'pending'} data-testid="publish-state" data-tone={state?.tone ?? 'none'} aria-live="polite">
         {state?.label ?? t.publish.none}
-      </p>
-      {state?.detail ? <p data-testid="publish-detail">{state.detail}</p> : null}
-      {loadFailed ? <p role="note">{t.publish.statusUnavailable}</p> : null}
-      {notice ? <p role="alert">{notice}</p> : null}
-      <button type="button" disabled={disabled || inFlight} onClick={() => void send(() => publish(entryId, version))}>
-        {t.publish.publish}
-      </button>
-      {published ? (
-        <button type="button" disabled={inFlight} onClick={() => void send(() => unpublish(entryId))}>
-          {t.publish.unpublish}
-        </button>
+      </StatusBadge>
+      {state?.detail ? (
+        <p data-testid="publish-detail" className="text-sm text-muted">
+          {state.detail}
+        </p>
       ) : null}
+      {loadFailed ? <Notice role="note">{t.publish.statusUnavailable}</Notice> : null}
+      {notice ? (
+        <Notice tone="error" role="alert">
+          {notice}
+        </Notice>
+      ) : null}
+      <div className="flex flex-wrap gap-3">
+        <Button variant="primary" className="max-sm:flex-1" disabled={disabled || inFlight} onClick={() => void send(() => publish(entryId, version))}>
+          {t.publish.publish}
+        </Button>
+        {published ? (
+          <Button variant="danger" className="max-sm:flex-1" disabled={inFlight} onClick={() => void send(() => unpublish(entryId))}>
+            {t.publish.unpublish}
+          </Button>
+        ) : null}
+      </div>
     </section>
   );
 }

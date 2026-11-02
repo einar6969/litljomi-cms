@@ -7,6 +7,9 @@ import { createBrowserEditorClient } from '@/lib/supabase/browser';
 import { prepareUpload, uploadOriginal } from '../../upload';
 import type { FieldProps } from '../field-registry';
 import { useEditorTenant } from '../tenant-context';
+import { Button, buttonClasses } from '@/ui/Button';
+import { Field } from '@/ui/Field';
+import { Notice as NoticeBox, type NoticeTone } from '@/ui/Notice';
 
 /** The stored value of an image field: an asset reference with this use's alt text (§5.2). */
 type ImageValue = { _ref: string; _kind: 'asset'; alt: string };
@@ -26,6 +29,8 @@ const messages: Record<Notice, string> = {
   focalSaved: t.editor.image.focalSaved,
   updateError: t.editor.image.updateError,
 };
+
+const toneOf = (notice: Notice): NoticeTone => (notice === 'uploading' ? 'info' : notice.endsWith('Saved') ? 'success' : 'error');
 
 const ACCEPT = 'image/jpeg,image/png,image/webp';
 
@@ -122,42 +127,57 @@ export function ImageField({ id, label, required, value, onChange }: FieldProps)
     void updateAsset(fraction(e.clientX - box.left, box.width), fraction(e.clientY - box.top, box.height), preview.defaultAlt, 'focalSaved');
   };
 
+  const busyPicker = busy ? 'cursor-not-allowed border-hairline bg-recessed text-muted' : 'cursor-pointer';
   return (
-    <fieldset>
-      <legend>{label}</legend>
+    <fieldset className="flex min-w-0 flex-col gap-3 rounded-lg border border-hairline p-4">
+      <legend className="px-1 text-[15px] font-medium">{label}</legend>
       {image ? (
-        <div>
+        <div className="flex flex-col items-start gap-3">
           {preview ? (
-            <button type="button" title={t.editor.image.focal} aria-label={t.editor.image.focal} onClick={chooseFocal} style={{ position: 'relative', padding: 0, border: 0, display: 'inline-block' }}>
+            <button
+              type="button"
+              title={t.editor.image.focal}
+              aria-label={t.editor.image.focal}
+              onClick={chooseFocal}
+              className="relative inline-block min-h-0 max-w-full cursor-crosshair overflow-hidden rounded-lg border border-hairline bg-recessed p-0 leading-none hover:bg-recessed"
+            >
               {/* A signed URL of the private original (§5.6), not a public file. */}
               <img
                 data-testid={`${id}-preview`}
                 src={preview.url}
                 alt={image.alt}
-                style={{ maxWidth: '20rem', maxHeight: '15rem', display: 'block' }}
+                className="block max-h-[240px] max-w-full"
                 onError={() => setSigning((n) => (n < 3 ? n + 1 : n))}
               />
               {preview.focalX !== null && preview.focalY !== null ? (
                 <span
                   aria-hidden="true"
-                  style={{ position: 'absolute', left: `${preview.focalX * 100}%`, top: `${preview.focalY * 100}%`, width: 10, height: 10, margin: -5, borderRadius: 5, background: '#fff', border: '2px solid #000' }}
+                  className="absolute -m-[7px] size-3.5 rounded-full border-2 border-ink bg-canvas"
+                  style={{ left: `${preview.focalX * 100}%`, top: `${preview.focalY * 100}%` }}
                 />
               ) : null}
             </button>
           ) : null}
-          <label htmlFor={`${id}-alt`}>
-            {t.editor.image.alt}
-            <input id={`${id}-alt`} name={`${id}-alt`} type="text" maxLength={1000} value={image.alt} onChange={(e) => onChange({ ...image, alt: e.target.value })} />
-          </label>
-          <button type="button" disabled={!preview || image.alt === (preview.defaultAlt ?? '')} onClick={() => void updateAsset(preview?.focalX ?? null, preview?.focalY ?? null, image.alt === '' ? null : image.alt, 'defaultAltSaved')}>
-            {t.editor.image.saveDefaultAlt}
-          </button>
-          <button type="button" onClick={() => onChange(undefined)}>
-            {t.editor.image.remove}
-          </button>
+          <div className="w-full">
+            <Field label={t.editor.image.alt} htmlFor={`${id}-alt`}>
+              <input id={`${id}-alt`} name={`${id}-alt`} type="text" maxLength={1000} value={image.alt} onChange={(e) => onChange({ ...image, alt: e.target.value })} />
+            </Field>
+          </div>
+          <div className="flex flex-wrap gap-3 max-sm:w-full max-sm:flex-col">
+            <Button disabled={!preview || image.alt === (preview.defaultAlt ?? '')} onClick={() => void updateAsset(preview?.focalX ?? null, preview?.focalY ?? null, image.alt === '' ? null : image.alt, 'defaultAltSaved')}>
+              {t.editor.image.saveDefaultAlt}
+            </Button>
+            <Button variant="danger" onClick={() => onChange(undefined)}>
+              {t.editor.image.remove}
+            </Button>
+          </div>
         </div>
       ) : null}
-      <label htmlFor={id}>
+      {/* The native input is visually hidden but still the label's control: focusable, named, and what a test or a screen reader reaches. */}
+      <label
+        htmlFor={id}
+        className={`${buttonClasses('secondary')} relative self-start max-sm:w-full has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ink ${busyPicker}`}
+      >
         {image ? t.editor.image.replace : t.editor.image.choose}
         <input
           id={id}
@@ -166,6 +186,7 @@ export function ImageField({ id, label, required, value, onChange }: FieldProps)
           accept={ACCEPT}
           required={required && !image}
           disabled={busy}
+          className="sr-only"
           onChange={(e) => {
             const file = e.target.files?.[0];
             e.target.value = '';
@@ -176,9 +197,13 @@ export function ImageField({ id, label, required, value, onChange }: FieldProps)
       {notice ? (
         // Progress and success are announced politely, failures as alerts. Not role="status": the
         // form's save status is the page's one status element.
-        <p data-testid={`${id}-notice`} {...(notice === 'uploading' || notice.endsWith('Saved') ? { 'aria-live': 'polite' as const } : { role: 'alert' })}>
+        <NoticeBox
+          data-testid={`${id}-notice`}
+          tone={toneOf(notice)}
+          {...(notice === 'uploading' || notice.endsWith('Saved') ? { 'aria-live': 'polite' as const } : { role: 'alert' })}
+        >
           {messages[notice]}
-        </p>
+        </NoticeBox>
       ) : null}
     </fieldset>
   );
