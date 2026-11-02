@@ -28,7 +28,8 @@
   { "id": 24, "title": "Image upload and rich-text field", "phase": 4, "sensitive": true, "tier": "high", "lane": "A", "dependsOn": [23], "requiredGates": ["G0", "G1"], "checkpointAfter": null },
   { "id": 25, "title": "Publish, unpublish and status display", "phase": 4, "sensitive": true, "tier": "high", "lane": "A", "dependsOn": [24, 30], "requiredGates": ["G0", "G1"], "checkpointAfter": null },
   { "id": 31, "title": "Editor design", "phase": 4, "sensitive": false, "tier": "low", "lane": "A", "dependsOn": [25], "requiredGates": ["G0", "G1"], "checkpointAfter": null },
+  { "id": 32, "title": "Cross-device sign-in and status tones", "phase": 5, "sensitive": true, "tier": "high", "lane": "B", "dependsOn": [31], "requiredGates": ["G0", "G1"], "checkpointAfter": null },
   { "id": 27, "title": "LABAK slice integration on branch `hub-integration`", "phase": 5, "sensitive": true, "tier": "medium", "lane": "A", "dependsOn": [25], "requiredGates": ["G0", "G1", "G7"], "checkpointAfter": "C3" },
   { "id": 28, "title": "Provision staging and deploy", "phase": 6, "sensitive": true, "tier": "high", "lane": "A", "dependsOn": [27], "requiredGates": ["G0", "G1", "G2", "G3", "G4", "G5", "G6"], "checkpointAfter": null },
-  { "id": 29, "title": "M1 acceptance on staging", "phase": 6, "sensitive": false, "tier": "medium", "lane": "A", "dependsOn": [28, 31], "requiredGates": ["G0", "G1", "G2", "G3", "G4", "G5", "G6"], "checkpointAfter": "C4" }
+  { "id": 29, "title": "M1 acceptance on staging", "phase": 6, "sensitive": false, "tier": "medium", "lane": "A", "dependsOn": [28, 31, 32], "requiredGates": ["G0", "G1", "G2", "G3", "G4", "G5", "G6"], "checkpointAfter": "C4" }
 ]

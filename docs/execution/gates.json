@@ -66,6 +66,11 @@
           "at": "2026-11-02",
           "scope": "Task 31, editor design, under G0 and G1 only: added to the plan and plan-index.json (Phase 4, Lane A, low tier, dependsOn 25; does not block Task 27; Task 29 depends on it) and run in a lane worktree brought up to m1/phase-1. Tailwind 4 (exact version, at least two weeks old) from registry.npmjs.org; fonts self-hosted from apps/cms/public/fonts/, no network fonts. Two steps with a stop for Einar's approval of the screenshots between them. One combined review per round (it also checks the screenshots), the controller's boundary check, a security review only if the boundary is touched; a round with only Minors passes. The pkce_code_verifier_not_found sign-in issue is recorded, not fixed. Stop when Task 31 is done and merged; main unchanged; Task 27 not started.",
           "note": "Einar in chat, 2026-11-02: \"Editor design (Einar, 2026-11-02). Authorisation, under G0 and G1 only: add Task 31, editor design, to the plan and `plan-index.json` (after Task 25, before Task 29, low tier; it doesn’t block Task 27), and run it. Record it as a G0 extension quoting these words.\" and \"Stop when Task 31 is done and merged. `main` stays where it is. Don’t start Task 27.\""
+        },
+        {
+          "at": "2026-11-02",
+          "scope": "Decision 41, under G0, G1 and G7 only, through C3: Task 32 (cross-device sign-in and status tones; high tier; Lane B worktree; parallel with Task 27; C3 after both; Task 29 depends on it); lighter review rules (site-author threat model, Minor-only rounds pass, non-blocking questions collected for C3). No external actions, no push, main moves only at C3 approval, network npm-only, .claude changes shown as exact diffs, bypass disabled; Task 28 not started.",
+          "note": "Einar in chat, 2026-11-02: \"Authorisation (Einar, 2026-11-02), under G0, G1 and G7 only, through C3. Record each item as decisions, quoting these words.\" and \"New Task 32: cross-device sign-in and status tones. High tier. It runs in parallel with Task 27, in a CMS worktree. C3 follows both Tasks 27 and 32, and Task 29 also depends on Task 32; update the plan and `plan-index.json` accordingly.\" and \"Lighter review rules from now on\" and \"Don’t start Task 28.\" Full quotes: plan decision 41."
         }
       ]
     },
@@ -106,8 +111,16 @@
       "params": {}
     },
     "G7": {
-      "status": "pending",
-      "params": {}
+      "status": "approved",
+      "by": "Einar",
+      "at": "2026-11-02",
+      "scope": "Task 27 only: create hub-integration from LABAK's main at aec9f95 and commit locally on that branch only. Never commit to, merge into or push main; no push at all; no Vercel, DNS or hosting action. The LABAK workspace CLAUDE.md and the repository README apply (copy verbatim; existing pages, layout and copy unchanged). Playwright's visual comparison needs one exact excludedCommands entry, proposed to Einar and approved separately, removed again at C3.",
+      "note": "Einar in chat, 2026-11-02: \"G7, for Task 27: I approve G7 with `branch=hub-integration` and `push=false`.\" and \"Create `hub-integration` from LABAK’s `main` at `aec9f95`, and commit locally on that branch only.\" and \"Never commit to, merge into or push `main`; no push at all; no Vercel, DNS or hosting action.\"",
+      "params": {
+        "branch": "hub-integration",
+        "push": false,
+        "base": "aec9f95"
+      }
     }
   }
 }

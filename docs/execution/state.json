@@ -1143,6 +1143,15 @@
       "doneAt": "2026-11-02T21:35:54.956Z"
     },
     {
+      "id": 32,
+      "status": "pending",
+      "commits": [],
+      "reviews": {},
+      "gatesUsed": [],
+      "blockers": [],
+      "notes": "Added 2026-11-02 (decision 41.1): cross-device sign-in and status tones."
+    },
+    {
       "id": 27,
       "status": "pending",
       "commits": [],

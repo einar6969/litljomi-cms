@@ -11,7 +11,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '../../..');
 const PLAN_INDEX = JSON.parse(fs.readFileSync(path.join(REPO, 'tools/harness/plan-index.json'), 'utf8'));
 const SCHEMA = JSON.parse(fs.readFileSync(path.join(REPO, 'docs/execution/state.schema.json'), 'utf8'));
-const EXECUTION_ORDER = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 17, 19, 20, 26, 21, 30, 22, 23, 24, 25, 31, 27, 28, 29];
+const EXECUTION_ORDER = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 17, 19, 20, 26, 21, 30, 22, 23, 24, 25, 31, 32, 27, 28, 29];
 
 function gatesFile(approved = ['G0']) {
   const gates = {};
@@ -73,10 +73,10 @@ function withRoot(fn, options) {
   };
 }
 
-test('plan-index lists Tasks 0–31 in execution order with phases, gates and checkpoints', () => {
+test('plan-index lists Tasks 0–32 in execution order with phases, gates and checkpoints', () => {
   assert.deepEqual(PLAN_INDEX.map((t) => t.id), EXECUTION_ORDER);
   const byId = Object.fromEntries(PLAN_INDEX.map((t) => [t.id, t]));
-  const sensitive = [0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 17, 18, 19, 20, 21, 22, 24, 25, 26, 27, 28, 30];
+  const sensitive = [0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 17, 18, 19, 20, 21, 22, 24, 25, 26, 27, 28, 30, 32];
   for (const t of PLAN_INDEX) {
     assert.equal(typeof t.title, 'string');
     assert.ok(t.title.length > 0);
@@ -93,11 +93,11 @@ test('plan-index lists Tasks 0–31 in execution order with phases, gates and ch
   assert.deepEqual(byId[29].requiredGates, ['G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6']);
   const checkpoints = PLAN_INDEX.filter((t) => t.checkpointAfter).map((t) => [t.id, t.checkpointAfter]);
   assert.deepEqual(checkpoints, [[3, 'C0'], [18, 'C1'], [21, 'C2'], [27, 'C3'], [29, 'C4']]);
-  const tiers = { high: [0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 17, 19, 20, 21, 22, 24, 25, 28, 30], medium: [18, 26, 27, 29] };
+  const tiers = { high: [0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 17, 19, 20, 21, 22, 24, 25, 28, 30, 32], medium: [18, 26, 27, 29] };
   for (const t of PLAN_INDEX) {
     const expected = tiers.high.includes(t.id) ? 'high' : tiers.medium.includes(t.id) ? 'medium' : 'low';
     assert.equal(t.tier, expected, `tier of Task ${t.id}`);
-    assert.equal(t.lane, [13, 14, 15, 16, 18, 26, 30].includes(t.id) ? 'B' : 'A', `lane of Task ${t.id}`);
+    assert.equal(t.lane, [13, 14, 15, 16, 18, 26, 30, 32].includes(t.id) ? 'B' : 'A', `lane of Task ${t.id}`);
     for (const dep of t.dependsOn) {
       assert.ok(EXECUTION_ORDER.indexOf(dep) < EXECUTION_ORDER.indexOf(t.id), `Task ${t.id} depends on a later task ${dep}`);
     }
@@ -112,8 +112,9 @@ test('plan-index lists Tasks 0–31 in execution order with phases, gates and ch
   assert.deepEqual(byId[30].dependsOn, [21]);
   assert.deepEqual(byId[25].dependsOn, [24, 30]);
   assert.deepEqual(byId[31].dependsOn, [25]);
-  assert.deepEqual(byId[29].dependsOn, [28, 31]);
-  const phases = { 0: [0, 1, 2, 3], 1: [4, 5, 6, 7, 8, 9, 10, 11, 12], 2: [13, 14, 15, 16], 3: [17, 18, 19, 20, 21], 4: [22, 23, 24, 25, 30, 31], 5: [26, 27], 6: [28, 29] };
+  assert.deepEqual(byId[29].dependsOn, [28, 31, 32]);
+  assert.deepEqual(byId[32].dependsOn, [31]);
+  const phases = { 0: [0, 1, 2, 3], 1: [4, 5, 6, 7, 8, 9, 10, 11, 12], 2: [13, 14, 15, 16], 3: [17, 18, 19, 20, 21], 4: [22, 23, 24, 25, 30, 31], 5: [26, 27, 32], 6: [28, 29] };
   for (const [phase, ids] of Object.entries(phases)) for (const id of ids) assert.equal(byId[id].phase, Number(phase));
   assert.equal(byId[0].title, 'Execution setup');
 });
@@ -135,7 +136,7 @@ test('the schema rejects a malformed state', () => {
 
 test('initial state: every task pending, every validation gate and checkpoint pending', () => {
   const s = initialState(PLAN_INDEX, 'm1/phase-0', '2026-11-01T00:00:00.000Z');
-  assert.equal(s.tasks.length, 32);
+  assert.equal(s.tasks.length, 33);
   assert.ok(s.tasks.every((t) => t.status === 'pending' && t.commits.length === 0));
   const gates = ['V-HARNESS', 'V-CONNECTORS', 'V-SANDBOX', 'V-HELPERS', ...Array.from({ length: 15 }, (_, i) => `A${i + 1}`)];
   assert.deepEqual(Object.keys(s.validationGates).sort(), gates.sort());
