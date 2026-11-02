@@ -19,8 +19,8 @@
 --   delivery (e321, e341) labak; (e322, e342) demo
 --
 -- Later assertions depend on earlier mutations, in this order: editor_labak
--- inserts request e301 (publish c301, naming outsider as requester) and e303
--- (unpublish c301, no requester given); service_role claims and commits e301,
+-- inserts a publish request for c301 naming outsider as requester (renamed
+-- e301 by the owner) and an unpublish request for c301 with no requester; service_role claims and commits e301,
 -- inserts release e323 (labak, number 2, building), records a delivery
 -- (e323, e341) and inserts site e343 (labak).
 begin;
@@ -217,7 +217,7 @@ select policies_are('cms', 'sites', array['sites_select_member', 'sites_select_c
   'sites policies: member select, console select');
 select policies_are('cms', 'site_deliveries', array['site_deliveries_select_member', 'site_deliveries_select_console'],
   'site_deliveries policies: member select, console select');
-select results_eq($$ select tablename::text, policyname::text, cmd, roles::text[] from pg_catalog.pg_policies
+select results_eq($$ select tablename::text collate "default", policyname::text collate "default", cmd collate "default", roles::text[] collate "default" from pg_catalog.pg_policies
      where schemaname = 'cms' and tablename in ('publish_requests', 'releases', 'sites', 'site_deliveries')
      order by 1, 2 $$,
   $$ values ('publish_requests', 'publish_requests_insert_member', 'INSERT', array['authenticated']),
@@ -284,9 +284,14 @@ select results_eq($$ select notify_status, notify_attempts, live_status from cms
 -- ---------------------------------------------------------------------------
 -- The editor requests publication (§6.1; Task 10's request_publish inserts this row).
 select tests.act_as(tests.persona('editor_labak'));
-select lives_ok($$ insert into cms.publish_requests (id, tenant_id, entry_id, action, draft_version, requested_by)
-  values (tests.pub('e301'), tests.tenant('labak'), tests.entry('c301'), 'publish', 1, tests.persona('outsider')) $$,
+select lives_ok($$ insert into cms.publish_requests (tenant_id, entry_id, action, draft_version, requested_by)
+  values (tests.tenant('labak'), tests.entry('c301'), 'publish', 1, tests.persona('outsider')) $$,
   'editor inserts a publish request for its own entry (naming another user as requester)');
+-- The editor cannot choose the id (no insert grant on it, tested below); the
+-- owner renames the new row to e301 so later assertions can name it.
+select tests.act_as_owner();
+update cms.publish_requests set id = tests.pub('e301') where entry_id = tests.entry('c301') and action = 'publish';
+select tests.act_as(tests.persona('editor_labak'));
 -- Actor columns cannot be spoofed (decision 11).
 select is((select requested_by from cms.publish_requests where id = tests.pub('e301')), tests.persona('editor_labak'),
   'publish_requests.requested_by forced to auth.uid(): outsider''s ID is replaced by editor_labak''s');
@@ -548,8 +553,8 @@ select throws_ok($$ insert into cms.site_deliveries (release_id, site_id, tenant
   values (tests.pub('e323'), tests.pub('e342'), tests.tenant('labak')) $$,
   '23503', null, 'a labak release cannot be delivered to a demo site (composite FK)');
 select throws_ok($$ insert into cms.site_deliveries (release_id, site_id, tenant_id)
-  values (tests.pub('e322'), tests.pub('e342'), tests.tenant('labak')) $$,
-  '23503', null, 'a delivery''s tenant must be its release''s and site''s tenant');
+  values (tests.pub('e322'), tests.pub('e341'), tests.tenant('labak')) $$,
+  '23503', null, 'a delivery''s tenant must be its release''s tenant (a demo release under labak)');
 select throws_ok($$ update cms.site_deliveries set site_id = tests.pub('e343') where release_id = tests.pub('e321') $$,
   '42501', null, 'service_role cannot move a delivery to another site');
 select throws_ok($$ delete from cms.site_deliveries $$, '42501', null, 'service_role cannot delete deliveries');
