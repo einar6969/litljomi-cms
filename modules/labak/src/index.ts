@@ -1,4 +1,4 @@
-import { defineModule, extendType, image, newsType, type LiveCheck, type SiteEntry } from '@litljomi/cms-schema';
+import { defineModule, extendType, image, newsType, text, type LiveCheck, type SiteEntry } from '@litljomi/cms-schema';
 
 /** How many news entries the home page lists (the site's `allArticles.slice(0, 6)`). */
 export const HOME_LATEST_COUNT = 6;
@@ -25,7 +25,12 @@ export default defineModule({
         body: { label: 'Meginmál' },
         source: { label: 'Heimild' },
       },
-      extraFields: { secondaryImage: image({ label: 'Aukamynd' }) },
+      extraFields: {
+        secondaryImage: image({ label: 'Aukamynd' }),
+        // The label of the site's source button (decision 42.2, Q2); the site shows the button only
+        // when an external source has a label.
+        sourceLabel: text({ label: 'Texti á heimildahnappi', max: 80 }),
+      },
     }),
   ],
   structure: [{ type: 'news', label: 'Fréttir' }],

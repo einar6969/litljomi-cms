@@ -80,7 +80,7 @@ describe('supabase/config.toml security settings', () => {
   const MAGIC_LINK = '{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email';
   const INVITE_LINK = '{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=invite';
   describe.each([
-    ['magic_link', [MAGIC_LINK, '{{ .Token }}'], [MAGIC_LINK]],
+    ['magic_link', [MAGIC_LINK], [MAGIC_LINK]],
     ['invite', [INVITE_LINK], [INVITE_LINK]],
     ['email_change', ['{{ .ConfirmationURL }}', '{{ .Email }}', '{{ .NewEmail }}'], ['{{ .ConfirmationURL }}']],
     ['reauthentication', ['{{ .Token }}'], []],
@@ -108,6 +108,13 @@ describe('supabase/config.toml security settings', () => {
       const hrefs = [...html.matchAll(/href\s*=\s*"([^"]*)"/gi)].map((m) => m[1]);
       expect(hrefs).toEqual(links);
     });
+  });
+
+  // Decision 42.2 (Q3): the magic-link mail carries the link only, no 6-digit code.
+  it('[auth.email.template.magic_link] has no one-time code', () => {
+    const html = readFileSync(join(repoRoot, 'supabase/templates/magic_link.html'), 'utf8');
+    expect(html).not.toMatch(/\{\{\s*\.Token\s*\}\}/);
+    expect(html).not.toMatch(/kóð/i);
   });
 
   it('has no [remotes.*] block (config push would apply it to a hosted project)', () => {

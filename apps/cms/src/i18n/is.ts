@@ -18,6 +18,7 @@ export const is = {
     title: 'Ljúka innskráningu',
     intro: 'Smelltu á hnappinn til að skrá þig inn í Litljómi vefumsjón.',
     submit: 'Halda áfram',
+    signedIn: 'Þú ert þegar skráð/ur inn',
   },
   tenants: {
     title: 'Vefirnir þínir',

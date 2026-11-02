@@ -26,6 +26,8 @@ const { RichTextField } = await import('../form/fields/RichTextField');
 const { SlugField } = await import('../form/SlugField');
 const { EditorTenantProvider } = await import('../form/tenant-context');
 const { EntryForm } = await import('../form/EntryForm');
+const { describeFields } = await import('../form/descriptors');
+const { getType } = await import('@/modules/registry');
 const { richTextDocSchema } = await import('@litljomi/rich-text');
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -347,5 +349,26 @@ describe('EntryForm', () => {
     expect($<HTMLInputElement>('#field-title')?.value).toBe('a');
     expect(container.querySelector('[role="note"]')?.textContent).toBe(t.editor.unsupportedField);
     expect($('#field-gallery')).toBeNull();
+  });
+
+  it("renders labak's news form with the sourceLabel text field, generated from the type (decision 42.2, Q2)", async () => {
+    await render(
+      <EntryForm
+        tenant={TENANT}
+        entryId={ENTRY}
+        fields={describeFields(getType('labak', 'news')!)}
+        titleKey="title"
+        initialData={{ title: 'a', sourceLabel: 'Lesa fréttina' }}
+        initialVersion={1}
+        initialSlug={null}
+        slugLocked={false}
+      />,
+    );
+    const input = $<HTMLInputElement>('#field-sourceLabel');
+    expect(input?.type).toBe('text');
+    expect(input?.value).toBe('Lesa fréttina');
+    expect(input?.maxLength).toBe(80);
+    expect(input?.required).toBe(false);
+    expect($('label[for="field-sourceLabel"]')?.textContent).toContain('Texti á heimildahnappi');
   });
 });
