@@ -71,3 +71,17 @@ it('adds rel to every external link, whatever the scheme case or stray character
   });
   expect(internal).not.toContain('rel=');
 });
+
+it('renders an ordered list start as <ol start>', async () => {
+  const out = await html({
+    type: 'doc',
+    content: [
+      {
+        type: 'orderedList',
+        attrs: { start: 3 },
+        content: [{ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'x' }] }] }],
+      },
+    ],
+  });
+  expect(out).toContain('<ol start="3">');
+});

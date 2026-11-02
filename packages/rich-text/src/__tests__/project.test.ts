@@ -50,3 +50,13 @@ it('resolves images and entry links', () => {
   const text = (out.content?.[1] as { content: { marks?: unknown[] }[] }).content[0]!;
   expect(text.marks).toEqual([{ type: 'link', attrs: { href: '/frettir/x' } }, { type: 'bold' }]);
 });
+
+it('keeps an ordered list start through projection', () => {
+  const li = { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'x' }] }] };
+  const d = richTextDocSchema.parse({
+    type: 'doc',
+    content: [{ type: 'orderedList', attrs: { start: 3, type: null }, content: [li] }],
+  });
+  const out = projectRichText(d, resolver({}));
+  expect(out.content[0]).toMatchObject({ type: 'orderedList', attrs: { start: 3 } });
+});

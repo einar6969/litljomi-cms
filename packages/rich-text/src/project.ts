@@ -18,7 +18,7 @@ export type ProjectedBlock =
   | { type: 'paragraph'; content?: ProjectedInline[] }
   | { type: 'heading'; attrs: { level: 2 | 3 }; content?: ProjectedInline[] }
   | { type: 'bulletList'; content: ProjectedListItem[] }
-  | { type: 'orderedList'; content: ProjectedListItem[] }
+  | { type: 'orderedList'; attrs?: { start: number }; content: ProjectedListItem[] }
   | { type: 'blockquote'; content: ProjectedBlock[] }
   | {
       type: 'image';
@@ -61,8 +61,14 @@ function projectBlock(b: RichTextBlock, r: RichTextResolver): ProjectedBlock | n
         ? { type: 'heading', attrs: b.attrs, content: b.content.map((n) => projectInline(n, r)) }
         : { type: 'heading', attrs: b.attrs };
     case 'bulletList':
-    case 'orderedList':
-      return { type: b.type, content: b.content.map((i) => projectItem(i, r)) };
+      return { type: 'bulletList', content: b.content.map((i) => projectItem(i, r)) };
+    case 'orderedList': {
+      // `start` is kept whenever present (even 1); `type` is always null and is dropped.
+      const content = b.content.map((i) => projectItem(i, r));
+      return b.attrs?.start !== undefined
+        ? { type: 'orderedList', attrs: { start: b.attrs.start }, content }
+        : { type: 'orderedList', content };
+    }
     case 'blockquote':
       return { type: 'blockquote', content: projectBlocks(b.content, r) };
     case 'image': {

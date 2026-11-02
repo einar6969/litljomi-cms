@@ -46,7 +46,7 @@ function block(b: ProjectedBlock, key: number): ReactNode {
     case 'bulletList':
       return <ul key={key}>{b.content.map((i, k) => <li key={k}>{i.content.map(block)}</li>)}</ul>;
     case 'orderedList':
-      return <ol key={key}>{b.content.map((i, k) => <li key={k}>{i.content.map(block)}</li>)}</ol>;
+      return <ol key={key} start={b.attrs?.start}>{b.content.map((i, k) => <li key={k}>{i.content.map(block)}</li>)}</ol>;
     case 'blockquote':
       return <blockquote key={key}>{b.content.map(block)}</blockquote>;
     case 'image':
