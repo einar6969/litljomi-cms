@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T10:48:38.753Z",
+  "updatedAt": "2026-11-02T11:00:26.385Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -777,7 +777,7 @@
     },
     {
       "id": 19,
-      "status": "in_review",
+      "status": "done",
       "commits": [
         "53606bd",
         "91d3334"
@@ -810,13 +810,17 @@
         "G1"
       ],
       "blockers": [],
-      "notes": "",
-      "startedAt": "2026-11-02T10:01:36.200Z"
+      "notes": "Phase 3 Lane A, high tier (Opus). Implemented in .worktrees/lane-a-next from Task 17's head 00d7830: commit 53606bd (migration 20261102001100_worker_phase3.sql: decision 33 grant UPDATE(name,status) on cms.tenants and tenant FOR SHARE in both commit functions, membership race documented; decision 34.1 `alter role service_role set statement_timeout = '10s'` plus PostgREST reload, proven over REST: 57014 at ~10.06 s, before it 8.2 s from authenticator's own 8 s; decision 34.2 worker_claim_request, extended worker_read_request, worker_record_alert; worker process-request/projection-context/alerts/rpc; lib/worker-trigger.ts server-only; pgTAP 095; cleared rows 29, 34 catch, 83, 88). Reviews: spec r1 pass; security r1 pass (verified the timeout and the tenant lock itself; Minors); quality r1 FAIL (Major: swallowed error at the 5th attempt; Major: projection branches untested). Fix 91d3334 (fresh implementer; logs and alerts, projection-branch tests, stable stored error {code:'unexpected',attempts}, post-commit re-read handling). Spec r2 pass, security r2 pass (fix diff), quality r2 pass. Merged into m1/phase-1 as 4c0ac3a (--no-ff, clean). Full suite by the controller after the merge: harness 32/32; lint, typecheck, check:slugs exit 0; Vitest 36 files 554 tests; demo-site test:e2e 6/6; db:reset ok, db:test Files=14 Tests=1296 PASS; test:integration 7 files 70 tests + cms 2 files 13 tests. Process note: the review records were committed before the merge (2ec572b, 'Task 19 review records (in progress)') so this task has two state commits. The database half of the suite ran after Task 20's implementer released the stack.",
+      "startedAt": "2026-11-02T10:01:36.200Z",
+      "doneAt": "2026-11-02T11:00:26.334Z"
     },
     {
       "id": 20,
       "status": "in_progress",
-      "commits": [],
+      "commits": [
+        "6129288",
+        "2803b63"
+      ],
       "reviews": {},
       "gatesUsed": [
         "G0",
