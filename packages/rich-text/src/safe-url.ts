@@ -11,13 +11,25 @@ export function isRootRelativePath(s: string): boolean {
   return s.startsWith('/') && s[1] !== '/' && s[1] !== '\\' && !UNSAFE_CHARS.test(s);
 }
 
-/** An absolute `https:` URL with a host, no whitespace or control characters. */
-export function isHttpsUrl(s: string): boolean {
-  if (UNSAFE_CHARS.test(s)) return false;
+/**
+ * The canonical form (`new URL(s).href`) of an absolute `https:` URL with a host, no credentials
+ * (user or password) and no whitespace or control characters; null for anything else. Callers
+ * deliver the canonical form, never the input: `https:m.test/a` parses to the host `m.test` here,
+ * but a browser would resolve it against the page as a relative path (Task 15 security r1).
+ */
+export function canonicalHttpsUrl(s: string): string | null {
+  if (UNSAFE_CHARS.test(s)) return null;
+  let u: URL;
   try {
-    const u = new URL(s);
-    return u.protocol === 'https:' && u.hostname !== '';
+    u = new URL(s);
   } catch {
-    return false;
+    return null;
   }
+  if (u.protocol !== 'https:' || u.hostname === '' || u.username !== '' || u.password !== '') return null;
+  return u.href;
+}
+
+/** An absolute `https:` URL with a host, no credentials, no whitespace or control characters. */
+export function isHttpsUrl(s: string): boolean {
+  return canonicalHttpsUrl(s) !== null;
 }

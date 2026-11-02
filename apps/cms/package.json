@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@litljomi/cms-schema": "workspace:*",
+    "@litljomi/cms-sdk": "workspace:*",
     "@litljomi/module-demo": "workspace:*",
     "@litljomi/module-labak": "workspace:*",
     "@litljomi/rich-text": "workspace:*",

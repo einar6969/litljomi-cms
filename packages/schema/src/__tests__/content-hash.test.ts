@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalJson, contentHash, defineType, image, projectEntry, text } from '../index.ts';
+import { canonicalJson, contentHash, defineType, entryContentHash, image, projectEntry, text } from '../index.ts';
 import { fakeCtx } from './helpers.ts';
 
 const A = '11111111-1111-4111-8111-111111111111';
@@ -83,5 +83,61 @@ describe('canonicalJson and contentHash', () => {
     expect(() => canonicalJson({ nested: lying })).toThrow(/proxies/i);
     expect(() => canonicalJson(new Proxy({ a: 1 }, {}))).toThrow(/proxies/i);
     expect(() => canonicalJson(new Proxy([1], {}))).toThrow(/proxies/i);
+  });
+  // Deferred Minor (Task 18 security r1): JSON.stringify honours toJSON (own or inherited) and reads
+  // accessors, so a value with either could serialise differently from what was hashed.
+  it('rejects an array with its own toJSON, or an inherited one', () => {
+    const own = Object.assign([1, 2], { toJSON: () => 'x' });
+    expect(() => canonicalJson(own)).toThrow(/toJSON/);
+    expect(() => canonicalJson({ a: own })).toThrow(/toJSON/);
+    const proto = Array.prototype as unknown as { toJSON?: () => string };
+    proto.toJSON = () => 'x';
+    try {
+      expect(() => canonicalJson([1])).toThrow(/toJSON/);
+    } finally {
+      delete proto.toJSON;
+    }
+    const objProto = Object.prototype as unknown as { toJSON?: () => string };
+    objProto.toJSON = () => 'x';
+    try {
+      expect(() => canonicalJson({ a: 1 })).toThrow(/toJSON/);
+    } finally {
+      delete objProto.toJSON;
+    }
+  });
+  it('rejects accessor properties on arrays and objects', () => {
+    let n = 0;
+    const arr = [0];
+    Object.defineProperty(arr, 0, { get: () => n++, enumerable: true });
+    expect(() => canonicalJson(arr)).toThrow(/accessor/);
+    const obj = {};
+    Object.defineProperty(obj, 'a', { get: () => n++, enumerable: true });
+    expect(() => canonicalJson(obj)).toThrow(/accessor/);
+  });
+});
+
+describe('entryContentHash (spec §7.2)', () => {
+  const entry = {
+    id: A,
+    revisionId: '22222222-2222-4222-8222-222222222222',
+    contentHash: 'ignored',
+    slug: 's',
+    title: 'T',
+    sortAt: null,
+    firstPublishedAt: '2026-11-02T09:00:00.000Z',
+    lastPublishedAt: '2026-11-02T09:00:00.000Z',
+    schemaVersion: 1,
+    data: { title: 'T' },
+  };
+  it('is the hash of the complete record minus contentHash', () => {
+    const { contentHash: _omitted, ...record } = entry;
+    expect(entryContentHash(entry)).toBe(contentHash(record));
+    expect(entryContentHash({ ...entry, contentHash: 'other' })).toBe(entryContentHash(entry));
+    expect(entryContentHash(record)).toBe(entryContentHash(entry));
+  });
+  it('changes when any delivered field changes, not only data', () => {
+    const h = entryContentHash(entry);
+    for (const change of [{ slug: 't' }, { title: 'U' }, { sortAt: '2026-01-01T00:00:00.000Z' }, { revisionId: A }, { data: { title: 'U' } }])
+      expect(entryContentHash({ ...entry, ...change })).not.toBe(h);
   });
 });

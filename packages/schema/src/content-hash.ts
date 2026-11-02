@@ -13,7 +13,10 @@ import { types } from 'node:util';
  * own or overridden iterator hashes what `JSON.stringify` delivers. A Proxy is always rejected
  * (`util.types.isProxy`): its traps can report a plain prototype and its own keys yet serialise
  * differently under `JSON.stringify` (for example a Date behind a lying `getPrototypeOf`, which
- * would otherwise hash as `{}`), and the two views cannot be made consistent.
+ * would otherwise hash as `{}`), and the two views cannot be made consistent. For the same reason a
+ * value with a `toJSON` method (own or inherited, which `JSON.stringify` would call) and an accessor
+ * property (a getter, which may return something different on each read) are rejected
+ * (Task 18 security r1).
  */
 export function canonicalJson(v: unknown): string {
   if (v === null) return 'null';
@@ -27,6 +30,7 @@ export function canonicalJson(v: unknown): string {
     case 'object': {
       if (types.isProxy(v)) throw new Error('canonicalJson: proxies cannot be hashed');
       if (Array.isArray(v)) {
+        rejectToJsonAndAccessors(v);
         // Index loop: holes read as `undefined`, which becomes null like JSON.stringify.
         const parts: string[] = [];
         for (let i = 0; i < v.length; i++) {
@@ -37,6 +41,7 @@ export function canonicalJson(v: unknown): string {
       }
       const proto: unknown = Object.getPrototypeOf(v);
       if (proto !== Object.prototype && proto !== null) throw new Error('canonicalJson: not a plain object');
+      rejectToJsonAndAccessors(v);
       const entries = Object.entries(v as Record<string, unknown>)
         .filter(([, x]) => x !== undefined)
         .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
@@ -47,10 +52,28 @@ export function canonicalJson(v: unknown): string {
   }
 }
 
+function rejectToJsonAndAccessors(v: object): void {
+  if ((v as { toJSON?: unknown }).toJSON !== undefined) throw new Error('canonicalJson: values with toJSON cannot be hashed');
+  for (const d of Object.values(Object.getOwnPropertyDescriptors(v))) {
+    if (d.get !== undefined || d.set !== undefined) throw new Error('canonicalJson: accessor properties cannot be hashed');
+  }
+}
+
 /**
  * Lowercase hex SHA-256 of `canonicalJson(record)`. Hash the complete projected record, including
  * resolved asset URLs and referenced entries' summaries (spec §7.2).
  */
 export function contentHash(record: unknown): string {
   return createHash('sha256').update(canonicalJson(record), 'utf8').digest('hex');
+}
+
+/**
+ * A bundle entry's `contentHash` (spec §7.2): `contentHash` over the entry's complete delivered
+ * record (id, revisionId, slug, title, sortAt, timestamps, schemaVersion and the projected data)
+ * minus the `contentHash` field itself. The release build and the fixture bundles use this one
+ * helper, so the hash changes whenever anything a site receives for the entry changes.
+ */
+export function entryContentHash(entry: Record<string, unknown>): string {
+  const { contentHash: _ignored, ...record } = entry;
+  return contentHash(record);
 }

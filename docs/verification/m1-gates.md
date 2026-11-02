@@ -142,3 +142,22 @@ Per gate (test names from the implementer's verbose run, confirmed by the securi
 - **Decisions 18, 19, 21 and 22 over HTTP** (`auth-passwordless.test.ts`): passwords never sign in (403 from the hook, which Auth runs as `supabase_auth_admin`); email changes need both addresses, also over PKCE; TOTP step-up and refresh; no token for sign-up, anonymous, phone, id_token, web3, forged PKCE, SSO or OAuth.
 
 Result: **A1, A2, A3, A4, A5 and A14 pass** (local stack).
+
+## Bundle and pointer cache headers (Task 20, 2026-11-02; decision 34.4)
+
+Question: can Storage serve a release bundle with spec §7.2's `cache-control: public, max-age=31536000, immutable`? storage-js turns its `cacheControl` option into `max-age=${cacheControl}`, so that option alone cannot add `public` or `immutable`.
+
+Probe on the local stack (Storage API 1.82.1, `@supabase/storage-js` 2.118.0), uploading to the `delivery` bucket with the secret key and reading each object back through its public URL (`/storage/v1/object/public/delivery/...`). The response headers served:
+
+| Upload | Served `cache-control` | Served `content-type` |
+|---|---|---|
+| `upload(path, bytes, { cacheControl: '31536000', contentType: 'application/json' })` | `max-age=31536000` | `application/json` |
+| `upload(path, bytes, { contentType: 'application/json', headers: { 'cache-control': 'public, max-age=31536000, immutable' } })` | `public, max-age=31536000, immutable` | `application/json` |
+| pointer: `upload(path, bytes, { contentType: 'application/json', upsert: true, headers: { 'cache-control': 'public, max-age=30' } })`, twice (the second replaces the object) | `public, max-age=30` | `application/json` |
+| pointer: `upload(path, bytes, { cacheControl: '30', contentType: 'application/json', upsert: true })` | `max-age=30` | `application/json` |
+
+Result: **`immutable` can be set.** storage-js's `headers` option replaces the `cache-control` header it builds from `cacheControl`, and Storage stores the value as given and serves it back unchanged. The worker (`apps/cms/src/privileged/worker/build-release.ts`, `supabaseReleaseStorage`) uploads the bundle with `public, max-age=31536000, immutable` and the pointer with `public, max-age=30`, exactly as §7.2 says, so spec §7.2 needs no amendment. `build-release.integration.test.ts` re-checks both headers on every run, through the public URLs.
+
+The same probe recorded what the worker relies on for copies and uploads that collide: a second server-side copy to an existing destination, and an upload with `upsert: false` to an existing path, both fail with `{ message: 'The resource already exists', status: 400, statusCode: '409' }`. The worker counts the copy case as success (decision 35) and treats the upload case as a failure (bundle paths are never reused).
+
+Limits: this is the local Storage API. Whether a CDN in front of hosted Storage keeps these headers is part of A6, checked on staging (Task 29). The probe's objects were removed afterwards.

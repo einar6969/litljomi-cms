@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import { isHttpsUrl, isRootRelativePath } from '@litljomi/rich-text';
+import { canonicalHttpsUrl, isRootRelativePath } from '@litljomi/rich-text';
 import type { AnyFieldKind, ContentType } from './define-type.ts';
 
 /** An asset as delivered to sites (spec §7.1). */
@@ -30,20 +30,26 @@ export interface EntrySummary {
 export interface ProjectionContext {
   /** The asset with its public URL, or null when it is unknown. */
   asset(id: string): PublicAsset | null;
-  /** The entry's summary, or null when it is not published (spec §6.2). */
+  /**
+   * The entry's summary, or null unless the entry is published and not archived: exactly the
+   * release inclusion rule of spec §7.1 (`published_rev_id IS NOT NULL AND archived_at IS NULL`),
+   * and, in a release build, also null for an entry that the build leaves out (fail closed).
+   */
   entry(id: string): EntrySummary | null;
 }
 
 /**
- * Asset lookup with the result checked: only `https:` URLs are accepted, anything else counts as
- * unresolved (null). Returns a copy with exactly the `PublicAsset` fields.
+ * Asset lookup with the result checked: only `https:` URLs without credentials are accepted,
+ * anything else counts as unresolved (null). Returns a copy with exactly the `PublicAsset` fields,
+ * the URL in its canonical form (`new URL(url).href`).
  */
 export function resolveAsset(ctx: ProjectionContext, id: string): PublicAsset | null {
   const a = ctx.asset(id);
-  if (a === null || !isHttpsUrl(a.url)) return null;
+  const url = a === null ? null : canonicalHttpsUrl(a.url);
+  if (a === null || url === null) return null;
   return {
     id: a.id,
-    url: a.url,
+    url,
     width: a.width,
     height: a.height,
     mime: a.mime,

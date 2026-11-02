@@ -8,7 +8,7 @@
       {
         "id": "11111111-1111-4111-8111-111111111111",
         "revisionId": "00000000-0000-4000-8000-000000000001",
-        "contentHash": "657625bb3986d64900d430d125a43519d3b3c692b63d0079bc525c823270a574",
+        "contentHash": "a3e4c568714f565da0ffbeaa85f57717ff826784015ba91e0ab03a4896e3e5be",
         "slug": "x",
         "title": "Opið hús",
         "sortAt": "2026-12-01",
@@ -42,7 +42,7 @@
       {
         "id": "22222222-2222-4222-8222-222222222222",
         "revisionId": "00000000-0000-4000-8000-000000000002",
-        "contentHash": "e137597a7a04b61c351e0741cb54bce5df6698ba28ffdaae2e66b47224da53f0",
+        "contentHash": "5fb58a2df384e21edca07b37c64a30fe55bb429471350731425800cd27337b61",
         "slug": "jolamarkadur",
         "title": "Jólamarkaður",
         "sortAt": "2026-12-15",

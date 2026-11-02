@@ -94,6 +94,13 @@ describe('projectEntry', () => {
     }
   });
 
+  it('delivers asset urls in canonical form and refuses credentials (Task 15 security r1)', () => {
+    expect(projectEntry(t, data, fakeCtx({ assets: { [A]: asset('https:m.test/a.jpg') } })).pic).toMatchObject({
+      url: 'https://m.test/a.jpg',
+    });
+    expect(projectEntry(t, data, fakeCtx({ assets: { [A]: asset('https://u:p@m.test/a.jpg') } })).pic).toBeNull();
+  });
+
   it('projects rich text through the context, dropping unsafe resolver output', () => {
     const body = {
       type: 'doc',
