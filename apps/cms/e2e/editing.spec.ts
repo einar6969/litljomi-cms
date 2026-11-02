@@ -1,27 +1,16 @@
 // Task 23: entry list, new entry, generated form, autosave, conflict and slugs, as editor_labak
 // (the session saved by the editor-session setup project), against the local CMS and stack.
 import { randomBytes } from 'node:crypto';
-import type { Page } from '@playwright/test';
 import { t } from '../src/i18n/is';
-import { CMS_URL } from './support/local';
+import { createNews } from './support/editor';
 import { sessionState } from './support/session';
 import { expect, test } from './support/test';
 
 test.use({ storageState: sessionState('editor_labak') });
 
-const ENTRY_URL = new RegExp(`^${CMS_URL}/t/labak/news/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`);
 // The labak module's own field labels (its type is the news type with Icelandic labels).
 const TITLE = 'Titill';
 const SAVED = { timeout: 10_000 };
-
-/** Opens the news list from the tenant's start page and creates an entry, as an editor would. */
-async function createNews(page: Page): Promise<void> {
-  await page.goto('/t/labak');
-  await page.getByRole('link', { name: 'Fréttir' }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Frétt');
-  await page.getByRole('button', { name: t.entries.new }).click();
-  await page.waitForURL(ENTRY_URL);
-}
 
 test('creates a news entry, suggests the slug from the title and autosaves', async ({ page }) => {
   await createNews(page);
@@ -29,8 +18,9 @@ test('creates a news entry, suggests the slug from the title and autosaves', asy
   await expect(page.getByTestId('slug-suggestion')).toContainText('braud-arsins-2025');
   await expect(page.getByRole('status')).toHaveText(t.editor.saved, SAVED);
 
-  // A field kind with no component yet is a notice, not an input (decision 37.6).
-  await expect(page.getByRole('note').first()).toHaveText(t.editor.unsupportedField);
+  // Since Task 24 every field kind of the news type has a component, so no field shows the
+  // component-less notice (decision 37.6; that notice is unit-tested with the form's fields).
+  await expect(page.getByText(t.editor.unsupportedField)).toHaveCount(0);
 
   // The title is in the draft after a reload, and the entry is in the list under it.
   await page.reload();

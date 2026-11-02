@@ -54,6 +54,13 @@ describe('resolveTenant', () => {
     const { client } = fakeClient({ data: null, error: { code: '42501', message: 'permission denied' } });
     await expect(resolveTenant(client, 'acme')).rejects.toThrow('42501');
   });
+
+  it('keeps only the error code, never the raw database message (which could reach the browser)', async () => {
+    const { client } = fakeClient({ data: null, error: { code: '42501', message: 'permission denied for view my_tenants' } });
+    const error = await resolveTenant(client, 'acme').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe('my_tenants: 42501');
+  });
 });
 
 describe('listMyTenants', () => {
@@ -69,7 +76,7 @@ describe('listMyTenants', () => {
 
   it('throws on a database error', async () => {
     const { client } = fakeClient({ data: null, error: { code: '42501', message: 'permission denied' } });
-    await expect(listMyTenants(client)).rejects.toThrow('42501');
+    await expect(listMyTenants(client)).rejects.toThrow(/^my_tenants: 42501$/);
   });
 });
 

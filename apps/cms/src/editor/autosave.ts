@@ -1,4 +1,4 @@
-import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import type { saveDraftAction } from '@/app/(editor)/t/[tenant]/actions';
 
 export type AutosaveState = 'idle' | 'saving' | 'saved' | 'conflict' | 'signed_out' | 'error';
@@ -98,6 +98,9 @@ export class AutosaveController {
     this.set({ state: 'saving' });
     let next: Partial<AutosaveSnapshot>;
     try {
+      // One save is a server action that reads the session, the entry and its tenant before the
+      // RPC, all with the editor's own session (Task 23 security design). Do not "optimise" it into
+      // a save that trusts a tenant or type the browser sends.
       const result = await this.o.save(this.o.entryId, this.snapshot.version, data);
       if (result.ok) {
         const clean = sent === this.seq;
@@ -147,5 +150,7 @@ export function useAutosave(o: AutosaveOptions): AutosaveSnapshot & { schedule: 
     controller.start();
     return () => controller.dispose();
   }, [controller]);
-  return { ...snapshot, schedule: (data) => controller.schedule(data), retry: () => controller.retry() };
+  // Stable for the controller's lifetime, so a caller's useCallback([schedule]) stays stable too.
+  const actions = useMemo(() => ({ schedule: (data: unknown) => controller.schedule(data), retry: () => controller.retry() }), [controller]);
+  return { ...snapshot, ...actions };
 }

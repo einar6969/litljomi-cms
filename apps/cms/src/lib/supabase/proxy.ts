@@ -13,6 +13,7 @@ import { supabasePublicEnv } from './env';
 export async function updateSession(request: NextRequest): Promise<NextResponse> {
   const { url, publishableKey } = supabasePublicEnv();
   let response = NextResponse.next({ request });
+  // `<any, 'api'>` as in lib/supabase/types.ts: no generated database types yet (see there).
   const supabase = createServerClient<any, 'api'>(url, publishableKey, {
     db: { schema: 'api' },
     cookies: {

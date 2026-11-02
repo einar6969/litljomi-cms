@@ -17,6 +17,8 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 /** The variables every Supabase CLI call on the e2e path must carry. */
 const SUPABASE_QUIET = { SUPABASE_NO_UPDATE_NOTIFIER: '1', SUPABASE_TELEMETRY_DISABLED: '1' };
 
+// Only `spawn` is replaced (global-setup.ts starts the seed with it); `spawnSync`, which these tests
+// use to run cms-next.sh for real, keeps Node's own implementation.
 const spawnMock = vi.hoisted(() => vi.fn());
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>();

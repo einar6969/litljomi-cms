@@ -1,6 +1,7 @@
 import 'server-only';
 import type { ContentType } from '@litljomi/cms-schema';
 import type { SupabaseClient } from '@/lib/supabase/types';
+import { isActive } from '@/lib/tenant';
 import { getType } from '@/modules/registry';
 
 /** What an `api` call answered with, as supabase-js reports it. */
@@ -52,7 +53,7 @@ export async function loadEntryContext(client: SupabaseClient, entryId: string):
   if (!entry.data) return null;
   const tenant = await client.from('my_tenants').select('id, slug, status').eq('id', entry.data.tenant_id).maybeSingle();
   if (tenant.error) throw new Error(`my_tenants: ${tenant.error.code}`);
-  if (!tenant.data || tenant.data.status !== 'active') return null;
+  if (!tenant.data || !isActive(tenant.data)) return null;
   const type = getType(tenant.data.slug, entry.data.type);
   if (!type) return null;
   return { entryId, tenantId: entry.data.tenant_id, tenantSlug: tenant.data.slug, type };

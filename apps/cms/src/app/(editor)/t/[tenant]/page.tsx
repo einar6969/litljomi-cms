@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { t } from '@/i18n/is';
 import { getModule } from '@/modules/registry';
-import { currentTenant } from '@/lib/tenant';
+import { currentTenant, isActive } from '@/lib/tenant';
 
 type Props = { params: Promise<{ tenant: string }> };
 
@@ -12,7 +12,7 @@ export default async function TenantHome({ params }: Props) {
   const { tenant: slug } = await params;
   const tenant = await currentTenant(slug);
   if (!tenant) notFound();
-  if (tenant.status !== 'active') return null;
+  if (!isActive(tenant)) return null;
   const structure = getModule(tenant.slug)?.structure ?? [];
   return (
     <main>
