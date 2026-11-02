@@ -64,14 +64,29 @@ create table cms.revision_refs (
 -- object key longer than 64 characters (characters, not bytes, of the key itself,
 -- not of its escaped JSON text) or with more than 1,000 references raises 54000,
 -- after the nesting check and before anything is walked or validated. A
--- reference is an object with a _ref key, what strict $.**._ref matches. With
--- all three limits a path is at most about 8.6 KB and the walk carries at most
--- 1,000 of them, so its cost is bounded whatever the keys are (a ~1 MB document
--- at all three limits: about 27 MB of temp files and 0.25 s locally).
+-- reference is an object with a _ref key, what strict $.**._ref matches.
 --
--- The walk is lean (decision 27): it enters only containers with a reference
--- below them, never a reference-free subtree, and a row carries its location
--- (needed for the result), never a subtree.
+-- The walk (decisions 27 and 28) takes one level of the document per
+-- statement, so at most 128 statements, and enters only containers with a
+-- reference below them. The containers entered on one level are disjoint and
+-- each holds a reference, so there are at most 1,000 of them and together they
+-- are no larger than the document. A node of the walk records only its parent's
+-- position on the level above and its own step (."key" or [i]), never its path:
+-- the path of a reference is put together once, from the steps of its
+-- ancestors, when the reference is found. Which children hold references is
+-- known from counts: the number of references below each entered container is
+-- known; its children are counted with strict $.**._ref, except a child larger
+-- than half of it (there is at most one), whose count is the remainder. So a
+-- subtree is scanned only when it is at most half its parent, and no part of
+-- the document is scanned more than log2 of the document's size times. The
+-- children are listed by set-returning functions in select lists, which pass
+-- their rows on one at a time instead of storing them in a tuplestore. The
+-- state of the walk is in memory, at most about the size of the document in
+-- its jsonb form. The one temp file is the result itself: at most 1,000 paths
+-- of at most about 8.6 KB, which spill once they pass work_mem (4 MB).
+-- Measured locally on documents inside all three limits (040_refs.test.sql,
+-- "Cost regressions" and "Adversarial shapes"): at most about 8.5 MB of temp
+-- files, for 1,000 paths of 8.4 KB, and at most about 0.5 s per draft save.
 create function private.extract_refs(p_data jsonb)
 returns table (path text, ref uuid, kind text)
 language plpgsql
@@ -82,7 +97,27 @@ as $$
 declare
   v_doc jsonb;
   v_refs bigint;
-  r record;
+  v_found bigint := 0;
+  v_depth int := 0;
+  -- The current level: its nodes, in walk order, and the references strictly
+  -- below each. A node with none is null in v_nodes and is not entered.
+  v_nodes jsonb[];
+  v_below int[];
+  v_more boolean;
+  -- v_levels[l]: one [parent, step] pair per node of level l, in the order of
+  -- v_nodes, where parent is a node's 1-based position on level l - 1 (the
+  -- document is level 0).
+  v_levels jsonb[] := '{}';
+  v_level jsonb;
+  -- The references found on the current level: parent, step, _ref and _kind.
+  v_ref_parent int[];
+  v_ref_step text[];
+  v_ref_value jsonb[];
+  v_ref_kind jsonb[];
+  v_steps text[];
+  v_pair jsonb;
+  v_up int;
+  v_loc text;
 begin
   -- p_data may be a TOAST pointer (a trigger's NEW.data). #> '{}' returns the
   -- document itself, detoasted, so the checks and the walk below do not each
@@ -129,55 +164,114 @@ begin
   if v_refs = 0 then
     return;
   end if;
-  -- One row per reference object and per container on the way to one: loc is
-  -- the jsonpath text; nested says whether a reference sits strictly below, and
-  -- only those rows are entered, through steps (the same location as a #> path,
-  -- null on rows not entered); ref_value and kind_value are set on reference
-  -- objects only. Rows come out level by level, in document order within a level.
-  for r in
-    with recursive walk (loc, steps, nested, ref_value, kind_value) as (
-      select '$'::text, '{}'::text[],
-             pg_catalog.jsonb_path_exists(v_doc, 'strict $.**{1 to last}._ref'),
-             v_doc -> '_ref',
-             case when v_doc -> '_ref' is not null then v_doc -> '_kind' end
-      union all
-      select w.loc || c.step, case when f.nested then w.steps || c.key end, f.nested, f.ref_value,
-             case when f.ref_value is not null then c.value -> '_kind' end
-      from walk w
-      cross join lateral (select v_doc #> w.steps offset 0) as n (node)
-      cross join lateral (
-        select '.' || pg_catalog.to_jsonb(e.key)::text, e.key, e.value
-        from pg_catalog.jsonb_each(case when pg_catalog.jsonb_typeof(n.node) = 'object' then n.node end) as e
-        union all
-        select '[' || (a.ord - 1)::text || ']', (a.ord - 1)::text, a.value
-        from pg_catalog.jsonb_array_elements(case when pg_catalog.jsonb_typeof(n.node) = 'array' then n.node end)
-          with ordinality as a (value, ord)
-      ) as c (step, key, value)
-      -- Scalars are dropped; -> '_ref' is null except on an object with a _ref key.
-      cross join lateral (
-        select c.value -> '_ref', pg_catalog.jsonb_path_exists(c.value, 'strict $.**{1 to last}._ref')
-        where pg_catalog.jsonb_typeof(c.value) in ('object', 'array')
-        offset 0
-      ) as f (ref_value, nested)
-      where w.nested and (f.ref_value is not null or f.nested)
-    )
-    select w.loc, w.ref_value, w.kind_value
-    from walk w
-    where w.ref_value is not null
+
+  -- Level 0 is the document, itself a reference if it has a _ref key. -> '_ref'
+  -- is null except on an object with a _ref key (JSON null included), the
+  -- objects strict $.**._ref matches.
+  if v_doc -> '_ref' is not null then
+    v_ref_parent := array[0];
+    v_ref_step := array[''];
+    v_ref_value := array[v_doc -> '_ref'];
+    v_ref_kind := array[v_doc -> '_kind'];
+  end if;
+  v_nodes := array[v_doc];
+  v_below := array[v_refs - (v_doc -> '_ref' is not null)::int];
+  v_more := v_below[1] > 0;
   loop
-    if pg_catalog.jsonb_typeof(r.ref_value) <> 'string'
-       or (r.ref_value #>> '{}') !~ ('^[0123456789abcdef]{8}-[0123456789abcdef]{4}-[0123456789abcdef]{4}'
-                                      '-[0123456789abcdef]{4}-[0123456789abcdef]{12}$') then
-      raise exception 'malformed _ref' using errcode = '22P02', detail = pg_catalog.format('at %s', r.loc);
-    end if;
-    if r.kind_value is null or r.kind_value not in ('"entry"'::jsonb, '"asset"'::jsonb) then
-      raise exception 'invalid_reference' using errcode = 'P0001', detail = pg_catalog.format('_kind at %s', r.loc);
-    end if;
-    path := r.loc;
-    ref := (r.ref_value #>> '{}')::uuid;
-    kind := r.kind_value #>> '{}';
-    return next;
+    -- The references found on level v_depth, in walk order, _ref checked
+    -- first. A path is the steps of the reference's ancestors, read up through
+    -- v_levels, and its own.
+    for i in 1 .. coalesce(pg_catalog.array_length(v_ref_parent, 1), 0) loop
+      v_steps := pg_catalog.array_fill(''::text, array[greatest(v_depth, 1)]);
+      v_steps[greatest(v_depth, 1)] := v_ref_step[i];
+      v_up := v_ref_parent[i];
+      for d in reverse v_depth - 1 .. 1 loop
+        v_pair := v_levels[d] -> (v_up - 1);
+        v_steps[d] := v_pair ->> 1;
+        v_up := (v_pair ->> 0)::int;
+      end loop;
+      v_loc := '$' || pg_catalog.array_to_string(v_steps, '');
+      if pg_catalog.jsonb_typeof(v_ref_value[i]) <> 'string'
+         or (v_ref_value[i] #>> '{}') !~ ('^[0123456789abcdef]{8}-[0123456789abcdef]{4}-[0123456789abcdef]{4}'
+                                         '-[0123456789abcdef]{4}-[0123456789abcdef]{12}$') then
+        raise exception 'malformed _ref' using errcode = '22P02', detail = pg_catalog.format('at %s', v_loc);
+      end if;
+      if v_ref_kind[i] is null or v_ref_kind[i] not in ('"entry"'::jsonb, '"asset"'::jsonb) then
+        raise exception 'invalid_reference' using errcode = 'P0001', detail = pg_catalog.format('_kind at %s', v_loc);
+      end if;
+      v_found := v_found + 1;
+      path := v_loc;
+      ref := (v_ref_value[i] #>> '{}')::uuid;
+      kind := v_ref_kind[i] #>> '{}';
+      return next;
+    end loop;
+    exit when not coalesce(v_more, false);
+    v_depth := v_depth + 1;
+
+    -- Level v_depth. From the inside out: p lists the entered nodes of the level
+    -- above (position i, the node, the references below it); e lists their
+    -- children; c keeps the containers and counts the references in each (n),
+    -- except in a child larger than half its parent, whose n is null; r keeps
+    -- the children with a reference or a null n and gives the latter the
+    -- remainder of their parent's count; a child with a count is a node of this
+    -- level, and a reference if it has a _ref key. Only r, which holds at most
+    -- two rows per entered node and no subtrees, is sorted (for the window); the
+    -- node is then read again from its parent. The aggregates have no ORDER BY
+    -- and share one input, so position j of v_nodes, v_below and v_level is the
+    -- same node.
+    select pg_catalog.array_agg(case when y.total > y.is_ref then y.node end),
+           pg_catalog.array_agg((y.total - y.is_ref)::int),
+           pg_catalog.jsonb_agg(pg_catalog.jsonb_build_array(y.parent, y.step)),
+           pg_catalog.bool_or(y.total > y.is_ref),
+           pg_catalog.array_agg(y.parent) filter (where y.is_ref = 1),
+           pg_catalog.array_agg(y.step) filter (where y.is_ref = 1),
+           pg_catalog.array_agg(y.node -> '_ref') filter (where y.is_ref = 1),
+           pg_catalog.array_agg(y.node -> '_kind') filter (where y.is_ref = 1)
+      into v_nodes, v_below, v_level, v_more, v_ref_parent, v_ref_step, v_ref_value, v_ref_kind
+    from (
+      select r.parent, r.total, v.node, (v.node -> '_ref' is not null)::int,
+             case when r.k is null then '[' || r.idx::text || ']' else '.' || pg_catalog.to_jsonb(r.k)::text end
+      from (
+        select c.parent, c.k, c.idx,
+               coalesce(c.n, c.below - coalesce(pg_catalog.sum(c.n) over (partition by c.parent), 0))
+        from (
+          select c.parent, c.below, c.k, c.idx,
+                 case when 2 * pg_catalog.pg_column_size(c.node) > c.parent_size then null
+                      else pg_catalog.jsonb_array_length(pg_catalog.jsonb_path_query_array(c.node, 'strict $.**._ref.type()')) end
+          from (
+            select e.parent, e.below, e.parent_size, e.k, e.idx,
+                   case when e.k is null then e.parent_node -> e.idx else e.parent_node -> e.k end
+            from (
+              -- An object's keys or an array's positions: one of the two
+              -- set-returning functions has no rows, and the other's rows come
+              -- with a null in its place.
+              select p.i, p.below, p.node, pg_catalog.pg_column_size(p.node),
+                     pg_catalog.jsonb_object_keys(case when pg_catalog.jsonb_typeof(p.node) = 'object' then p.node end),
+                     pg_catalog.generate_series(0, pg_catalog.jsonb_array_length(
+                       case when pg_catalog.jsonb_typeof(p.node) = 'array' then p.node end) - 1)
+              from (select pg_catalog.generate_subscripts(v_nodes, 1), pg_catalog.unnest(v_nodes), pg_catalog.unnest(v_below))
+                as p (i, node, below)
+              where p.below > 0
+            ) as e (parent, below, parent_node, parent_size, k, idx)
+            offset 0
+          ) as c (parent, below, parent_size, k, idx, node)
+          where pg_catalog.jsonb_typeof(c.node) in ('object', 'array')
+          offset 0
+        ) as c (parent, below, k, idx, n)
+        where c.n is null or c.n > 0
+      ) as r (parent, k, idx, total)
+      cross join lateral (
+        select case when r.k is null then v_nodes[r.parent] -> r.idx else v_nodes[r.parent] -> r.k end offset 0
+      ) as v (node)
+      where r.total > 0
+    ) as y (parent, total, node, is_ref, step);
+    v_levels[v_depth] := v_level;
   end loop;
+  -- The counts make the walk find exactly the references strict $.**._ref
+  -- counted; this guards that.
+  if v_found <> v_refs then
+    raise exception 'reference walk found % of % references', v_found, v_refs using errcode = 'XX000';
+  end if;
 end;
 $$;
 

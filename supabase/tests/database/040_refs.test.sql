@@ -15,7 +15,7 @@
 --   entry c106  labak  news  draft referencing c105        deleted in the cascade test
 --   entry c107  labak  news  no draft                      referenced by revision d102 only
 --   entry c108  labak  news  draft {}                      the nesting-limit draft
---   entry c109  labak  news  draft {}                      the key- and reference-limit draft (last section)
+--   entry c109  labak  news  draft {}                      the key- and reference-limit and cost-regression draft
 --   entry c110  labak  news  no draft                      refused draft inserts (last section)
 --   assets f001, f002: plain UUIDs; cms.assets and the asset foreign keys come
 --   in Task 8, so asset references are not checked against a table yet.
@@ -25,11 +25,13 @@
 -- update (version 3) and a new document (version 4); the worker appends
 -- revisions d101 (c104 at version 4) and d102 (referencing c107); c106 and
 -- c105 are deleted; the nesting-limit section adds c108, saves its draft and
--- appends revision d103; the last section adds c109 and c110, saves c109's
--- draft and appends revisions d104 and d105.
+-- appends revision d103; the key- and reference-limit section adds c109 and
+-- c110, saves c109's draft and appends revisions d104 and d105; the
+-- adversarial-shapes section saves c109's draft once per shape and appends
+-- revisions d106 to d109, d10b and d10c (d10a is refused).
 begin;
 \ir _helpers.sql
-select plan(153);
+select plan(163);
 
 -- {"_ref": <id>, "_kind": <kind>}, the reference shape of §4.3.
 create function tests.ref(p_id uuid, p_kind text) returns jsonb
@@ -630,12 +632,13 @@ select is_empty($$ select probe from tests.costs where temp_bytes >= 1024 * 1024
 -- A document at every limit at once, just under 1 MB: 126 levels of objects
 -- with 64-character keys, an array at level 127 and 1,000 reference objects at
 -- level 128, each with a 64-character usage key holding 880 characters. Every
--- path is about 8.5 KB, so the walk carries about 8.5 MB of paths: the worst
--- case decision 28 allows. It is accepted, as a draft save and as a revision;
--- locally the walk writes about 27 MB of temp files in about 0.25 s, so the
--- bounds (64 MB, 3 s) are wide margins. The keys repeat, so the paths compress
--- under the primary keys' btree limit (2,704 bytes); paths this long made of
--- incompressible keys are refused by the index, also with 54000.
+-- path is about 8.5 KB, so the result is about 8.5 MB of paths: the largest
+-- result decision 28 allows. It is accepted, as a draft save and as a revision.
+-- The only temp file is that result, spilled past work_mem (4 MB): locally
+-- 8,486,912 bytes in about 0.18 s (26.6 MB in 0.27 s when the walk carried each
+-- node's path), so the bounds are 10 MB and 1 s. The keys repeat, so the paths
+-- compress under the primary keys' btree limit (2,704 bytes); paths this long
+-- made of incompressible keys are refused by the index, also with 54000 (below).
 create function tests.at_limits() returns jsonb
 language sql
 set search_path = ''
@@ -661,8 +664,8 @@ select results_eq($$ select probe, state from tests.costs where probe like '% at
   $$ values ('draft at limits', '00000'), ('revision at limits', '00000') $$,
   'the document at the limits is accepted, as a draft save and as a revision');
 select is_empty($$ select probe from tests.costs where probe like '% at limits'
-    and (temp_bytes >= 64 * 1024 * 1024 or elapsed >= interval '3 seconds') $$,
-  'the document at the limits writes under 64 MB of temp files and is saved in under 3 seconds');
+    and (temp_bytes > 10 * 1024 * 1024 or elapsed >= interval '1 second') $$,
+  'the document at the limits writes at most 10 MB of temp files and is saved in under a second');
 select set_eq($$ select path, target_entry_id from cms.draft_refs where entry_id = tests.entry('c109') $$,
   $$ select '$' || repeat('."' || repeat('k', 64) || '"', 126) || '[' || i || ']', tests.entry('c101')
      from generate_series(0, 999) as i $$,
@@ -671,5 +674,175 @@ select set_eq($$ select path, target_entry_id from cms.revision_refs where revis
   $$ select path, target_entry_id from cms.draft_refs where entry_id = tests.entry('c109') $$,
   'the revision at the limits has the same references');
 
+-- Adversarial shapes inside all three limits (Task 7 round 2 security review).
+-- The walk once kept one row per reference and per container on the way to
+-- one, each with its full path, so a document whose references each sit at the
+-- end of their own long chain under a shared trunk made it carry about 1,000
+-- times the depth in paths. The walk now keeps one parent position and one step
+-- per node and puts a path together only for a reference, so the only temp
+-- file left is the result itself when it passes work_mem (4 MB): at most 1,000
+-- paths of at most about 8.6 KB. Each shape is saved as a draft by the editor
+-- and appended as a revision by the worker, with the bounds 10 MB and 1 s (at
+-- most 8.0 MB and about 0.5 s locally, against up to 1.1 GB and 1.1 s before); the
+-- statement timeout is only a guard. The measurements are printed at the end.
+set local statement_timeout = '3s';
+-- p_count references, each at the end of its own chain of p_chain objects
+-- {"a": ...}, in an array under p_trunk objects with 64-character keys.
+create function tests.branching(p_trunk int, p_chain int, p_count int) returns jsonb
+language sql
+set search_path = ''
+as $$ select tests.trunk(p_trunk, 64, (select pg_catalog.jsonb_agg(tests.nest(p_chain, tests.ref(tests.entry('c101'), 'entry')))
+           from pg_catalog.generate_series(1, p_count))) $$;
+-- p_inner wrapped in p_levels objects, each with one 64-character key made of
+-- two md5 digests of p_seed and the level, so the keys do not repeat and the
+-- paths do not compress.
+create function tests.md5_chain(p_seed text, p_levels int, p_inner jsonb) returns jsonb
+language sql
+set search_path = ''
+as $$ select (pg_catalog.string_agg('{"' || pg_catalog.md5(p_seed || '/' || i) || pg_catalog.md5(i || '/' || p_seed) || '":', ''
+              order by i) || p_inner::text || pg_catalog.repeat('}', p_levels))::jsonb
+      from pg_catalog.generate_series(1, p_levels) as i $$;
+-- p_count references, each at the end of its own chain of p_chain md5-key
+-- objects, in an array under p_trunk objects with 64-character keys.
+create function tests.md5_branching(p_trunk int, p_chain int, p_count int) returns jsonb
+language sql
+set search_path = ''
+as $$ select tests.trunk(p_trunk, 64, (select pg_catalog.jsonb_agg(tests.md5_chain(g::text, p_chain, tests.ref(tests.entry('c101'), 'entry')))
+           from pg_catalog.generate_series(1, p_count) as g)) $$;
+grant execute on function tests.branching(int, int, int), tests.md5_chain(text, int, jsonb), tests.md5_branching(int, int, int)
+  to authenticated, service_role;
+-- The shapes, all within the limits: 128 levels at most, keys of 64 characters
+-- at most, 1,000 references at most and 1 MB at most (before: when the walk
+-- carried each node's path; now: this walk, as a draft save):
+--   "branching", the security review's document: trunk 63, 1,000 chains of 63.
+--     Before 1.1 GB of temp files in 1.1 s; now 4.5 MB (the result) in 0.28 s.
+--   "branching deep trunk", its second document: trunk 118, 1,000 chains of 8.
+--     Before 281 MB in 0.33 s; now 8.0 MB in 0.17 s.
+--   "md5 chains": 1,000 chains of 13 incompressible keys under a trunk of 50.
+--     Before 211 MB in 0.33 s; now 4.3 MB in 0.18 s.
+--   "md5 deep chains": 370 chains of 38 incompressible keys under a trunk of 1,
+--     about 2.6 KB per path, as long as the primary keys' btree limit (2,704
+--     bytes per index row) allows. Before 39 MB in 0.14 s; now none in 0.14 s.
+--   "long chains": 1,000 chains of 125, the most nodes the walk can enter.
+--     Before 117 MB in 0.86 s; now none in 0.4 to 0.5 s, the slowest.
+--   "deep blob": one reference beside a 940 KB array, 125 levels down, the
+--     review's CPU probe (each level scanned the whole subtree again; now only
+--     children at most half their parent are counted). Before 0.56 s; now 0.08 s.
+create table tests.shapes (shape text primary key, doc jsonb);
+insert into tests.shapes (shape, doc) values
+  ('branching', tests.branching(63, 63, 1000)),
+  ('branching deep trunk', tests.branching(118, 8, 1000)),
+  ('md5 chains', tests.md5_branching(50, 13, 1000)),
+  ('md5 deep chains', tests.md5_branching(1, 38, 370)),
+  ('long chains', tests.branching(1, 125, 1000)),
+  ('deep blob', tests.nest(125, jsonb_build_object('blob', (select jsonb_agg(jsonb_build_array(g, g)) from generate_series(1, 60000) as g),
+                                                   'ref', tests.ref(tests.entry('c101'), 'entry'))));
+grant select on tests.shapes to authenticated, service_role;
+-- Depth d: a container at jsonpath depth d - 1 and none at depth d.
+select results_eq($$ select s.shape, e.depth,
+      jsonb_path_exists(s.doc, ('strict $.**{' || (e.depth - 1) || '} ? (@.type() == "object" || @.type() == "array")')::jsonpath)
+      and not jsonb_path_exists(s.doc, ('strict $.**{' || e.depth || '} ? (@.type() == "object" || @.type() == "array")')::jsonpath),
+      (select count(*)::int from jsonb_path_query(s.doc, 'strict $.**._ref')), octet_length(s.doc::text) <= 1048576
+    from tests.shapes s
+    join (values ('branching', 128), ('branching deep trunk', 128), ('md5 chains', 65), ('md5 deep chains', 41),
+                 ('long chains', 128), ('deep blob', 128)) as e (shape, depth)
+      on e.shape = s.shape
+    order by s.shape $$,
+  $$ values ('branching', 128, true, 1000, true), ('branching deep trunk', 128, true, 1000, true),
+            ('deep blob', 128, true, 1, true), ('long chains', 128, true, 1000, true),
+            ('md5 chains', 65, true, 1000, true), ('md5 deep chains', 41, true, 370, true) $$,
+  'the adversarial shapes are within the limits: depth, references and size');
+select is_empty($$ select 1 from tests.shapes s,
+    lateral (select regexp_matches(s.doc::text, '"((?:[^"\\]|\\.)*)":', 'g')) as m (a) where char_length(m.a[1]) > 64 $$,
+  'the adversarial shapes have no key longer than 64 characters');
+
+-- Each shape: the editor saves it as c109's draft, and draft_refs then holds
+-- exactly the references strict $.**._ref finds, each at a path that evaluates
+-- to it; the worker appends it as a revision with the same references.
+create function tests.save_shape(p_shape text, p_revision text, p_version int) returns void
+language plpgsql
+set search_path = ''
+as $$
+begin
+  perform tests.act_as(tests.persona('editor_labak'));
+  insert into tests.costs select 'draft ' || p_shape, c.* from tests.cost(pg_catalog.format(
+    'update cms.drafts set data = (select doc from tests.shapes where shape = %L) where entry_id = tests.entry(''c109'')',
+    p_shape)) as c;
+  perform tests.act_as_service();
+  insert into tests.costs select 'revision ' || p_shape, c.* from tests.cost(pg_catalog.format(
+    'insert into cms.revisions (id, tenant_id, entry_id, draft_version, schema_version, data, requested_by)
+       select tests.revision(%L), tests.tenant(''labak''), tests.entry(''c109''), %s, 1, doc, tests.persona(''editor_labak'')
+       from tests.shapes where shape = %L', p_revision, p_version, p_shape)) as c;
+  perform tests.act_as_owner();
+end;
+$$;
+create table tests.shape_refs (shape text, path text, target uuid, found boolean, in_revision boolean);
+create function tests.record_shape(p_shape text, p_revision text) returns void
+language sql
+set search_path = ''
+as $$
+  with s as materialized (select doc #> '{}' as doc from tests.shapes where shape = p_shape)
+  insert into tests.shape_refs
+  select p_shape, r.path, r.target_entry_id,
+         (pg_catalog.jsonb_path_query_first(s.doc, ('strict ' || r.path)::pg_catalog.jsonpath, '{}', true) ->> '_ref') = r.target_entry_id::text,
+         exists (select 1 from cms.revision_refs v where v.tenant_id = tests.tenant('labak') and v.revision_id = tests.revision(p_revision)
+                 and v.path = r.path and v.target_entry_id = r.target_entry_id)
+  from cms.draft_refs r, s
+  where r.entry_id = tests.entry('c109')
+$$;
+select tests.save_shape('branching', 'd106', 4);
+select tests.record_shape('branching', 'd106');
+select tests.save_shape('branching deep trunk', 'd107', 5);
+select tests.record_shape('branching deep trunk', 'd107');
+select tests.save_shape('md5 chains', 'd108', 6);
+select tests.record_shape('md5 chains', 'd108');
+select tests.save_shape('md5 deep chains', 'd109', 7);
+select tests.record_shape('md5 deep chains', 'd109');
+select tests.save_shape('long chains', 'd10b', 8);
+select tests.record_shape('long chains', 'd10b');
+select tests.save_shape('deep blob', 'd10c', 9);
+select tests.record_shape('deep blob', 'd10c');
+-- The probes of the shapes above (the longest path comes after).
+create view tests.shape_costs as
+  select c.* from tests.costs c join tests.shapes s on c.probe in ('draft ' || s.shape, 'revision ' || s.shape);
+select results_eq($$ select probe, state from tests.shape_costs order by probe $$,
+  $$ values ('draft branching', '00000'), ('draft branching deep trunk', '00000'), ('draft deep blob', '00000'),
+            ('draft long chains', '00000'), ('draft md5 chains', '00000'), ('draft md5 deep chains', '00000'),
+            ('revision branching', '00000'), ('revision branching deep trunk', '00000'), ('revision deep blob', '00000'),
+            ('revision long chains', '00000'), ('revision md5 chains', '00000'), ('revision md5 deep chains', '00000') $$,
+  'the adversarial shapes are accepted, as draft saves and as revisions');
+select is_empty($$ select probe from tests.shape_costs
+    where (temp_bytes > 10 * 1024 * 1024 or elapsed >= interval '1 second') $$,
+  'the adversarial shapes write at most 10 MB of temp files and are saved in under a second');
+select results_eq($$ select shape, count(*)::int, count(*) filter (where found and in_revision)::int
+    from tests.shape_refs group by shape order by shape $$,
+  $$ values ('branching', 1000, 1000), ('branching deep trunk', 1000, 1000), ('deep blob', 1, 1),
+            ('long chains', 1000, 1000), ('md5 chains', 1000, 1000), ('md5 deep chains', 370, 370) $$,
+  'each shape''s references are all in draft_refs and revision_refs, at paths that evaluate to them');
+select set_eq($$ select path from tests.shape_refs where shape = 'branching' $$,
+  $$ select '$' || repeat('."' || repeat('k', 64) || '"', 63) || '[' || i || ']' || repeat('."a"', 63)
+     from generate_series(0, 999) as i $$,
+  'the branching shape''s references are at their full paths');
+select ok((select min(octet_length(path)) > 2500 from tests.shape_refs where shape = 'md5 deep chains'),
+  'the md5 deep chains'' paths are over 2,500 bytes of incompressible keys');
+
+-- The longest path, 126 levels of incompressible 64-character keys (about
+-- 8.5 KB), is within the limits too, but no index row can hold it: the primary
+-- keys refuse it with 54000, so the write fails closed, cheaply.
+insert into tests.shapes (shape, doc) values ('md5 longest path', tests.md5_chain('x', 126, tests.ref(tests.entry('c101'), 'entry')));
+select tests.save_shape('md5 longest path', 'd10a', 10);
+select results_eq($$ select probe, state from tests.costs where probe like '% md5 longest path' order by probe $$,
+  $$ values ('draft md5 longest path', '54000'), ('revision md5 longest path', '54000') $$,
+  'a path longer than the btree limit is refused with 54000, as a draft save and as a revision');
+select is_empty($$ select probe from tests.costs where probe like '% md5 longest path'
+    and (temp_bytes > 1024 * 1024 or elapsed >= interval '1 second') $$,
+  'the refused longest path writes under 1 MB of temp files and is refused in under a second');
+select tests.act_as(tests.persona('editor_labak'));
+select throws_like($$ update cms.drafts set data = (select doc from tests.shapes where shape = 'md5 longest path') where entry_id = tests.entry('c109') $$,
+  'index row %', 'it is the index that refuses the longest path');
+select tests.act_as_owner();
+
+-- For the record: every cost measured above (SQLSTATE, temp bytes, run time).
+select diag(probe || ' ' || state || ' ' || temp_bytes || ' ' || elapsed) from tests.costs order by probe;
 select * from finish();
 rollback;
