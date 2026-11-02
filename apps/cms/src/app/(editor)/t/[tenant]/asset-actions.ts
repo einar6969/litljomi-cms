@@ -1,7 +1,7 @@
 'use server';
 
 import { z } from 'zod';
-import { failureOf, hasSession } from '@/editor/server/entry-context';
+import { authOrError, hasSession } from '@/editor/server/entry-context';
 import { inspectImage } from '@/editor/server/image-metadata';
 import { EXTENSION_BY_MIME, MEDIA_PRIVATE_BUCKET, previewUrl, SAFE_FILENAME } from '@/editor/upload';
 import { createEditorClient } from '@/lib/supabase/server';
@@ -15,7 +15,7 @@ import { isActive, resolveTenant } from '@/lib/tenant';
 // object back and derives it.
 
 // The canonical lowercase form, as the asset path and the database require (decision 25).
-const assetId = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+const assetIdShape = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 const MAX_PATH_LENGTH = 200;
 const MAX_ALT_LENGTH = 1000;
 
@@ -29,7 +29,7 @@ export type UpdateAssetResult = { ok: true } | { ok: false; code: Failure };
 
 const registerArgs = z.object({
   tenantSlug: z.string(),
-  assetId,
+  assetId: assetIdShape,
   path: z.string().max(MAX_PATH_LENGTH),
   filename: z.string().regex(SAFE_FILENAME),
 });
@@ -69,7 +69,7 @@ export async function registerAssetAction(tenantSlug: string, assetId: string, p
       p_height: image.height,
       p_sha256: image.sha256,
     });
-    if (result.error) return { ok: false, code: failureOf({ error: result.error, status: result.status }) === 'auth' ? 'auth' : 'error' };
+    if (result.error) return { ok: false, code: authOrError(result) };
     return { ok: true, assetId: args.data.assetId };
   } catch {
     return { ok: false, code: 'error' };
@@ -98,7 +98,7 @@ async function loadAsset(client: SupabaseClient, id: string): Promise<AssetRow |
  * 600 seconds (§5.6), with its default alt text and focal point. The tenant comes from the asset.
  */
 export async function assetPreviewAction(id: string): Promise<AssetPreviewResult> {
-  const args = assetId.safeParse(id);
+  const args = assetIdShape.safeParse(id);
   if (!args.success) return { ok: false, code: 'invalid' };
   try {
     const client = await createEditorClient();
@@ -115,7 +115,7 @@ export async function assetPreviewAction(id: string): Promise<AssetPreviewResult
 
 const unit = z.number().min(0).max(1);
 const updateArgs = z
-  .object({ id: assetId, focalX: unit.nullable(), focalY: unit.nullable(), defaultAlt: z.string().max(MAX_ALT_LENGTH).nullable() })
+  .object({ id: assetIdShape, focalX: unit.nullable(), focalY: unit.nullable(), defaultAlt: z.string().max(MAX_ALT_LENGTH).nullable() })
   .refine((a) => (a.focalX === null) === (a.focalY === null), 'focal point needs both coordinates');
 
 /**
@@ -136,7 +136,7 @@ export async function updateAssetAction(id: string, focalX: number | null, focal
       p_focal_y: args.data.focalY,
       p_default_alt: args.data.defaultAlt,
     });
-    if (result.error) return { ok: false, code: failureOf({ error: result.error, status: result.status }) === 'auth' ? 'auth' : 'error' };
+    if (result.error) return { ok: false, code: authOrError(result) };
     return { ok: true };
   } catch {
     return { ok: false, code: 'error' };

@@ -121,8 +121,10 @@ insert into editor_views values
                          'published_draft_version', 'first_published_at', 'status']),
   ('asset_list', array['id', 'tenant_id', 'filename', 'mime', 'width', 'height', 'focal_x', 'focal_y', 'default_alt',
                        'original_path', 'archived_at']),
+  -- Task 25 replaced this view (20261102001500_publication_status.sql; 099_publication_status).
   ('publication_status', array['request_id', 'tenant_id', 'entry_id', 'action', 'status', 'error', 'requested_at',
-                               'release_number', 'release_status', 'notify_status', 'live_status', 'live_confirmed_at']),
+                               'release_number', 'release_status', 'omitted', 'missing_assets', 'site_count',
+                               'sites_notified', 'sites_live_ok', 'sites_not_confirmed', 'notify_attempts']),
   ('tenant_sites', array['id', 'tenant_id', 'base_url', 'preview_url', 'active']);
 
 select is_empty($$ select v.name from editor_views v
@@ -245,17 +247,17 @@ select results_eq($$ select id, tenant_id, filename, mime, width, height, focal_
   $$ values (tests.asset('f802'), tests.tenant('labak'), 'b.jpg'::text, 'image/jpeg'::text, 800, 600, null::real, null::real,
              null::text, tests.asset_path(tests.tenant('labak'), tests.asset('f802'), 'b.jpg'), null::timestamptz) $$,
   'asset_list columns');
--- The latest request per entry, with its release and one row per site delivery.
+-- The latest request per entry, with its release and counts over the tenant's two active sites
+-- (Task 25's shape; its states are tested in 099_publication_status).
 select results_eq($$ select request_id, tenant_id, entry_id, action, status, error, requested_at, release_number,
-            release_status, notify_status, live_status, live_confirmed_at
-     from api.publication_status order by entry_id, notify_status $$,
+            release_status, omitted, missing_assets, site_count, sites_notified, sites_live_ok, sites_not_confirmed,
+            notify_attempts
+     from api.publication_status order by entry_id $$,
   $$ values (tests.pub('e802'), tests.tenant('labak'), tests.entry('c803'), 'publish'::text, 'committed'::text, null::jsonb,
-             now() - interval '1 hour', 2, 'delivered'::text, 'failed'::text, 'pending'::text, null::timestamptz),
-            (tests.pub('e802'), tests.tenant('labak'), tests.entry('c803'), 'publish', 'committed', null,
-             now() - interval '1 hour', 2, 'delivered', 'ok', 'ok', now()),
+             now() - interval '1 hour', 2, 'delivered'::text, false, null::text[], 2, 1, 1, 0, 0),
             (tests.pub('e803'), tests.tenant('labak'), tests.entry('c804'), 'publish', 'pending', null,
-             now() - interval '1 hour', null, null, null, null, null) $$,
-  'publication_status: the latest labak request per entry, its release and each site''s delivery');
+             now() - interval '1 hour', null, null, false, null, 2, 0, 0, 0, 0) $$,
+  'publication_status: the latest labak request per entry, its release and the counts over its sites');
 select results_eq($$ select id, tenant_id, base_url, preview_url, active from api.tenant_sites order by id $$,
   $$ values (tests.pub('e841'), tests.tenant('labak'), 'http://localhost:3100'::text, 'http://localhost:3100/p'::text, true),
             (tests.pub('e842'), tests.tenant('labak'), 'http://localhost:3102', null, true) $$,

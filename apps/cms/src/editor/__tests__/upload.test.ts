@@ -7,7 +7,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{1
 
 const fileOf = (bytes: number, name: string, type: string) => new File([new Uint8Array(bytes)], name, { type });
 
-describe('prepareUpload (review focus 4)', () => {
+describe('prepareUpload: unsupported or oversized images are refused before upload', () => {
   it('rejects a HEIC image before upload', () => {
     expect(prepareUpload(fileOf(1024, 'IMG_0001.HEIC', 'image/heic'), TENANT)).toEqual({ ok: false, reason: 'type' });
   });

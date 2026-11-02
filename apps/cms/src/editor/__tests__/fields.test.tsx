@@ -13,6 +13,8 @@ vi.mock('@/app/(editor)/t/[tenant]/asset-actions', () => actions);
 // The browser client is only passed to uploadOriginal, which is replaced below.
 vi.mock('@/lib/supabase/browser', () => ({ createBrowserEditorClient: () => ({}) }));
 vi.mock('@/app/(editor)/t/[tenant]/actions', () => ({ saveDraftAction: vi.fn(), setSlugAction: vi.fn() }));
+// The form's publish panel (Task 25) is tested in publish-panel.test.tsx.
+vi.mock('@/app/(editor)/t/[tenant]/publish-actions', () => ({ requestPublishAction: vi.fn(), requestUnpublishAction: vi.fn() }));
 const uploadOriginal = vi.hoisted(() => vi.fn());
 vi.mock('../upload', async (importOriginal) => ({ ...(await importOriginal<typeof import('../upload')>()), uploadOriginal }));
 
