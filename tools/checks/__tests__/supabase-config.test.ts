@@ -42,6 +42,9 @@ describe('supabase/config.toml security settings', () => {
     expect(setting(path), `${path}: ${reason}`).toBe(expected);
   });
 
+  // Two tests on purpose: the exact-value test below fails on any change (adding a schema is a
+  // reviewed decision), while this one names the security reason when the change exposes a schema
+  // that must never be exposed or empties the list.
   it('[api] schemas is a non-empty list (empty falls back to public) that exposes none of public, cms, private', () => {
     const schemas = setting('api.schemas');
     expect(schemas, 'api.schemas must be a list').toBeInstanceOf(Array);

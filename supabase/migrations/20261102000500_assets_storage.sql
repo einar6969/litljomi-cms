@@ -35,6 +35,9 @@ create table cms.assets (
   archived_at timestamptz,
   -- Target of the composite foreign keys from draft_refs and revision_refs.
   unique (tenant_id, id),
+  -- Prefix only: the filename segment (one non-empty segment, not '.' or '..',
+  -- equal to filename) is checked by api.register_asset (Task 10, Task 8
+  -- security r1 Minor 2), the editor's only route.
   check (original_path like tenant_id::text || '/' || id::text || '/%')
 );
 

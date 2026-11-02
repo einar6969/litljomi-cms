@@ -31,7 +31,7 @@
 -- revisions d106 to d109, d10b and d10c (d10a is refused).
 begin;
 \ir _helpers.sql
-select plan(187);
+select plan(188);
 
 -- {"_ref": <id>, "_kind": <kind>}, the reference shape of §4.3.
 create function tests.ref(p_id uuid, p_kind text) returns jsonb
@@ -497,8 +497,8 @@ select results_eq($$ select probe, state from tests.costs where probe like '% 10
   $$ values ('draft 10,000 levels', '54000'), ('draft 15,000 references', '54000'), ('revision 10,000 levels', '54000') $$,
   'the 10,000-level and 15,000-reference probes are refused with 54000 when measured');
 select is_empty($$ select probe from tests.costs where (probe like '% 10,000 levels' or probe like '% 15,000 references')
-    and elapsed >= interval '5 seconds' $$,
-  'the 10,000-level and 15,000-reference documents are refused in under 5 seconds');
+    and (temp_bytes >= 1024 * 1024 or elapsed >= interval '5 seconds') $$,
+  'the 10,000-level and 15,000-reference documents write under 1 MB of temp files and are refused in under 5 seconds');
 
 -- Key and reference-count limits (§4.3, decisions 28 and 29). Every object key
 -- must match ^[A-Za-z0-9_-]{1,64}$, wherever it is: a key of 64 such characters
@@ -801,7 +801,8 @@ select is_empty($$ select probe from tests.costs where probe like '% at limits'
 -- Positive control: the measurement works. The 8.5 MB result spills past
 -- work_mem, so both writes report well over 1 MB of temp files. This depends on
 -- work_mem being 4 MB (the local default); with a work_mem large enough to hold
--- the result in memory this check would fail.
+-- the result in memory this check would fail, so the precondition says why.
+select is(current_setting('work_mem'), '4MB', 'precondition for the positive control: work_mem is 4MB');
 select results_eq($$ select probe, temp_bytes > 1024 * 1024 from tests.costs where probe like '% at limits' order by probe $$,
   $$ values ('draft at limits', true), ('revision at limits', true) $$,
   'positive control: the document at the limits writes over 1 MB of temp files, so tests.cost measures them');

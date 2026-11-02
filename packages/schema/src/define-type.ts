@@ -28,14 +28,17 @@ export interface ContentType<F extends Record<string, AnyFieldKind> = any> exten
   queryColumns(data: unknown): { title: string | null; sortAt: string | null };
 }
 
-/** A field key starts with a letter and continues with letters, digits or underscores (no `-`, `.`, `$`, spaces). */
-const FIELD_KEY = /^[A-Za-z][A-Za-z0-9_]*$/;
+/**
+ * A field key starts with a letter and continues with letters, digits or underscores (no `-`, `.`,
+ * `$`, spaces), at most 64 characters: the database refuses longer object keys (decision 29).
+ */
+const FIELD_KEY = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 /** Names that would reach the prototype chain of the validator shapes and projected records. */
 const RESERVED_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 function assertFieldKey(key: string): void {
   if (RESERVED_KEYS.has(key) || !FIELD_KEY.test(key) || key in Object.prototype) {
-    throw new Error(`defineType: invalid field key "${key}" (letters, digits and underscores, starting with a letter; not a reserved name)`);
+    throw new Error(`defineType: invalid field key "${key}" (letters, digits and underscores, starting with a letter, at most 64 characters; not a reserved name)`);
   }
 }
 

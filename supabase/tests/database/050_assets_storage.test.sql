@@ -1,6 +1,7 @@
 -- supabase/tests/database/050_assets_storage.test.sql
 -- Assets, storage buckets and storage policies (spec §4.1 rules 3 and 6, §4.3,
--- §4.5, §5.6, §8.1; plan Task 8, decision 11, "Review focus" item 4).
+-- §4.5, §5.6, §8.1; plan Task 8, decision 11 (actor columns cannot be spoofed),
+-- "Review focus" item 4 (unsupported or oversized images are refused)).
 --
 -- Personas and tenants come from tests.seed() (_helpers.sql): editor_labak and
 -- editor_demo are members of labak and demo; outsider, revoked and
@@ -288,7 +289,9 @@ select throws_ok($$ insert into cms.assets (id, tenant_id, original_path, filena
           'a.jpg', 'image/jpeg', 1000, 1, 1, repeat('a', 64)) $$,
   '42501', null, 'service_role cannot insert assets');
 select throws_ok($$ delete from cms.assets $$, '42501', null, 'service_role cannot delete assets');
-select is((select count(*)::int from cms.assets), 4, 'service_role reads every asset');
+select set_eq($$ select id from cms.assets $$,
+  $$ values (tests.asset('f201')), (tests.asset('f202')), (tests.asset('f203')), (tests.asset('f204')) $$,
+  'service_role reads every asset, in both tenants');
 
 -- check_actor (decision 11): a BEFORE trigger whose name sorts after
 -- assets_force_actor cannot spoof created_by; the owner keeps what it writes.
@@ -418,12 +421,13 @@ select throws_ok($$ insert into storage.objects (bucket_id, name)
 -- DELETE unless storage.allow_delete_query is 'true', which the Storage API
 -- sets for its own deletes; with it set, RLS is what refuses the editor.
 select lives_ok($$ update storage.objects set name = tests.tenant('labak') || '/' || tests.asset('f203') || '/b.jpg' $$,
-  'editor''s update of storage objects runs');
+  'editor''s update of storage objects runs and affects no row (checked at the end of the file)');
 select throws_ok($$ delete from storage.objects $$, '42501',
   'Direct deletion from storage tables is not allowed. Use the Storage API instead.',
   'a direct delete is refused by Storage''s protect_delete trigger');
 select set_config('storage.allow_delete_query', 'true', true);
-select lives_ok($$ delete from storage.objects $$, 'editor''s delete of storage objects runs, as the Storage API''s would');
+select lives_ok($$ delete from storage.objects $$,
+  'editor''s delete of storage objects runs, as the Storage API''s would, and affects no row (checked at the end)');
 select set_config('storage.allow_delete_query', 'false', true);
 -- The demo editor cannot see the labak upload.
 select tests.act_as(tests.persona('editor_demo'));

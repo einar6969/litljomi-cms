@@ -55,6 +55,7 @@ grant execute on function tests.api_functions(), tests.api_views(), tests.sqlsta
   to anon, authenticated, service_role;
 
 -- The lists are not vacuous: 9 editor, 11 worker and 3 admin functions; 6 views.
+-- A task that adds an api function or view updates these counts (and 010's 14).
 select is((select count(*)::int from tests.api_functions()), 23, 'api holds 23 functions');
 select is((select count(*)::int from tests.api_functions() where name ~ '^(worker|admin)_'), 14,
   '14 of them are worker_* or admin_*');

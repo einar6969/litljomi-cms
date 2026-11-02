@@ -20,9 +20,10 @@
 --
 -- Later assertions depend on earlier mutations, in this order: editor_labak
 -- inserts a publish request for c301 naming outsider as requester (renamed
--- e301 by the owner) and an unpublish request for c301 with no requester; service_role claims and commits e301,
--- inserts release e323 (labak, number 2, building), records a delivery
--- (e323, e341) and inserts site e343 (labak).
+-- e301 by the owner) and an unpublish request for c301 with no requester;
+-- service_role claims e301 and commits it against release e321, inserts
+-- release e323 (labak, number 2, building), records a delivery (e323, e341)
+-- and inserts site e343 (labak).
 begin;
 \ir _helpers.sql
 select plan(189);
@@ -133,9 +134,10 @@ select has_index('cms', 'publish_requests', 'publish_requests_status_requested_a
 select has_index('cms', 'releases', 'releases_one_building_per_tenant', array['tenant_id'],
   'releases has an index on tenant_id for building releases');
 select index_is_unique('cms', 'releases', 'releases_one_building_per_tenant', 'the building-release index is unique');
-select is((select pg_catalog.pg_get_expr(i.indpred, i.indrelid) from pg_catalog.pg_index i
+-- Matched loosely: pg_get_expr's parentheses and casts are deparser output.
+select matches((select pg_catalog.pg_get_expr(i.indpred, i.indrelid) from pg_catalog.pg_index i
            where i.indexrelid = 'cms.releases_one_building_per_tenant'::regclass),
-  '(status = ''building''::text)', 'the building-release index is partial: where status = ''building''');
+  '^\(*status = ''building''(::text)?\)*$', 'the building-release index is partial: where status = ''building''');
 
 -- RLS enabled on all four.
 select ok((select bool_and(c.relrowsecurity) from pg_catalog.pg_class c
@@ -217,6 +219,8 @@ select policies_are('cms', 'sites', array['sites_select_member', 'sites_select_c
   'sites policies: member select, console select');
 select policies_are('cms', 'site_deliveries', array['site_deliveries_select_member', 'site_deliveries_select_console'],
   'site_deliveries policies: member select, console select');
+-- pg_policies' name columns use collation "C"; they are cast to the default
+-- collation so the ordered rows compare with the expected text values.
 select results_eq($$ select tablename::text collate "default", policyname::text collate "default", cmd collate "default", roles::text[] collate "default" from pg_catalog.pg_policies
      where schemaname = 'cms' and tablename in ('publish_requests', 'releases', 'sites', 'site_deliveries')
      order by 1, 2 $$,
@@ -289,7 +293,10 @@ select lives_ok($$ insert into cms.publish_requests (tenant_id, entry_id, action
   values (tests.tenant('labak'), tests.entry('c301'), 'publish', 1, tests.persona('outsider')) $$,
   'editor inserts a publish request for its own entry (naming another user as requester)');
 -- The editor cannot choose the id (no insert grant on it, tested below); the
--- owner renames the new row to e301 so later assertions can name it.
+-- owner renames the new row to e301 so later assertions can name it. The
+-- WHERE clause must match exactly one row (the only publish request for c301
+-- at this point): two would collide on the primary key, and the next
+-- assertion fails if it matched none.
 select tests.act_as_owner();
 update cms.publish_requests set id = tests.pub('e301') where entry_id = tests.entry('c301') and action = 'publish';
 select tests.act_as(tests.persona('editor_labak'));
@@ -438,7 +445,9 @@ select is_empty($$ select 1 from cms.releases $$, 'platform admin at aal1 sees n
 select is_empty($$ select 1 from cms.sites $$, 'platform admin at aal1 sees no site');
 select is_empty($$ select 1 from cms.site_deliveries $$, 'platform admin at aal1 sees no delivery');
 select tests.act_as(tests.persona('platform_admin'), 'aal2');
-select is((select count(*)::int from cms.publish_requests), 3, 'platform admin at aal2 sees every request');
+select set_eq($$ select entry_id, action from cms.publish_requests $$,
+  $$ values (tests.entry('c301'), 'publish'::text), (tests.entry('c301'), 'unpublish'), (tests.entry('c302'), 'publish') $$,
+  'platform admin at aal2 sees every request');
 select results_eq($$ select id from cms.releases order by id $$,
   $$ values (tests.pub('e321')), (tests.pub('e322')) $$, 'platform admin at aal2 sees every tenant''s release');
 select results_eq($$ select id, base_url from cms.sites order by id $$,
@@ -482,7 +491,9 @@ select throws_ok($$ insert into cms.publish_requests (tenant_id, entry_id, actio
 -- ---------------------------------------------------------------------------
 -- The worker (service_role): what Task 11's functions need, nothing more.
 select tests.act_as_service();
-select is((select count(*)::int from cms.publish_requests), 3, 'service_role reads every request');
+select set_eq($$ select entry_id, action from cms.publish_requests $$,
+  $$ values (tests.entry('c301'), 'publish'::text), (tests.entry('c301'), 'unpublish'), (tests.entry('c302'), 'publish') $$,
+  'service_role reads every request');
 select lives_ok($$ update cms.publish_requests set status = 'validating', claimed_at = now(), attempts = attempts + 1
   where id = tests.pub('e301') $$, 'service_role claims a request');
 select lives_ok($$ update cms.publish_requests set status = 'committed', revision_id = tests.revision('d301'),

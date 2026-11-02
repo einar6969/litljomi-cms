@@ -31,6 +31,7 @@ const registerAsset = async (persona: PersonaName, tenantId: string, assetId = r
 afterAll(closeAll);
 
 describe('A1: cms, private and public are not reachable over the Data API', () => {
+  // The plan's Task 12 test, kept by name; the it.each below generalises it.
   it('A1: cms tables are not reachable over REST', async () => {
     const c = await editorClient('editor_labak');
     // The cast only satisfies the client's types; the request names schema cms.
@@ -150,8 +151,9 @@ describe('A2: invoker api functions write cms under RLS and column grants', () =
       p_entry_id: id, p_expected_version: 1, p_data: { image: { _ref: demoAsset, _kind: 'asset' } },
       p_schema_version: 1, p_title: 'T', p_sort_at: null,
     });
-    expect(error).not.toBeNull();
+    expect(error?.code).toBe('23503'); // the composite foreign key (tenant_id, target_asset_id)
     expect(await countDraftRefs(id)).toBe(0);
+    expect((await ownerQuery<{ version: number }>('select version from cms.drafts where entry_id = $1', [id]))[0]?.version).toBe(1);
   });
 
   it('A2: anon cannot call editor functions or read the views', async () => {

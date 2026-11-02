@@ -5,7 +5,8 @@
 //   block <task> "<text>" | unblock <task> | validate <gate-id> pass|fail|waived <evidence>
 //   done <task> | checkpoint C<n> <report> | render
 // "waived" is accepted only for V-HARNESS and V-CONNECTORS.
-// start: every task in dependsOn done, and at most one active task per lane (Einar, 2026-11-02).
+// start: every task in dependsOn done (Lane A: or in_review, see below), and at most one active task
+// per lane (Einar, 2026-11-02).
 // start, Lane A overlap (Einar, 2026-11-02): a Lane A task may start while a Lane A dependency is
 // in_review (not blocked, not in_progress); at most one Lane A task is in_progress at a time.
 // done: every task in dependsOn done.
@@ -367,7 +368,7 @@ function cmdDone(ctx, root, args, now) {
   }
   const security = t.task.reviews.security;
   if (security && (security.atCommits ?? -1) < t.task.commits.length) {
-    missing.push(`a security review of the latest commit (the security review is older than the latest commit)`);
+    missing.push('a security review of the latest commit (the security review is older than the latest commit)');
   }
   if (missing.length) throw new Refusal(`Task ${t.id} cannot be marked done; it needs: ${missing.join('; ')}`);
   Object.assign(t.task, { status: 'done', doneAt: now });

@@ -24,17 +24,22 @@ const claimsFor = (as: Exclude<Actor, 'owner'>) =>
 export async function pgAs(as: Actor): Promise<pg.Client> {
   const client = new pg.Client({ connectionString: env.dbUrl });
   client.on('error', () => {}); // a terminated backend is reported by the failing query
-  await client.connect();
   open.add(client);
-  const { rows } = await client.query('select pg_backend_pid() as pid');
-  pids.set(client, rows[0].pid);
-  await client.query('begin');
-  if (as !== 'owner') {
-    const claims = claimsFor(as);
-    await client.query(`select set_config('role', $1, true), set_config('request.jwt.claims', $2, true)`, [
-      claims.role,
-      JSON.stringify(claims),
-    ]);
+  try {
+    await client.connect();
+    const { rows } = await client.query('select pg_backend_pid() as pid');
+    pids.set(client, rows[0].pid);
+    await client.query('begin');
+    if (as !== 'owner') {
+      const claims = claimsFor(as);
+      await client.query(`select set_config('role', $1, true), set_config('request.jwt.claims', $2, true)`, [
+        claims.role,
+        JSON.stringify(claims),
+      ]);
+    }
+  } catch (e) {
+    await closeClient(client); // a failed setup leaves no open connection behind
+    throw e;
   }
   return client;
 }
@@ -47,11 +52,12 @@ export async function withTx<T>(as: Actor, fn: (c: pg.Client) => Promise<T>): Pr
     await c.query('commit');
     return result;
   } finally {
-    await close(c);
+    await closeClient(c);
   }
 }
 
-async function close(c: pg.Client) {
+/** Rolls back and closes one pgAs() connection; does nothing if it is already closed. */
+export async function closeClient(c: pg.Client) {
   if (!open.delete(c)) return;
   try {
     await c.query('rollback');
@@ -68,7 +74,7 @@ export async function ownerQuery<T = Record<string, unknown>>(text: string, para
 
 /** Rolls back and closes every pgAs() connection still open, and the owner pool. */
 export async function closeAll() {
-  await Promise.all([...open].map(close));
+  await Promise.all([...open].map(closeClient));
   const p = pool;
   pool = null;
   await p?.end();
@@ -76,10 +82,11 @@ export async function closeAll() {
 
 /**
  * Resolves once the client's backend waits on a lock (pg_stat_activity
- * wait_event_type = 'Lock'); fails after 2 s. Proves the interleaving a
- * concurrency test relies on instead of assuming it from timing.
+ * wait_event_type = 'Lock'); fails after 5 s (generous, so a slow machine does
+ * not fail it; a real block shows within milliseconds). Proves the interleaving
+ * a concurrency test relies on instead of assuming it from timing.
  */
-export async function expectBlocked(client: pg.Client, timeoutMs = 2000): Promise<void> {
+export async function expectBlocked(client: pg.Client, timeoutMs = 5000): Promise<void> {
   const pid = pids.get(client);
   if (pid === undefined) throw new Error('expectBlocked: not a pgAs() client');
   const deadline = Date.now() + timeoutMs;

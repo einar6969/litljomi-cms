@@ -52,6 +52,7 @@ begin
     if v_constraint = 'entries_tenant_type_slug_key' then
       raise exception 'slug_taken' using errcode = 'P0001';
     end if;
+    -- Deliberate pass-through: any other unique violation keeps its 23505.
     raise;
   end;
   insert into cms.drafts (entry_id, tenant_id, schema_version)
@@ -120,6 +121,7 @@ begin
     if v_constraint = 'entries_tenant_type_slug_key' then
       raise exception 'slug_taken' using errcode = 'P0001';
     end if;
+    -- Deliberate pass-through: any other unique violation keeps its 23505.
     raise;
   end;
 end;
@@ -247,9 +249,11 @@ end;
 $$;
 
 -- Requests publication of the draft version the editor last saw (§6.1). The
--- tenant comes from the entry. tenant_inactive if the tenant is suspended;
--- version_conflict if the draft has already moved on. The worker re-checks both
--- at commit (§6.2); these checks only give the editor an early answer.
+-- tenant comes from the entry. tenant_inactive unless the tenant is visible and
+-- active (fail closed: a tenant row the caller cannot see counts as inactive);
+-- version_conflict if the draft has already moved on (a null expected version
+-- included). The worker re-checks both at commit (§6.2); these checks only give
+-- the editor an early answer.
 create function api.request_publish(p_entry_id uuid, p_expected_draft_version int)
 returns uuid
 language plpgsql
@@ -268,7 +272,7 @@ begin
   if not found then
     raise exception 'not_found' using errcode = 'P0001';
   end if;
-  if exists (select 1 from cms.tenants t where t.id = v_tenant_id and t.status <> 'active') then
+  if not exists (select 1 from cms.tenants t where t.id = v_tenant_id and t.status = 'active') then
     raise exception 'tenant_inactive' using errcode = 'P0001';
   end if;
   if p_expected_draft_version is distinct from v_version then

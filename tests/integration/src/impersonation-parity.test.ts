@@ -10,7 +10,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { anonClient, editorClient, secretClient } from './clients.ts';
 import { TENANT, type PersonaName } from './fixtures.ts';
-import { closeAll, pgAs } from './sql.ts';
+import { closeAll, closeClient, pgAs } from './sql.ts';
 
 type Caller = PersonaName | 'anon' | 'service';
 type Outcome = { ok: true; value: unknown } | { ok: false; code: string | undefined; message: string | undefined };
@@ -20,7 +20,13 @@ type Case = {
   as: Caller;
   expected: Outcome;
 } & (
-  | { rpc: string; args: (ctx: Context) => Record<string, unknown>; shape?: (value: unknown) => unknown }
+  | {
+      rpc: string;
+      args: (ctx: Context) => Record<string, unknown>;
+      shape?: (value: unknown) => unknown;
+      /** The function returns a set (PostgREST answers with an array of rows). */
+      setof?: boolean;
+    }
   | { view: string; column: string }
 );
 
@@ -51,7 +57,7 @@ const PARITY_CASES: Case[] = [
     args: () => ({ p_limit: 1 }), expected: denied('42501', 'permission denied for function worker_claim_requests') },
   { name: 'anon calls an editor function', as: 'anon', rpc: 'create_entry',
     args: () => ({ p_tenant_id: TENANT.labak, p_type: 'news' }), expected: denied('42501', 'permission denied for schema api') }, // anon has no USAGE on api
-  { name: 'secret key reads the sites through Vault', as: 'service', rpc: 'worker_sites',
+  { name: 'secret key reads the sites through Vault', as: 'service', rpc: 'worker_sites', setof: true,
     args: () => ({ p_tenant_id: TENANT.demo }),
     shape: (v) => (v as { base_url: string }[]).map((s) => s.base_url).sort(), expected: { ok: true, value: ['http://localhost:3101'] } },
   { name: 'editor lists entries: own tenant only', as: 'editor_labak', view: 'entry_list', column: 'tenant_id',
@@ -92,17 +98,20 @@ async function viaSql(c: Case, ctx: Context): Promise<Outcome> {
     // A set-returning function is read as rows, a scalar one as its value: the
     // same shapes PostgREST returns.
     const { rows } = await db.query(`select to_jsonb(r) as v from api."${c.rpc}"(${named}) r`, values);
-    const value = rows.length === 1 && c.rpc !== 'worker_sites' ? unwrap(rows[0].v) : rows.map((r) => r.v);
+    const value = c.setof ? rows.map((r) => r.v) : unwrap(rows[0].v);
     return { ok: true, value: c.shape ? c.shape(value) : value };
   } catch (e) {
     const err = e as { code?: string; message?: string };
     return { ok: false, code: err.code, message: err.message };
   } finally {
-    await db.query('rollback');
+    await closeClient(db); // rolls back
   }
 }
 
-// to_jsonb of a scalar function's single column row: {"<function name>": value}.
+// A scalar function called in FROM yields one row with one column named after
+// the function, so to_jsonb(r) is {"<function name>": value}; unwrap takes the
+// value. (A function returning a composite yields its columns instead, and is
+// kept whole.)
 const unwrap = (v: Record<string, unknown>) => {
   const values = Object.values(v);
   return values.length === 1 ? values[0] : v;

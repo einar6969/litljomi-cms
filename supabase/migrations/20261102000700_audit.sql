@@ -108,6 +108,7 @@ create trigger entries_audit_insert
   for each row
   execute function private.audit_entries();
 
+-- Keep this WHEN clause identical to the function's IF conditions above.
 create trigger entries_audit_update
   after update on cms.entries
   for each row
@@ -146,6 +147,7 @@ create trigger assets_audit_insert
   for each row
   execute function private.audit_assets();
 
+-- Keep this WHEN clause identical to the function's IF conditions above.
 create trigger assets_audit_update
   after update on cms.assets
   for each row
@@ -186,6 +188,7 @@ create trigger publish_requests_audit_insert
   for each row
   execute function private.audit_publish_requests();
 
+-- Keep this WHEN clause identical to the function's IF conditions above.
 create trigger publish_requests_audit_update
   after update on cms.publish_requests
   for each row
@@ -209,6 +212,7 @@ begin
 end;
 $$;
 
+-- Keep this WHEN clause identical to the function's IF conditions above.
 create trigger releases_audit_update
   after update on cms.releases
   for each row
@@ -274,7 +278,12 @@ create policy audit_log_select_console on cms.audit_log
 -- Grants (§4.5). authenticated: INSERT so the triggers can run, SELECT for the
 -- console policy. service_role: INSERT, because the worker's and the CLI's
 -- writes fire the triggers above (and decision 10's alerts are audit events).
--- Never UPDATE or DELETE for any API role. id is generated always, so no
--- caller chooses it either. anon: none.
-grant select, insert on cms.audit_log to authenticated;
-grant insert on cms.audit_log to service_role;
+-- Never UPDATE or DELETE for any API role. INSERT is granted on every column
+-- except id: id is generated always, so an ordinary INSERT cannot name it, and
+-- without a column privilege on id INSERT ... OVERRIDING SYSTEM VALUE is
+-- refused too (42501). actor_id stays insertable because the triggers name it;
+-- at stays insertable as before, and audit_force_actor always overwrites it
+-- (and actor_id whenever auth.uid() is set). anon: none.
+grant select on cms.audit_log to authenticated;
+grant insert (tenant_id, actor_id, action, target_type, target_id, at, details)
+  on cms.audit_log to authenticated, service_role;

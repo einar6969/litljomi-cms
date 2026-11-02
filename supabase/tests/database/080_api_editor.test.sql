@@ -29,11 +29,16 @@
 --   site     e841, e842 labak; e843 demo
 --   delivery (e822, e841) ok/ok; (e822, e842) failed/pending; (e821, e841) ok/ok
 --
+-- Rows the function tests create along the way (not fixtures): the entries
+-- tests.new_entry (create_entry with defaults) and tests.slug_entry (slug
+-- 'annad', schema version 3), the asset f805 (register_asset), and the publish
+-- and unpublish requests tests.request and tests.unpublish.
+--
 -- The views are checked first, against these fixtures. The function tests then
 -- change them, in file order.
 begin;
 \ir _helpers.sql
-select plan(160);
+select plan(163);
 
 create function tests.asset(p_key text) returns uuid
 language plpgsql
@@ -568,7 +573,11 @@ select results_eq($$ select id from cms.assets where archived_at = now() order b
 -- it on the already archived f806 takes the lock without updating: the row's
 -- xmax becomes the id of this transaction or, when the test runner wraps each
 -- statement in a savepoint, of one of its subtransactions, whose ids are
--- assigned after the top-level one.
+-- assigned after the top-level one. The comparison is modulo 2^32 (xmax is a
+-- 32-bit xid, pg_current_xact_id an epoch-extended one) and assumes no xid
+-- wraparound between this transaction's start and the call, which holds on the
+-- short-lived local stack. The function-text regex below is only a backstop
+-- for this behavioural check.
 select is((select xmax::text from cms.assets where id = tests.asset('f806')), '0',
   'f806 is not locked before the call');
 select tests.act_as(tests.persona('editor_labak'));
@@ -600,6 +609,8 @@ select throws_ok($$ select api.request_publish(tests.entry('c801'), 4) $$, 'P000
   'request_publish with a version the draft has not reached: version_conflict');
 select throws_ok($$ select api.request_publish(tests.entry('c802'), 1) $$, 'P0001', 'not_found',
   'request_publish on another tenant''s entry: not_found');
+select throws_ok($$ select api.request_publish(tests.entry('c801'), null) $$, 'P0001', 'version_conflict',
+  'request_publish with a null expected version: version_conflict');
 select lives_ok($$ select set_config('tests.unpublish', api.request_unpublish(tests.entry('c803'))::text, true) $$,
   'request_unpublish');
 select results_eq($$ select tenant_id, entry_id, action, draft_version, requested_by, status from cms.publish_requests
@@ -639,6 +650,18 @@ select throws_ok($$ select api.request_publish(tests.entry('c802'), 9) $$, 'P000
 select tests.act_as_owner();
 select is((select count(*)::int from cms.publish_requests where tenant_id = tests.tenant('demo')), 1,
   'no request was inserted for the suspended tenant');
+
+-- Fail closed (Task 10 quality r1, Minor 4): an active tenant whose row the
+-- caller cannot see counts as inactive. A restrictive policy, dropped again
+-- below, hides every tenant row from authenticated.
+update cms.tenants set status = 'active' where id = tests.tenant('demo');
+create policy zz_hide_tenants on cms.tenants as restrictive for select to authenticated using (false);
+select tests.act_as(tests.persona('editor_demo'));
+select is_empty($$ select 1 from cms.tenants $$, 'precondition: the tenant rows are hidden from the editor');
+select throws_ok($$ select api.request_publish(tests.entry('c802'), 1) $$, 'P0001', 'tenant_inactive',
+  'request_publish when the active tenant row is invisible: tenant_inactive');
+select tests.act_as_owner();
+drop policy zz_hide_tenants on cms.tenants;
 
 select * from finish();
 rollback;

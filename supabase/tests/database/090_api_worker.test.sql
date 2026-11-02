@@ -338,7 +338,9 @@ select is((select row(e.published_rev_id, e.published_draft_version, e.first_pub
 -- SHARE (and the draft_refs foreign keys' from the fixtures), so "For Share"
 -- appears only if the loop ran. The draft's FOR UPDATE is the strongest mode.
 -- Task 12's concurrent test (an unpublish of a referenced entry waits for the
--- commit) proves the same locks across sessions.
+-- commit) proves the same locks across sessions. The mode strings ('For
+-- Update', 'For Share', ...) are pgrowlocks' output format, which could change
+-- with its version; a change fails these assertions loudly, never silently.
 select tests.act_as_owner();
 select is((select l.modes from cms.drafts d join extensions.pgrowlocks('cms.drafts') l on l.locked_row = d.ctid
            where d.entry_id = tests.entry('c910')),

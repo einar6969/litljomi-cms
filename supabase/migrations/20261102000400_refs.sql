@@ -16,6 +16,12 @@ alter table cms.revisions add constraint revisions_tenant_id_id_key unique (tena
 
 -- The primary keys start with tenant_id, so a duplicate key can never reveal
 -- another tenant's rows (decision 26). A path is unique within one document.
+-- The path is part of the key, so a btree index row must hold it (2,704 bytes
+-- after compression): a document inside every limit of decisions 27-29 whose
+-- path to a reference is longer, made of incompressible keys (126 levels of
+-- 64-character keys is about 8.5 KB), is refused by the index with 54000. The
+-- write fails closed and cheaply (040_refs.test.sql, "md5 longest path"); real
+-- schema and rich-text paths are far shorter.
 create table cms.draft_refs (
   tenant_id uuid not null,
   entry_id uuid not null,
@@ -280,7 +286,8 @@ begin
     v_levels[v_depth] := v_level;
   end loop;
   -- The counts make the walk find exactly the references strict $.**._ref
-  -- counted; this guards that.
+  -- counted; this guards that. No input is known to reach it: it is an
+  -- internal invariant check, and it fails closed (the write is refused).
   if v_found <> v_refs then
     raise exception 'reference walk found % of % references', v_found, v_refs using errcode = 'XX000';
   end if;

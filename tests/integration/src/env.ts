@@ -15,12 +15,19 @@ export type Env = {
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 
 function loadEnv(): Env {
-  const out = execFileSync('supabase', ['status', '-o', 'json'], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'ignore'],
-    env: { ...process.env, SUPABASE_TELEMETRY_DISABLED: '1' },
-  });
+  let out: string;
+  try {
+    out = execFileSync('supabase', ['status', '-o', 'json'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      env: { ...process.env, SUPABASE_TELEMETRY_DISABLED: '1' },
+    });
+  } catch (e) {
+    throw new Error('`supabase status -o json` failed; is the Supabase CLI installed and the local stack running (pnpm db:start)?', {
+      cause: e,
+    });
+  }
   const status = JSON.parse(out.slice(out.indexOf('{'))) as Record<string, string | undefined>;
   const pick = (...names: string[]) => {
     for (const n of names) if (status[n]) return status[n];

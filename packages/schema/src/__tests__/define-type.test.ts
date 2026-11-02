@@ -112,6 +112,10 @@ describe('defineType field keys', () => {
   it.each(['', '1a', 'a b', 'a-b', 'a.b', '_a', 'a$', 'é', 'a\n'])('rejects the non-identifier key %j', (key) => {
     expect(() => build({ ...ok, [key]: text({ label: 'X' }) })).toThrow(/field key/);
   });
+  it('caps keys at 64 characters, as the database does (decision 29)', () => {
+    expect(() => build({ ...ok, ['a'.repeat(64)]: text({ label: 'X' }) })).not.toThrow();
+    expect(() => build({ ...ok, ['a'.repeat(65)]: text({ label: 'X' }) })).toThrow(/field key/);
+  });
   it.each(['title', 'secondaryImage', 'a1', 'snake_case', 'A'])('accepts the key %s', (key) => {
     expect(() => build({ ...ok, [key]: text({ label: 'X' }) })).not.toThrow();
   });

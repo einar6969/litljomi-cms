@@ -3,6 +3,9 @@ import { seedIntegration } from './seed.ts';
 import { closeAll } from './sql.ts';
 
 export default async function setup() {
-  await seedIntegration();
-  await closeAll();
+  try {
+    await seedIntegration();
+  } finally {
+    await closeAll();
+  }
 }

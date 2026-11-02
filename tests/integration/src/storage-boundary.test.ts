@@ -12,8 +12,13 @@ import { closeAll, ownerQuery } from './sql.ts';
 // A few bytes with a JPEG signature; the Storage API checks the declared
 // content type against the bucket's allowed MIME types, not the pixels.
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0xff, 0xd9]);
-const upload = (c: SupabaseClient, bucket: string, path: string, options: { upsert?: boolean; contentType?: string } = {}) =>
-  c.storage.from(bucket).upload(path, JPEG, { contentType: 'image/jpeg', ...options });
+const upload = (
+  c: SupabaseClient,
+  bucket: string,
+  path: string,
+  options: { upsert?: boolean; contentType?: string } = {},
+  bytes: Uint8Array = JPEG,
+) => c.storage.from(bucket).upload(path, bytes, { contentType: 'image/jpeg', ...options });
 const objectExists = async (bucket: string, path: string) =>
   (await ownerQuery('select 1 from storage.objects where bucket_id = $1 and name = $2', [bucket, path])).length === 1;
 
@@ -71,7 +76,12 @@ describe('A4: media-private by tenant prefix and membership', () => {
 
   it('A4: an editor cannot overwrite, move or delete an original', async () => {
     const labak = await editorClient('editor_labak');
-    expect((await upload(labak, 'media-private', labakPath, { upsert: true })).error).not.toBeNull();
+    // Different bytes, so a successful overwrite would show in the content.
+    const other = new Uint8Array([...JPEG.slice(0, -2), 0x00, 0xff, 0xd9]);
+    expect((await upload(labak, 'media-private', labakPath, { upsert: true }, other)).error).not.toBeNull();
+    const kept = await labak.storage.from('media-private').download(labakPath);
+    expect(kept.error).toBeNull();
+    expect(new Uint8Array(await kept.data!.arrayBuffer())).toEqual(JPEG);
     const moved = `${TENANT.labak}/${randomUUID()}/b.jpg`;
     expect((await labak.storage.from('media-private').move(labakPath, moved)).error).not.toBeNull();
     await labak.storage.from('media-private').remove([labakPath]);

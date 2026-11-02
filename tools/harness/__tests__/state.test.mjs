@@ -210,27 +210,58 @@ test('start allows one active task per lane', withRoot((root) => {
 }, { planIndex: twoLaneIndex, approved: ['G0', 'G1'] }));
 
 // Lane A overlap (Einar, 2026-11-02): the next Lane A task may start while its Lane A dependency is in review.
-test('start allows a Lane A task while its Lane A dependency is in_review, not in_progress or blocked', withRoot((root) => {
+test('start allows a Lane A task while its Lane A dependency is in_review, not in_progress', withRoot((root) => {
   markDone(root, [0, 1, 2, 3, 4, 5, 6]);
   approveCheckpoints(root, ['C0']);
   assert.equal(run(['start', '7'], { root }).code, 0);
   let r = run(['start', '8'], { root });
   assert.notEqual(r.code, 0, 'Task 7 in_progress');
-  assert.match(r.stderr, /Task 7/);
-  let s = readState(root);
+  assert.match(r.stderr, /depends on Task 7, not done or in review/);
+  const s = readState(root);
   task(s, 7).status = 'in_review';
   writeState(root, s);
   r = run(['start', '8'], { root });
   assert.equal(r.code, 0, r.stderr);
   assert.equal(task(readState(root), 8).status, 'in_progress');
-  // A second Lane A task cannot be in_progress, even with Task 8 still unfinished.
-  s = readState(root);
-  task(s, 8).status = 'in_progress';
-  task(s, 9).status = 'pending';
+}, { approved: ['G0', 'G1'] }));
+
+// The busy rule on its own: Tasks 8 and 9 both depend only on Task 7, so the dependency check
+// passes for both and only the one-in_progress-Lane-A-task rule can refuse.
+const independentLaneAIndex = PLAN_INDEX.map((t) => (t.id === 9 ? { ...t, dependsOn: [7] } : t));
+
+test('start refuses a second in_progress Lane A task even when its dependencies are ready', withRoot((root) => {
+  markDone(root, [0, 1, 2, 3, 4, 5, 6, 7]);
+  approveCheckpoints(root, ['C0']);
+  assert.equal(run(['start', '8'], { root }).code, 0);
+  let r = run(['start', '9'], { root });
+  assert.notEqual(r.code, 0);
+  assert.match(r.stderr, /lane A already has an active task: Task 8 \(in_progress\)/);
+  assert.doesNotMatch(r.stderr, /depends on/);
+  // Blocked counts as busy too.
+  let s = readState(root);
+  task(s, 8).status = 'blocked';
   writeState(root, s);
   r = run(['start', '9'], { root });
-  assert.notEqual(r.code, 0);
-  assert.match(r.stderr, /Task 8/);
+  assert.match(r.stderr, /lane A already has an active task: Task 8 \(blocked\)/);
+  // In review does not: the overlap allows the next Lane A task.
+  s = readState(root);
+  task(s, 8).status = 'in_review';
+  writeState(root, s);
+  r = run(['start', '9'], { root });
+  assert.equal(r.code, 0, r.stderr);
+}, { planIndex: independentLaneAIndex, approved: ['G0', 'G1'] }));
+
+// Documents what the rule allows, not what the controller does (it works in one worktree and never
+// has two Lane A tasks in review with a third in progress): Task 9 may start with 7 and 8 both in_review.
+test('start allows a Lane A task with two Lane A tasks in_review', withRoot((root) => {
+  markDone(root, [0, 1, 2, 3, 4, 5, 6]);
+  approveCheckpoints(root, ['C0']);
+  const s = readState(root);
+  task(s, 7).status = 'in_review';
+  task(s, 8).status = 'in_review';
+  writeState(root, s);
+  const r = run(['start', '9'], { root });
+  assert.equal(r.code, 0, r.stderr);
 }, { approved: ['G0', 'G1'] }));
 
 test('start refuses a Lane A task whose dependency is blocked', withRoot((root) => {

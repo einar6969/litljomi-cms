@@ -20,7 +20,7 @@
 -- removes outsider's membership in demo.
 begin;
 \ir _helpers.sql
-select plan(81);
+select plan(83);
 
 create function tests.asset(p_key text) returns uuid
 language plpgsql
@@ -68,15 +68,18 @@ select ok((select c.relrowsecurity from pg_catalog.pg_class c where c.oid = 'cms
 
 -- Grants (§4.5): authenticated insert (for the triggers) and select (console
 -- policy only); service_role insert (the worker's and CLI's writes fire the
--- triggers); never update or delete; anon nothing.
-select table_privs_are('cms', 'audit_log', 'authenticated', array['SELECT', 'INSERT'],
-  'authenticated: select and insert on audit_log');
-select table_privs_are('cms', 'audit_log', 'service_role', array['INSERT'], 'service_role: insert only on audit_log');
+-- triggers); never update or delete; anon nothing. INSERT is per column, every
+-- column except id, so nobody can name id even with OVERRIDING SYSTEM VALUE.
+select table_privs_are('cms', 'audit_log', 'authenticated', array['SELECT'],
+  'authenticated: table-level select only on audit_log (insert is per column)');
+select table_privs_are('cms', 'audit_log', 'service_role', array[]::text[],
+  'service_role: no table-level privilege on audit_log (insert is per column)');
 select table_privs_are('cms', 'audit_log', 'anon', array[]::text[], 'anon: nothing on audit_log');
-select is_empty($$ select r, c.col, c.priv from (values ('anon'), ('authenticated'), ('service_role')) as v(r)
-     cross join lateral tests.column_privs(v.r, 'cms.audit_log') as c
-     where c.priv <> 'INSERT' $$,
-  'no API role has a column update or references privilege on audit_log');
+select set_eq($$ select r, c.col, c.priv from (values ('anon'), ('authenticated'), ('service_role')) as v(r)
+     cross join lateral tests.column_privs(v.r, 'cms.audit_log') as c $$,
+  $$ select r, col, 'INSERT' from (values ('authenticated'), ('service_role')) as v(r)
+     cross join unnest(array['tenant_id', 'actor_id', 'action', 'target_type', 'target_id', 'at', 'details']) as col $$,
+  'authenticated and service_role insert every audit_log column except id; no update or references; anon nothing');
 select is_empty($$ select r from (values ('anon'), ('authenticated'), ('service_role')) as v(r)
      where has_table_privilege(v.r, 'cms.audit_log', 'UPDATE, DELETE, TRUNCATE') $$,
   'audit_log is append-only for anon, authenticated and service_role');
@@ -172,7 +175,10 @@ select throws_ok($$ insert into cms.audit_log (tenant_id, action, target_type) v
   '42501', null, 'editor cannot write a platform event (null tenant)');
 select throws_ok($$ insert into cms.audit_log (id, tenant_id, action, target_type)
   values (1, tests.tenant('labak'), 'test.id', 'test') $$,
-  '428C9', null, 'nobody chooses audit_log.id (generated always)');
+  '428C9', null, 'an ordinary INSERT cannot name audit_log.id (generated always)');
+select throws_ok($$ insert into cms.audit_log (id, tenant_id, action, target_type) overriding system value
+  values (1, tests.tenant('labak'), 'test.id', 'test') $$,
+  '42501', 'permission denied for table audit_log', 'editor cannot choose audit_log.id with OVERRIDING SYSTEM VALUE');
 select is_empty($$ select 1 from cms.audit_log $$, 'editor reads no audit rows, not even its own');
 select throws_ok($$ update cms.audit_log set action = 'x' $$, '42501', null, 'editor cannot update audit_log');
 select throws_ok($$ delete from cms.audit_log $$, '42501', null, 'editor cannot delete from audit_log');
@@ -258,6 +264,9 @@ select set_config('tests.audit_before_worker', (select max(id) from cms.audit_lo
 -- The worker (service_role): its events take the requester from the row
 -- (§4.7); events with no requester are system events (decision 12).
 select tests.act_as_service();
+select throws_ok($$ insert into cms.audit_log (id, tenant_id, action, target_type) overriding system value
+  values (1, tests.tenant('labak'), 'test.id', 'test') $$,
+  '42501', 'permission denied for table audit_log', 'service_role cannot choose audit_log.id with OVERRIDING SYSTEM VALUE');
 select lives_ok($$ update cms.publish_requests set status = 'validating', claimed_at = now(), attempts = attempts + 1
   where entry_id = tests.entry('c701') $$, 'worker claims the request');
 select lives_ok($$ update cms.publish_requests set attempts = attempts + 1 where entry_id = tests.entry('c701') $$,

@@ -74,7 +74,12 @@ export async function newUser(prefix: string, { invite = false } = {}): Promise<
 }
 
 export async function deleteThrowawayUsers(ids: string[] = created.splice(0)) {
-  for (const id of ids) if (id) await adminAuth(`/admin/users/${id}`, { method: 'DELETE' });
+  for (const id of ids) {
+    if (!id) continue;
+    const r = await adminAuth(`/admin/users/${id}`, { method: 'DELETE' });
+    // 404: already gone (a test deleted it); anything else is a failed cleanup.
+    if (r.status !== 200 && r.status !== 404) throw new Error(`delete user ${id}: ${brief(r)}`);
+  }
 }
 
 /** A session through admin generate_link and POST /verify with the hashed token. */
@@ -89,11 +94,14 @@ type MailMessage = { ID: string; To: { Address: string }[]; HTML: string; Text: 
 const mailApi = `${env.mailUrl}/api/v1`;
 
 export async function clearMail() {
-  await fetch(`${mailApi}/messages`, { method: 'DELETE' });
+  const res = await fetch(`${mailApi}/messages`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`Mailpit: clearing the mailbox answered ${res.status}`);
 }
 
 async function mailsTo(to: string): Promise<MailMessage[]> {
-  const list = (await (await fetch(`${mailApi}/messages`)).json()) as { messages?: MailMessage[] };
+  const res = await fetch(`${mailApi}/messages`);
+  if (!res.ok) throw new Error(`Mailpit: listing messages answered ${res.status}`);
+  const list = (await res.json()) as { messages?: MailMessage[] };
   const mine = (list.messages ?? []).filter((m) => m.To.some((t) => t.Address.toLowerCase() === to.toLowerCase()));
   return Promise.all(mine.map(async (m) => (await (await fetch(`${mailApi}/message/${m.ID}`)).json()) as MailMessage));
 }
