@@ -28,7 +28,11 @@ describe('createCmsClient', () => {
   it('never uses no-store', async () => {
     const { fetch, client } = setup();
     await client.getEntries('news');
-    for (const call of fetch.mock.calls) expect(JSON.stringify(call)).not.toContain('no-store');
+    expect(fetch).toHaveBeenCalledTimes(2);
+    for (const [, init] of fetch.mock.calls as unknown as Array<[unknown, { cache?: string; next?: { revalidate?: number | false } }]>) {
+      expect(init.cache).not.toBe('no-store');
+      expect(init.next?.revalidate).not.toBe(0);
+    }
   });
   it('tolerates a trailing slash on the base URL', async () => {
     const fetch = vi.fn(async (url: string | URL | Request) => (String(url).endsWith('current.json') ? json(pointer) : json(bundle)));
@@ -54,5 +58,10 @@ describe('createCmsClient', () => {
     for (const b of ['../x.json', 'https://evil/x.json', '/releases/5.json', 'releases/5.json?x=1']) {
       await expect(setup({ ...pointer, bundle: b }).client.getBundle()).rejects.toThrow(/bundle/);
     }
+  });
+  it('throws when the bundle names another tenant or another release than the pointer', async () => {
+    await expect(setup(pointer, { ...bundle, tenant: 'other' }).client.getBundle()).rejects.toThrow(/tenant/);
+    await expect(setup(pointer, { ...bundle, release: 6 }).client.getBundle()).rejects.toThrow(/release/);
+    await expect(setup(pointer, { ...bundle, release: undefined }).client.getBundle()).rejects.toThrow(/release/);
   });
 });

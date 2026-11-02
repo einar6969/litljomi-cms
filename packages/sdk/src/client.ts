@@ -17,6 +17,7 @@ export function createCmsClient(o: { deliveryBaseUrl: string; tenant: string; fe
   const doFetch = o.fetch ?? fetch;
   const base = o.deliveryBaseUrl.replace(/\/+$/, '');
 
+  // Untyped on purpose: the caller checks `format`, tenant and release before trusting the shape.
   async function readJson(url: string, init: object): Promise<unknown> {
     const res = await doFetch(url, init);
     if (!res.ok) throw new Error(`cms: ${url} responded ${res.status}`);
@@ -30,6 +31,8 @@ export function createCmsClient(o: { deliveryBaseUrl: string; tenant: string; fe
     if (typeof pointer.bundle !== 'string' || !BUNDLE_PATH.test(pointer.bundle)) throw new Error('cms: unexpected bundle path in pointer');
     const bundle = (await readJson(`${base}/${o.tenant}/${pointer.bundle}`, { cache: 'force-cache' })) as Bundle;
     if (bundle?.format !== 1) throw new Error(`cms: unsupported bundle format ${String(bundle?.format)}`);
+    if (bundle.tenant !== o.tenant) throw new Error('cms: bundle tenant does not match');
+    if (bundle.release !== pointer.release) throw new Error('cms: bundle release does not match the pointer');
     return bundle;
   }
 

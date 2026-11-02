@@ -1,0 +1,17 @@
+{
+  "name": "@litljomi/cli",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "cli": "vite-node src/main.ts --",
+    "test": "vitest run --project cli --root ../.."
+  },
+  "dependencies": {
+    "@litljomi/cms-schema": "workspace:*",
+    "@litljomi/module-demo": "workspace:*"
+  },
+  "devDependencies": {
+    "vite-node": "^3.2.4"
+  }
+}
