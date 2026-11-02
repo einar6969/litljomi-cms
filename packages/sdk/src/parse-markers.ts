@@ -3,7 +3,8 @@
  * (decision 7). Only markers a browser renders as elements count (Task 18 security r1, 11a): the
  * scanner skips comments, the contents of `script`, `style`, `textarea`, `title` and `template`,
  * and attribute values. It visits each character a bounded number of times and stops at a tag
- * without its closing `>` (11c), so its cost is linear in the input.
+ * without its closing `>` (11c), so its cost is linear in the input. Names are folded ASCII-only on
+ * the page itself, and a scan that stops early is reported as incomplete (Task 21 security r1).
  */
 
 /** Elements whose contents are not parsed as markup (raw text, escapable raw text) or not rendered (template). */
@@ -25,6 +26,13 @@ function decode(s: string): string {
 const isSpace = (c: string | undefined) => c === ' ' || c === '\n' || c === '\t' || c === '\r' || c === '\f';
 const isNameStart = (c: string | undefined) => c !== undefined && /[A-Za-z]/.test(c);
 
+/**
+ * ASCII-only lower case, as HTML folds tag and attribute names. String.prototype.toLowerCase is not
+ * used on the page: it folds non-ASCII letters too and can change the length ('İ', U+0130, becomes
+ * two code units), so positions found in a folded copy do not index the page (Task 21 security r1).
+ */
+const asciiLower = (s: string) => s.replace(/[A-Z]+/g, (m) => m.toLowerCase());
+
 /** One start tag: its lower-case name and attributes (first occurrence wins, values decoded). */
 type Tag = { name: string; attrs: Map<string, string> };
 
@@ -36,7 +44,7 @@ function readTag(html: string, i: number): { tag: Tag; end: number } | null {
   const n = html.length;
   let j = i;
   while (j < n && !isSpace(html[j]) && html[j] !== '/' && html[j] !== '>') j++;
-  const name = html.slice(i, j).toLowerCase();
+  const name = asciiLower(html.slice(i, j));
   const attrs = new Map<string, string>();
   for (;;) {
     while (j < n && (isSpace(html[j]) || html[j] === '/')) j++;
@@ -44,7 +52,7 @@ function readTag(html: string, i: number): { tag: Tag; end: number } | null {
     if (html[j] === '>') return { tag: { name, attrs }, end: j + 1 };
     const keyStart = j;
     while (j < n && !isSpace(html[j]) && html[j] !== '/' && html[j] !== '>' && html[j] !== '=') j++;
-    const key = html.slice(keyStart, j).toLowerCase();
+    const key = asciiLower(html.slice(keyStart, j));
     while (j < n && isSpace(html[j])) j++;
     let value = '';
     if (html[j] === '=') {
@@ -66,40 +74,68 @@ function readTag(html: string, i: number): { tag: Tag; end: number } | null {
   }
 }
 
-/** Index of the end of `</name ...>` from `from` (case-insensitive), or -1. */
-function closingTagEnd(html: string, lower: string, name: string, from: number): number {
+/**
+ * Index of the end of `</name ...>` from `from`, or -1. The name is compared ASCII
+ * case-insensitively on the page itself (`name` is lower-case ASCII), so no position shifts.
+ */
+function closingTagEnd(html: string, name: string, from: number): number {
   let k = from;
   for (;;) {
-    const at = lower.indexOf('</' + name, k);
+    const at = html.indexOf('</', k);
     if (at === -1) return -1;
-    const after = html[at + 2 + name.length];
-    if (after === undefined || isSpace(after) || after === '>' || after === '/') {
-      const gt = html.indexOf('>', at);
+    const nameEnd = at + 2 + name.length;
+    const after = html[nameEnd];
+    if (asciiLower(html.slice(at + 2, nameEnd)) === name && (after === undefined || isSpace(after) || after === '>' || after === '/')) {
+      const gt = html.indexOf('>', nameEnd);
       return gt === -1 ? -1 : gt + 1;
     }
     k = at + 2;
   }
 }
 
-/** The start tags a browser would render as elements, in document order. */
-function* tags(html: string): Generator<Tag> {
-  const lower = html.toLowerCase();
+/**
+ * Index just after the comment that starts at `lt` (`<!--`), or -1 when it never ends. Ends where a
+ * browser ends it: `<!-->` and `<!--->` are empty comments, and `--!>` closes one like `-->`.
+ * `bang` carries the position of the next `--!>` (-1: none) from one call to the next.
+ */
+function commentEnd(html: string, lt: number, bang: { at?: number }): number {
+  const body = lt + 4;
+  if (html[body] === '>') return body + 1;
+  if (html.startsWith('->', body)) return body + 2;
+  const a = html.indexOf('-->', body);
+  // The next `--!>` is remembered between comments, so a page without one is searched once (linear).
+  if (bang.at === undefined || (bang.at !== -1 && bang.at < body)) bang.at = html.indexOf('--!>', body);
+  const b = bang.at;
+  if (a === -1 && b === -1) return -1;
+  if (b === -1 || (a !== -1 && a < b)) return a + 3;
+  return b + 4;
+}
+
+/**
+ * The start tags a browser would render as elements, in document order, and whether the scan
+ * reached the end of the page. It stops early, with `complete: false`, at an unterminated tag,
+ * quote, comment or declaration and at a skipped element that is never closed: what follows is
+ * unread, so the result proves nothing about it (Task 21 security r1).
+ */
+function scan(html: string): { tags: Tag[]; complete: boolean } {
+  const out: Tag[] = [];
   const n = html.length;
+  const bang: { at?: number } = {};
   let i = 0;
   while (i < n) {
     const lt = html.indexOf('<', i);
-    if (lt === -1) return;
+    if (lt === -1) break;
     if (html.startsWith('<!--', lt)) {
-      const end = html.indexOf('-->', lt + 4);
-      if (end === -1) return;
-      i = end + 3;
+      const end = commentEnd(html, lt, bang);
+      if (end === -1) return { tags: out, complete: false };
+      i = end;
       continue;
     }
     const c = html[lt + 1];
     if (c === '!' || c === '?' || c === '/') {
       // A doctype, processing instruction or end tag: skip to its `>`.
       const gt = html.indexOf('>', lt + 1);
-      if (gt === -1) return;
+      if (gt === -1) return { tags: out, complete: false };
       i = gt + 1;
       continue;
     }
@@ -108,27 +144,44 @@ function* tags(html: string): Generator<Tag> {
       continue;
     }
     const read = readTag(html, lt + 1);
-    if (read === null) return;
-    yield read.tag;
+    if (read === null) return { tags: out, complete: false };
+    out.push(read.tag);
     i = read.end;
     if (SKIPPED_CONTENT.has(read.tag.name)) {
-      const end = closingTagEnd(html, lower, read.tag.name, i);
-      if (end === -1) return;
+      const end = closingTagEnd(html, read.tag.name, i);
+      if (end === -1) return { tags: out, complete: false };
       i = end;
     }
   }
+  return { tags: out, complete: true };
+}
+
+type Marker = { id: string; hash: string };
+
+/**
+ * Every entry marker of the page in one scan: `markers` as parseEntryMarkers returns them, `ids` as
+ * parseEntryMarkerIds does, and `complete`, false when the scan could not read the page to its end
+ * (see scan). An incomplete scan is inconclusive: the live check's `absent` fails on it, while a
+ * marker found before the stop still counts for `present`.
+ */
+export function scanEntryMarkers(html: string): { ids: string[]; markers: Marker[]; complete: boolean } {
+  const { tags, complete } = scan(html);
+  const ids: string[] = [];
+  const markers: Marker[] = [];
+  for (const { name, attrs } of tags) {
+    if (name !== 'span') continue;
+    const id = attrs.get('data-cms-entry');
+    if (id === undefined || id === '') continue;
+    ids.push(id);
+    const hash = attrs.get('data-cms-hash');
+    if (hash !== undefined && hash !== '') markers.push({ id, hash });
+  }
+  return { ids, markers, complete };
 }
 
 /** Entry markers in document order. A marker lacking its id or its hash is ignored. */
-export function parseEntryMarkers(html: string): Array<{ id: string; hash: string }> {
-  const out: Array<{ id: string; hash: string }> = [];
-  for (const { name, attrs } of tags(html)) {
-    if (name !== 'span') continue;
-    const id = attrs.get('data-cms-entry');
-    const hash = attrs.get('data-cms-hash');
-    if (id !== undefined && id !== '' && hash !== undefined && hash !== '') out.push({ id, hash });
-  }
-  return out;
+export function parseEntryMarkers(html: string): Marker[] {
+  return scanEntryMarkers(html).markers;
 }
 
 /**
@@ -137,19 +190,13 @@ export function parseEntryMarkers(html: string): Array<{ id: string; hash: strin
  * closed on an incomplete marker (Task 18 security r1, 11b).
  */
 export function parseEntryMarkerIds(html: string): string[] {
-  const out: string[] = [];
-  for (const { name, attrs } of tags(html)) {
-    if (name !== 'span') continue;
-    const id = attrs.get('data-cms-entry');
-    if (id !== undefined && id !== '') out.push(id);
-  }
-  return out;
+  return scanEntryMarkers(html).ids;
 }
 
 /** The release number, or null when absent, malformed, or when markers disagree. */
 export function parseReleaseMarker(html: string): number | null {
   const found = new Set<number>();
-  for (const { name, attrs } of tags(html)) {
+  for (const { name, attrs } of scan(html).tags) {
     if (name !== 'meta' || attrs.get('name') !== 'cms-release') continue;
     const content = attrs.get('content') ?? '';
     if (!/^\d{1,15}$/.test(content)) return null;

@@ -2,7 +2,9 @@
 import { describe, expect, it } from 'vitest';
 import type { ModuleManifest, SiteEntry } from '@litljomi/cms-schema';
 import type { Bundle, BundleEntry } from '@litljomi/cms-sdk';
-import { liveTargets, releaseView } from '../deliver';
+import type { SupabaseClient } from '../../../lib/supabase/types';
+import { confirmSite, liveTargets, releaseView, type DeliveredRelease, type LiveTarget } from '../deliver';
+import { entryMarker, startFakeSite } from './fake-site';
 
 const MEDIA = 'https://media.example/storage/v1/object/public/media-public/';
 const E1 = '11111111-1111-4111-8111-111111111111';
@@ -130,5 +132,41 @@ describe('liveTargets', () => {
     const broken = { site: { news: { path: () => '/x', checks: () => { throw new Error('boom'); } } } } as unknown as ModuleManifest;
     const [t] = liveTargets(broken, { bundle: current, previousBundle: null, requests: [{ id: 'q9', entryId: E1, action: 'publish' }] }, MEDIA);
     expect(t).toMatchObject({ failure: 'checks_failed', checks: [] });
+  });
+});
+
+// Task 21 security r1, Minor: the targets of one delivery to a site share its page fetches.
+describe('confirmSite', () => {
+  it('fetches a page shared by several targets once per round', async () => {
+    const site = await startFakeSite();
+    try {
+      site.pages.set('/api/revalidate', { status: 200 });
+      site.handler = async (req) => {
+        if (req.method === 'GET') await new Promise((r) => setTimeout(r, 30));
+        return undefined;
+      };
+      site.pages.set('/n', { status: 200, html: entryMarker(E1, 'h1') + entryMarker(E2, 'h2') + entryMarker(E3, 'h3') });
+      const calls: Array<{ fn: string; args: Record<string, unknown> }> = [];
+      const db = {
+        rpc: async (fn: string, args: Record<string, unknown>) => {
+          calls.push({ fn, args });
+          return { data: null, error: null };
+        },
+      } as unknown as SupabaseClient;
+      const target = (id: string, hash: string): LiveTarget => ({ entryId: id, requestIds: ['r-' + id], failure: null, checks: [{ path: '/n', expect: 'present' }], ownPath: '/n/x', contentHash: hash, mediaUrls: [] });
+      const release: DeliveredRelease = { tenantId: 't', tenantSlug: 'prufa', releaseId: 'rel', number: 2, bundle: bundle(2, []), previousBundle: null, requests: [] };
+      const outcome = await confirmSite(
+        db,
+        release,
+        { id: 's', base_url: site.origin, revalidate_url: `${site.origin}/api/revalidate`, webhook_secrets: ['leyndo'] },
+        [target(E1, 'h1'), target(E2, 'h2'), target(E3, 'h3')],
+        { pollMs: 20, timeoutMs: 1_000 },
+      );
+      expect(outcome).toBe('ok');
+      expect(site.hits('/n')).toBe(1);
+      expect(calls.at(-1)?.args).toMatchObject({ p_live_status: 'ok' });
+    } finally {
+      await site.close();
+    }
   });
 });

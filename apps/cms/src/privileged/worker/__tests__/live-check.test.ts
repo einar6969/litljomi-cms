@@ -1,7 +1,7 @@
 // runLiveChecks (spec §7.3, §7.4; plan Task 21, decisions 7 and 35) against a local fake site.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LiveCheck } from '@litljomi/cms-schema';
-import { runLiveChecks } from '../live-check';
+import { createPageFetcher, MAX_CONCURRENT_FETCHES, runLiveChecks } from '../live-check';
 import { entryMarker, html, releaseMeta, startFakeSite, type FakeSite } from './fake-site';
 
 const ID = '7d0c5a8e-1b2f-4c3d-9e4f-5a6b7c8d9e0f';
@@ -188,5 +188,93 @@ describe('limits', () => {
   });
   it('with no checks and no media, the entry is live (nothing declared)', async () => {
     expect(await run({ checks: [] })).toEqual({ live: true, failures: [] });
+  });
+});
+
+// Task 21 security r1: a page whose scan desynchronises or cannot complete is no proof of absence.
+describe('absent on pages the scan cannot read to the end', () => {
+  it.each([
+    ['a title', '<title>Heimsókn frá İzmir</title>'],
+    ['a script', '<script>1</script>'],
+    ['a style', '<style>p{}</style>'],
+    ['a textarea', '<textarea>x</textarea>'],
+    ['a template', '<template><p>x</p></template>'],
+    ['a comment', '<!-- x -->'],
+  ])('fails when the marker follows İ and %s (Major)', async (_, el) => {
+    site.pages.set(OWN, page('', 404));
+    site.pages.set('/frettir', page(`<p>İzmir</p>${el}<ul>${entryMarker(ID, OLD)}</ul>`));
+    expect(await run({ checks: [absent(), absent('/frettir')], contentHash: null })).toMatchObject({
+      live: false,
+      failures: [{ path: '/frettir', reason: 'marker_present' }],
+    });
+  });
+  it.each([
+    ['a never-closed script', '<script>var a = 1;'],
+    ['an unterminated tag', '<div class="x"'],
+    ['an unterminated comment', '<!-- x'],
+  ])('fails as inconclusive on a page with %s', async (_, tail) => {
+    site.pages.set(OWN, page('', 404));
+    site.pages.set('/frettir', { status: 200, html: `<html><body><ul>${entryMarker('other', OLD)}</ul>${tail}` });
+    expect(await run({ checks: [absent(), absent('/frettir')], contentHash: null })).toMatchObject({
+      live: false,
+      failures: [{ path: '/frettir', reason: 'scan_incomplete' }],
+    });
+  });
+  it('fails as inconclusive on a 404 own path that cannot be read to the end', async () => {
+    site.pages.set(OWN, { status: 404, html: '<html><body><h1>404</h1><script>x' });
+    expect(await run({ checks: [absent()], contentHash: null })).toMatchObject({ live: false, failures: [{ path: OWN, reason: 'scan_incomplete' }] });
+  });
+  it('a present check still passes when its marker is found before the scan stops', async () => {
+    site.pages.set(OWN, { status: 200, html: `<html><body>${entryMarker(ID, NEW)}<script>x` });
+    expect(await run({ checks: [present()] })).toEqual({ live: true, failures: [] });
+  });
+});
+
+// Task 21 security r1, Minor: page fetches per site are bounded and identical ones shared.
+describe('page fetches', () => {
+  it(`runs at most ${MAX_CONCURRENT_FETCHES} fetches at a time against a site`, async () => {
+    let active = 0;
+    let peak = 0;
+    site.handler = async () => {
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise((r) => setTimeout(r, 30));
+      active--;
+      return page('<p>ekkert</p>');
+    };
+    const checks = Array.from({ length: 20 }, (_, i) => absent(`/listi/${i}`));
+    const result = await runLiveChecks({ baseUrl: site.origin, checks, ownPath: OWN, entry: { id: ID, contentHash: null }, mediaUrls: [], resend: async () => {}, pollMs: 20, timeoutMs: 3_000 });
+    expect(result).toEqual({ live: true, failures: [] });
+    expect(site.requests).toHaveLength(20);
+    expect(peak).toBe(MAX_CONCURRENT_FETCHES);
+  });
+  it('a shared fetcher fetches a page once for every run that checks it at the same time', async () => {
+    site.handler = async () => {
+      await new Promise((r) => setTimeout(r, 30));
+      return undefined;
+    };
+    site.pages.set('/frettir', page(entryMarker('a', NEW) + entryMarker('b', NEW)));
+    const fetchPage = createPageFetcher();
+    const one = (id: string) =>
+      runLiveChecks({ baseUrl: site.origin, checks: [present('/frettir')], ownPath: OWN, entry: { id, contentHash: NEW }, mediaUrls: [], resend: async () => {}, fetchPage, ...fast });
+    expect(await Promise.all([one('a'), one('b'), one('a')])).toEqual([0, 1, 2].map(() => ({ live: true, failures: [] })));
+    expect(site.hits('/frettir')).toBe(1);
+  });
+  it('checks of one run on the same path share the fetch', async () => {
+    site.handler = async () => {
+      await new Promise((r) => setTimeout(r, 30));
+      return undefined;
+    };
+    site.pages.set('/frettir', page(entryMarker(ID, NEW)));
+    expect((await run({ checks: [present('/frettir'), present('/frettir')] })).live).toBe(true);
+    expect(site.hits('/frettir')).toBe(1);
+  });
+  it('a fetch waiting for a free slot past the deadline is not made', async () => {
+    site.handler = () => 'hang';
+    const fetchPage = createPageFetcher(1);
+    const deadline = Date.now() + 1_200;
+    const results = await Promise.all([fetchPage(`${site.origin}/a`, deadline, 100), fetchPage(`${site.origin}/b`, deadline, 100)]);
+    expect(results.map((r) => r.error)).toEqual(['fetch_failed', 'timeout']);
+    expect(site.requests.map((r) => r.path)).toEqual(['/a']);
   });
 });

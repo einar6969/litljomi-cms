@@ -2,7 +2,7 @@
 // and 35). A page proves an entry live only through the entry marker rendered from the same data
 // as its content: the release marker in the layout is never read here.
 import type { LiveCheck } from '@litljomi/cms-schema';
-import { parseEntryMarkerIds, parseEntryMarkers } from '@litljomi/cms-sdk';
+import { scanEntryMarkers } from '@litljomi/cms-sdk';
 
 /** §7.4: poll about every 3 seconds, up to 60 seconds. */
 export const DEFAULT_POLL_MS = 3_000;
@@ -11,6 +11,8 @@ export const DEFAULT_TIMEOUT_MS = 60_000;
 const FETCH_TIMEOUT_MS = 10_000;
 /** A page is read up to this size; a larger one fails its check (and bounds the marker scan). */
 export const MAX_PAGE_BYTES = 5 * 1024 * 1024;
+/** At most this many fetches run at a time through one page fetcher (one site, one delivery). */
+export const MAX_CONCURRENT_FETCHES = 6;
 
 export type LiveCheckFailure = { path: string; reason: string };
 
@@ -23,31 +25,75 @@ export type LiveCheckInput = {
   mediaUrls: string[];
   /** Sends the webhook again; called at most once per run. */
   resend: () => Promise<void>;
+  /**
+   * Fetches the pages and media. Share one (createPageFetcher) between the runs of one delivery to
+   * one site, so they share identical fetches and its concurrency bound; default: one per run.
+   */
+  fetchPage?: PageFetcher;
   pollMs?: number;
   timeoutMs?: number;
 };
 
-type Fetched = { status: number; body: string | null; error?: string };
+export type FetchedPage = { status: number; body: string | null; error?: string };
+/** GET `url` without redirects or caching, its body read up to `maxBytes` (0: not read), by `deadline`. */
+export type PageFetcher = (url: string, deadline: number, maxBytes: number) => Promise<FetchedPage>;
+
+/**
+ * A page fetcher that runs at most `maxConcurrent` fetches at a time and makes an identical fetch
+ * (same URL and size cap) once while it is in flight or waiting, every caller getting its result
+ * (Task 21 security r1). A fetch still waiting for a slot when its deadline has passed is not made
+ * (`timeout`). Create one after the site was notified: a shared fetch then always started after it.
+ */
+export function createPageFetcher(maxConcurrent = MAX_CONCURRENT_FETCHES): PageFetcher {
+  let active = 0;
+  const waiting: Array<() => void> = [];
+  const shared = new Map<string, Promise<FetchedPage>>();
+
+  async function limited(url: string, deadline: number, maxBytes: number): Promise<FetchedPage> {
+    if (active < maxConcurrent) active++;
+    else await new Promise<void>((resolve) => waiting.push(resolve)); // the slot is handed over
+    try {
+      if (Date.now() >= deadline) return { status: 0, body: null, error: 'timeout' };
+      return await fetchCapped(url, deadline, maxBytes);
+    } finally {
+      const next = waiting.shift();
+      if (next) next();
+      else active--;
+    }
+  }
+
+  return (url, deadline, maxBytes) => {
+    const key = `${maxBytes} ${url}`;
+    let result = shared.get(key);
+    if (!result) {
+      result = limited(url, deadline, maxBytes).finally(() => shared.delete(key));
+      shared.set(key, result);
+    }
+    return result;
+  };
+}
 
 /**
  * Polls every check and media URL until all pass or the window closes (§7.4):
  *
- * - `present`: 200 and an entry marker `{ id, hash: contentHash }` (parseEntryMarkers).
- * - `absent`: no entry marker carrying the id at all, whatever its hash (parseEntryMarkerIds, so
- *   an incomplete marker fails closed); the own path must answer 404, any other page 200 (an error
- *   page proves nothing about the page).
+ * - `present`: 200 and an entry marker `{ id, hash: contentHash }` (scanEntryMarkers' markers).
+ * - `absent`: no entry marker carrying the id at all, whatever its hash (scanEntryMarkers' ids, so
+ *   an incomplete marker fails closed), on a page scanned to its end (an incomplete scan fails,
+ *   `scan_incomplete`); the own path must answer 404, any other page 200 (an error page proves
+ *   nothing about the page).
  * - media: every URL answers 200.
  *
  * When a page shows the entry's marker with a different hash on any poll after the first (the first
  * request triggers regeneration), `resend()` is called, once per run. Each check is fetched
- * without following redirects, with no cache, and read up to MAX_PAGE_BYTES. A check path must be
- * root-relative (`/…`, not `//…`). The failures are the checks still failing at the end, each with
- * its last reason. Never throws.
+ * through `fetchPage` without following redirects, with no cache, and read up to MAX_PAGE_BYTES.
+ * A check path must be root-relative (`/…`, not `//…`). The failures are the checks still failing
+ * at the end, each with its last reason. Never throws.
  */
 export async function runLiveChecks(o: LiveCheckInput): Promise<{ live: boolean; failures: LiveCheckFailure[] }> {
   const pollMs = o.pollMs ?? DEFAULT_POLL_MS;
   const deadline = Date.now() + (o.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const base = o.baseUrl.replace(/\/+$/, '');
+  const fetchPage = o.fetchPage ?? createPageFetcher();
 
   type Item = { key: string; path: string; evaluate: () => Promise<{ pass: boolean; reason: string; stale: boolean }> };
   const failures: LiveCheckFailure[] = [];
@@ -64,24 +110,26 @@ export async function runLiveChecks(o: LiveCheckInput): Promise<{ live: boolean;
       key: `media:${i}`,
       path: url,
       evaluate: async () => {
-        const r = await fetchCapped(url, deadline, 0);
+        const r = await fetchPage(url, deadline, 0);
         return { pass: r.status === 200, reason: r.error ?? `status ${r.status}`, stale: false };
       },
     });
   });
 
   async function evaluateCheck(check: LiveCheck, url: string): Promise<{ pass: boolean; reason: string; stale: boolean }> {
-    const r = await fetchCapped(url, deadline, MAX_PAGE_BYTES);
+    const r = await fetchPage(url, deadline, MAX_PAGE_BYTES);
     if (r.error) return { pass: false, reason: r.error, stale: false };
-    const html = r.body ?? '';
+    const scanned = scanEntryMarkers(r.body ?? '');
     if (check.expect === 'present') {
       if (o.entry.contentHash === null) return { pass: false, reason: 'no_content_hash', stale: false };
-      const mine = parseEntryMarkers(html).filter((m) => m.id === o.entry.id);
+      const mine = scanned.markers.filter((m) => m.id === o.entry.id);
       if (r.status !== 200) return { pass: false, reason: `status ${r.status}`, stale: false };
       if (mine.some((m) => m.hash === o.entry.contentHash)) return { pass: true, reason: '', stale: false };
       return mine.length > 0 ? { pass: false, reason: 'stale_hash', stale: true } : { pass: false, reason: 'marker_missing', stale: false };
     }
-    if (parseEntryMarkerIds(html).includes(o.entry.id)) return { pass: false, reason: 'marker_present', stale: false };
+    if (scanned.ids.includes(o.entry.id)) return { pass: false, reason: 'marker_present', stale: false };
+    // A page the scan could not read to its end proves nothing about the rest (inconclusive).
+    if (!scanned.complete) return { pass: false, reason: 'scan_incomplete', stale: false };
     const wanted = check.path === o.ownPath ? 404 : 200;
     return r.status === wanted ? { pass: true, reason: '', stale: false } : { pass: false, reason: `status ${r.status}`, stale: false };
   }
@@ -118,7 +166,7 @@ export async function runLiveChecks(o: LiveCheckInput): Promise<{ live: boolean;
 }
 
 /** GET without redirects or caching, the body read up to `maxBytes` (0: not read). */
-async function fetchCapped(url: string, deadline: number, maxBytes: number): Promise<Fetched> {
+async function fetchCapped(url: string, deadline: number, maxBytes: number): Promise<FetchedPage> {
   const timeout = Math.max(1_000, Math.min(FETCH_TIMEOUT_MS, deadline - Date.now()));
   let response: Response;
   try {

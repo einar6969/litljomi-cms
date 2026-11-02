@@ -12,7 +12,7 @@ import type { SupabaseClient } from '../../lib/supabase/types';
 import { createAdminClient } from '../admin-client';
 import { alert } from './alerts';
 import { buildRelease, type BuildOptions, type BuildResult, type LinkedRequest } from './build-release';
-import { runLiveChecks, type LiveCheckFailure } from './live-check';
+import { createPageFetcher, runLiveChecks, type LiveCheckFailure } from './live-check';
 import { notifySite } from './notify';
 import { publicMediaUrl } from './projection-context';
 import { callRpc } from './rpc';
@@ -192,6 +192,9 @@ export async function confirmSite(
 
   // One resend per site and delivery, whichever entry saw the stale hash first (§7.4).
   const resend = once(() => notifySite(site, payload));
+  // One fetcher per site and delivery, created after the notification: the targets share identical
+  // page fetches and at most MAX_CONCURRENT_FETCHES run at a time against the site.
+  const fetchPage = createPageFetcher();
   const failures: Array<LiveCheckFailure & { entryId: string }> = [];
   await Promise.all(
     targets.map(async (t) => {
@@ -206,6 +209,7 @@ export async function confirmSite(
         entry: { id: t.entryId, contentHash: t.contentHash },
         mediaUrls: t.mediaUrls,
         resend,
+        fetchPage,
         pollMs: options.pollMs,
         timeoutMs: options.timeoutMs,
       });
