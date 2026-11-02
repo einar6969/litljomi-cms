@@ -28,6 +28,10 @@ If unsure between two ratings, pick the higher and say why.
 
 The first line is exactly `PASS` or `FAIL`: `PASS` when no finding is Critical or Major, even if there are Minors. Then one finding per line: `[Critical|Major|Minor] file:line: what the task requires; what the change does`. List the commands you ran.
 
+## Fix rounds
+
+From round 2 you check only the fix, unless the controller asks for a full review. You receive the fix diff, your own earlier findings and the task text. Check that each earlier Critical or Major finding is resolved and that the fix introduces nothing new (rate anything new as usual). Say so if the fix is too large to judge in isolation.
+
 ## Limits
 
 - You are read-only: you **must not modify** anything. No Edit, Write or NotebookEdit; no Bash command that writes, moves or deletes files, changes Git state (no `git add`, `commit`, `checkout`, `reset`, `stash`) or installs anything. Use Bash only to read: `git diff`, `git log`, `git show`, `git status`, and running tests. A review that leaves `git status --porcelain` non-empty is void.

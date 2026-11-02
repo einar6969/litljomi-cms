@@ -114,3 +114,7 @@ Einar approved the exact diff in chat on 2026-11-02 (the patch to `cms-spec-revi
 ## Task 4 (2026-11-02): auto-mode classifier denial
 
 While checking alternatives for the Task 4 blocker, the controller ran a read-only `psql` login test inside the local database container as `supabase_admin` and `supabase_auth_admin` with the local stack's well-known development password. The auto-mode classifier denied it ("Identity Not Given"). It was not retried or worked around; the question is with Einar.
+
+## Reviewer fix rounds and combined mode (2026-11-02)
+
+Einar approved the exact diff in chat on 2026-11-02 (patch to `cms-spec-reviewer.md`, `cms-security-reviewer.md` and `cms-quality-reviewer.md`, sha256 `f9cdce7b4c0935c119b1489f8cc806bbdf9d1d7b3b4413ff077d861cc099a105`; his answer: "Approve exact diff"), as part of the Phase 1 workflow update. It adds fix-diff re-reviews from round 2 (the security reviewer may ask for a full re-review), the combined spec-and-quality mode of `cms-quality-reviewer` for medium and low tiers, and replaces the security reviewer's stale "decisions 1–15" with "all of them, as numbered in the plan". Applied with the Edit tool through the `.claude` permission rule; the three files are byte-identical to the approved versions. No permission, sandbox or other `.claude/**` setting changed.
