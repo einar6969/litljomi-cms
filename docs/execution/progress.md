@@ -125,3 +125,10 @@ None.
 - All three Lane A worktrees and lane-b exist; `lane-a-alt` is at `b7adb2f` (Task 20 done), `lane-a-next` at Task 21's head `c337b48` (merged), `lane-b` at `aa33a4e`. Bring each up to `m1/phase-1` before reuse.
 - Local stack notes: `supabase db reset` reports a blocked call to `api.github.com` (CLI version check; harmless). The local end to end is `pnpm db:reset && pnpm test:e2e-local`; run `pnpm db:reset` after `pnpm test:integration` before `pnpm db:test`. Labak builds after the integration suite leave out Task 12's partial-data entries (correct fail-closed behaviour).
 - Phase 4 needs a decision on Playwright (decision 34.6): its browser download host is outside the npm-only allowlist.
+
+### Phase 3 closed after C2 approval (2026-11-02, third controller session)
+
+- **C2 approved** by Einar on 2026-11-02 (recorded in `state.json`). His rulings are decision 36: spec §7.4 amended to the M1 fixed retry interval (alert and "delivery failed" when the 10 attempts run out), §7.4 "Limits" and §7.3 document the accepted live-check limits, failed-build objects deferred to M3 retention, the local end-to-end script's secret-key read accepted for local tests only, and Task 28 verifies the role timeout on hosted Supabase first (stop and ask if refused).
+- **New Task 30** (Phase 4, Lane B, high tier, after Task 21, before Task 25): the sweep fails stale `building` releases; `worker_finish_release` succeeds only while `building`; a missing private original fails the publish request before commit (`asset_missing`, alert), with no projection fallback (M3). Task 25 depends on 24 and 30. The harness now has 31 tasks.
+- Documentation change reviewed: combined r1 FAIL (Task 30 had implied a projection fallback), fixed, r2 pass (`docs/execution/reviews/c2-rulings-*`).
+- `main` fast-forwarded to `m1/phase-1` (local only, no push). Phase 4 starts in a fresh controller session with Task 22 (Lane A) and Task 30 (Lane B); bring each worktree up to `m1/phase-1` first. Phase 4 needs a decision on Playwright (its browser host is outside the npm-only allowlist).
