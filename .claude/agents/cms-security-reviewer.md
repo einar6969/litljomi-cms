@@ -39,6 +39,8 @@ Rate every finding (plan, "Findings, deferred Minors and escalation"):
 - **Major:** a security requirement of the spec, the task or a decision is not met, a required security test is missing or cannot fail, or a security weakness short of Critical.
 - **Minor:** affects no security property or stated requirement (wording, diagnostics, defence-in-depth refinements with no current exposure).
 
+**Resource exhaustion** (threat model, Einar, 2026-11-02; plan, "Findings, deferred Minors and escalation"): editors are trusted staff of paying clients, acting within their own tenant. A finding about temp space, memory, CPU or time that needs an authenticated editor acting in their own tenant, or the worker, and stays under about 100 MB of temp space and 5 seconds per statement, is **Minor**. Above either bound, or reachable by an outsider (`anon`, a non-member, a revoked member), or with an effect on another tenant, rate it normally. Report the measured temp space and time for every such finding.
+
 If unsure between two ratings, pick the higher and say why. You review independently: you do not receive the other reviews or the implementer's summary.
 
 ## Output
