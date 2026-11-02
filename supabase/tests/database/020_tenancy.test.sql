@@ -2,18 +2,27 @@
 -- Tenancy tables and RLS (spec §4.1 rules 3 and 7, §4.3, §4.5; plan Task 5).
 begin;
 \ir _helpers.sql
-select plan(47);
+select plan(52);
 
 select has_table('cms', 'tenants', 'cms.tenants exists');
 select has_table('cms', 'memberships', 'cms.memberships exists');
 select has_table('cms', 'platform_admins', 'cms.platform_admins exists');
 select enum_has_labels('cms', 'membership_role', array['editor'], 'membership_role has the single v1 value editor');
 
--- Grants exactly as §4.5 and the plan (table level; no column grants on these tables).
+-- Grants exactly as §4.5 and the plan (table level; the one column grant,
+-- service_role's UPDATE (name, status) on tenants, is pinned below).
 select table_privs_are('cms', 'tenants', 'authenticated', array['SELECT'], 'authenticated: select on tenants');
 select table_privs_are('cms', 'memberships', 'authenticated', array['SELECT'], 'authenticated: select on memberships');
 select table_privs_are('cms', 'platform_admins', 'authenticated', array['SELECT'], 'authenticated: select on platform_admins');
-select table_privs_are('cms', 'tenants', 'service_role', array['SELECT', 'INSERT', 'UPDATE'], 'service_role: select, insert, update on tenants');
+select table_privs_are('cms', 'tenants', 'service_role', array['SELECT', 'INSERT'], 'service_role: select and insert on tenants, no table-level update (decision 33)');
+-- Decision 33: service_role may update only name and status, never id (the
+-- storage-path prefix) or slug; UPDATE on a column is also what lets the
+-- worker's commit lock the tenant row FOR SHARE.
+select set_eq($$ select col, priv from tests.column_privs('service_role', 'cms.tenants') where priv = 'UPDATE' $$,
+  $$ values ('name', 'UPDATE'), ('status', 'UPDATE') $$,
+  'service_role: update on tenants is exactly (name, status) (decision 33)');
+select is_empty($$ select col, priv from tests.column_privs('authenticated', 'cms.tenants') $$,
+  'authenticated: no insert, update or references on any tenants column');
 select table_privs_are('cms', 'memberships', 'service_role', array['SELECT', 'INSERT', 'DELETE'], 'service_role: select, insert, delete on memberships');
 select table_privs_are('cms', 'platform_admins', 'service_role', array['SELECT', 'INSERT', 'DELETE'], 'service_role: select, insert, delete on platform_admins');
 select table_privs_are('cms', 'tenants', 'anon', array[]::text[], 'anon: nothing on tenants');
@@ -77,8 +86,17 @@ select tests.act_as_owner();
 select throws_ok($$ update cms.tenants set slug = 'other' where slug = 'labak' $$, 'P0001', 'slug_locked', 'tenant slug immutable');
 select lives_ok($$ update cms.tenants set name = 'Annað nafn' where slug = 'labak' $$, 'other tenant columns stay updatable');
 select tests.act_as_service();
-select throws_ok($$ update cms.tenants set slug = 'other' where slug = 'labak' $$, 'P0001', 'slug_locked', 'tenant slug immutable for service_role');
+-- Decision 33: service_role cannot name the slug or the id in an UPDATE at all
+-- (42501, no column privilege), before the slug lock is reached.
+select throws_ok($$ update cms.tenants set slug = 'other' where slug = 'labak' $$, '42501', null,
+  'service_role cannot update a tenant slug (no column privilege)');
+select throws_ok($$ update cms.tenants set id = gen_random_uuid() where slug = 'demo' $$, '42501', null,
+  'service_role cannot change a tenant id (no column privilege)');
 select lives_ok($$ update cms.tenants set status = 'suspended' where slug = 'demo' $$, 'service_role can suspend a tenant');
+select lives_ok($$ update cms.tenants set name = 'Demo nafn' where slug = 'demo' $$, 'service_role can rename a tenant');
+select tests.act_as_owner();
+select is((select row(id, slug, name, status)::text from cms.tenants where slug = 'demo'),
+  row(tests.tenant('demo'), 'demo', 'Demo nafn', 'suspended')::text, 'service_role changed name and status only');
 
 -- The lock sees the final row, whatever other triggers run: a BEFORE UPDATE
 -- trigger whose name sorts after the lock's cannot change the slug.

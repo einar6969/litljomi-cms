@@ -55,12 +55,13 @@ select is_empty($$ select p.oid::regprocedure::text from pg_proc p join pg_names
     and (p.proacl is null or exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0)) $$,
   'no api function is executable by PUBLIC');
 -- worker_* and admin_* (§4.6, §8.1 item 2; plan Task 11): EXECUTE for
--- service_role only; the owner (postgres) is the only other grantee. 14 = 11
--- worker_* + 3 admin_* functions (the same counts as 100_escalation); a task
+-- service_role only; the owner (postgres) is the only other grantee. 16 = 13
+-- worker_* (11 from Task 11, worker_claim_request and worker_record_alert from
+-- Task 19) + 3 admin_* functions (the same counts as 100_escalation); a task
 -- that adds one updates both files.
 select is((select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-           where n.nspname = 'api' and p.proname ~ '^(worker|admin)_'), 14,
-  'api holds the 14 worker_* and admin_* functions (so the checks below are not vacuous)');
+           where n.nspname = 'api' and p.proname ~ '^(worker|admin)_'), 16,
+  'api holds the 16 worker_* and admin_* functions (so the checks below are not vacuous)');
 select is_empty($$ select p.oid::regprocedure::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'api' and p.proname ~ '^(worker|admin)_'
     and (not has_function_privilege('service_role', p.oid, 'execute')

@@ -12,11 +12,12 @@
 -- Fixture rows (owner context; tests.asset('f901'), tests.pub('e901') give
 -- 00000000-0000-4000-8000-00000000f901 and ...e901):
 --   asset    f901 labak a.jpg; f902 labak archived; f903 labak, archived after
---            c926 published it; f904 demo; f905 labak
+--            c926 published it; f904 demo; f905 labak; f906 labak with focal
+--            point, default alt and a public path (cleared after its read)
 --   entry    (all news; labak unless marked demo)
 --            c901, c902, c905 (demo): targets of the claim requests
 --            c906  draft {pub: ->c907, unpub: ->c908, img: ->f901, old: ->f902}
---            c907  slug tilvisun, published d907 (first/last 2020-01-01)
+--            c907  slug tilvisun, published d907 titled Birt (first/last 2020-01-01)
 --            c908  never published
 --            c910  draft v3 {title, link ->c907, image ->f901, list[0].x ->c907}
 --            c911  draft without references, plus a forged draft_refs row (->c908)
@@ -29,14 +30,17 @@
 --            c925  published d925, then archived
 --            c926  published d926 {image ->f903}
 --            c927  draft {rel ->c925}
+--            c930  draft {img ->f906, other ->f904 (demo), other_entry ->c905 (demo)},
+--                  the demo references written with the refs trigger disabled
 --   release  e931 labak 1 delivered; e932 labak 2 failed
 --   site     e941 labak (a webhook_secret_ref with no Vault secret)
 --   requests e901–e905 for the claim tests; e906–e934 below, each described
+--            where it is used (e930: pending, c930, for the extended read)
 --            where it is used.
 -- Assertions depend on earlier ones, in file order.
 begin;
 \ir _helpers.sql
-select plan(161);
+select plan(163);
 
 create function tests.asset(p_key text) returns uuid
 language plpgsql
@@ -89,8 +93,10 @@ select is_empty($$ select s from unnest(array[
     'api.worker_record_delivery(uuid,uuid,text,text,jsonb)',
     'api.admin_create_tenant(text,text)',
     'api.admin_create_site(uuid,text,text,text,text)',
-    'api.admin_add_membership(uuid,uuid)']) as s where to_regprocedure(s) is null $$,
-  'all fourteen worker and admin functions exist with the Interfaces'' signatures');
+    'api.admin_add_membership(uuid,uuid)',
+    'api.worker_claim_request(uuid)',
+    'api.worker_record_alert(uuid,text,jsonb)']) as s where to_regprocedure(s) is null $$,
+  'all sixteen worker and admin functions exist with the Interfaces'' signatures (Task 11, and Task 19''s two)');
 select set_eq($$ select p.proname::text, pg_catalog.pg_get_function_result(p.oid) from pg_catalog.pg_proc p
      join pg_catalog.pg_namespace n on n.oid = p.pronamespace
      where n.nspname = 'api' and (p.proname like 'worker\_%' or p.proname like 'admin\_%') $$,
@@ -101,7 +107,8 @@ select set_eq($$ select p.proname::text, pg_catalog.pg_get_function_result(p.oid
             ('worker_previous_release', 'cms.releases'),
             ('worker_sites', 'TABLE(id uuid, base_url text, revalidate_url text, webhook_secrets text[])'),
             ('worker_record_delivery', 'void'), ('admin_create_tenant', 'uuid'), ('admin_create_site', 'uuid'),
-            ('admin_add_membership', 'void') $$,
+            ('admin_add_membership', 'void'), ('worker_claim_request', 'cms.publish_requests'),
+            ('worker_record_alert', 'void') $$,
   'worker and admin functions: return types, and no others');
 select is((select pg_catalog.pg_get_function_arguments('api.worker_claim_requests(integer)'::regprocedure)),
   'p_limit integer DEFAULT 10', 'worker_claim_requests: p_limit defaults to 10');
@@ -170,10 +177,11 @@ update cms.drafts set data = jsonb_build_object(
 update cms.drafts set data = '{"n": 2}' where entry_id = tests.entry('c914');
 update cms.drafts set data = '{"n": 3}' where entry_id = tests.entry('c914');
 -- Published entries.
-insert into cms.revisions (id, tenant_id, entry_id, draft_version, schema_version, data, requested_by)
-select tests.revision(r), tests.tenant('labak'), tests.entry(e), 1, 1, d, tests.persona('editor_labak')
-from (values ('d907', 'c907', '{}'::jsonb), ('d913', 'c913', '{}'), ('d925', 'c925', '{}'),
-             ('d926', 'c926', jsonb_build_object('image', tests.ref(tests.asset('f903'), 'asset')))) as v(r, e, d);
+insert into cms.revisions (id, tenant_id, entry_id, draft_version, schema_version, data, title, requested_by)
+select tests.revision(r), tests.tenant('labak'), tests.entry(e), 1, 1, d, ti, tests.persona('editor_labak')
+from (values ('d907', 'c907', '{}'::jsonb, 'Birt'), ('d913', 'c913', '{}', null), ('d925', 'c925', '{}', null),
+             ('d926', 'c926', jsonb_build_object('image', tests.ref(tests.asset('f903'), 'asset')), null))
+  as v(r, e, d, ti);
 update cms.entries e set published_rev_id = tests.revision('d' || substr(k, 2)), published_draft_version = 1,
   first_published_at = case when k in ('c907', 'c913') then '2020-01-01 00:00:00+00'::timestamptz else now() end,
   last_published_at = case when k in ('c907', 'c913') then '2020-01-01 00:00:00+00'::timestamptz else now() end
@@ -282,7 +290,10 @@ from (values
 -- worker_read_request: one statement, {request, entry, draft, refs}.
 select tests.act_as_service();
 select is(array(select jsonb_object_keys(api.worker_read_request(tests.pub('e906'))) order by 1),
-  array['draft', 'entry', 'refs', 'request'], 'worker_read_request returns request, entry, draft and refs');
+  array['draft', 'entry', 'refs', 'request', 'tenant'], 'worker_read_request returns request, entry, tenant, draft and refs');
+select is(api.worker_read_request(tests.pub('e906')) -> 'tenant',
+  jsonb_build_object('id', tests.tenant('labak'), 'slug', 'labak', 'status', 'active'),
+  'tenant is the request''s tenant: {id, slug, status} (decision 34.2)');
 select is((select (j -> 'request' ->> 'id', j -> 'request' ->> 'status', j -> 'request' ->> 'draft_version',
                    j -> 'entry' ->> 'id', j -> 'entry' ->> 'tenant_id', j -> 'entry' ->> 'type')::text
            from api.worker_read_request(tests.pub('e906')) as j),
@@ -292,13 +303,67 @@ select is(api.worker_read_request(tests.pub('e906')) -> 'draft',
   (select jsonb_build_object('data', d.data, 'version', 1, 'schema_version', 1) from cms.drafts d
    where d.entry_id = tests.entry('c906')),
   'draft is exactly {data, version, schema_version}');
+-- Each reference carries its target's metadata (decision 34.2): an entry's
+-- type, slug and published revision's title (null when unpublished); an
+-- asset's filename, mime, size, focal point, default alt and public path.
 select is(api.worker_read_request(tests.pub('e906')) -> 'refs',
   jsonb_build_array(
-    jsonb_build_object('path', '$."img"', 'kind', 'asset', 'id', tests.asset('f901'), 'published', false, 'archived', false),
-    jsonb_build_object('path', '$."old"', 'kind', 'asset', 'id', tests.asset('f902'), 'published', false, 'archived', true),
-    jsonb_build_object('path', '$."pub"', 'kind', 'entry', 'id', tests.entry('c907'), 'published', true, 'archived', false),
-    jsonb_build_object('path', '$."unpub"', 'kind', 'entry', 'id', tests.entry('c908'), 'published', false, 'archived', false)),
-  'refs come from the draft''s data with their targets'' state, not from the forged draft_refs row');
+    jsonb_build_object('path', '$."img"', 'kind', 'asset', 'id', tests.asset('f901'), 'published', false, 'archived', false,
+                       'filename', 'a.jpg', 'mime', 'image/jpeg', 'width', 800, 'height', 600, 'focal_x', null,
+                       'focal_y', null, 'default_alt', null, 'public_path', null),
+    jsonb_build_object('path', '$."old"', 'kind', 'asset', 'id', tests.asset('f902'), 'published', false, 'archived', true,
+                       'filename', 'b.jpg', 'mime', 'image/jpeg', 'width', 800, 'height', 600, 'focal_x', null,
+                       'focal_y', null, 'default_alt', null, 'public_path', null),
+    jsonb_build_object('path', '$."pub"', 'kind', 'entry', 'id', tests.entry('c907'), 'published', true, 'archived', false,
+                       'type', 'news', 'slug', 'tilvisun', 'title', 'Birt'),
+    jsonb_build_object('path', '$."unpub"', 'kind', 'entry', 'id', tests.entry('c908'), 'published', false, 'archived', false,
+                       'type', 'news', 'slug', null, 'title', null)),
+  'refs come from the draft''s data with their targets'' state and metadata, not from the forged draft_refs row');
+-- Asset metadata is read from the row, and a target in another tenant is
+-- looked up in the request's tenant only, so it reads as missing (all nulls).
+-- (Paths are ordered by the database's collation, which puts $."other_entry"
+-- before $."other".)
+select tests.act_as_owner();
+insert into cms.assets (id, tenant_id, original_path, filename, mime, bytes, width, height, sha256, focal_x, focal_y,
+                        default_alt, public_path, created_by)
+  values (tests.asset('f906'), tests.tenant('labak'),
+          tests.tenant('labak')::text || '/' || tests.asset('f906')::text || '/f.png', 'f.png', 'image/png', 1000,
+          1200, 900, repeat('6', 64), 0.25, 0.75, 'Sjálfgefið', 'labak/' || tests.asset('f906')::text || '/f.png',
+          tests.persona('editor_labak'));
+insert into cms.entries (id, tenant_id, type, slug, created_by)
+  values (tests.entry('c930'), tests.tenant('labak'), 'news', null, tests.persona('editor_labak'));
+insert into cms.drafts (entry_id, tenant_id, schema_version, data, updated_by)
+  values (tests.entry('c930'), tests.tenant('labak'), 1,
+          jsonb_build_object('img', tests.ref(tests.asset('f906'), 'asset')), tests.persona('editor_labak'));
+-- (A draft cannot hold another tenant's reference: draft_refs' composite
+-- foreign keys refuse it. The cross-tenant case is set up as the owner with
+-- the refs trigger disabled for one update, inside this rolled-back test.)
+alter table cms.drafts disable trigger drafts_sync_refs_on_update;
+update cms.drafts set data = data || jsonb_build_object('other', tests.ref(tests.asset('f904'), 'asset'),
+                                                        'other_entry', tests.ref(tests.entry('c905'), 'entry'))
+  where entry_id = tests.entry('c930');
+alter table cms.drafts enable trigger drafts_sync_refs_on_update;
+insert into cms.publish_requests (id, tenant_id, entry_id, action, draft_version, requested_by, status, claimed_at, attempts)
+  values (tests.pub('e930'), tests.tenant('labak'), tests.entry('c930'), 'publish', 1, tests.persona('editor_labak'),
+          'pending', null, 0);
+select tests.act_as_service();
+select is(api.worker_read_request(tests.pub('e930')) -> 'refs',
+  jsonb_build_array(
+    jsonb_build_object('path', '$."img"', 'kind', 'asset', 'id', tests.asset('f906'), 'published', true, 'archived', false,
+                       'filename', 'f.png', 'mime', 'image/png', 'width', 1200, 'height', 900, 'focal_x', 0.25,
+                       'focal_y', 0.75, 'default_alt', 'Sjálfgefið',
+                       'public_path', 'labak/' || tests.asset('f906')::text || '/f.png'),
+    jsonb_build_object('path', '$."other_entry"', 'kind', 'entry', 'id', tests.entry('c905'), 'published', false,
+                       'archived', false, 'type', null, 'slug', null, 'title', null),
+    jsonb_build_object('path', '$."other"', 'kind', 'asset', 'id', tests.asset('f904'), 'published', false,
+                       'archived', false, 'filename', null, 'mime', null, 'width', null, 'height', null,
+                       'focal_x', null, 'focal_y', null, 'default_alt', null, 'public_path', null)),
+  'asset metadata is the row''s; another tenant''s targets read as missing, without their metadata');
+-- f906's public path is cleared again so the release tests below start with
+-- no public asset.
+select tests.act_as_owner();
+update cms.assets set public_path = null where id = tests.asset('f906');
+select tests.act_as_service();
 select throws_ok($$ select api.worker_read_request(gen_random_uuid()) $$, 'P0001', 'not_found',
   'worker_read_request: an unknown request is not_found');
 
