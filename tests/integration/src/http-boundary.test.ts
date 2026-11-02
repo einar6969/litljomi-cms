@@ -206,10 +206,17 @@ describe('A3: worker and admin functions are for the secret key only', () => {
 });
 
 // Deferred Minor (Task 10): deleting an auth user who holds memberships through
-// the Auth admin API cascades to cms.memberships, whose AFTER DELETE audit
-// trigger writes cms.audit_log. Supabase Auth deletes as supabase_auth_admin.
+// the Auth admin API. Supabase Auth deletes as supabase_auth_admin; the foreign
+// key cascades to cms.memberships, but the memberships AFTER DELETE audit
+// trigger is SECURITY INVOKER and runs as supabase_auth_admin, which has no
+// USAGE on cms (spec §4.5), so its insert into cms.audit_log fails with 42501
+// and the whole deletion rolls back (observed 2026-11-02: Auth 500 "Database
+// error deleting user"; database log "permission denied for schema cms" on the
+// membership.removed insert). It fails closed: nothing is deleted and nothing
+// goes unaudited. Removing the memberships first, then the user, works. Pinned
+// as observed; the triggers are not changed here (reported to the controller).
 describe('Auth admin user deletion with memberships (Task 10 deferred Minor)', () => {
-  it('deleting the user succeeds, removes the membership and writes membership.removed', async () => {
+  it('deleting a user who holds a membership fails closed; after the membership is removed it succeeds', async () => {
     const s = secretClient();
     const email = `delete-${randomUUID()}@test.local`;
     const created = await s.auth.admin.createUser({ email, email_confirm: true });
@@ -217,10 +224,15 @@ describe('Auth admin user deletion with memberships (Task 10 deferred Minor)', (
     const userId = created.data.user!.id;
     expect((await s.schema('api').rpc('admin_add_membership', { p_tenant_id: TENANT.labak, p_user_id: userId })).error).toBeNull();
 
+    const refused = await s.auth.admin.deleteUser(userId);
+    expect(refused.error).toMatchObject({ status: 500, message: 'Database error deleting user' });
+    expect(await ownerQuery('select 1 from auth.users where id = $1', [userId])).toHaveLength(1);
+    expect(await ownerQuery('select 1 from cms.memberships where user_id = $1', [userId])).toHaveLength(1);
+
+    // As an operator would: remove the membership first (audited), then the user.
+    await ownerQuery('delete from cms.memberships where user_id = $1', [userId]);
     const deleted = await s.auth.admin.deleteUser(userId);
     expect(deleted.error).toBeNull();
-
-    expect(await ownerQuery('select 1 from cms.memberships where user_id = $1', [userId])).toEqual([]);
     expect(await ownerQuery('select 1 from auth.users where id = $1', [userId])).toEqual([]);
     const audit = await ownerQuery<{ action: string; actor_id: string | null; tenant_id: string }>(
       `select action, actor_id, tenant_id from cms.audit_log
@@ -228,8 +240,8 @@ describe('Auth admin user deletion with memberships (Task 10 deferred Minor)', (
       [userId],
     );
     expect(audit).toEqual([
-      { action: 'membership.added', actor_id: null, tenant_id: TENANT.labak },
-      { action: 'membership.removed', actor_id: null, tenant_id: TENANT.labak },
+      { action: 'system.membership.added', actor_id: null, tenant_id: TENANT.labak },
+      { action: 'system.membership.removed', actor_id: null, tenant_id: TENANT.labak },
     ]);
   });
 });

@@ -50,7 +50,7 @@ const PARITY_CASES: Case[] = [
   { name: 'editor calls a worker function', as: 'editor_labak', rpc: 'worker_claim_requests',
     args: () => ({ p_limit: 1 }), expected: denied('42501', 'permission denied for function worker_claim_requests') },
   { name: 'anon calls an editor function', as: 'anon', rpc: 'create_entry',
-    args: () => ({ p_tenant_id: TENANT.labak, p_type: 'news' }), expected: denied('42501', 'permission denied for function create_entry') },
+    args: () => ({ p_tenant_id: TENANT.labak, p_type: 'news' }), expected: denied('42501', 'permission denied for schema api') }, // anon has no USAGE on api
   { name: 'secret key reads the sites through Vault', as: 'service', rpc: 'worker_sites',
     args: () => ({ p_tenant_id: TENANT.demo }),
     shape: (v) => (v as { base_url: string }[]).map((s) => s.base_url).sort(), expected: { ok: true, value: ['http://localhost:3101'] } },
@@ -59,7 +59,7 @@ const PARITY_CASES: Case[] = [
   { name: 'platform admin without membership sees no tenants', as: 'platform_admin', view: 'my_tenants', column: 'id',
     expected: { ok: true, value: [] } },
   { name: 'anon reads an editor view', as: 'anon', view: 'entry_list', column: 'tenant_id',
-    expected: denied('42501', 'permission denied for view entry_list') },
+    expected: denied('42501', 'permission denied for schema api') },
 ];
 
 const restClient = async (as: Caller): Promise<SupabaseClient> =>

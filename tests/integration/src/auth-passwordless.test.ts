@@ -83,7 +83,8 @@ describe('decision 18: only email methods issue tokens', () => {
     });
     expect(verified.status, brief(verified)).toBe(200);
     expect(claims(verified.json.access_token).aal).toBe('aal2');
-    expect(methods(verified.json.access_token)).toEqual(['otp', 'totp']);
+    // amr order is not stable when both share a timestamp.
+    expect(methods(verified.json.access_token).sort()).toEqual(['otp', 'totp']);
     const r3 = await refresh(verified.json.refresh_token);
     expect(r3.status, brief(r3)).toBe(200);
     expect(claims(r3.json.access_token).aal).toBe('aal2');
@@ -119,6 +120,10 @@ describe('decision 18: only email methods issue tokens', () => {
     const signupEmail = `signup-${Date.now()}@test.local`;
     const signup = await adminAuth('/admin/generate_link', { body: { type: 'signup', email: signupEmail, password: 'signup pass 12345' } });
     expect(signup.status, brief(signup)).toBe(200);
+    const unconfirmed = await auth('/token?grant_type=password', { body: { email: signupEmail, password: 'signup pass 12345' } });
+    expect(unconfirmed.status, brief(unconfirmed)).toBe(400); // email_not_confirmed, before the hook
+    const confirmed = await auth('/verify', { body: { type: 'signup', token_hash: signup.json.hashed_token } });
+    expect(confirmed.status, brief(confirmed)).toBe(200);
     const signupPw = await auth('/token?grant_type=password', { body: { email: signupEmail, password: 'signup pass 12345' } });
     expect(signupPw.status, brief(signupPw)).toBe(403);
     await deleteThrowawayUsers([signup.json.id]);
@@ -193,12 +198,12 @@ describe('decision 18: only email methods issue tokens', () => {
     expect(await emailOf(user.id)).toBe(newAddress);
     const location = await followVerify(verifyLink(pkceOld));
     expect(await emailOf(user.id)).toBe(user.email);
+    // The second confirmation redirects with a PKCE code (observed 2026-11-02).
     const code = location ? new URL(location).searchParams.get('code') : null;
-    if (code) {
-      const exchanged = await auth('/token?grant_type=pkce', { body: { auth_code: code, code_verifier: p.verifier } });
-      expect(exchanged.status, brief(exchanged)).toBe(200);
-      expect(claims(exchanged.json.access_token).email).toBe(user.email);
-    }
+    expect(code, location ?? 'no redirect').toBeTruthy();
+    const exchanged = await auth('/token?grant_type=pkce', { body: { auth_code: code, code_verifier: p.verifier } });
+    expect(exchanged.status, brief(exchanged)).toBe(200);
+    expect(claims(exchanged.json.access_token).email).toBe(user.email);
   });
 
   it('a later magic-link sign-in is aal1 until TOTP; /reauthenticate issues no token', async () => {
