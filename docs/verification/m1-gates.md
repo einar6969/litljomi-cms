@@ -93,3 +93,23 @@ Mutation check: each mutation was applied inside the test's transaction and roll
 - A newline-sensitive pattern (`(?n)`) still rejects a trailing newline, because the `uuid` cast also rejects it. Checked directly: the plain anchored `~` gives `false` for a trailing newline, `(?n)` gives `true`, and the cast raises 22P02.
 
 **Result: pass.**
+
+## A9 (Task 11, 2026-11-02)
+
+Assumption (spec §11.1, plan "Validation gates"): Vault secrets are created and read through `service_role`-only functions. Fallback if it fails: §8.2 app-level encryption (not needed).
+
+Evidence: `supabase/tests/database/090_api_worker.test.sql` (commit `e6b66ab`, branch `m1/lane-a-alt`), local stack PostgreSQL 17.11 with `supabase_vault` 0.3.1. The controller ran `pnpm db:reset && pnpm db:test` from the worktree: `Files=13, Tests=1233 … Result: PASS`. Passing A9 assertions:
+
+```
+A9: admin_create_site stores a webhook secret in Vault (as service_role)
+A9: worker_sites reads the secret back from Vault (as service_role)
+A9: the site's webhook_secret_ref is a Vault secret named after the site
+A9: Vault stores the secret encrypted
+the secret is in no cms.sites column
+```
+
+- `api.admin_create_site` (invoker, `search_path = ''`, EXECUTE `service_role` only) calls `vault.create_secret` and stores only the returned id in `cms.sites.webhook_secret_ref`; `api.worker_sites` (same attributes) reads `vault.decrypted_secrets` by that id. Implementer's rolled-back probe as `service_role`: `worker_sites(demo)` returned `{s3cr3t}`; `vault.secrets` row `name=cms.sites/<id>/webhook`, `secret_is_plaintext=false`.
+- Grants relied on are Supabase's defaults; none were added: `service_role` USAGE on `vault`; `vault.create_secret(text,text,text,uuid)` owned by `supabase_admin`, SECURITY DEFINER, EXECUTE for `service_role`; `vault.decrypted_secrets` and `vault.secrets` SELECT for `service_role`. Editors and `anon` get `42501 permission denied for schema vault` (security review r1 probe).
+- Security review r1 (`docs/execution/reviews/task-11-r1-security.md`): the secret appears in no `cms` column, audit row or raise message; `worker_sites` returns it to `service_role` only. The reviewer notes that `vault.create_secret` is Supabase-owned SECURITY DEFINER code; whether §4.2's wording should say so is open for Einar (deferred-minors, Task 11).
+
+Result: **A9 pass.**

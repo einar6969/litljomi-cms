@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T07:41:22.202Z",
+  "updatedAt": "2026-11-02T08:24:44.898Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -495,8 +495,51 @@
     },
     {
       "id": 11,
+      "status": "done",
+      "commits": [
+        "9fc5efc",
+        "e6b66ab",
+        "f8bca05"
+      ],
+      "reviews": {
+        "spec": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-11-r1-spec.md",
+          "at": "2026-11-02T07:59:55.859Z",
+          "atCommits": 2
+        },
+        "security": {
+          "status": "pass",
+          "round": 2,
+          "report": "docs/execution/reviews/task-11-r2-security.md",
+          "at": "2026-11-02T08:12:32.209Z",
+          "atCommits": 3
+        },
+        "quality": {
+          "status": "pass",
+          "round": 2,
+          "report": "docs/execution/reviews/task-11-r2-quality.md",
+          "at": "2026-11-02T08:12:47.406Z",
+          "atCommits": 3
+        }
+      },
+      "gatesUsed": [
+        "G0",
+        "G1"
+      ],
+      "blockers": [],
+      "notes": "Implemented in .worktrees/lane-a-alt from Task 10's head (with m1/phase-1 merged, cd747da): WIP 9fc5efc, final e6b66ab. Stop: the commit could not lock the draft (Postgres row locks need UPDATE on a column; service_role had SELECT only on cms.drafts). Einar ruled \"Grant one column\" (decision 31: grant update (updated_at) on cms.drafts to service_role, only for the lock; 030 assertion updated). Controller accepted the implementer's error codes, finish_release interface and path rules, snapshot keys, worker_sites active only, idempotent add_membership, Vault names, write-once first_published_at trigger, revisions 1 MB check, refs from the copied data; publishing an archived entry is not refused. Statement timeout investigated, not implemented (function-level settings do not interrupt a running statement); options logged for Einar at C1. A9 pass, recorded in docs/verification/m1-gates.md. Reviews: spec r1 pass; security r1 pass (2 Minors, 2 wording points for Einar), quality r1 FAIL (Major: referenced-row lock assertions could not fail because the FK takes FOR KEY SHARE), fix f8bca05 (pgrowlocks mode checks; shown to fail without the locks), security r2 pass, quality r2 pass. Merged into m1/phase-1 as e4143d4 (--no-ff, clean). Full suite by the controller after the merge: harness 30/30; lint, typecheck, check:slugs (2 slugs) exit 0; Vitest 25 files, 327 tests; pnpm db:reset && pnpm db:test Files=13, Tests=1238, PASS.",
+      "startedAt": "2026-11-02T07:35:39.621Z",
+      "doneAt": "2026-11-02T08:24:44.898Z"
+    },
+    {
+      "id": 12,
       "status": "in_progress",
-      "commits": [],
+      "commits": [
+        "313b05b",
+        "5b336e0"
+      ],
       "reviews": {},
       "gatesUsed": [
         "G0",
@@ -504,16 +547,7 @@
       ],
       "blockers": [],
       "notes": "",
-      "startedAt": "2026-11-02T07:35:39.621Z"
-    },
-    {
-      "id": 12,
-      "status": "pending",
-      "commits": [],
-      "reviews": {},
-      "gatesUsed": [],
-      "blockers": [],
-      "notes": ""
+      "startedAt": "2026-11-02T07:59:55.885Z"
     },
     {
       "id": 13,
