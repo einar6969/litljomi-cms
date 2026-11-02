@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T14:33:17.793Z",
+  "updatedAt": "2026-11-02T14:57:21.769Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -1034,16 +1034,41 @@
     },
     {
       "id": 24,
-      "status": "in_progress",
-      "commits": [],
-      "reviews": {},
+      "status": "done",
+      "commits": [
+        "94566a2"
+      ],
+      "reviews": {
+        "spec": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-24-r1-spec.md",
+          "at": "2026-11-02T14:49:58.816Z",
+          "atCommits": 1
+        },
+        "security": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-24-r1-security.md",
+          "at": "2026-11-02T14:51:56.212Z",
+          "atCommits": 1
+        },
+        "quality": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-24-r1-quality.md",
+          "at": "2026-11-02T14:53:21.296Z",
+          "atCommits": 1
+        }
+      },
       "gatesUsed": [
         "G0",
         "G1"
       ],
       "blockers": [],
       "notes": "",
-      "startedAt": "2026-11-02T14:24:45.719Z"
+      "startedAt": "2026-11-02T14:24:45.719Z",
+      "doneAt": "2026-11-02T14:57:21.769Z"
     },
     {
       "id": 25,

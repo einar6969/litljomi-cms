@@ -140,6 +140,9 @@
 | C2 cleanup | spec-quality r1 | e2e-local SIGINT handlers call `process.exit` in a Vitest worker (forks pool only); `mockRestore` skipped on a failed assertion; demo-site module-level fixture guard; port probe/bind race (`c2-cleanup-r1-spec-quality.md`) | C3 | open |
 | C2 cleanup | security r1 | `cms-next.sh:12` stderr of `supabase status` no longer discarded (keys are on stdout; assumption unconfirmed); `cms-next.sh:21` loopback glob accepts userinfo (pre-existing, local CLI input) (`c2-cleanup-r1-security.md`) | C3 | open |
 | 23 | security r1 | `apps/cms/src/lib/tenant.ts:23`: `resolveTenant` throws with the raw PostgREST message, uncaught in `createEntryAction` (dev-mode only exposure, own query) (`task-23-r1-security.md`) | Task 24 | open |
+| 24 | spec r1 | Literal `3100` left in two e2e comments; plan's `prepareUpload` signature (updated by the controller with the ratification); RichTextField link button with an empty editor (`task-24-r1-spec.md`) | C3 | open |
+| 24 | security r1 | Refused or unregistered originals stay in `media-private` (no delete policy; members-only orphan storage); `api.register_asset` callable directly with editor-declared metadata (Task 10 design; worker could re-derive at publish); `register_asset`/`update_asset` do not check `tenant_inactive` at the database layer (`task-24-r1-security.md`) | C3 (Einar) | open |
+| 24 | quality r1 | `assetId` shadowing; duplicated auth/error mapping (security-relevant); "review focus 4" wording; ImageField notice ternaries and filename re-derivation (security-relevant); silent stop after three preview re-signs; long positional `updateAsset` calls; no test that an invalid rich-text document keeps the stored value; `flush()` timing in `fields.test.tsx` (`task-24-r1-quality.md`) | Task 25 (security-relevant items with its security review) | open |
 
 ## Carried from Phase 0 before ratings existed
 
