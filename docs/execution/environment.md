@@ -148,3 +148,9 @@ Einar approved the exact diff in chat on 2026-11-02 (patch to `cms-security-revi
 ## Controller walkthrough in the built-in browser pane (2026-11-02)
 
 - For Einar's requested walkthrough ("Run those steps yourself first"), the controller used the desktop app's browser pane against `http://localhost:3100` and the local Auth verify URL on `127.0.0.1:54321` only, signing in with the local test identity `editor-demo@test.local` (magic link from Mailpit). No other site was opened; no settings changed. The CMS and demo site were started as sandboxed background shell commands and stopped afterwards (ports 3100 and 3101 free).
+
+## Sandbox exclusion for Task 27's visual comparison (2026-11-02)
+
+- Einar's G7 brief (decision 41.2): "Task 27’s visual comparison needs Playwright in the LABAK repository, and Chromium can’t run inside the sandbox. When you get there, propose one exact, narrow `excludedCommands` entry for that single command and wait for my approval. Don’t chain it, and remove it again at C3."
+- Proposed diff: `sandbox.excludedCommands` gains `"npm run test:visual"` (patch sha256 `50c03deb7b593846db45a5706a085e0c419e26b33b7afa9f55ff0caf0377f3b6`, `diff -u --label`). Einar in chat, 2026-11-02: "Approve both" (round 5 of Task 27 and the exclusion diff). Applied with the Edit tool; byte-identical to the proposed file (`cmp`). Run only as exactly `npm run test:visual` from the LABAK repository root, after the round-5 reviews pass. **Removed again at C3.**
+- Conditions the run's config was reviewed against (Task 27 security rounds 2–4): loopback only (Chromium `--host-resolver-rules`, request abort with an unexpected-host check, service workers blocked), nothing downloaded (`update-notifier=false` in LABAK's `.npmrc`, no npm children), writes only gitignored repo paths plus npm logs and a Chromium temp profile.

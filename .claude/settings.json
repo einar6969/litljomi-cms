@@ -31,7 +31,7 @@
   "sandbox": {
     "enabled": true,
     "failIfUnavailable": true,
-    "excludedCommands": ["pnpm --filter cms e2e *"],
+    "excludedCommands": ["pnpm --filter cms e2e *", "npm run test:visual"],
     "network": {
       "allowedDomains": ["registry.npmjs.org"],
       "allowUnixSockets": [
