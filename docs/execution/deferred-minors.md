@@ -139,6 +139,7 @@
 | 23 | spec-quality r1 | Unused i18n keys `entries.open`, `editor.unsaved`; `useAutosave` `schedule`/`retry` not memoized; no unit tests for SlugField/LinkField/TextField/DateField; comment on `saveDraftAction`'s three reads (`task-23-r1-spec-quality.md`) | Task 24 (form files it extends) | open |
 | C2 cleanup | spec-quality r1 | e2e-local SIGINT handlers call `process.exit` in a Vitest worker (forks pool only); `mockRestore` skipped on a failed assertion; demo-site module-level fixture guard; port probe/bind race (`c2-cleanup-r1-spec-quality.md`) | C3 | open |
 | C2 cleanup | security r1 | `cms-next.sh:12` stderr of `supabase status` no longer discarded (keys are on stdout; assumption unconfirmed); `cms-next.sh:21` loopback glob accepts userinfo (pre-existing, local CLI input) (`c2-cleanup-r1-security.md`) | C3 | open |
+| 23 | security r1 | `apps/cms/src/lib/tenant.ts:23`: `resolveTenant` throws with the raw PostgREST message, uncaught in `createEntryAction` (dev-mode only exposure, own query) (`task-23-r1-security.md`) | Task 24 | open |
 
 ## Carried from Phase 0 before ratings existed
 
