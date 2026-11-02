@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { types } from 'node:util';
 
 /**
  * Canonical JSON: object keys sorted by UTF-16 code unit at every depth, `undefined` object
@@ -7,6 +8,12 @@ import { createHash } from 'node:crypto';
  * (NaN, Infinity, bigint, functions, symbols) and for objects that are not plain (prototype other
  * than `Object.prototype` or null: Date, Map, Set, boxed primitives, class instances), because
  * serialising those would silently differ from what a site receives.
+ *
+ * Arrays are walked by index up to `length`, never through `Symbol.iterator`, so an array with its
+ * own or overridden iterator hashes what `JSON.stringify` delivers. A Proxy is always rejected
+ * (`util.types.isProxy`): its traps can report a plain prototype and its own keys yet serialise
+ * differently under `JSON.stringify` (for example a Date behind a lying `getPrototypeOf`, which
+ * would otherwise hash as `{}`), and the two views cannot be made consistent.
  */
 export function canonicalJson(v: unknown): string {
   if (v === null) return 'null';
@@ -18,8 +25,16 @@ export function canonicalJson(v: unknown): string {
       if (!Number.isFinite(v)) throw new Error('canonicalJson: non-finite number');
       return JSON.stringify(v);
     case 'object': {
-      // Array.from visits holes as `undefined` (map would skip them and leave an empty slot).
-      if (Array.isArray(v)) return `[${Array.from(v, (x) => (x === undefined ? 'null' : canonicalJson(x))).join(',')}]`;
+      if (types.isProxy(v)) throw new Error('canonicalJson: proxies cannot be hashed');
+      if (Array.isArray(v)) {
+        // Index loop: holes read as `undefined`, which becomes null like JSON.stringify.
+        const parts: string[] = [];
+        for (let i = 0; i < v.length; i++) {
+          const x: unknown = v[i];
+          parts.push(x === undefined ? 'null' : canonicalJson(x));
+        }
+        return `[${parts.join(',')}]`;
+      }
       const proto: unknown = Object.getPrototypeOf(v);
       if (proto !== Object.prototype && proto !== null) throw new Error('canonicalJson: not a plain object');
       const entries = Object.entries(v as Record<string, unknown>)

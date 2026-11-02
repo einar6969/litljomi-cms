@@ -64,4 +64,24 @@ describe('canonicalJson and contentHash', () => {
     expect(canonicalJson(sparse)).toBe(JSON.stringify(sparse));
     expect(canonicalJson(new Array(2))).toBe('[null,null]');
   });
+  it('walks arrays by index and length, ignoring an own or overridden iterator', () => {
+    const own = [1, 2, 3];
+    Object.defineProperty(own, Symbol.iterator, { value: function* () { yield 9; }, enumerable: false });
+    expect(canonicalJson(own)).toBe(JSON.stringify(own));
+    expect(canonicalJson(own)).toBe('[1,2,3]');
+    const original = Array.prototype[Symbol.iterator];
+    Array.prototype[Symbol.iterator] = function* () { yield 'x'; } as typeof original;
+    try {
+      expect(canonicalJson([1, 2])).toBe('[1,2]');
+    } finally {
+      Array.prototype[Symbol.iterator] = original;
+    }
+  });
+  it('rejects a Proxy, whatever prototype it reports, instead of hashing {}', () => {
+    const lying = new Proxy(new Date(0), { getPrototypeOf: () => Object.prototype });
+    expect(() => canonicalJson(lying)).toThrow(/proxies/i);
+    expect(() => canonicalJson({ nested: lying })).toThrow(/proxies/i);
+    expect(() => canonicalJson(new Proxy({ a: 1 }, {}))).toThrow(/proxies/i);
+    expect(() => canonicalJson(new Proxy([1], {}))).toThrow(/proxies/i);
+  });
 });

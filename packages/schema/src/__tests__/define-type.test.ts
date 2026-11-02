@@ -115,4 +115,17 @@ describe('defineType field keys', () => {
   it.each(['title', 'secondaryImage', 'a1', 'snake_case', 'A'])('accepts the key %s', (key) => {
     expect(() => build({ ...ok, [key]: text({ label: 'X' }) })).not.toThrow();
   });
+  it('rejects a fields object whose prototype is set, such as a literal __proto__ key', () => {
+    const inherited = { extra: text({ label: 'X' }) };
+    expect(() =>
+      defineType({ name: 'p', version: 1, label: 'P', fields: { __proto__: inherited as never, title: text({ label: 'T' }) }, preview: { title: 'title' }, orderBy: 'title' }),
+    ).toThrow(/prototype/);
+    expect(() =>
+      defineType({ name: 'p', version: 1, label: 'P', fields: Object.create({ extra: text({ label: 'X' }) }), preview: { title: 'title' }, orderBy: 'title' } as never),
+    ).toThrow(/prototype/);
+  });
+  it('accepts a null-prototype fields object', () => {
+    const fields = Object.assign(Object.create(null), { title: text({ label: 'T' }) });
+    expect(() => defineType({ name: 'p', version: 1, label: 'P', fields, preview: { title: 'title' }, orderBy: 'title' })).not.toThrow();
+  });
 });
