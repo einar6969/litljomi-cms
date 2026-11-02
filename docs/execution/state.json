@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T23:20:49.275Z",
+  "updatedAt": "2026-11-02T23:39:06.496Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -1376,9 +1376,9 @@
       "approval": "Einar in chat, 2026-11-02: \"C2 rulings (Einar, 2026-11-02). C2 is approved.\" and \"Fast-forward `main` to `m1/phase-1` (local only, no push). Then close Phase 3. Phase 4 starts in a fresh session.\" Rulings recorded as plan decision 36."
     },
     "C3": {
-      "status": "pending",
-      "report": null,
-      "at": null,
+      "status": "reported",
+      "report": "docs/execution/checkpoints/C3.md",
+      "at": "2026-11-02T23:39:06.496Z",
       "approvedByEinar": false
     },
     "C4": {
