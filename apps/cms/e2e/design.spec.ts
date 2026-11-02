@@ -25,7 +25,7 @@ async function shoot(page: Page, name: string): Promise<void> {
     await page.setViewportSize({ width, height: 900 });
     // Let fonts and the layout settle after the resize.
     await page.evaluate(() => document.fonts.ready);
-    await page.waitForTimeout(150);
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     if (width === 375) {
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       expect(overflow, `${name} scrolls sideways at 375 px`).toBeLessThanOrEqual(0);
@@ -38,6 +38,13 @@ test.describe('sign-in page', () => {
   test('screenshots', async ({ page }) => {
     await page.goto('/login');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(t.login.title);
+    // The self-hosted fonts must load before there is a session (the proxy must not redirect them).
+    await page.evaluate(() => document.fonts.ready);
+    const fontsLoaded = await page.evaluate(() => [document.fonts.check('16px "Albert Sans"'), document.fonts.check('700 28px "Bricolage Grotesque"')]);
+    expect(fontsLoaded, 'Albert Sans and Bricolage Grotesque loaded signed out').toEqual([true, true]);
+    const faces = await page.evaluate(() => [...document.fonts].map((f) => f.status));
+    expect(faces.length).toBeGreaterThan(0);
+    expect(faces.every((s) => s === 'loaded'), `font faces: ${faces.join(',')}`).toBe(true);
     await shoot(page, 'login');
     // The invalid-link alert, as it shows after a failed callback.
     await page.goto('/login?error=link');
@@ -66,7 +73,8 @@ test.describe('demo editor (event)', () => {
     // In progress: the status read is held back so the "Í birtingu…" state stays on screen.
     await page.route('**/rest/v1/publication_status*', async (route) => {
       await new Promise((resolve) => setTimeout(resolve, 8_000));
-      await route.continue().catch(() => undefined);
+      // fallback, not continue: the context's loopback guard (support/test.ts) still applies.
+      await route.fallback().catch(() => undefined);
     });
     await page.getByRole('button', { name: t.publish.publish }).click();
     await expect(state(page)).toHaveText(t.publish.inProgress);

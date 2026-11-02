@@ -63,42 +63,42 @@ export function EntryForm({ tenant, entryId, fields, titleKey, initialData, init
   return (
     <EditorTenantProvider value={tenant}>
       <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
-      <form onSubmit={(e) => e.preventDefault()} className="flex min-w-0 flex-col gap-5">
-        {fields.map((field) => {
-          const Component = fieldRegistry[field.kind];
-          const id = `field-${field.key}`;
-          if (!Component) {
+        <form onSubmit={(e) => e.preventDefault()} className="flex min-w-0 flex-col gap-5">
+          {fields.map((field) => {
+            const Component = fieldRegistry[field.kind];
+            const id = `field-${field.key}`;
+            if (!Component) {
+              return (
+                <div key={field.key} className="flex flex-col gap-1.5">
+                  <span className="text-[15px] font-medium">{field.label}</span>
+                  <Notice role="note">{t.editor.unsupportedField}</Notice>
+                </div>
+              );
+            }
             return (
-              <div key={field.key} className="flex flex-col gap-1.5">
-                <span className="text-[15px] font-medium">{field.label}</span>
-                <Notice role="note">{t.editor.unsupportedField}</Notice>
-              </div>
+              <Component
+                key={field.key}
+                id={id}
+                label={field.label}
+                required={field.required}
+                max={field.max}
+                multiline={field.multiline}
+                value={data[field.key]}
+                onChange={(value) => change(field.key, value)}
+              />
             );
-          }
-          return (
-            <Component
-              key={field.key}
-              id={id}
-              label={field.label}
-              required={field.required}
-              max={field.max}
-              multiline={field.multiline}
-              value={data[field.key]}
-              onChange={(value) => change(field.key, value)}
-            />
-          );
-        })}
-        <SlugField entryId={entryId} initialSlug={initialSlug} title={title} locked={slugLocked} setSlug={setSlugAction} />
-        <SaveStatus state={autosave.state} retry={autosave.retry} />
-      </form>
-      {/* The request carries the version the editor last saw (review focus 3). */}
-      <PublishPanel
-        entryId={entryId}
-        version={autosave.version}
-        disabled={autosave.state === 'conflict' || autosave.state === 'signed_out'}
-        initiallyPublished={published}
-        fieldLabels={fieldLabels}
-      />
+          })}
+          <SlugField entryId={entryId} initialSlug={initialSlug} title={title} locked={slugLocked} setSlug={setSlugAction} />
+          <SaveStatus state={autosave.state} retry={autosave.retry} />
+        </form>
+        {/* The request carries the version the editor last saw (review focus 3). */}
+        <PublishPanel
+          entryId={entryId}
+          version={autosave.version}
+          disabled={autosave.state === 'conflict' || autosave.state === 'signed_out'}
+          initiallyPublished={published}
+          fieldLabels={fieldLabels}
+        />
       </div>
     </EditorTenantProvider>
   );

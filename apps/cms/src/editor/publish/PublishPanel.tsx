@@ -136,7 +136,7 @@ export function PublishPanel({
   const inFlight = busy || (state !== null && !isFinal(state));
 
   return (
-    <section aria-labelledby="publish-heading" className="flex flex-col gap-4 rounded-lg border border-hairline bg-recessed p-5 lg:sticky lg:top-6">
+    <section aria-labelledby="publish-heading" className="flex flex-col gap-4 rounded-lg border border-hairline bg-recessed p-5">
       <h2 id="publish-heading" className="text-xs font-semibold uppercase leading-4 tracking-wider text-muted">
         {t.publish.heading}
       </h2>

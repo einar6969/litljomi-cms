@@ -15,7 +15,7 @@ type Props = HTMLAttributes<HTMLElement> & { tone?: NoticeTone; as?: 'p' | 'div'
 export function Notice({ tone = 'info', as: Tag = 'p', className = '', ...props }: Props) {
   return (
     <Tag
-      className={`rounded-lg border border-l-[6px] border-hairline bg-recessed px-4 py-3 text-[15px] text-ink ${TONES[tone]} ${className}`}
+      className={`max-w-none rounded-lg border border-l-[6px] border-hairline bg-recessed px-4 py-3 text-[15px] text-ink ${TONES[tone]} ${className}`}
       {...props}
     />
   );

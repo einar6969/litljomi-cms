@@ -32,9 +32,9 @@
   --color-accent: #8ed462;
   --color-danger: #c8352a;
   --color-warning: #b45309;
-  /* The accent as text (6.4:1 on white); the plain accent is never text. */
+  /* The accent as text (about 6.0:1 on white); the plain accent is never text. */
   --color-accent-text: color-mix(in srgb, #8ed462 45%, #171714);
-  /* The border of an input: 3.4:1 on white (WCAG 1.4.11); the hairline is too faint for one. */
+  /* The border of an input: 3.3:1 on white (WCAG 1.4.11); the hairline is too faint for one. */
   --color-control: color-mix(in srgb, #66685f 75%, #ffffff);
 
   --font-sans: 'Albert Sans', ui-sans-serif, system-ui, sans-serif;
@@ -160,6 +160,7 @@
     cursor: not-allowed;
   }
 
+  /* Raw buttons (the image field's) get this look; the Button component sets its own utilities. */
   button {
     min-height: 44px;
     padding: 0 16px;
@@ -213,8 +214,8 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 4px 12px;
-    padding: 6px;
+    gap: 8px;
+    padding: 8px;
     border-bottom: 1px solid var(--color-hairline);
     background: var(--color-recessed);
   }
@@ -222,7 +223,11 @@
   .rt-box [role='toolbar'] .rt-group {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--color-hairline);
+    border-radius: 8px;
+    background: var(--color-canvas);
   }
 
   .rt-box [role='toolbar'] .rt-link {
