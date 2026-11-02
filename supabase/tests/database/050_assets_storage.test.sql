@@ -88,8 +88,9 @@ select is_empty($$ select * from tests.column_privs('anon', 'cms.assets') $$, 'a
 -- content table (§4.5).
 select policies_are('cms', 'assets', array['assets_select_member', 'assets_insert_member', 'assets_update_member'],
   'assets policies: select, insert, update for members');
-select triggers_are('cms', 'assets', array['assets_force_actor', 'assets_check_actor'],
-  'assets triggers: force_actor and check_actor on created_by (decision 11)');
+select triggers_are('cms', 'assets', array['assets_force_actor', 'assets_check_actor', 'assets_audit_insert',
+    'assets_audit_update'],
+  'assets triggers: force_actor and check_actor on created_by (decision 11), and the audit triggers (Task 10)');
 
 -- Buckets (§5.6). media-private also carries the upload limits of §5.6 (JPEG,
 -- PNG, WebP; 20 MB), enforced by the Storage API; the asset row's constraints
