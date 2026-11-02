@@ -131,6 +131,8 @@ export function liveTargets(
   });
 }
 
+// Runs `fn` at most once per run: `done` is set before the call, so a resend that throws is not
+// repeated (theoretical here, since `notifySite` never throws).
 const once = (fn: () => Promise<unknown>) => {
   let done = false;
   return async () => {

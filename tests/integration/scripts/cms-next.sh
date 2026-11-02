@@ -7,7 +7,12 @@
 # The caller passes CMS_INTERNAL_SECRET, CRON_SECRET and CMS_PUBLIC_URL in the environment.
 set -eu
 root=$(cd "$(dirname "$0")/../../.." && pwd)
-status=$(cd "$root" && SUPABASE_TELEMETRY_DISABLED=1 supabase status -o env 2>/dev/null)
+# stdout (the keys) is captured and never printed; stderr is left alone so a failure of
+# `supabase status` (no Docker, no stack, a CLI error) is shown, not hidden.
+status=$(cd "$root" && SUPABASE_TELEMETRY_DISABLED=1 supabase status -o env) || {
+  echo "cms-next.sh: 'supabase status -o env' failed (see its message above); is the local stack running (pnpm db:start)?" >&2
+  exit 1
+}
 value() { printf '%s\n' "$status" | sed -n "s/^$1=//p" | head -n 1 | tr -d '"'; }
 api_url=$(value API_URL)
 publishable=$(value PUBLISHABLE_KEY)

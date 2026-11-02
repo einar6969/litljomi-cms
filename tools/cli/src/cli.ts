@@ -50,6 +50,8 @@ export async function runCli(args: string[], io: CliIo): Promise<number> {
     error(`cannot load module "${name}": ${e instanceof Error ? e.message : String(e)}`);
     return 1;
   }
+  // `--out` is resolved against the current directory: under `pnpm --filter @litljomi/cli` that is
+  // tools/cli, so a path given from another package (apps/demo-site's gen:types) starts with `../../`.
   const file = resolve(out);
   await mkdir(dirname(file), { recursive: true });
   await writeFile(file, renderTypes(manifest));

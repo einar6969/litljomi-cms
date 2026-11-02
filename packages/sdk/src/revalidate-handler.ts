@@ -33,10 +33,10 @@ async function readCapped(req: Request, max: number): Promise<Uint8Array | null>
 }
 
 /**
- * Route handler body for the site's revalidation endpoint. The site passes its own
- * `revalidateTag`, so the SDK does not depend on a Next.js version. 401 on a bad signature or a
- * stale timestamp, checked (with the signature's format) before the body is read; 413 on a body
- * over MAX_WEBHOOK_BODY_BYTES (declared or streamed); the signature covers the raw body bytes. A throwing `secrets()` gives a plain 500 without detail. Otherwise revalidates the `cms` tag and answers 200.
+ * Route handler for the site's revalidation endpoint. The site passes its own `revalidateTag`, so
+ * the SDK does not depend on a Next.js version. 401 on a bad signature or stale timestamp (checked
+ * before the body is read), 413 on a body over MAX_WEBHOOK_BODY_BYTES, a plain 500 if `secrets()`
+ * throws; otherwise revalidates the `cms` tag and answers 200.
  */
 export function createRevalidateHandler(o: {
   secrets: () => string[];

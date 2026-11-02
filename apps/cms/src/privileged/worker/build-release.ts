@@ -34,6 +34,7 @@ import { callRpc, isApiError } from './rpc';
 import {
   deliveryBundlePath,
   deliveryPointerPath,
+  MEDIA_PRIVATE,
   pointerBundlePath,
   privateMediaPath,
   publicMediaPath,
@@ -53,7 +54,6 @@ export const POINTER_DEADLINE_MS = 270_000;
 export const MAX_STORED_OMISSION_DETAILS = 50;
 
 const DELIVERY = 'delivery';
-const MEDIA_PRIVATE = 'media-private';
 const MEDIA_PUBLIC = 'media-public';
 
 /** The storage operations of a build; the default goes through the admin client's Storage API. */
@@ -246,6 +246,8 @@ export async function buildRelease(tenantId: string, options: BuildOptions = {})
       }
     });
     const elapsed = clock() - begunAt;
+    // Deliberately outside `at()`: `refused` already is a BuildFailure carrying its own step
+    // ('pointer_deadline') and the `pointer_refused` reason, and wrapping would only rewrite `step`.
     if (elapsed >= POINTER_DEADLINE_MS) {
       throw refused('pointer_deadline', `${Math.round(elapsed)} ms since the release began (limit ${POINTER_DEADLINE_MS} ms)`);
     }

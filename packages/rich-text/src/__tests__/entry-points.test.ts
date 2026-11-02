@@ -13,7 +13,9 @@ const pkg = JSON.parse(readFileSync(resolve(src, '../package.json'), 'utf8')) as
 // A textual walker, not a bundler: it follows string-literal specifiers in `from '...'`,
 // `import '...'` and `import('...')`. It cannot resolve an import whose specifier is computed
 // (`import(name)`, `require(x)`, a template with substitutions), so any such call in the graph is
-// recorded as the marker below and fails the first test instead of being missed. ESLint
+// recorded as the marker below and fails the first test instead of being missed.
+// The pattern is textual, so it also matches `import(` inside comments and strings: that only
+// ever fails closed (a false alarm, never a missed import). ESLint
 // (`eslint.config.mjs`, packages/**) separately forbids importing the editor entry by name.
 const COMPUTED_IMPORT = '<computed import>';
 

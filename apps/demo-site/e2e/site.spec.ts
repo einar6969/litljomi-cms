@@ -7,7 +7,8 @@ import { startSite, WEBHOOK_SECRETS, type RunningSite } from './harness.ts';
 
 const bundle = JSON.parse(readFileSync(join(FIXTURES_ROOT, 'delivery', 'demo', 'releases', '1.json'), 'utf8')) as Bundle;
 const events = bundle.entries['event'] ?? [];
-const x = events.find((e) => e.slug === 'x');
+const x = events.find((e) => e.slug === 'x'); // the fixture itself is checked in fixtures.test.ts
+if (x === undefined) throw new Error('the fixture bundle has no event with slug x');
 
 let site: RunningSite;
 beforeAll(async () => {
@@ -30,16 +31,12 @@ function revalidate(o: { body?: string; secret?: string; signature?: string; ts?
 }
 
 describe('demo site against the fixture bundle', () => {
-  it('has the fixture entry x', () => {
-    expect(x).toBeDefined();
-    expect(events.length).toBeGreaterThan(1);
-  });
   it('/events/x renders a marker with the bundle hash and the content', async () => {
     const res = await get('/events/x');
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(parseEntryMarkers(html)).toEqual([{ id: x?.id, hash: x?.contentHash }]);
-    expect(html).toContain(String((x?.data as { title: string }).title));
+    expect(parseEntryMarkers(html)).toEqual([{ id: x.id, hash: x.contentHash }]);
+    expect(html).toContain(String((x.data as { title: string }).title));
     expect(parseReleaseMarker(html)).toBe(bundle.release);
   });
   it('/events lists every event with its marker', async () => {
@@ -69,6 +66,6 @@ describe('demo site against the fixture bundle', () => {
   it('still serves the event pages after revalidation', async () => {
     const res = await get('/events/x');
     expect(res.status).toBe(200);
-    expect(parseEntryMarkers(await res.text())).toEqual([{ id: x?.id, hash: x?.contentHash }]);
+    expect(parseEntryMarkers(await res.text())).toEqual([{ id: x.id, hash: x.contentHash }]);
   });
 });

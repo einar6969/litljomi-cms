@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { dirname, join, normalize, sep } from 'node:path';
+import { dirname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /** The directory served as the site root: `delivery/<tenant>/current.json` lives under it. */
@@ -14,6 +14,7 @@ export interface FixtureServer {
 
 /** Serves the fixture bundle files read-only over HTTP, standing in for the `delivery` bucket. */
 export async function startFixtureServer(root: string = FIXTURES_ROOT, port = 0): Promise<FixtureServer> {
+  const base = resolve(root); // a relative or unnormalised root still matches the prefix check below
   const server: Server = createServer(async (req, res) => {
     try {
       if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -21,8 +22,8 @@ export async function startFixtureServer(root: string = FIXTURES_ROOT, port = 0)
         return;
       }
       const pathname = decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname);
-      const file = normalize(join(root, pathname));
-      if (!file.startsWith(root + sep) || !file.endsWith('.json')) {
+      const file = normalize(join(base, pathname));
+      if (!file.startsWith(base + sep) || !file.endsWith('.json')) {
         res.writeHead(404).end();
         return;
       }
