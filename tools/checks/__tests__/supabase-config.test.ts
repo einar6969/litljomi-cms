@@ -5,7 +5,9 @@ import { parse } from 'smol-toml';
 import { describe, expect, it } from 'vitest';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const configPath = join(here, '..', '..', '..', 'supabase', 'config.toml');
+// SUPABASE_CONFIG_PATH lets a check run against a temporary copy (failing-first evidence).
+const configPath =
+  process.env.SUPABASE_CONFIG_PATH ?? join(here, '..', '..', '..', 'supabase', 'config.toml');
 
 type Section = Record<string, unknown>;
 const config = parse(readFileSync(configPath, 'utf8')) as {
@@ -32,8 +34,10 @@ describe('supabase/config.toml security settings', () => {
     expect(config.auth.mfa.totp.verify_enabled).toBe(true);
   });
 
-  it('[api] schemas exposes none of public, cms, private', () => {
+  it('[api] schemas is non-empty (empty falls back to public) and exposes none of public, cms, private', () => {
     const schemas = config.api.schemas as string[];
+    expect(Array.isArray(schemas)).toBe(true);
+    expect(schemas.length).toBeGreaterThan(0);
     for (const forbidden of ['public', 'cms', 'private']) {
       expect(schemas).not.toContain(forbidden);
     }
