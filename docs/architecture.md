@@ -185,7 +185,7 @@ Not available in v1: custom pages, custom lifecycle hooks, custom database table
 | `cms` | **No** | All platform tables |
 | `private` | No | Trigger functions, internal helpers and the Auth hook (§4.4) |
 
-**v1 contains no `SECURITY DEFINER` functions.** Supabase's guidance is never to create one in an exposed schema; with invoker-only functions and the RLS patterns below, none are needed. Adding one later requires an explicit architecture decision, placement outside exposed schemas, a pinned `search_path = ''`, and catalog-test coverage.
+**v1 contains no `SECURITY DEFINER` functions.** The rule covers functions v1 creates; Supabase's own Vault functions (`vault.create_secret`, `vault.decrypted_secrets`), used as §8.2 decides, are outside it (plan decision 32). Supabase's guidance is never to create one in an exposed schema; with invoker-only functions and the RLS patterns below, none are needed. Adding one later requires an explicit architecture decision, placement outside exposed schemas, a pinned `search_path = ''`, and catalog-test coverage.
 
 Supabase's custom-schema setup recipe grants `ALL` to `anon` and `authenticated`. **It must not be applied to `cms`.** Grants on `cms` are exactly those in §4.5.
 
@@ -413,7 +413,7 @@ One transaction. The function:
 2. Checks `drafts.version = request.draft_version`. If not, marks the request `superseded` ("the entry changed after you pressed publish"). **The committed content is copied from the `drafts` row inside this transaction, never taken from a parameter**; with the version check, this guarantees that the validated version is exactly the committed one.
 3. Checks `drafts.schema_version` is the version the worker validated against.
 4. Re-checks authorization at commit time: the tenant is `active`, and `requested_by` still holds a membership.
-5. Checks every `draft_refs` target: entries in the same tenant that are published (or the entry itself), assets in the same tenant that are not archived. Otherwise `failed_validation` with the offending references.
+5. Checks every reference in the draft data copied in step 2 (extracted as the refs trigger does; the commit never trusts `draft_refs`, which editors can write): entries in the same tenant that are published (or the entry itself), assets in the same tenant that are not archived, each locked `FOR SHARE`. Otherwise `failed_validation` with the offending references (plan decision 32).
 6. Inserts the revision (data, `schema_version`, `draft_version`, `title`, `sort_at`, `requested_by`).
 7. Sets `entries.published_rev_id`, `published_draft_version`, `first_published_at` (if null; this locks the slug), `last_published_at`.
 8. Sets the request to `committed` with `revision_id`; writes the audit event.
