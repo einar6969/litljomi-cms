@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T02:58:04.697Z",
+  "updatedAt": "2026-11-02T02:59:35.243Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -185,7 +185,7 @@
     },
     {
       "id": 4,
-      "status": "blocked",
+      "status": "in_progress",
       "commits": [],
       "reviews": {},
       "gatesUsed": [
@@ -197,10 +197,10 @@
           "text": "Step 4b: the pgTAP test role (postgres, not superuser) cannot run 'set local role supabase_auth_admin' (permission denied; supautils reserves that membership, so it cannot be granted either). The plan says stop and report rather than drop the check. Waiting for Einar's ruling.",
           "at": "2026-11-02T02:58:04.697Z",
           "previousStatus": "in_progress",
-          "resolvedAt": null
+          "resolvedAt": "2026-11-02T02:59:35.243Z"
         }
       ],
-      "notes": "Authorized by Einar on 2026-11-02 (G0 extension in gates.json). Implementer round 1 (Opus, fresh) stopped at Step 4b before writing any file: postgres (pgTAP role, rolsuper false) is not a member of supabase_auth_admin; set local role supabase_auth_admin -> permission denied; grant supabase_auth_admin to postgres -> reserved membership (supautils.reserved_memberships). Verified by the controller on the local stack. Other findings from the implementer: pg_graphql is not installed locally (drop is a no-op locally, still needed on hosted); no default ACL exists for api/cms/private; possible risk that pgTAP functions lose PUBLIC execute after the global revoke (to verify on first db:test). A controller probe of a supabase_admin/supabase_auth_admin login was denied by the auto-mode classifier and not retried (environment.md). Blocked pending Einar.",
+      "notes": "Authorized by Einar on 2026-11-02 (G0 extension in gates.json). Implementer round 1 (Opus, fresh) stopped at Step 4b before writing any file: postgres (pgTAP role, rolsuper false) is not a member of supabase_auth_admin; set local role supabase_auth_admin -> permission denied; grant supabase_auth_admin to postgres -> reserved membership (supautils.reserved_memberships). Verified by the controller on the local stack. Other findings from the implementer: pg_graphql is not installed locally (drop is a no-op locally, still needed on hosted); no default ACL exists for api/cms/private; possible risk that pgTAP functions lose PUBLIC execute after the global revoke (to verify on first db:test). A controller probe of a supabase_admin/supabase_auth_admin login was denied by the auto-mode classifier and not retried (environment.md). Blocked pending Einar. Ruling 2026-11-02: Einar chose \"Static grants + HTTP (Recommended)\" (decision 22; Step 4b amended). Unblocked; fresh implementer round 2.",
       "startedAt": "2026-11-02T02:53:25.436Z"
     },
     {
