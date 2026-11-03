@@ -253,14 +253,14 @@ describe('ImageField', () => {
     expect(onChange).toHaveBeenLastCalledWith({ _ref: ASSET, _kind: 'asset', alt: 'Brauð á borði' });
   });
 
-  it('saves this alt text as the asset default through updateAssetAction, keeping the focal point', async () => {
+  it('saves this alt text as the asset default through updateAssetAction, leaving the focal point as stored', async () => {
     actions.assetPreviewAction.mockResolvedValue({ ok: true, url: 'http://127.0.0.1:54321/x', defaultAlt: null, focalX: 0.2, focalY: 0.3 });
     actions.updateAssetAction.mockResolvedValue({ ok: true });
     await render(<ImageField {...field} value={{ _ref: ASSET, _kind: 'asset', alt: 'Brauð' }} onChange={vi.fn()} />);
     await until(() => expect($('[data-testid="field-x-preview"]')).not.toBeNull());
     const button = [...container.querySelectorAll('button')].find((b) => b.textContent === t.editor.image.saveDefaultAlt)!;
     await act(async () => button.click());
-    expect(actions.updateAssetAction).toHaveBeenCalledWith(ASSET, 0.2, 0.3, 'Brauð');
+    expect(actions.updateAssetAction).toHaveBeenCalledWith(ASSET, { defaultAlt: 'Brauð' });
     expect($('[data-testid="field-x-notice"]')?.textContent).toBe(t.editor.image.defaultAltSaved);
   });
 
@@ -305,6 +305,32 @@ describe('ImageField', () => {
     const notice = $('[data-testid="field-x-notice"]')!;
     expect(notice.getAttribute('aria-live')).toBe('polite');
     expect(notice.hasAttribute('role')).toBe(false);
+  });
+
+  it('saves a clicked focal point, and removes it, as changes of the focal point only', async () => {
+    actions.assetPreviewAction.mockResolvedValue({ ok: true, url: 'http://127.0.0.1:54321/x', defaultAlt: 'Brauð', focalX: null, focalY: null });
+    actions.updateAssetAction.mockResolvedValue({ ok: true });
+    await render(<ImageField {...field} value={{ _ref: ASSET, _kind: 'asset', alt: 'Brauð' }} onChange={vi.fn()} />);
+    await until(() => expect($('[data-testid="field-x-preview"]')).not.toBeNull());
+    const picker = $<HTMLButtonElement>('#field-x-focal')!;
+    picker.getBoundingClientRect = () => ({ left: 10, top: 20, width: 200, height: 100 }) as DOMRect;
+    await act(async () => picker.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1, clientX: 60, clientY: 95 })));
+    expect(actions.updateAssetAction).toHaveBeenLastCalledWith(ASSET, { focal: { x: 0.25, y: 0.75 } });
+    expect($('[data-testid="field-x-notice"]')?.textContent).toBe(t.editor.image.focalSaved);
+    expect($('[data-testid="field-x-focal-marker"]')?.getAttribute('style')).toContain('left: 25%');
+    const clear = [...container.querySelectorAll('button')].find((b) => b.textContent === t.editor.image.clearFocal)!;
+    await act(async () => clear.click());
+    expect(actions.updateAssetAction).toHaveBeenLastCalledWith(ASSET, { focal: null });
+    expect($('[data-testid="field-x-focal-marker"]')).toBeNull();
+  });
+
+  it("links to the asset's detail page in a new tab", async () => {
+    actions.assetPreviewAction.mockResolvedValue({ ok: true, url: 'http://127.0.0.1:54321/x', defaultAlt: null, focalX: null, focalY: null });
+    await render(<ImageField {...field} value={{ _ref: ASSET, _kind: 'asset', alt: '' }} onChange={vi.fn()} />);
+    const link = [...container.querySelectorAll('a')].find((a) => a.textContent === t.editor.image.details)!;
+    expect(link.getAttribute('href')).toBe(`/t/${TENANT.slug}/assets/${ASSET}`);
+    expect(link.target).toBe('_blank');
+    expect(link.rel).toBe('noopener');
   });
 
   it('removes the image', async () => {
