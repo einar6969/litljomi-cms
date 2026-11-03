@@ -166,3 +166,9 @@ Einar in chat: "1. Turn off “Automatically expose new tables” in sitting 2, 
 
 - Einar asked to wrap up during the phone check. `checkpoints/C4.md` written: A8, A11, A15 pass (`state.json`); A6, A7, the A1–A4 re-run, the phone check and Task 29 items 2–11 not done. Both sites live at "Birt á vef ✓"; `landssamband-bakarameistara` unchanged. `state.mjs checkpoint C4` refused (Tasks 28 and 29 not done), so C4 stays `pending` in `state.json`; not worked around.
 - **Waiting for Einar:** the four C4 questions (A1–A4 adapter, Task 29 scope, Task 28 state, next sitting); sign out of supabase.com in the pane; `vercel logout`; whether to push `main`/`m1/phase-1` and remove the three worktrees; secret key rotation.
+
+### Session closed (2026-11-03, eighth controller session)
+
+- After C4: decision 46 (A1–A4 staging adapter, Einar "Approve adapter") built (`13fcd44`), security review PASS with six Minors (`reviews/decision-46-r1-security.md`), merged `8f0cdd7`; Einar's run `RESULT: 71 passed, 0 failed`: A1–A4 pass on staging (`state.json`). Test fixtures left on staging are in the undo table.
+- Phone check: Einar reports "good"; Vercel metrics show no sign-in confirmation or publish after 05:37 UTC, so A6 and A7 stay pending (Einar: "ill worry about that later").
+- **Open for Einar (unchanged from C4 unless noted):** A6/A7 evidence; C4 questions 2–4 (Task 29 scope, Task 28 state, next sitting); sign out of supabase.com in the pane; `vercel logout`; push `main` (5568098) and `m1/phase-1`; remove the three merged worktrees; rotate the staging secret key. Einar continues in his main session; nothing pushed from here.
