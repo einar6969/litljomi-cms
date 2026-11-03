@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useState, type MouseEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { assetPreviewAction, registerAssetAction, updateAssetAction } from '@/app/(editor)/t/[tenant]/asset-actions';
+import { MAX_ALT_LENGTH, type AssetChange } from '@/editor/media/asset-metadata';
+import { FocalPointPicker } from '@/editor/media/FocalPointPicker';
 import { t } from '@/i18n/is';
 import { createBrowserEditorClient } from '@/lib/supabase/browser';
 import { prepareUpload, uploadOriginal } from '../../upload';
@@ -52,16 +54,13 @@ const imageOf = (value: unknown): ImageValue | null => {
   return typeof _ref === 'string' && _kind === 'asset' ? { _ref, _kind, alt: typeof alt === 'string' ? alt : '' } : null;
 };
 
-// Two decimals is finer than any crop needs.
-const fraction = (offset: number, size: number) => Math.round(Math.min(1, Math.max(0, offset / size)) * 100) / 100;
-
 /**
  * An image field (§5.2, §5.6). A chosen file is checked before upload (`prepareUpload`), uploaded
  * from the browser to `media-private` with the editor's session, then registered by the server,
  * which reads the object back. The preview is a signed URL valid for 600 seconds, signed again if
  * it fails to load (expired), at most `MAX_PREVIEW_RESIGNS` times, then a notice. The alt text
  * belongs to this use; the asset's own default alt text and focal point are edited here too
- * (`update_asset`).
+ * (`update_asset`), and on the asset's detail page, linked from here.
  */
 export function ImageField({ id, label, required, value, onChange }: FieldProps) {
   const tenant = useEditorTenant();
@@ -122,14 +121,21 @@ export function ImageField({ id, label, required, value, onChange }: FieldProps)
     }
   };
 
-  /** Saves the asset's focal point and default alt text (`update_asset`); unchanged values are kept. */
-  const updateAsset = async (change: Partial<Pick<Preview, 'focalX' | 'focalY' | 'defaultAlt'>>, saved: Notice) => {
+  /** Saves a change to the asset's focal point or default alt text (`update_asset`); the rest is kept as stored. */
+  const updateAsset = async (change: AssetChange, saved: Notice) => {
     if (!image || !preview) return;
-    const { focalX, focalY, defaultAlt } = { ...preview, ...change };
     try {
-      const result = await updateAssetAction(image._ref, focalX, focalY, defaultAlt);
+      const result = await updateAssetAction(image._ref, change);
       if (result.ok) {
-        setPreview({ ...preview, focalX, focalY, defaultAlt });
+        setPreview((p) =>
+          p === null
+            ? p
+            : {
+                ...p,
+                ...(change.focal !== undefined ? { focalX: change.focal?.x ?? null, focalY: change.focal?.y ?? null } : {}),
+                ...(change.defaultAlt !== undefined ? { defaultAlt: change.defaultAlt } : {}),
+              },
+        );
         setNotice(saved);
       } else {
         setNotice(noticeFor(result.code, 'updateError'));
@@ -137,13 +143,6 @@ export function ImageField({ id, label, required, value, onChange }: FieldProps)
     } catch {
       setNotice('updateError');
     }
-  };
-
-  const chooseFocal = (e: MouseEvent<HTMLButtonElement>) => {
-    if (!preview) return;
-    const box = e.currentTarget.getBoundingClientRect();
-    if (box.width === 0 || box.height === 0) return;
-    void updateAsset({ focalX: fraction(e.clientX - box.left, box.width), focalY: fraction(e.clientY - box.top, box.height) }, 'focalSaved');
   };
 
   // The picker is a <label>, which has no disabled state: while busy it mirrors the `disabled:`
@@ -155,33 +154,18 @@ export function ImageField({ id, label, required, value, onChange }: FieldProps)
       {image ? (
         <div className="flex flex-col items-start gap-3">
           {preview ? (
-            <button
-              type="button"
-              title={t.editor.image.focal}
-              aria-label={t.editor.image.focal}
-              onClick={chooseFocal}
-              className="relative inline-block min-h-0 max-w-full cursor-crosshair overflow-hidden rounded-lg border border-hairline bg-recessed p-0 leading-none hover:bg-recessed"
-            >
-              {/* A signed URL of the private original (§5.6), not a public file. */}
-              <img
-                data-testid={`${id}-preview`}
-                src={preview.url}
-                alt={image.alt}
-                className="block max-h-[240px] max-w-full"
-                onError={previewFailed}
-              />
-              {preview.focalX !== null && preview.focalY !== null ? (
-                <span
-                  aria-hidden="true"
-                  className="absolute -m-[7px] size-3.5 rounded-full border-2 border-ink bg-canvas"
-                  style={{ left: `${preview.focalX * 100}%`, top: `${preview.focalY * 100}%` }}
-                />
-              ) : null}
-            </button>
+            <FocalPointPicker
+              id={id}
+              url={preview.url}
+              alt={image.alt}
+              focal={preview.focalX !== null && preview.focalY !== null ? { x: preview.focalX, y: preview.focalY } : null}
+              onSave={(focal) => void updateAsset({ focal }, 'focalSaved')}
+              onImageError={previewFailed}
+            />
           ) : null}
           <div className="w-full">
             <Field label={t.editor.image.alt} htmlFor={`${id}-alt`}>
-              <input id={`${id}-alt`} name={`${id}-alt`} type="text" maxLength={1000} value={image.alt} onChange={(e) => onChange({ ...image, alt: e.target.value })} />
+              <input id={`${id}-alt`} name={`${id}-alt`} type="text" maxLength={MAX_ALT_LENGTH} value={image.alt} onChange={(e) => onChange({ ...image, alt: e.target.value })} />
             </Field>
           </div>
           <div className="flex flex-wrap gap-3 max-sm:w-full max-sm:flex-col">
@@ -192,6 +176,15 @@ export function ImageField({ id, label, required, value, onChange }: FieldProps)
               {t.editor.image.remove}
             </Button>
           </div>
+          {/* A new tab (a plain link, no client navigation), so the form and anything not yet autosaved stay where they are. */}
+          <a
+            href={`/t/${encodeURIComponent(tenant.slug)}/assets/${image._ref}`}
+            target="_blank"
+            rel="noopener"
+            className="inline-flex min-h-[44px] items-center text-[15px] font-medium"
+          >
+            {t.editor.image.details}
+          </a>
         </div>
       ) : null}
       {/* The native input is visually hidden but still the label's control: focusable, named, and what a test or a screen reader reaches. */}

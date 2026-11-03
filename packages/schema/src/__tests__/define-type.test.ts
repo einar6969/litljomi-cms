@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { date, defineType, extendType, image, link, text } from '../index.ts';
+import { date, datetime, defineType, extendType, image, link, text } from '../index.ts';
 
 const t = defineType({
   name: 't',
@@ -40,6 +40,13 @@ describe('defineType', () => {
     expect(n.queryColumns({ title: 'Hæ', when: '2025-01-02' })).toEqual({ title: 'Hæ', sortAt: '2025-01-02' });
     expect(n.queryColumns({})).toEqual({ title: null, sortAt: null });
     expect(n.queryColumns(null)).toEqual({ title: null, sortAt: null });
+  });
+
+  it('promotes sort_at (a timestamp column) only from a date or datetime field: a type ordered by a text field saves none', () => {
+    const byTitle = defineType({ name: 'n', version: 1, label: 'N', fields: { title: text({ label: 'T' }) }, preview: { title: 'title' }, orderBy: 'title' });
+    expect(byTitle.queryColumns({ title: 'Lokað á morgun' })).toEqual({ title: 'Lokað á morgun', sortAt: null });
+    const byDateTime = defineType({ name: 'n', version: 1, label: 'N', fields: { title: text({ label: 'T' }), at: datetime({ label: 'D' }) }, preview: { title: 'title' }, orderBy: 'at' });
+    expect(byDateTime.queryColumns({ at: '2025-01-02T10:00:00Z' }).sortAt).toBe('2025-01-02T10:00:00Z');
   });
 });
 
