@@ -3,7 +3,7 @@
 // as its content: the release marker in the layout is never read here.
 import type { LiveCheck } from '@litljomi/cms-schema';
 import { scanEntryMarkers } from '@litljomi/cms-sdk';
-import { POINTER_MAX_AGE_S } from './build-release';
+import { POINTER_MAX_AGE_S } from './storage-paths';
 
 /** §7.4: poll about every 3 seconds, up to 60 seconds. */
 export const DEFAULT_POLL_MS = 3_000;
@@ -29,8 +29,9 @@ export type LiveCheckInput = {
   /** Sends the webhook again; called at most once per run. */
   resend: () => Promise<void>;
   /**
-   * When the pointer was written (epoch ms): the resend waits until a CDN can no longer serve the
-   * pointer from before it (decision 48). Absent: that moment counts as past.
+   * When the pointer was written (epoch ms, wall time as `Date.now()`): the resend waits until a
+   * CDN can no longer serve the pointer from before it (decision 48). Absent: that moment counts as
+   * past.
    */
   pointerWrittenAt?: number;
   /**
@@ -95,8 +96,8 @@ export function createPageFetcher(maxConcurrent = MAX_CONCURRENT_FETCHES): PageF
  * request triggers regeneration), `resend()` is called, once per run, but no earlier than the
  * pointer's max-age plus RESEND_MARGIN_MS after `pointerWrittenAt` (a site regenerating sooner may
  * read the old pointer from the CDN again, decision 48), within the window; at once when that
- * moment has passed. Each check is fetched
- * through `fetchPage` without following redirects, with no cache, and read up to MAX_PAGE_BYTES.
+ * moment has passed. Each check is fetched through `fetchPage` without following redirects, with
+ * no cache, and read up to MAX_PAGE_BYTES.
  * A check path must be root-relative (`/…`, not `//…`). The failures are the checks still failing
  * at the end, each with its last reason. Never throws.
  */
@@ -172,6 +173,8 @@ export async function runLiveChecks(o: LiveCheckInput): Promise<{ live: boolean;
       }),
     );
     if (pending.size === 0) break;
+    // Deliberately sticky: once a page regenerated from an old pointer, the resend goes out when due
+    // even if a later poll shows another failure, since the CDN may still hold the old pointer.
     if (stale && round > 1) staleSeen = true;
     await resendWhenDue();
     const left = deadline - Date.now();

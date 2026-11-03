@@ -1,8 +1,8 @@
 // runLiveChecks (spec §7.3, §7.4; plan Task 21, decisions 7 and 35) against a local fake site.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LiveCheck } from '@litljomi/cms-schema';
-import { POINTER_MAX_AGE_S } from '../build-release';
 import { createPageFetcher, DEFAULT_TIMEOUT_MS, MAX_CONCURRENT_FETCHES, runLiveChecks, type PageFetcher } from '../live-check';
+import { POINTER_MAX_AGE_S } from '../storage-paths';
 import { entryMarker, html, releaseMeta, startFakeSite, type FakeSite } from './fake-site';
 
 const ID = '7d0c5a8e-1b2f-4c3d-9e4f-5a6b7c8d9e0f';
@@ -153,7 +153,7 @@ describe('resend', () => {
   describe('waits for the pointer to expire from the CDN (§7.2, §7.4; decision 48)', () => {
     // A fake clock and a fake fetcher: every poll sees the old hash.
     const stalePage: PageFetcher = async () => ({ status: 200, body: html(releaseMeta(5), entryMarker(ID, OLD)) });
-    const runAt = (pointerWrittenAt: number, resend: () => Promise<void>) =>
+    const runAt = (pointerWrittenAt: number | undefined, resend: () => Promise<void>) =>
       runLiveChecks({ baseUrl: 'https://site.test', checks: [present()], ownPath: OWN, entry: { id: ID, contentHash: NEW }, mediaUrls: [], resend, fetchPage: stalePage, pointerWrittenAt });
     beforeEach(() => {
       vi.useFakeTimers({ now: 1_000_000 });
@@ -184,6 +184,26 @@ describe('resend', () => {
       await vi.advanceTimersByTimeAsync(DEFAULT_TIMEOUT_MS);
       await done;
       expect(resend).toHaveBeenCalledTimes(1);
+    });
+    it('without a write time (a sweep retry), resends at the second poll', async () => {
+      const resend = vi.fn(async () => {});
+      const done = runAt(undefined, resend);
+      await vi.advanceTimersByTimeAsync(2_999);
+      expect(resend).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(resend).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(DEFAULT_TIMEOUT_MS);
+      await done;
+      expect(resend).toHaveBeenCalledTimes(1);
+    });
+    it('never resends after the window closes when the moment falls past it', async () => {
+      const resend = vi.fn(async () => {});
+      let settled = false;
+      const done = runAt(Date.now() + DEFAULT_TIMEOUT_MS, resend).finally(() => (settled = true));
+      await vi.advanceTimersByTimeAsync(DEFAULT_TIMEOUT_MS);
+      expect(settled).toBe(true); // the run ends at the deadline, not at the resend moment
+      expect((await done).live).toBe(false);
+      expect(resend).not.toHaveBeenCalled();
     });
   });
   it('a failing resend does not throw', async () => {

@@ -35,6 +35,7 @@ import {
   deliveryBundlePath,
   deliveryPointerPath,
   MEDIA_PRIVATE,
+  POINTER_MAX_AGE_S,
   pointerBundlePath,
   privateMediaPath,
   publicMediaPath,
@@ -42,8 +43,6 @@ import {
 
 /** §7.2. */
 export const BUNDLE_CACHE_CONTROL = 'public, max-age=31536000, immutable';
-/** §7.2: how long a CDN may serve the pointer; the live check's resend waits it out (§7.4, decision 48). */
-export const POINTER_MAX_AGE_S = 30;
 /** §7.2. */
 export const POINTER_CACHE_CONTROL = `public, max-age=${POINTER_MAX_AGE_S}`;
 /**
@@ -84,7 +83,10 @@ export type BuildResult = {
    * of omitted entries included), in request order, so the caller can live-check each (Task 21).
    */
   requests?: LinkedRequest[];
-  /** Delivered only: when the pointer was written (epoch ms), for the live check's resend (decision 48). */
+  /**
+   * Delivered only: when the pointer was written (epoch ms, from `now`), for the live check's
+   * resend (decision 48), which compares it with `Date.now()`: an injected `now` must be wall time.
+   */
   pointerWrittenAt?: number;
 };
 

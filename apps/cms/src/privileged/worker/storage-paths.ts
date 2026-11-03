@@ -9,6 +9,12 @@
 /** The private bucket holding asset originals; shared by the build and the request check. */
 export const MEDIA_PRIVATE = 'media-private';
 
+/**
+ * §7.2: how long a CDN may serve the pointer; shared by the build (its cache header) and the live
+ * check, whose resend waits it out (§7.4, decision 48).
+ */
+export const POINTER_MAX_AGE_S = 30;
+
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/; // decision 2
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/; // canonical text form
 // Control characters (C0 and DEL).
