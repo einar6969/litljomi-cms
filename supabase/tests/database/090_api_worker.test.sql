@@ -113,6 +113,9 @@ select set_eq($$ select p.proname::text, pg_catalog.pg_get_function_result(p.oid
             -- M3-10 (103_preview_secrets).
             ('worker_preview_sites', 'TABLE(id uuid, preview_url text, preview_secret text)'),
             ('admin_set_preview_secret', 'void'),
+            -- M3-11 (105_preview_endpoint).
+            ('worker_preview_tenant', 'uuid'),
+            ('worker_preview_draft', 'jsonb'),
             -- Task 21 (097_worker_sweep).
             ('worker_tenants_to_release', 'TABLE(tenant_id uuid)'),
             -- M3-02 (102_retry_backoff).
