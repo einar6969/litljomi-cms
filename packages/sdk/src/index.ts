@@ -1,4 +1,5 @@
-export type { Bundle, BundleEntry, Pointer } from './bundle.ts';
+export type { Bundle, BundleEntry, EntrySummary, FocalPoint, Pointer, PublicAsset } from './bundle.ts';
+export { focalPoint, focalPosition } from './focal.ts';
 export { SIGNATURE_HEADER, TIMESTAMP_HEADER, DEFAULT_TOLERANCE_SECONDS, parseWebhookSecrets, signWebhook, verifyWebhook } from './webhook.ts';
 export { CmsEntryMarker, CmsReleaseMarker } from './markers.tsx';
 export { parseEntryMarkerIds, parseEntryMarkers, parseReleaseMarker, scanEntryMarkers } from './parse-markers.ts';

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { authOrError, hasSession } from '@/editor/server/entry-context';
 import { inspectImage } from '@/editor/server/image-metadata';
 import { EXTENSION_BY_MIME, MEDIA_PRIVATE_BUCKET, previewUrl, SAFE_FILENAME } from '@/editor/upload';
+import { assetChangeShape, assetIdShape, assetMetadataShape, mergeAssetChange, saveAssetMetadata, type AssetChange } from '@/editor/media/asset-metadata';
 import { createEditorClient } from '@/lib/supabase/server';
 import type { SupabaseClient } from '@/lib/supabase/types';
 import { isActive, resolveTenant } from '@/lib/tenant';
@@ -14,10 +15,7 @@ import { isActive, resolveTenant } from '@/lib/tenant';
 // decide. Nothing here trusts metadata the browser could send: the server reads the uploaded
 // object back and derives it.
 
-// The canonical lowercase form, as the asset path and the database require (decision 25).
-const assetIdShape = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 const MAX_PATH_LENGTH = 200;
-const MAX_ALT_LENGTH = 1000;
 
 type Failure = 'invalid' | 'auth' | 'error';
 
@@ -113,30 +111,26 @@ export async function assetPreviewAction(id: string): Promise<AssetPreviewResult
   }
 }
 
-const unit = z.number().min(0).max(1);
-const updateArgs = z
-  .object({ id: assetIdShape, focalX: unit.nullable(), focalY: unit.nullable(), defaultAlt: z.string().max(MAX_ALT_LENGTH).nullable() })
-  .refine((a) => (a.focalX === null) === (a.focalY === null), 'focal point needs both coordinates');
+const updateArgs = z.object({ id: assetIdShape, change: assetChangeShape });
 
 /**
- * Sets an asset's focal point (both coordinates in 0..1, or both null) and default alt text
- * through `api.update_asset` (§4.6, §5.6), which finds the row under RLS. The tenant comes from the
+ * Changes an asset's focal point (both coordinates in 0..1, or null to remove it), its default alt
+ * text, or both, through `api.update_asset` (§4.6, §5.6), which finds the row under RLS. A part the
+ * change leaves out keeps the value just read from `api.asset_list`. The tenant comes from the
  * asset and must be active.
  */
-export async function updateAssetAction(id: string, focalX: number | null, focalY: number | null, defaultAlt: string | null): Promise<UpdateAssetResult> {
-  const args = updateArgs.safeParse({ id, focalX, focalY, defaultAlt });
+export async function updateAssetAction(id: string, change: AssetChange): Promise<UpdateAssetResult> {
+  const args = updateArgs.safeParse({ id, change });
   if (!args.success) return { ok: false, code: 'invalid' };
   try {
     const client = await createEditorClient();
     if (!(await hasSession(client))) return { ok: false, code: 'auth' };
-    if (!(await loadAsset(client, args.data.id))) return { ok: false, code: 'error' };
-    const result = await client.rpc('update_asset', {
-      p_asset_id: args.data.id,
-      p_focal_x: args.data.focalX,
-      p_focal_y: args.data.focalY,
-      p_default_alt: args.data.defaultAlt,
-    });
-    if (result.error) return { ok: false, code: authOrError(result) };
+    const asset = await loadAsset(client, args.data.id);
+    if (!asset) return { ok: false, code: 'error' };
+    const metadata = assetMetadataShape.safeParse(mergeAssetChange(asset, args.data.change));
+    if (!metadata.success) return { ok: false, code: 'error' };
+    const { error, status } = await saveAssetMetadata(client, metadata.data);
+    if (error) return { ok: false, code: authOrError({ error, status }) };
     return { ok: true };
   } catch {
     return { ok: false, code: 'error' };
