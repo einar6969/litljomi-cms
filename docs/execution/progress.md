@@ -195,3 +195,12 @@ None.
 - Suite after the last merge (`8b2c547`): harness 32/32; lint, typecheck, slugs clean; Vitest 65 files 1169; pgTAP 19 files 1405; integration 74 + 35; `test:e2e-local` 1/1; demo-site e2e 5/5; `pnpm --filter cms e2e` 30/30 from a reset database. Database reset afterwards.
 - Controller walkthrough on localhost: cross-browser sign-in (pane requests, a separate Playwright browser confirms), two LABAK articles published to "Birt á vef ✓" on the branch site at 3200. Details and the commands for Einar in `checkpoints/C3.md`.
 - **Waiting for Einar:** C3 go-ahead, the seven C3 questions, and approval of the diff removing `npm run test:visual` from `sandbox.excludedCommands` (sha256 `9d62ac1e…b8ed`). LABAK `hub-integration` is at `42ed226`, local only. Next session: remove the e2e exclusion before G2, then G2–G6 and Task 28.
+
+### C3 approved (2026-11-02, sixth controller session)
+
+- **C3 approved** by Einar; rulings are decision 42 (plan). The visual exclusion is removed (`fb43e8c`); `main` fast-forwarded to `m1/phase-1` at `fb43e8c` (local only).
+- **Spec amended:** §9.1 (vendored `npm pack` files until a second site; GitHub Packages then) and §2.2 (staging on Supabase Free until production).
+- **Hosted plan decided** (each gate still approved separately when reached, next session): G2 private `einar6969/litljomi-cms` with Actions; SDK via vendored tarballs on `hub-integration`; G3 Supabase Free staging; G4 Resend Free from a litljomi.is subdomain; G5 only the C3 records; G6 Vercel Pro (Einar upgrades); before any push of `hub-integration`, Einar turns off branch previews on `landssamband-bakarameistara`.
+- **For the next session, before G2:** remove `pnpm --filter cms e2e *` from `sandbox.excludedCommands` (diff to Einar); revise the runbook's GitHub Packages steps (G2.5, G6.2, section 12 token rows, section 14 open item) to decision 42.4; generate fresh staging secrets. G7 currently has `push=false`; Task 28 needs a push, so G7 needs a new approval.
+- **C3 follow-up** (decision 42.3) in progress in this session: Q1, Q2, Q3, Q5, Q7.
+- **C3 follow-up done** (2026-11-03): CMS `d87cc4f` (merged `a1b5f23`), LABAK `240b3fb` on `hub-integration`; all reviews pass; full suite green (Vitest 1188, integration 75 + 35, cms e2e 33/33). C3 addendum written. Open for Einar: `kill 87420` (stray server on 3157), and whether spec §4.4 should drop "one-time code". Stop here; the hosted work starts in a fresh session.
