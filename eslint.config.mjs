@@ -26,6 +26,12 @@ const privilegedPaths = [{ regex: `(^#?|${SEP})privileged(${SEP}|$)`, message: P
 const privilegedExceptPipelinePaths = [
   { regex: `(^#?|${SEP})privileged($|\\\\|/(?!(worker/pipeline|internal-auth)(\\.ts)?$))`, message: PIPELINE_ONLY_MESSAGE },
 ];
+// M3-10 (spec §7.5): the preview token route handler may import only its entry,
+// `privileged/preview/token-route`, under the same rules.
+const PREVIEW_TOKEN_ONLY_MESSAGE = 'The preview token route may import only privileged/preview/token-route from privileged/.';
+const privilegedExceptPreviewTokenPaths = [
+  { regex: `(^#?|${SEP})privileged($|\\\\|/(?!preview/token-route(\\.ts)?$))`, message: PREVIEW_TOKEN_ONLY_MESSAGE },
+];
 // Alias forms covered: `@/`, `~/`, `#` (subpath imports), relative and bare specifiers.
 // The registry is exempt only when `registry` (optionally with an extension) is the last segment,
 // so `registry.x/../labak`, `registry/..` or any `..` after `modules/` is still forbidden.
@@ -166,6 +172,7 @@ const boundary = (paths) => ({ paths, selectors: dynamicSyntax(paths) });
 const secret = { paths: [], selectors: secretSyntax };
 const privileged = boundary(privilegedPaths);
 const privilegedExceptPipeline = boundary(privilegedExceptPipelinePaths);
+const privilegedExceptPreviewToken = boundary(privilegedExceptPreviewTokenPaths);
 const modules = boundary(modulePaths);
 const apps = boundary(appPaths);
 const editor = boundary(editorPaths);
@@ -239,6 +246,11 @@ export default tseslint.config(
   {
     files: ['apps/cms/src/app/api/internal/worker/route.ts', 'apps/cms/src/app/api/cron/sweep/route.ts'],
     rules: rulesOf(secret, privilegedExceptPipeline, modules, supabase, integrationTests),
+  },
+  // M3-10: the preview token route handler may import its entry from privileged/ (§7.5).
+  {
+    files: ['apps/cms/src/app/api/preview-token/route.ts'],
+    rules: rulesOf(secret, privilegedExceptPreviewToken, modules, supabase, integrationTests),
   },
   {
     files: ['packages/**'],
