@@ -51,7 +51,7 @@
     "enabled": true,
     "failIfUnavailable": true,
     "network": {
-      "allowedDomains": ["registry.npmjs.org", "api.vercel.com"],
+      "allowedDomains": ["registry.npmjs.org"],
       "allowUnixSockets": [
         "/Users/einarzoega/.orbstack/run/docker.sock",
         "/var/run/docker.sock"
