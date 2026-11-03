@@ -3,6 +3,7 @@
 // as its content: the release marker in the layout is never read here.
 import type { LiveCheck } from '@litljomi/cms-schema';
 import { scanEntryMarkers } from '@litljomi/cms-sdk';
+import { POINTER_MAX_AGE_S } from './build-release';
 
 /** §7.4: poll about every 3 seconds, up to 60 seconds. */
 export const DEFAULT_POLL_MS = 3_000;
@@ -11,6 +12,8 @@ export const DEFAULT_TIMEOUT_MS = 60_000;
 const FETCH_TIMEOUT_MS = 10_000;
 /** A page is read up to this size; a larger one fails its check (and bounds the marker scan). */
 export const MAX_PAGE_BYTES = 5 * 1024 * 1024;
+/** The resend waits this long past the pointer's max-age after it was written (§7.4, decision 48). */
+export const RESEND_MARGIN_MS = 1_000;
 /** At most this many fetches run at a time through one page fetcher (one site, one delivery). */
 export const MAX_CONCURRENT_FETCHES = 6;
 
@@ -25,6 +28,11 @@ export type LiveCheckInput = {
   mediaUrls: string[];
   /** Sends the webhook again; called at most once per run. */
   resend: () => Promise<void>;
+  /**
+   * When the pointer was written (epoch ms): the resend waits until a CDN can no longer serve the
+   * pointer from before it (decision 48). Absent: that moment counts as past.
+   */
+  pointerWrittenAt?: number;
   /**
    * Fetches the pages and media. Share one (createPageFetcher) between the runs of one delivery to
    * one site, so they share identical fetches and its concurrency bound; default: one per run.
@@ -84,7 +92,10 @@ export function createPageFetcher(maxConcurrent = MAX_CONCURRENT_FETCHES): PageF
  * - media: every URL answers 200.
  *
  * When a page shows the entry's marker with a different hash on any poll after the first (the first
- * request triggers regeneration), `resend()` is called, once per run. Each check is fetched
+ * request triggers regeneration), `resend()` is called, once per run, but no earlier than the
+ * pointer's max-age plus RESEND_MARGIN_MS after `pointerWrittenAt` (a site regenerating sooner may
+ * read the old pointer from the CDN again, decision 48), within the window; at once when that
+ * moment has passed. Each check is fetched
  * through `fetchPage` without following redirects, with no cache, and read up to MAX_PAGE_BYTES.
  * A check path must be root-relative (`/…`, not `//…`). The failures are the checks still failing
  * at the end, each with its last reason. Never throws.
@@ -136,7 +147,20 @@ export async function runLiveChecks(o: LiveCheckInput): Promise<{ live: boolean;
 
   const pending = new Map(items.map((item) => [item.key, item]));
   const lastReason = new Map<string, string>();
+  // Never past the window: the loop ends at the deadline (with the default window, write + 31 s is
+  // always inside it, since the pointer is written before the window opens).
+  const resendAt = (o.pointerWrittenAt ?? -Infinity) + POINTER_MAX_AGE_S * 1_000 + RESEND_MARGIN_MS;
+  let staleSeen = false;
   let resent = false;
+  const resendWhenDue = async () => {
+    if (!staleSeen || resent || Date.now() < resendAt) return;
+    resent = true;
+    try {
+      await o.resend();
+    } catch (error) {
+      console.error('[cms-worker] live check: sending the webhook again failed', error);
+    }
+  };
   for (let round = 1; ; round++) {
     let stale = false;
     await Promise.all(
@@ -148,22 +172,24 @@ export async function runLiveChecks(o: LiveCheckInput): Promise<{ live: boolean;
       }),
     );
     if (pending.size === 0) break;
-    if (stale && round > 1 && !resent) {
-      resent = true;
-      try {
-        await o.resend();
-      } catch (error) {
-        console.error('[cms-worker] live check: sending the webhook again failed', error);
-      }
-    }
+    if (stale && round > 1) staleSeen = true;
+    await resendWhenDue();
     const left = deadline - Date.now();
     if (left <= 0) break;
-    await new Promise((resolve) => setTimeout(resolve, Math.min(pollMs, left)));
+    const nextPoll = Date.now() + Math.min(pollMs, left);
+    // A resend due before the next poll is sent at its moment; the poll keeps its time.
+    if (staleSeen && !resent && resendAt < nextPoll) {
+      await sleep(resendAt - Date.now());
+      await resendWhenDue();
+    }
+    await sleep(nextPoll - Date.now());
     if (Date.now() >= deadline) break;
   }
   for (const item of pending.values()) failures.push({ path: item.path, reason: lastReason.get(item.key) ?? 'unknown' });
   return { live: failures.length === 0, failures };
 }
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
 
 /** GET without redirects or caching, the body read up to `maxBytes` (0: not read). */
 async function fetchCapped(url: string, deadline: number, maxBytes: number): Promise<FetchedPage> {

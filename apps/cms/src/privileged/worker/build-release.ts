@@ -42,8 +42,10 @@ import {
 
 /** §7.2. */
 export const BUNDLE_CACHE_CONTROL = 'public, max-age=31536000, immutable';
+/** §7.2: how long a CDN may serve the pointer; the live check's resend waits it out (§7.4, decision 48). */
+export const POINTER_MAX_AGE_S = 30;
 /** §7.2. */
-export const POINTER_CACHE_CONTROL = 'public, max-age=30';
+export const POINTER_CACHE_CONTROL = `public, max-age=${POINTER_MAX_AGE_S}`;
 /**
  * No pointer is written once this long has passed since `worker_begin_release` succeeded (decision
  * 37.1 (a)): 270 s of the worker's 300 s maxDuration, so a build that runs late fails instead of
@@ -82,6 +84,8 @@ export type BuildResult = {
    * of omitted entries included), in request order, so the caller can live-check each (Task 21).
    */
   requests?: LinkedRequest[];
+  /** Delivered only: when the pointer was written (epoch ms), for the live check's resend (decision 48). */
+  pointerWrittenAt?: number;
 };
 
 /** A committed request linked to a delivered release. */
@@ -258,6 +262,7 @@ export async function buildRelease(tenantId: string, options: BuildOptions = {})
       pointerWritten = upload.written;
       if (!upload.ok) throw upload.error;
     });
+    const pointerWrittenAt = now().getTime();
     await at('pointer_verify', async () => {
       const p = await readPointer();
       if (p.release !== number || p.bundle !== pointer.bundle) throw new Error(`the pointer reads back release ${String(p.release)}`);
@@ -282,7 +287,7 @@ export async function buildRelease(tenantId: string, options: BuildOptions = {})
     // Step 10. Left-out entries are visible and alerted ("Withdrawal and failure visibility").
     if (omitted.length > 0) await alert('release.entry_omitted', { tenantId, releaseId, number, omitted: stored });
     const requests = snapshot.requests.map((r) => ({ id: r.id, entryId: r.entry_id, action: r.action }));
-    return { status: 'delivered', releaseId, number, omitted, bundle, previousBundle, requests };
+    return { status: 'delivered', releaseId, number, omitted, bundle, previousBundle, requests, pointerWrittenAt };
   } catch (error) {
     const failure = error instanceof BuildFailure ? error : new BuildFailure(step, error);
     const stored = storedOmissions(omitted);

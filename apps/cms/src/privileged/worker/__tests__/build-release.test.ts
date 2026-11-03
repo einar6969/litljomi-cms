@@ -242,6 +242,8 @@ describe('buildRelease: delivery', () => {
 
     expect(result.status).toBe('delivered');
     expect(result).toMatchObject({ releaseId: RELEASE, number: 3, omitted: [], previousBundle: null });
+    // When the pointer was written, for the live check's resend (decision 48).
+    expect(result.pointerWrittenAt).toBe(Date.parse(STAMP));
     // Every linked request is returned for the live checks (Task 21).
     expect(result.requests).toEqual([
       { id: 'r1', entryId: E1, action: 'publish' },

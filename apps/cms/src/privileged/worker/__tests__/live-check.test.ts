@@ -1,7 +1,8 @@
 // runLiveChecks (spec §7.3, §7.4; plan Task 21, decisions 7 and 35) against a local fake site.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LiveCheck } from '@litljomi/cms-schema';
-import { createPageFetcher, MAX_CONCURRENT_FETCHES, runLiveChecks } from '../live-check';
+import { POINTER_MAX_AGE_S } from '../build-release';
+import { createPageFetcher, DEFAULT_TIMEOUT_MS, MAX_CONCURRENT_FETCHES, runLiveChecks, type PageFetcher } from '../live-check';
 import { entryMarker, html, releaseMeta, startFakeSite, type FakeSite } from './fake-site';
 
 const ID = '7d0c5a8e-1b2f-4c3d-9e4f-5a6b7c8d9e0f';
@@ -148,6 +149,42 @@ describe('resend', () => {
     });
     expect((await run({ checks: [present()], resend })).live).toBe(true);
     expect(resend).toHaveBeenCalledTimes(1);
+  });
+  describe('waits for the pointer to expire from the CDN (§7.2, §7.4; decision 48)', () => {
+    // A fake clock and a fake fetcher: every poll sees the old hash.
+    const stalePage: PageFetcher = async () => ({ status: 200, body: html(releaseMeta(5), entryMarker(ID, OLD)) });
+    const runAt = (pointerWrittenAt: number, resend: () => Promise<void>) =>
+      runLiveChecks({ baseUrl: 'https://site.test', checks: [present()], ownPath: OWN, entry: { id: ID, contentHash: NEW }, mediaUrls: [], resend, fetchPage: stalePage, pointerWrittenAt });
+    beforeEach(() => {
+      vi.useFakeTimers({ now: 1_000_000 });
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('stale at 3 s: no resend before max-age + 1 s after the pointer was written, then exactly one', async () => {
+      const resend = vi.fn(async () => {});
+      const done = runAt(Date.now(), resend);
+      await vi.advanceTimersByTimeAsync(3_000); // the second poll sees the stale hash
+      await vi.advanceTimersByTimeAsync(POINTER_MAX_AGE_S * 1_000 + 1_000 - 3_000 - 1);
+      expect(resend).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(resend).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(DEFAULT_TIMEOUT_MS);
+      expect((await done).live).toBe(false);
+      expect(resend).toHaveBeenCalledTimes(1);
+    });
+    it('resends at once when that moment has already passed when the page is first seen stale', async () => {
+      const resend = vi.fn(async () => {});
+      const done = runAt(Date.now() - 40_000, resend);
+      await vi.advanceTimersByTimeAsync(2_999);
+      expect(resend).not.toHaveBeenCalled(); // the first poll triggers regeneration
+      await vi.advanceTimersByTimeAsync(1);
+      expect(resend).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(DEFAULT_TIMEOUT_MS);
+      await done;
+      expect(resend).toHaveBeenCalledTimes(1);
+    });
   });
   it('a failing resend does not throw', async () => {
     site.pages.set(OWN, page(entryMarker(ID, OLD)));

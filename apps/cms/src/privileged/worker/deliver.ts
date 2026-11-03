@@ -40,6 +40,8 @@ export type DeliveredRelease = {
   bundle: Bundle;
   previousBundle: Bundle | null;
   requests: LinkedRequest[];
+  /** When the pointer was written (epoch ms), for the live check's resend; absent on a retry (decision 48). */
+  pointerWrittenAt?: number;
 };
 
 /** One entry to confirm: a failure decided before any fetch, or its checks. */
@@ -214,6 +216,7 @@ export async function confirmSite(
         entry: { id: t.entryId, contentHash: t.contentHash },
         mediaUrls: t.mediaUrls,
         resend,
+        pointerWrittenAt: release.pointerWrittenAt,
         fetchPage,
         pollMs: options.pollMs,
         timeoutMs: options.timeoutMs,
@@ -280,6 +283,7 @@ export async function deliverTenant(tenantId: string, options: DeliveryOptions &
       bundle: result.bundle,
       previousBundle: result.previousBundle ?? null,
       requests: result.requests ?? [],
+      pointerWrittenAt: result.pointerWrittenAt,
     },
     options,
   );
