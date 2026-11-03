@@ -160,3 +160,7 @@ Einar approved the exact diff in chat on 2026-11-02 (patch to `cms-security-revi
 
 - Proposed diffs (`diff -u --label a/.claude/settings.json --label b/.claude/settings.json`): **A** removes `sandbox.excludedCommands` (`pnpm --filter cms e2e *`), sha256 `8c9527678a7d0ddb95a67eff1dceb68fede20e2a7148fc7da76efe89965a8f6f`; **B** (on top of A) adds `Edit`/`Write` deny rules for `/.env`, `/.env.local`, `/**/.env`, `/**/.env.local` and `ask` rules for `supabase config push *`, `supabase db reset --linked *`, `supabase migration repair *` (runbook section 16 open items), sha256 `bd45e0e929830959de16072f902528b3f310e7be215391189d444abbb721316c`.
 - Einar in chat, 2026-11-03: "Approve A and B". Applied by the controller after the security review of the local preparation, as told to Einar. From then on Einar runs every browser test in his own terminal (decision 43.1).
+
+## npm cache in the session's temp folder (2026-11-03)
+
+- The sandbox refused writes to `~/.npm/_cacache` (`EPERM`), so `npm pack`, `npm ci` and `npm install` failed for decision 43.3; the implementer stopped and reported. Einar in chat, 2026-11-03: "Yes, temp cache" (to the controller's proposal that npm use a cache in the session's temp folder, which the sandbox already allows). npm commands for the vendoring run with `npm_config_cache="$TMPDIR/npm-cache"`; no settings change.
