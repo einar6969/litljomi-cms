@@ -200,7 +200,7 @@ Einar in chat, 2026-11-03 (twelfth controller session), recorded as decision 50 
 | 1 | The Supabase images were not pullable; the local stack could not start |
 | 2 | `pnpm db:test` 1,405, `pnpm test:integration` 110 and unit (`pnpm test`) 1,381, all pass; images pulled from `ghcr.io`; `example.com` refused (network limit holds); nothing written to GitHub |
 
-Pending (decision 50.5, M2-1): Einar adds Playwright's browser download host to the "Limited" list; the first UI thread reports the exact host it is refused. Record the host here once added.
+Playwright (decisions 50.5, 50.6): Playwright 1.64.1 downloads browsers from `cdn.playwright.dev`, falling back to `playwright.download.prss.microsoft.com`. Einar adds them to the "Limited" list; if a UI thread is still refused, it reports the exact host.
 
 ### Gate for cloud work
 

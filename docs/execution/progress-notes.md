@@ -216,3 +216,4 @@ Einar in chat: "1. Turn off “Automatically expose new tables” in sitting 2, 
 - **Plans:** `docs/plans/m2.md` and `docs/plans/m3.md`, draft for Einar's approval. No task started.
 - **For Einar:** push `main` and `m1/phase-1`; approve or amend the two plans.
 - **Decision 50.5:** Einar answered the plans' nine open questions (verbatim in the plan); both plans updated, still draft. Pending for Einar: Playwright's download host on the Project's network list.
+- **Decision 50.6:** Einar approved both plans ("approved."). Playwright hosts given to Einar: `cdn.playwright.dev`, `playwright.download.prss.microsoft.com`.
