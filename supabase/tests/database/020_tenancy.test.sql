@@ -21,8 +21,11 @@ select table_privs_are('cms', 'tenants', 'service_role', array['SELECT', 'INSERT
 select set_eq($$ select col, priv from tests.column_privs('service_role', 'cms.tenants') where priv = 'UPDATE' $$,
   $$ values ('name', 'UPDATE'), ('status', 'UPDATE') $$,
   'service_role: update on tenants is exactly (name, status) (decision 33)');
-select is_empty($$ select col, priv from tests.column_privs('authenticated', 'cms.tenants') $$,
-  'authenticated: no insert, update or references on any tenants column');
+-- M3-07: UPDATE (name) only so that register_asset and update_asset can lock the row FOR SHARE;
+-- the tenants_lock_member policy (WITH CHECK false) refuses every UPDATE (102_asset_trust).
+select set_eq($$ select col, priv from tests.column_privs('authenticated', 'cms.tenants') $$,
+  $$ values ('name', 'UPDATE') $$,
+  'authenticated: update on tenants is exactly (name), for the lock (M3-07); no insert or references');
 select table_privs_are('cms', 'memberships', 'service_role', array['SELECT', 'INSERT', 'DELETE'], 'service_role: select, insert, delete on memberships');
 select table_privs_are('cms', 'platform_admins', 'service_role', array['SELECT', 'INSERT', 'DELETE'], 'service_role: select, insert, delete on platform_admins');
 select table_privs_are('cms', 'tenants', 'anon', array[]::text[], 'anon: nothing on tenants');

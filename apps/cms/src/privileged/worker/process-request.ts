@@ -9,7 +9,16 @@
 // then, and a missing one would fail every build of the tenant. If one is missing the request fails
 // validation (`asset_missing`) with an alert and is never committed, so an entry already live stays
 // at its published revision.
+//
+// Each of those originals is then read and its metadata derived again from its bytes (M3-07,
+// decision 50.5): api.register_asset records what the caller declares, so a direct call can store
+// false dimensions, type, size or hash. An asset whose stored metadata differs from what its
+// original's bytes say, or whose original is not a JPEG, PNG or WebP of at most 20 MB, fails the
+// request (`asset_mismatch`) with an alert, and the entry is not committed. Originals are
+// immutable for editors (media-private has no update or delete policy), and the metadata columns
+// for every writer but the owner, so what is checked here is what the release build copies.
 import { ProjectionError, projectEntry, type ContentType, type ProjectionContext } from '@litljomi/cms-schema';
+import { inspectImage } from '@/editor/server/image-metadata';
 import { getModule, getType } from '@/modules/registry';
 import { supabaseUrl } from '../../lib/supabase/env';
 import type { SupabaseClient } from '../../lib/supabase/types';
@@ -47,6 +56,11 @@ export type ProcessOptions = {
    * when it cannot tell. Defaults to the admin client's Storage API.
    */
   originalExists?: (path: string) => Promise<boolean>;
+  /**
+   * The bytes of an object in media-private that exists; throws when it cannot be read. Defaults
+   * to a download through the admin client's Storage API.
+   */
+  readOriginal?: (path: string) => Promise<Uint8Array>;
 };
 
 type ClaimedRow = {
@@ -87,7 +101,7 @@ export async function processRequestById(requestId: string, options: ProcessOpti
     const read = await callRpc<WorkerRead>(db, 'worker_read_request', { p_request_id: requestId });
     return { ...outcomeOf(read), status: 'skipped' };
   }
-  return processClaimed(db, row as ClaimedRequest, originalLookup(db, options));
+  return processClaimed(db, row as ClaimedRequest, originalsOf(db, options));
 }
 
 /**
@@ -99,10 +113,10 @@ export async function processPendingRequests(limit = 10, options: ProcessOptions
   const db = createAdminClient();
   const rows = (await callRpc<ClaimedRequest[] | null>(db, 'worker_claim_requests', { p_limit: limit })) ?? [];
   const outcomes: RequestOutcome[] = [];
-  const originalExists = originalLookup(db, options);
+  const originals = originalsOf(db, options);
   for (const row of rows) {
     try {
-      outcomes.push(await processClaimed(db, row, originalExists));
+      outcomes.push(await processClaimed(db, row, originals));
     } catch (error) {
       // failUnexpected logged the cause; this line records that the sweep moved on without it.
       console.error(`[cms-worker] request ${row.id} has no outcome in this sweep; it stays validating for the re-claim`, error);
@@ -113,19 +127,32 @@ export async function processPendingRequests(limit = 10, options: ProcessOptions
 
 /** Concurrent Storage `exists` requests while checking a request's private originals. */
 const ORIGINAL_CHECKS_AT_A_TIME = 8;
+/** Concurrent downloads while re-deriving originals' metadata (each up to 20 MB in memory). */
+const ORIGINAL_READS_AT_A_TIME = 4;
 
-type OriginalExists = (path: string) => Promise<boolean>;
+/** Access to the private originals: whether one exists, and its bytes. */
+type Originals = { exists: (path: string) => Promise<boolean>; read: (path: string) => Promise<Uint8Array> };
 
-/** The lookup of private originals: the given one, or media-private through the admin client. */
-function originalLookup(db: SupabaseClient, options: ProcessOptions): OriginalExists {
-  if (options.originalExists) return options.originalExists;
-  return async (path) => {
-    // storage-js answers `data: false` with an error for 400 and 404 and throws on anything else.
-    // An answer that is neither (no `true`, no `false`) is not read as "missing": it fails.
-    const { data, error } = await db.storage.from(MEDIA_PRIVATE).exists(path);
-    if (typeof data !== 'boolean') throw new Error(`media-private exists(${path}): ${error?.message ?? 'no answer'}`);
-    return data;
-  };
+/** The given lookups, or media-private through the admin client for those not given. */
+function originalsOf(db: SupabaseClient, options: ProcessOptions): Originals {
+  const exists =
+    options.originalExists ??
+    (async (path: string) => {
+      // storage-js answers `data: false` with an error for 400 and 404 and throws on anything else.
+      // An answer that is neither (no `true`, no `false`) is not read as "missing": it fails.
+      const { data, error } = await db.storage.from(MEDIA_PRIVATE).exists(path);
+      if (typeof data !== 'boolean') throw new Error(`media-private exists(${path}): ${error?.message ?? 'no answer'}`);
+      return data;
+    });
+  const read =
+    options.readOriginal ??
+    (async (path: string) => {
+      // The original was just found; failing to read it now is unexpected (retried), never "missing".
+      const { data, error } = await db.storage.from(MEDIA_PRIVATE).download(path);
+      if (error || !data) throw new Error(`media-private download(${path}): ${error?.message ?? 'no data'}`);
+      return new Uint8Array(await data.arrayBuffer());
+    });
+  return { exists, read };
 }
 
 function outcomeOf(read: WorkerRead): Omit<RequestOutcome, 'status'> {
@@ -139,14 +166,14 @@ function outcomeOf(read: WorkerRead): Omit<RequestOutcome, 'status'> {
   };
 }
 
-async function processClaimed(db: SupabaseClient, row: ClaimedRequest, originalExists: OriginalExists): Promise<RequestOutcome> {
+async function processClaimed(db: SupabaseClient, row: ClaimedRequest, originals: Originals): Promise<RequestOutcome> {
   let read: WorkerRead | null = null;
   try {
     read = await callRpc<WorkerRead>(db, 'worker_read_request', { p_request_id: row.id });
     const result: Result =
       row.action === 'unpublish'
         ? { status: await callRpc<CommitStatus>(db, 'worker_commit_unpublish', { p_request_id: row.id }) }
-        : await publish(db, read, originalExists);
+        : await publish(db, read, originals);
     if (result.status !== 'committed' && result.errors === undefined) await addRecordedErrors(db, row.id, result);
     return { ...outcomeOf(read), ...result };
   } catch (error) {
@@ -202,7 +229,7 @@ async function failUnexpected(db: SupabaseClient, row: ClaimedRequest, read: Wor
 }
 
 /** Validates and projects a publish request's draft, checks its private originals, then commits it (§6.1, §6.2). */
-async function publish(db: SupabaseClient, read: WorkerRead, originalExists: OriginalExists): Promise<Result> {
+async function publish(db: SupabaseClient, read: WorkerRead, originals: Originals): Promise<Result> {
   const { request, entry, tenant, draft } = read;
   const commit = (validatedVersion: number | null, title: string | null, sortAt: string | null) =>
     callRpc<CommitStatus>(db, 'worker_commit_publish', {
@@ -243,10 +270,20 @@ async function publish(db: SupabaseClient, read: WorkerRead, originalExists: Ori
   if (unprojectable) return reject(unprojectable);
 
   // Decision 36.4: the originals the release build will copy must exist, or the request fails here.
-  const missing = await missingOriginals(read, originalExists);
+  const pending = pendingOriginals(read);
+  const missing = await missingOriginals(pending, originals.exists);
   if (missing.length > 0) {
     const result = await reject({ code: 'asset_missing', assetIds: missing });
     await alert('publish_request.asset_missing', { tenantId: tenant.id, requestId: request.id, entryId: entry.id, assetIds: missing });
+    return result;
+  }
+
+  // M3-07: the stored metadata must be what the originals' bytes say.
+  const mismatched = await mismatchedOriginals(db, tenant.id, pending, originals.read);
+  if (mismatched.length > 0) {
+    const assetIds = mismatched.map((m) => m.id);
+    const result = await reject({ code: 'asset_mismatch', assetIds });
+    await alert('publish_request.asset_mismatch', { tenantId: tenant.id, requestId: request.id, entryId: entry.id, assets: mismatched });
     return result;
   }
 
@@ -254,16 +291,16 @@ async function publish(db: SupabaseClient, read: WorkerRead, originalExists: Ori
   return { status: await commit(draft.version, title, sortAt) };
 }
 
+/** A referenced asset whose original the release build will copy; `path` is null when it cannot be built. */
+type PendingOriginal = { id: string; path: string | null };
+
 /**
- * The ids of the referenced assets that are not public yet, not archived and in the request's
- * tenant (the read gives a filename only then; the commit refuses the others as invalid
- * references) whose private original is not in media-private, in reference order. The path is the
- * one api.register_asset requires; an asset whose path cannot be built cannot have an original
- * there, so it counts as missing.
+ * The referenced assets that are not public yet, not archived and in the request's tenant (the
+ * read gives a filename only then; the commit refuses the others as invalid references), once
+ * each, in reference order. The path is the one api.register_asset requires.
  */
-async function missingOriginals(read: WorkerRead, originalExists: OriginalExists): Promise<string[]> {
-  // In reference order; `path` is null when it cannot be built (counted as missing without a lookup).
-  const assets: Array<{ id: string; path: string | null }> = [];
+function pendingOriginals(read: WorkerRead): PendingOriginal[] {
+  const assets: PendingOriginal[] = [];
   const seen = new Set<string>();
   for (const r of read.refs) {
     if (r.kind !== 'asset' || r.archived || r.public_path !== null || r.filename === null || seen.has(r.id)) continue;
@@ -276,6 +313,15 @@ async function missingOriginals(read: WorkerRead, originalExists: OriginalExists
     }
     assets.push({ id: r.id, path });
   }
+  return assets;
+}
+
+/**
+ * The ids of the pending assets whose private original is not in media-private, in reference
+ * order. An asset whose path cannot be built cannot have an original there, so it counts as
+ * missing.
+ */
+async function missingOriginals(assets: PendingOriginal[], originalExists: Originals['exists']): Promise<string[]> {
   // At most ORIGINAL_CHECKS_AT_A_TIME Storage requests in flight (up to 1,000 references, decision 28).
   const present: boolean[] = [];
   for (let i = 0; i < assets.length; i += ORIGINAL_CHECKS_AT_A_TIME) {
@@ -283,6 +329,49 @@ async function missingOriginals(read: WorkerRead, originalExists: OriginalExists
     present.push(...(await Promise.all(batch.map((a) => (a.path === null ? false : originalExists(a.path))))));
   }
   return assets.filter((_, i) => !present[i]).map((a) => a.id);
+}
+
+/** The metadata api.worker_asset_metadata returns for an asset. */
+type StoredMetadata = { id: string; original_path: string; mime: string; bytes: number; width: number; height: number; sha256: string };
+
+/** The metadata fields compared with the original's bytes. */
+const METADATA_FIELDS = ['mime', 'bytes', 'width', 'height', 'sha256'] as const;
+
+/** An asset whose stored metadata is not what its original says: the differing fields, or why the original was refused. */
+export type MetadataMismatch = { id: string; fields: string[] } | { id: string; original: 'type' | 'size' };
+
+/**
+ * The pending assets (every one has an original in media-private, checked just before) whose
+ * stored metadata differs from what their original's bytes say (`inspectImage`, the same
+ * derivation the upload's server action uses), in reference order. An original that is not an
+ * accepted image of at most 20 MB is a mismatch too. The stored row is read through
+ * api.worker_asset_metadata; an asset without one, or whose stored path is not the one checked,
+ * counts as a mismatch of the path.
+ */
+async function mismatchedOriginals(
+  db: SupabaseClient,
+  tenantId: string,
+  assets: PendingOriginal[],
+  readOriginal: Originals['read'],
+): Promise<MetadataMismatch[]> {
+  if (assets.length === 0) return [];
+  const rows = (await callRpc<StoredMetadata[] | null>(db, 'worker_asset_metadata', { p_tenant_id: tenantId, p_asset_ids: assets.map((a) => a.id) })) ?? [];
+  const stored = new Map(rows.map((r) => [r.id, r]));
+  const check = async (asset: PendingOriginal): Promise<MetadataMismatch | null> => {
+    const row = stored.get(asset.id);
+    // missingOriginals counted a null path as missing, so every path here is set.
+    if (!row || asset.path === null || row.original_path !== asset.path) return { id: asset.id, fields: ['original_path'] };
+    const derived = await inspectImage(await readOriginal(asset.path));
+    if (!derived.ok) return { id: asset.id, original: derived.reason };
+    // bigint columns may arrive as numbers or strings; compare their text.
+    const fields = METADATA_FIELDS.filter((f) => String(row[f]) !== String(derived[f]));
+    return fields.length > 0 ? { id: asset.id, fields } : null;
+  };
+  const results: Array<MetadataMismatch | null> = [];
+  for (let i = 0; i < assets.length; i += ORIGINAL_READS_AT_A_TIME) {
+    results.push(...(await Promise.all(assets.slice(i, i + ORIGINAL_READS_AT_A_TIME).map(check))));
+  }
+  return results.filter((m): m is MetadataMismatch => m !== null);
 }
 
 type Failure = Record<string, unknown> | null;

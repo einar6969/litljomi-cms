@@ -11,6 +11,8 @@
 //      live check are retried once per sweep, up to MAX_NOTIFY_ATTEMPTS attempts
 //      (api.worker_deliveries_to_retry). A release superseded by a newer delivered one is never
 //      retried, and a release delivered by step 2 of this same sweep is not retried in it.
+//   4. Originals in media-private with no assets row, older than a day, are removed
+//      (api.worker_private_orphans; M3-07).
 //
 // A failing step does not stop the next one; the sweep throws at the end if any step failed, so
 // the cron route reports it.
@@ -19,6 +21,7 @@ import type { SupabaseClient } from '../../lib/supabase/types';
 import { createAdminClient } from '../admin-client';
 import { alert } from './alerts';
 import { supabaseReleaseStorage } from './build-release';
+import { removePrivateOrphans } from './media-orphans';
 import { MAX_NOTIFY_ATTEMPTS, confirmRelease, deliverTenant, type DeliveredRelease, type DeliveryOptions } from './deliver';
 import { processPendingRequests } from './process-request';
 import { callRpc } from './rpc';
@@ -99,6 +102,9 @@ export async function runSweep(options: DeliveryOptions = {}): Promise<void> {
   } catch (error) {
     failed('listing deliveries to retry')(error);
   }
+
+  // 4. Orphaned private originals.
+  await removePrivateOrphans(db).catch(failed('removing orphaned originals'));
 
   if (errors.length > 0) throw new AggregateError(errors, `sweep: ${errors.length} step(s) failed`);
 }

@@ -1,7 +1,9 @@
 // Unit tests of the worker's error paths with a fake admin client (decision 35; spec §6.3). The
 // happy paths and the database's outcomes run against the local stack in
 // process-request.integration.test.ts.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createHash } from 'node:crypto';
+import sharp from 'sharp';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { ProjectionError, defineModule, defineType, newsType, type FieldKind } from '@litljomi/cms-schema';
 
@@ -12,6 +14,8 @@ const calls: Call[] = [];
 let handlers: Record<string, (args: Record<string, unknown>) => Reply> = {};
 /** Storage objects the fake client's `exists` finds, as `bucket/path`. */
 const stored = new Set<string>();
+/** Bytes the fake client's `download` returns, by `bucket/path`. */
+const downloads = new Map<string, Uint8Array>();
 const fakeClient = {
   rpc: vi.fn(async (fn: string, args: Record<string, unknown>) => {
     calls.push({ fn, args });
@@ -25,6 +29,11 @@ const fakeClient = {
       exists: async (path: string) => {
         calls.push({ fn: 'storage.exists', args: { bucket, path } });
         return stored.has(`${bucket}/${path}`) ? { data: true, error: null } : { data: false, error: { message: 'Object not found', status: 404 } };
+      },
+      download: async (path: string) => {
+        calls.push({ fn: 'storage.download', args: { bucket, path } });
+        const bytes = downloads.get(`${bucket}/${path}`);
+        return bytes ? { data: new Blob([new Uint8Array(bytes)]), error: null } : { data: null, error: { message: 'Object not found' } };
       },
     }),
   },
@@ -125,6 +134,7 @@ const dbError = (code: string, message: string): Reply => ({ error: { code, mess
 beforeEach(() => {
   calls.length = 0;
   stored.clear();
+  downloads.clear();
   vi.spyOn(console, 'error').mockImplementation(() => {});
   vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://example.supabase.co');
 });
@@ -472,13 +482,38 @@ describe('processRequestById: private originals', () => {
     };
   };
 
+  // The originals of A1 (a JPEG) and A2 (a PNG), and the metadata api.worker_asset_metadata stores.
+  const P1 = `${TENANT_ID}/${A1}/a.jpg`;
+  const P2 = `${TENANT_ID}/${A2}/b.png`;
+  let jpeg: Uint8Array;
+  let png: Uint8Array;
+  const metadataOf = (id: string, path: string, bytes: Uint8Array, mime: string, width: number, height: number) => ({
+    id,
+    original_path: path,
+    mime,
+    bytes: bytes.byteLength,
+    width,
+    height,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+  });
+  let storedMetadata: () => Array<ReturnType<typeof metadataOf>>;
+  beforeAll(async () => {
+    const solid = (w: number, h: number) => sharp({ create: { width: w, height: h, channels: 3, background: { r: 10, g: 20, b: 30 } } });
+    jpeg = new Uint8Array(await solid(80, 60).jpeg().toBuffer());
+    png = new Uint8Array(await solid(40, 30).png().toBuffer());
+  });
+
   beforeEach(() => {
+    storedMetadata = () => [metadataOf(A1, P1, jpeg, 'image/jpeg', 80, 60), metadataOf(A2, P2, png, 'image/png', 40, 30)];
+    downloads.set(`media-private/${P1}`, jpeg);
+    downloads.set(`media-private/${P2}`, png);
     handlers = {
       worker_claim_request: () => ({ data: claimed() }),
       worker_read_request: () => ({ data: readWithRefs() }),
       worker_reject_request: () => ({}),
       worker_record_alert: () => ({}),
       worker_commit_publish: () => ({ data: 'committed' }),
+      worker_asset_metadata: () => ({ data: storedMetadata() }),
     };
   });
 
@@ -582,5 +617,97 @@ describe('processRequestById: private originals', () => {
     handlers.worker_claim_requests = () => ({ data: [claimed()] });
     const outcomes = await processPendingRequests(1, { originalExists: exists().originalExists });
     expect(outcomes.map((o) => o.status)).toEqual(['failed_validation']);
+  });
+
+  // M3-07 (decision 50.5): the stored metadata is re-derived from the originals' bytes.
+  describe('metadata re-derived from the originals', () => {
+    const both = () => exists(P1, P2).originalExists;
+    const mismatchAlert = (assets: unknown) => ({
+      fn: 'worker_record_alert',
+      args: {
+        p_tenant_id: TENANT_ID,
+        p_event: 'publish_request.asset_mismatch',
+        p_details: { tenantId: TENANT_ID, requestId: 'r1', entryId: 'e1', assets },
+      },
+    });
+
+    it('commits when the stored metadata is what the bytes say, reading each original once from media-private', async () => {
+      expect(await processRequestById('r1', { originalExists: both() })).toMatchObject({ status: 'committed' });
+      expect(called('worker_asset_metadata')).toEqual([
+        { fn: 'worker_asset_metadata', args: { p_tenant_id: TENANT_ID, p_asset_ids: [A1, A2] } },
+      ]);
+      expect(called('storage.download').map((c) => c.args)).toEqual([
+        { bucket: 'media-private', path: P1 },
+        { bucket: 'media-private', path: P2 },
+      ]);
+    });
+
+    it('false dimensions, type, size or hash fail the request with asset_mismatch and an alert, and never commit', async () => {
+      storedMetadata = () => [
+        { ...metadataOf(A1, P1, jpeg, 'image/jpeg', 80, 60), width: 8000, height: 6000 },
+        { ...metadataOf(A2, P2, png, 'image/png', 40, 30), mime: 'image/jpeg', bytes: 1, sha256: 'f'.repeat(64) },
+      ];
+
+      const outcome = await processRequestById('r1', { originalExists: both() });
+
+      const error = { code: 'asset_mismatch', assetIds: [A1, A2] };
+      expect(outcome).toMatchObject({ status: 'failed_validation', errors: error });
+      expect(called('worker_reject_request')).toEqual([
+        { fn: 'worker_reject_request', args: { p_request_id: 'r1', p_status: 'failed_validation', p_error: error } },
+      ]);
+      expect(called('worker_commit_publish')).toEqual([]);
+      expect(called('worker_record_alert')).toEqual([
+        mismatchAlert([
+          { id: A1, fields: ['width', 'height'] },
+          { id: A2, fields: ['mime', 'bytes', 'sha256'] },
+        ]),
+      ]);
+    });
+
+    it('accepts bigint bytes returned as text', async () => {
+      storedMetadata = () => [
+        { ...metadataOf(A1, P1, jpeg, 'image/jpeg', 80, 60), bytes: String(jpeg.byteLength) as unknown as number },
+        metadataOf(A2, P2, png, 'image/png', 40, 30),
+      ];
+      expect(await processRequestById('r1', { originalExists: both() })).toMatchObject({ status: 'committed' });
+    });
+
+    it('an original that is not an accepted image is a mismatch', async () => {
+      const readOriginal = async (path: string) => (path === P1 ? new TextEncoder().encode('not an image') : png);
+
+      const outcome = await processRequestById('r1', { originalExists: both(), readOriginal });
+
+      expect(outcome).toMatchObject({ status: 'failed_validation', errors: { code: 'asset_mismatch', assetIds: [A1] } });
+      expect(called('worker_record_alert')).toEqual([mismatchAlert([{ id: A1, original: 'type' }])]);
+    });
+
+    it('an asset without a stored row, or with another stored path, is a mismatch of the path', async () => {
+      storedMetadata = () => [{ ...metadataOf(A2, P2, png, 'image/png', 40, 30), original_path: `${TENANT_ID}/${A2}/c.png` }];
+
+      const outcome = await processRequestById('r1', { originalExists: both() });
+
+      expect(outcome).toMatchObject({ status: 'failed_validation', errors: { code: 'asset_mismatch', assetIds: [A1, A2] } });
+      expect(called('storage.download')).toEqual([]);
+    });
+
+    it('a missing original is reported as asset_missing before any metadata is read', async () => {
+      const outcome = await processRequestById('r1', { originalExists: exists(P2).originalExists });
+      expect(outcome).toMatchObject({ errors: { code: 'asset_missing', assetIds: [A1] } });
+      expect(called('worker_asset_metadata')).toEqual([]);
+    });
+
+    it('a failed download is an unexpected error (retried by the re-claim), not a mismatch', async () => {
+      downloads.delete(`media-private/${P2}`);
+      await expect(processRequestById('r1', { originalExists: both() })).rejects.toThrow(`media-private download(${P2}): Object not found`);
+      expect(called('worker_reject_request')).toEqual([]);
+      expect(called('worker_commit_publish')).toEqual([]);
+    });
+
+    it('a draft whose assets are all public reads no metadata and downloads nothing', async () => {
+      handlers.worker_read_request = () => ({ data: { ...readWithRefs(), refs: refs.slice(2) } });
+      expect(await processRequestById('r1', { originalExists: both() })).toMatchObject({ status: 'committed' });
+      expect(called('worker_asset_metadata')).toEqual([]);
+      expect(called('storage.download')).toEqual([]);
+    });
   });
 });
