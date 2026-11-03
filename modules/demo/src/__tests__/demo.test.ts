@@ -25,6 +25,24 @@ describe('demo module', () => {
     expect(event.orderBy).toBe('startDate');
     expect(event.version).toBe(1);
   });
+  it('has an optional field of each scalar kind, filled in its fixture (M2-03)', () => {
+    const byKind = Object.fromEntries(Object.entries<AnyFieldKind>(event.fields).map(([k, f]) => [f.kind, { key: k, f }]));
+    for (const kind of ['number', 'boolean', 'select', 'datetime']) {
+      const field = byKind[kind];
+      expect(field, kind).toBeDefined();
+      expect(field!.f.required).toBe(false);
+      expect((fixture as Record<string, unknown>)[field!.key]).not.toBeUndefined();
+    }
+  });
+  it.each([
+    ['capacity', -1],
+    ['capacity', 2.5],
+    ['freeEntry', 'yes'],
+    ['category', 'party'],
+    ['doorsOpen', '2026-12-01T17:30:00'],
+  ])('refuses the fixture with %s = %j', (key, value) => {
+    expect(event.publishValidator().safeParse({ ...fixture, [key]: value }).success).toBe(false);
+  });
   it('builds paths and checks', () => {
     const s = demo.site.event!;
     expect(s.path(e)).toBe('/events/opid-hus');
