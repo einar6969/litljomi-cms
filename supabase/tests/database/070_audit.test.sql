@@ -99,10 +99,11 @@ select is((select qual from pg_catalog.pg_policies where schemaname = 'cms' and 
 -- Triggers (plan Task 10): the actor trigger on audit_log and the audit
 -- triggers. 050 and 060 pin the full trigger lists of assets and publish_requests.
 select triggers_are('cms', 'audit_log', array['audit_log_force_actor'], 'audit_log triggers: audit_force_actor');
--- entries_lock_first_published_at is Task 11's (first_published_at is write-once).
+-- entries_lock_first_published_at is Task 11's (first_published_at is write-once);
+-- entries_check_singleton is M2-09's (one live entry per singleton type, 104).
 select triggers_are('cms', 'entries', array['entries_force_actor', 'entries_check_actor', 'entries_lock_slug',
-    'entries_audit_insert', 'entries_audit_update', 'entries_lock_first_published_at'],
-  'entries triggers: actor, slug lock, first_published_at lock and audit');
+    'entries_audit_insert', 'entries_audit_update', 'entries_lock_first_published_at', 'entries_check_singleton'],
+  'entries triggers: actor, slug lock, first_published_at lock, audit and singleton check');
 select triggers_are('cms', 'releases', array['releases_audit_update', 'releases_schedule_retry'],
   'releases triggers: audit on status change, and the retry schedule on failure (M3-02)');
 select triggers_are('cms', 'memberships', array['memberships_audit'], 'memberships triggers: audit on insert and delete');

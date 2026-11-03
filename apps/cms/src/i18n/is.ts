@@ -35,6 +35,11 @@ export const is = {
     inactive: 'Vefur óvirkur',
     inactiveBody: 'Ekki er hægt að breyta efni þessa vefs eins og er.',
     contentTypes: 'Efnisflokkar',
+    navigation: 'Efni vefsins',
+  },
+  singleton: {
+    opening: 'Opna…',
+    openFailed: 'Ekki tókst að opna færsluna. Reyndu aftur.',
   },
   entries: {
     new: 'Ný færsla',
@@ -46,6 +51,7 @@ export const is = {
     status: 'Staða',
     updated: 'Breytt',
     back: 'Til baka í lista',
+    backHome: 'Til baka í efnisflokka',
     statuses: {
       draft: 'Uppkast',
       published: 'Birt',

@@ -39,9 +39,14 @@ export { slugify } from './slugify.ts';
 export { newsType } from './library/news.ts';
 export {
   defineModule,
+  isSingleton,
+  structureItems,
   type LiveCheck,
   type ModuleManifest,
   type ReleaseView,
   type SiteEntry,
   type SiteIntegration,
+  type StructureGroup,
+  type StructureItem,
+  type StructureNode,
 } from './module.ts';

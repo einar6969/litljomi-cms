@@ -41,3 +41,8 @@ export interface NoticeEntry {
   body: string | null;
   date: string | null;
 }
+
+export interface SiteInfoEntry {
+  title: string | null;
+  tagline: string | null;
+}

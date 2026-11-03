@@ -1,3 +1,4 @@
+import { isSingleton } from '@litljomi/cms-schema';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { z } from 'zod';
@@ -7,7 +8,7 @@ import { OutdatedDraft } from '@/editor/form/OutdatedDraft';
 import { t } from '@/i18n/is';
 import { createEditorClient } from '@/lib/supabase/server';
 import { currentTenant, isActive } from '@/lib/tenant';
-import { getType } from '@/modules/registry';
+import { getModule, getType } from '@/modules/registry';
 
 type Props = { params: Promise<{ tenant: string; type: string; entryId: string }> };
 
@@ -45,11 +46,14 @@ export default async function EntryPage({ params }: Props) {
   const published = entry.status === 'published' || entry.status === 'changed';
   const fields = describeFields(type);
   const fieldLabels = Object.fromEntries(fields.map((f) => [f.key, f.label]));
+  // A singleton has no list to go back to: its type's page would open this entry again.
+  const singleton = isSingleton(getModule(tenant.slug)!, type.name);
+  const tenantPath = `/t/${encodeURIComponent(tenant.slug)}`;
   return (
     <main className="flex flex-col gap-4">
       <p>
-        <Link href={`/t/${encodeURIComponent(tenant.slug)}/${encodeURIComponent(type.name)}`} className="inline-flex min-h-[44px] items-center text-[15px] font-medium">
-          {t.entries.back}
+        <Link href={singleton ? tenantPath : `${tenantPath}/${encodeURIComponent(type.name)}`} className="inline-flex min-h-[44px] items-center text-[15px] font-medium">
+          {singleton ? t.entries.backHome : t.entries.back}
         </Link>
       </p>
       <h1>{type.label}</h1>

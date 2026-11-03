@@ -1,11 +1,13 @@
 'use server';
 
+import { isSingleton } from '@litljomi/cms-schema';
 import { z } from 'zod';
 import { authOrError, failureAmong, hasSession, loadEntryContext } from '@/editor/server/entry-context';
+import { openSingleton, type OpenSingletonResult } from '@/editor/server/singleton';
 import { updateDraftSchema, type UpdateDraftSchemaResult } from '@/editor/server/update-draft-schema';
 import { createEditorClient } from '@/lib/supabase/server';
 import { isActive, resolveTenant } from '@/lib/tenant';
-import { getType } from '@/modules/registry';
+import { getModule, getType } from '@/modules/registry';
 
 // Every export here is an endpoint any signed-in user can call with any arguments. Each action
 // validates its arguments, uses only the editor's own session (`createEditorClient`) and lets RLS
@@ -33,8 +35,9 @@ export type SetSlugResult =
 
 /**
  * Creates an entry and its empty draft in a tenant the editor is a member of. The tenant comes
- * only from `api.my_tenants` and the type must be in that tenant's module. Throws on any failure;
- * the form shows one generic message.
+ * only from `api.my_tenants` and the type must be in that tenant's module and not a singleton (a
+ * singleton is opened with `openSingletonAction`). Throws on any failure; the form shows one
+ * generic message.
  */
 export async function createEntryAction(tenantSlug: string, type: string): Promise<{ entryId: string }> {
   if (typeof tenantSlug !== 'string' || typeof type !== 'string' || type.length > MAX_NAME_LENGTH) throw new Error('create_entry: invalid arguments');
@@ -42,6 +45,7 @@ export async function createEntryAction(tenantSlug: string, type: string): Promi
   const tenant = await resolveTenant(client, tenantSlug);
   const contentType = tenant && isActive(tenant) ? getType(tenant.slug, type) : undefined;
   if (!tenant || !contentType) throw new Error('create_entry: unknown tenant or type');
+  if (isSingleton(getModule(tenant.slug)!, contentType.name)) throw new Error('create_entry: singleton type');
   const { data, error } = await client.rpc('create_entry', {
     p_tenant_id: tenant.id,
     p_type: contentType.name,
@@ -50,6 +54,24 @@ export async function createEntryAction(tenantSlug: string, type: string): Promi
   });
   if (error || typeof data !== 'string') throw new Error(`create_entry: ${error?.code ?? 'no id'}`);
   return { entryId: data };
+}
+
+/**
+ * Opens a singleton type (§10.1): its one entry, created on first open. The tenant comes only from
+ * `api.my_tenants`; the type must be a singleton in that tenant's module. Never throws.
+ */
+export async function openSingletonAction(tenantSlug: string, type: string): Promise<OpenSingletonResult> {
+  if (typeof tenantSlug !== 'string' || typeof type !== 'string' || type.length > MAX_NAME_LENGTH) return { ok: false, code: 'error' };
+  try {
+    const client = await createEditorClient();
+    if (!(await hasSession(client))) return { ok: false, code: 'auth' };
+    const tenant = await resolveTenant(client, tenantSlug);
+    const contentType = tenant && isActive(tenant) ? getType(tenant.slug, type) : undefined;
+    if (!tenant || !contentType || !isSingleton(getModule(tenant.slug)!, contentType.name)) return { ok: false, code: 'error' };
+    return await openSingleton(client, tenant.id, contentType);
+  } catch {
+    return { ok: false, code: 'error' };
+  }
 }
 
 /**

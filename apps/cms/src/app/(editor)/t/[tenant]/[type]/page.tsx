@@ -1,6 +1,8 @@
+import { isSingleton } from '@litljomi/cms-schema';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { NewEntryButton } from '@/editor/NewEntryButton';
+import { OpenSingleton } from '@/editor/OpenSingleton';
 import { applyEntryListFilter, isFiltered, MAX_QUERY_LENGTH, parseEntryListFilter, STATUS_FILTERS, type StatusFilter } from '@/editor/entry-list-filter';
 import { t } from '@/i18n/is';
 import { Button } from '@/ui/Button';
@@ -8,7 +10,7 @@ import { Field } from '@/ui/Field';
 import { StatusBadge } from '@/ui/StatusBadge';
 import { createEditorClient } from '@/lib/supabase/server';
 import { currentTenant, isActive } from '@/lib/tenant';
-import { getType } from '@/modules/registry';
+import { getModule, getType } from '@/modules/registry';
 
 type Props = {
   params: Promise<{ tenant: string; type: string }>;
@@ -30,7 +32,8 @@ const FILTER_LABELS: Record<StatusFilter, string> = { ...t.entries.statuses, unp
 // The entries of one content type, newest edit first. The tenant is resolved through
 // api.my_tenants and the type must be in its module; the rows come from api.entry_list under the
 // editor's session, so RLS decides what is listed. The title search and status filter (M2-10) are
-// in the URL, sent by a plain GET form, so they work before the page's JavaScript has loaded.
+// in the URL, sent by a plain GET form, so they work before the page's JavaScript has loaded. A
+// singleton type has no list: its page opens the type's one entry, creating it on first open (§10.1).
 export default async function EntryListPage({ params, searchParams }: Props) {
   const { tenant: slug, type: typeName } = await params;
   const filter = parseEntryListFilter(await searchParams);
@@ -39,6 +42,14 @@ export default async function EntryListPage({ params, searchParams }: Props) {
   if (!isActive(tenant)) return null;
   const type = getType(tenant.slug, typeName);
   if (!type) notFound();
+  if (isSingleton(getModule(tenant.slug)!, type.name)) {
+    return (
+      <main className="flex flex-col gap-6">
+        <h1>{type.label}</h1>
+        <OpenSingleton tenantSlug={tenant.slug} type={type.name} />
+      </main>
+    );
+  }
   const query = (await createEditorClient())
     .from('entry_list')
     .select('id, slug, title, status, updated_at')
