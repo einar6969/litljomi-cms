@@ -1,7 +1,7 @@
 'use server';
 
 import { z } from 'zod';
-import { failureAmong, hasSession, loadEntryContext } from '@/editor/server/entry-context';
+import { authOrError, failureAmong, hasSession, loadEntryContext } from '@/editor/server/entry-context';
 import { updateDraftSchema, type UpdateDraftSchemaResult } from '@/editor/server/update-draft-schema';
 import { createEditorClient } from '@/lib/supabase/server';
 import { isActive, resolveTenant } from '@/lib/tenant';
@@ -20,6 +20,10 @@ const MAX_NAME_LENGTH = 100;
 export type SaveDraftResult =
   | { ok: true; version: number }
   | { ok: false; code: 'version_conflict' | 'auth' | 'invalid' | 'error'; issues?: { path: (string | number)[]; message: string }[] };
+
+export type LoadDraftResult =
+  | { ok: true; version: number; data: Record<string, unknown> }
+  | { ok: false; code: 'auth' | 'invalid' | 'error' };
 
 export type { UpdateDraftSchemaResult };
 
@@ -78,6 +82,33 @@ export async function saveDraftAction(id: string, expectedVersion: number, data:
     });
     if (result.error) return { ok: false, code: failureAmong({ error: result.error, status: result.status }, ['version_conflict']) };
     return typeof result.data === 'number' ? { ok: true, version: result.data } : { ok: false, code: 'error' };
+  } catch {
+    return { ok: false, code: 'error' };
+  }
+}
+
+const draftRow = z.object({ data: z.unknown(), draft_version: draftVersion });
+const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/**
+ * The entry's current draft and its version, read after a stale save so the editor can compare it
+ * with their own values (§5.5, M2-11). Read like the entry page reads it: `api.entry_detail` under
+ * the editor's session, in the tenant `loadEntryContext` found; data that is not an object reads as
+ * empty, as on the page.
+ */
+export async function loadDraftAction(id: string): Promise<LoadDraftResult> {
+  const args = entryId.safeParse(id);
+  if (!args.success) return { ok: false, code: 'invalid' };
+  try {
+    const client = await createEditorClient();
+    if (!(await hasSession(client))) return { ok: false, code: 'auth' };
+    const context = await loadEntryContext(client, args.data);
+    if (!context) return { ok: false, code: 'error' };
+    const result = await client.from('entry_detail').select('data, draft_version').eq('id', context.entryId).eq('tenant_id', context.tenantId).maybeSingle();
+    if (result.error) return { ok: false, code: authOrError({ error: result.error, status: result.status }) };
+    const row = draftRow.safeParse(result.data);
+    if (!row.success) return { ok: false, code: 'error' };
+    return { ok: true, version: row.data.draft_version, data: isObject(row.data.data) ? row.data.data : {} };
   } catch {
     return { ok: false, code: 'error' };
   }
