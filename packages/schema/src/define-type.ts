@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { FieldKind } from './field-kind.ts';
+import { assertFields, fieldShapes } from './field-set.ts';
 import { assertVersioning, upcast, type Transform } from './upcast.ts';
 
 export type AnyFieldKind = FieldKind<any, any>;
@@ -36,34 +37,10 @@ export interface ContentType<F extends Record<string, AnyFieldKind> = any> exten
   upcast(data: unknown, fromVersion: number): unknown;
 }
 
-/**
- * A field key starts with a letter and continues with letters, digits or underscores (no `-`, `.`,
- * `$`, spaces), at most 64 characters: the database refuses longer object keys (decision 29).
- */
-const FIELD_KEY = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
-/** Names that would reach the prototype chain of the validator shapes and projected records. */
-const RESERVED_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
-
-function assertFieldKey(key: string): void {
-  if (RESERVED_KEYS.has(key) || !FIELD_KEY.test(key) || key in Object.prototype) {
-    throw new Error(`defineType: invalid field key "${key}" (letters, digits and underscores, starting with a letter, at most 64 characters; not a reserved name)`);
-  }
-}
-
 export function defineType<F extends Record<string, AnyFieldKind>>(d: TypeDefinition<F>): ContentType<F> {
-  // A literal `__proto__:` key in an object literal sets the prototype and is silently dropped.
-  const fieldsProto: unknown = Object.getPrototypeOf(d.fields);
-  if (fieldsProto !== Object.prototype && fieldsProto !== null) {
-    throw new Error('defineType: fields must be a plain object (its prototype is not Object.prototype or null; a literal "__proto__" key sets it)');
-  }
-  for (const key of Object.keys(d.fields)) assertFieldKey(key);
+  assertFields('defineType', d.fields);
   assertVersioning(d);
-  const draftShape: Record<string, z.ZodType> = {};
-  const publishShape: Record<string, z.ZodType> = {};
-  for (const [key, field] of Object.entries(d.fields)) {
-    draftShape[key] = field.draftSchema().optional();
-    publishShape[key] = field.publishSchema();
-  }
+  const shapes = fieldShapes(d.fields);
   const column = (data: unknown, key: string): string | null => {
     if (typeof data !== 'object' || data === null) return null;
     const v = (data as Record<string, unknown>)[key];
@@ -71,8 +48,8 @@ export function defineType<F extends Record<string, AnyFieldKind>>(d: TypeDefini
   };
   return {
     ...d,
-    draftValidator: () => z.object(draftShape),
-    publishValidator: () => z.object(publishShape),
+    draftValidator: () => z.object(shapes.draft),
+    publishValidator: () => z.object(shapes.publish),
     queryColumns: (data) => ({ title: column(data, d.preview.title), sortAt: column(data, d.orderBy) }),
     upcast: (data, fromVersion) => upcast(d, data, fromVersion),
   };

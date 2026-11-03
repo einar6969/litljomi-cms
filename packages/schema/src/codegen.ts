@@ -5,6 +5,20 @@ const TYPE_NAME = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
 // keeps the output valid if that rule is ever widened.
 const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
+/** One `key: type;` declaration per field, in field order. */
+function propertyLines(fields: Record<string, AnyFieldKind>): string[] {
+  return Object.entries<AnyFieldKind>(fields).map(([key, field]) => {
+    const prop = IDENTIFIER.test(key) ? key : JSON.stringify(key);
+    return `${prop}: ${field.tsType()};`;
+  });
+}
+
+/** The delivered shape of a field set as an inline object type, `{ a: X; b: Y }` (used by `group`). */
+export function objectTsType(fields: Record<string, AnyFieldKind>): string {
+  const lines = propertyLines(fields);
+  return lines.length === 0 ? '{}' : `{ ${lines.join(' ')} }`;
+}
+
 const pascal = (name: string) =>
   name
     .split('-')
@@ -43,10 +57,7 @@ export function generateDeliveryTypes(types: ContentType[]): string {
     if (seen.has(t.name)) throw new Error(`generateDeliveryTypes: duplicate type name "${t.name}"`);
     seen.add(t.name);
     if (!TYPE_NAME.test(t.name)) throw new Error(`generateDeliveryTypes: type name "${t.name}" is not a lower-case kebab name`);
-    const lines = Object.entries<AnyFieldKind>(t.fields).map(([key, field]) => {
-      const prop = IDENTIFIER.test(key) ? key : JSON.stringify(key);
-      return `  ${prop}: ${field.tsType()};`;
-    });
+    const lines = propertyLines(t.fields).map((l) => `  ${l}`);
     return `export interface ${pascal(t.name)}Entry {\n${lines.join('\n')}\n}\n`;
   });
   return [PRELUDE, ...blocks].join('\n');
