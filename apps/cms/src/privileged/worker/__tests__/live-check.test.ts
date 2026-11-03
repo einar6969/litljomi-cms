@@ -19,7 +19,16 @@ afterEach(async () => {
 });
 
 const fast = { pollMs: 20, timeoutMs: 400 };
-const run = (o: { checks: LiveCheck[]; contentHash?: string | null; mediaUrls?: string[]; resend?: () => Promise<void>; ownPath?: string }) =>
+/** A window with a single poll: the first poll's wait reaches the deadline. */
+const ONE_POLL = { pollMs: 2_000, timeoutMs: 2_000 };
+const run = (o: {
+  checks: LiveCheck[];
+  contentHash?: string | null;
+  mediaUrls?: string[];
+  resend?: () => Promise<void>;
+  ownPath?: string;
+  window?: { pollMs: number; timeoutMs: number };
+}) =>
   runLiveChecks({
     baseUrl: site.origin,
     checks: o.checks,
@@ -27,8 +36,43 @@ const run = (o: { checks: LiveCheck[]; contentHash?: string | null; mediaUrls?: 
     entry: { id: ID, contentHash: o.contentHash === undefined ? NEW : o.contentHash },
     mediaUrls: o.mediaUrls ?? [],
     resend: o.resend ?? (async () => {}),
-    ...fast,
+    ...(o.window ?? fast),
   });
+type RunInput = { checks: LiveCheck[]; contentHash?: string | null };
+/** The fake site's page for `path`, as the fake site would serve it (404 when there is none). */
+const servedPage = (path: string) => {
+  const found = site.pages.get(path);
+  return typeof found === 'function' ? found() : (found ?? { status: 404, html: html('', '<h1>404</h1>') });
+};
+/**
+ * `run` on a fake clock, with a fetcher that reads the fake site's pages without HTTP: for tests
+ * that assert the last failure reason of a page that fails on every poll (decision 48, quality r2).
+ * On a real clock, a last poll that starts just before the 400 ms deadline can find it passed by the
+ * time its fetch is made, and the check then ends as `timeout`: one run in four failed so under
+ * load. The scan and the polling are the same; only the transport and the clock differ.
+ */
+async function runOnFakeClock(o: RunInput): Promise<Awaited<ReturnType<typeof runLiveChecks>>> {
+  vi.useFakeTimers({ now: 1_000_000 });
+  try {
+    const done = runLiveChecks({
+      baseUrl: site.origin,
+      checks: o.checks,
+      ownPath: OWN,
+      entry: { id: ID, contentHash: o.contentHash === undefined ? NEW : o.contentHash },
+      mediaUrls: [],
+      resend: async () => {},
+      fetchPage: async (url) => {
+        const p = servedPage(new URL(url).pathname);
+        return { status: p.status, body: p.html ?? '' };
+      },
+      ...fast,
+    });
+    await vi.runAllTimersAsync();
+    return await done;
+  } finally {
+    vi.useRealTimers();
+  }
+}
 const present = (path = OWN): LiveCheck => ({ path, expect: 'present' });
 const absent = (path = OWN): LiveCheck => ({ path, expect: 'absent' });
 const page = (body: string, status = 200, release = 5) => ({ status, html: html(releaseMeta(release), body) });
@@ -36,7 +80,7 @@ const page = (body: string, status = 200, release = 5) => ({ status, html: html(
 describe('present', () => {
   it('fails on the old hash in the entry block even with a newer release marker in the layout (the key proof rule)', async () => {
     site.pages.set(OWN, page(`<main>${entryMarker(ID, OLD)}</main>`, 200, 99));
-    const result = await run({ checks: [present()] });
+    const result = await runOnFakeClock({ checks: [present()] });
     expect(result.live).toBe(false);
     expect(result.failures).toEqual([{ path: OWN, reason: expect.stringContaining('stale') }]);
   });
@@ -52,7 +96,7 @@ describe('present', () => {
   });
   it('fails on the new hash with a status other than 200', async () => {
     site.pages.set(OWN, page(entryMarker(ID, NEW), 500));
-    expect(await run({ checks: [present()] })).toMatchObject({ live: false, failures: [{ path: OWN, reason: expect.stringContaining('500') }] });
+    expect(await runOnFakeClock({ checks: [present()] })).toMatchObject({ live: false, failures: [{ path: OWN, reason: expect.stringContaining('500') }] });
   });
   it('fails when the marker is only in a comment or a script', async () => {
     site.pages.set(OWN, page(`<!-- ${entryMarker(ID, NEW)} --><script>"${entryMarker(ID, NEW)}"</script>`));
@@ -67,7 +111,7 @@ describe('present', () => {
 describe('absent', () => {
   it('fails when the own path still answers 200 without the marker (it must be 404)', async () => {
     site.pages.set(OWN, page('<main>Ekkert hér</main>'));
-    expect(await run({ checks: [absent()], contentHash: null })).toMatchObject({
+    expect(await runOnFakeClock({ checks: [absent()], contentHash: null })).toMatchObject({
       live: false,
       failures: [{ path: OWN, reason: expect.stringContaining('200') }],
     });
@@ -83,7 +127,7 @@ describe('absent', () => {
   it('fails when a listing still contains the entry marker', async () => {
     site.pages.set(OWN, page('', 404));
     site.pages.set('/frettir', page(`<ul>${entryMarker('other', OLD)}${entryMarker(ID, OLD)}</ul>`));
-    expect(await run({ checks: [absent(), absent('/frettir')], contentHash: null })).toMatchObject({
+    expect(await runOnFakeClock({ checks: [absent(), absent('/frettir')], contentHash: null })).toMatchObject({
       live: false,
       failures: [{ path: '/frettir', reason: expect.stringContaining('marker') }],
     });
@@ -291,7 +335,8 @@ describe('limits', () => {
   });
   it('fails a page larger than the size cap', async () => {
     site.pages.set(OWN, page(entryMarker(ID, NEW) + 'x'.repeat(6 * 1024 * 1024)));
-    expect(await run({ checks: [present()] })).toMatchObject({ live: false, failures: [{ reason: 'too_large' }] });
+    // One poll only (the poll interval is the whole window), so no later poll can meet the deadline.
+    expect(await run({ checks: [present()], window: ONE_POLL })).toMatchObject({ live: false, failures: [{ reason: 'too_large' }] });
   });
   it('with no checks and no media, the entry is live (nothing declared)', async () => {
     expect(await run({ checks: [] })).toEqual({ live: true, failures: [] });
@@ -310,7 +355,7 @@ describe('absent on pages the scan cannot read to the end', () => {
   ])('fails when the marker follows İ and %s (Major)', async (_, el) => {
     site.pages.set(OWN, page('', 404));
     site.pages.set('/frettir', page(`<p>İzmir</p>${el}<ul>${entryMarker(ID, OLD)}</ul>`));
-    expect(await run({ checks: [absent(), absent('/frettir')], contentHash: null })).toMatchObject({
+    expect(await runOnFakeClock({ checks: [absent(), absent('/frettir')], contentHash: null })).toMatchObject({
       live: false,
       failures: [{ path: '/frettir', reason: 'marker_present' }],
     });
@@ -322,18 +367,18 @@ describe('absent on pages the scan cannot read to the end', () => {
   ])('fails as inconclusive on a page with %s', async (_, tail) => {
     site.pages.set(OWN, page('', 404));
     site.pages.set('/frettir', { status: 200, html: `<html><body><ul>${entryMarker('other', OLD)}</ul>${tail}` });
-    expect(await run({ checks: [absent(), absent('/frettir')], contentHash: null })).toMatchObject({
+    expect(await runOnFakeClock({ checks: [absent(), absent('/frettir')], contentHash: null })).toMatchObject({
       live: false,
       failures: [{ path: '/frettir', reason: 'scan_incomplete' }],
     });
   });
   it('fails as inconclusive on a 404 own path that cannot be read to the end', async () => {
     site.pages.set(OWN, { status: 404, html: '<html><body><h1>404</h1><script>x' });
-    expect(await run({ checks: [absent()], contentHash: null })).toMatchObject({ live: false, failures: [{ path: OWN, reason: 'scan_incomplete' }] });
+    expect(await runOnFakeClock({ checks: [absent()], contentHash: null })).toMatchObject({ live: false, failures: [{ path: OWN, reason: 'scan_incomplete' }] });
   });
   it('a present check still passes when its marker is found before the scan stops', async () => {
     site.pages.set(OWN, { status: 200, html: `<html><body>${entryMarker(ID, NEW)}<script>x` });
-    expect(await run({ checks: [present()] })).toEqual({ live: true, failures: [] });
+    expect(await runOnFakeClock({ checks: [present()] })).toEqual({ live: true, failures: [] });
   });
 });
 
