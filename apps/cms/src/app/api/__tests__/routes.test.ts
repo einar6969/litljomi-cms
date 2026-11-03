@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // The jobs are faked: the real pipeline is Task 21's. The fakes are hoisted rather than imported,
 // because only the two route files may import from privileged/.
 const pipeline = vi.hoisted(() => ({
-  processAndDeliver: vi.fn<(requestId: string) => Promise<void>>(),
+  processAndDeliver: vi.fn<(requestId: string, options?: { arrivedAt?: number }) => Promise<void>>(),
   sweep: vi.fn<() => Promise<void>>(),
 }));
 vi.mock('@/privileged/worker/pipeline', () => pipeline);
@@ -82,7 +82,19 @@ describe('POST /api/internal/worker', () => {
     expect(after).toHaveBeenCalledTimes(1);
     expect(pipeline.processAndDeliver).not.toHaveBeenCalled();
     await scheduled[0]!();
-    expect(pipeline.processAndDeliver).toHaveBeenCalledExactlyOnceWith(REQUEST_ID);
+    expect(pipeline.processAndDeliver).toHaveBeenCalledExactlyOnceWith(REQUEST_ID, expect.anything());
+  });
+  // Task 29 security r1, Minor 3: the run deadline counts from the request's arrival.
+  it('passes the time the request arrived, not the time the job inside after() starts', async () => {
+    vi.useFakeTimers({ now: 1_800_000_000_000, toFake: ['Date'] });
+    try {
+      await worker.POST(workerRequest({ requestId: REQUEST_ID }));
+      vi.setSystemTime(1_800_000_000_000 + 4_000);
+      await scheduled[0]!();
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(pipeline.processAndDeliver).toHaveBeenCalledExactlyOnceWith(REQUEST_ID, { arrivedAt: 1_800_000_000_000 });
   });
   it.each([
     ['without the header', null],

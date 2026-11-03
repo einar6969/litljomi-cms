@@ -169,7 +169,7 @@ select is_empty($$ select * from api.worker_deliveries_to_retry(tests.t(15)) $$,
 select tests.act_as(tests.persona('editor_labak'));
 select results_eq($$ select sites_not_confirmed, retries_exhausted, live_retrying from api.publication_status
                      where entry_id = tests.entry('c031') $$,
-  $$ values (1, false, false) $$, 'the superseded request is not retrying any more (the editor sees not confirmed, final)');
+  $$ values (0, false, false) $$, 'the superseded request shows the newer release''s live delivery, not its own retry (M3-15)');
 
 -- The view's grants are unchanged by the appended column.
 select tests.act_as_owner();

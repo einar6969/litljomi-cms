@@ -268,6 +268,9 @@ export async function confirmSite(
       for (const f of result.failures) failures.push({ entryId: t.entryId, ...f });
     }),
   );
+  // The targets settle in any order; sorted by entry (stable, so each entry's failures keep their
+  // check order), last_error is the same for the same misses (Task 21 quality r1, Minor 6).
+  failures.sort((a, b) => (a.entryId < b.entryId ? -1 : a.entryId > b.entryId ? 1 : 0));
   if (failures.length === 0) {
     await record(db, release.releaseId, site.id, null, 'ok', null, options);
     console.info('[cms-worker] live check', { ...log, status: 'ok', failures: 0 });
@@ -390,6 +393,8 @@ async function recordPointerLag(db: SupabaseClient, release: DeliveredRelease, r
 export async function deliverTenant(tenantId: string, options: DeliveryOptions & Pick<BuildOptions, 'db'> = {}): Promise<BuildResult> {
   const db = options.db ?? createAdminClient();
   const result = await buildRelease(tenantId, { db });
+  // A delivered build always carries its release id, number and bundle; the checks only narrow
+  // BuildResult's optional fields (Task 21 quality r1, Minor 4).
   if (result.status !== 'delivered' || !result.bundle || !result.releaseId || result.number === undefined) return result;
   await confirmRelease(
     db,

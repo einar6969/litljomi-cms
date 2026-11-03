@@ -1,10 +1,15 @@
 // Worker step 3 against the local stack (plan Task 21, decisions 34 and 35; spec §6.1, §7.3, §7.4).
 // Runs on labak with one fake site (node:http on a fixed port), created idempotently; the tenant's
-// other active sites are deactivated around the tests as owner and restored after. The fake site
+// other active sites are deactivated around the tests as owner and restored after, and the fake
+// site is deactivated again (Task 21 quality r1, Minor 7). The ids deactivated are kept in a file
+// until they are restored, so a run killed midway is healed by the next one. The fake site
 // renders the labak bundle that the delivery bucket's pointer names, reloading it only when a
 // correctly signed webhook arrives, as a site's revalidation would. Earlier labak content is in
 // every build, so assertions are about the entries each test creates.
 import { randomUUID } from 'node:crypto';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -26,6 +31,8 @@ const PORT = 3198;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const SECRET = 'pipeline-fake-site-secret';
 const fast = { pollMs: 100, timeoutMs: 15_000 };
+/** The labak sites this file deactivated and has not restored yet (a run killed midway leaves it). */
+const DEACTIVATED_FILE = join(tmpdir(), 'litljomi-cms-pipeline-deactivated-sites.json');
 
 let editor: SupabaseClient;
 let site: FakeSite;
@@ -110,9 +117,13 @@ beforeAll(async () => {
     if (error) throw new Error(`admin_create_site: ${error.message}`);
     siteId = data as string;
   }
+  // An earlier run that was killed left its list: those sites are restored first.
+  const leftover = existsSync(DEACTIVATED_FILE) ? (JSON.parse(readFileSync(DEACTIVATED_FILE, 'utf8')) as string[]) : [];
+  if (leftover.length > 0) await ownerQuery('update cms.sites set active = true where id = any($1::uuid[]) and id <> $2', [leftover, siteId]);
   deactivated = (
     await ownerQuery<{ id: string }>('update cms.sites set active = false where tenant_id = $1 and active and id <> $2 returning id', [TENANT.labak, siteId])
   ).map((r) => r.id);
+  writeFileSync(DEACTIVATED_FILE, JSON.stringify(deactivated));
   await ownerQuery('update cms.sites set active = true where id = $1', [siteId]);
 
   // Earlier files leave labak requests pending or committed without a release (some of them for
@@ -126,7 +137,9 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   await site?.close();
+  if (siteId) await ownerQuery('update cms.sites set active = false where id = $1', [siteId]);
   if (deactivated.length > 0) await ownerQuery('update cms.sites set active = true where id = any($1::uuid[])', [deactivated]);
+  rmSync(DEACTIVATED_FILE, { force: true });
   vi.unstubAllEnvs();
   await closeAll();
 });

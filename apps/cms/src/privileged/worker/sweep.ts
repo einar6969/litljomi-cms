@@ -12,8 +12,9 @@
 //   3. Deliveries of each tenant's latest delivered release that still need a notification or a
 //      live check, or whose live check missed (not_confirmed, M3-03), are retried when their next
 //      attempt is due (api.worker_deliveries_to_retry): the site is notified again and the full
-//      live check runs. A release superseded by a newer delivered one is never retried, and a
-//      release delivered by step 2 of this same sweep is not retried in it.
+//      live check runs. A release superseded by a newer delivered one is never retried, nor is one
+//      that step 2 of this same sweep superseded. Steps 2 and 3 run per tenant, concurrently
+//      across tenants: one tenant's build never delays another's retries.
 //   4. Originals in media-private with no assets row, older than a day, are removed
 //      (api.worker_private_orphans; M3-07).
 //   5. Releases older than the previous one, an hour after the newer delivery, are removed from
@@ -99,25 +100,41 @@ export async function runSweep(options: DeliveryOptions = {}): Promise<void> {
   // 1. Requests the fast path never processed (or left validating).
   await processPendingRequests().catch(failed('processing pending requests'));
 
-  // 2. Releases for committed requests that are in none yet.
-  const deliveredNow = new Set<string>();
+  // 2 and 3. Both selections are read first, at the same clock; then every tenant runs on its own,
+  // concurrently: a tenant with no release to build retries its due deliveries at once, so one
+  // tenant's build (and its pointer poll, up to 120 s) no longer delays another's retries (Task 29
+  // security r1, Minor 1). A tenant with a build waits for it: when it delivered a release, that
+  // release superseded the retried one, which is dropped; when the build threw, the retries wait
+  // for the next sweep, which reads again what is latest.
+  let tenants: string[] = [];
   try {
-    const tenants = (await callRpc<Array<{ tenant_id: string }> | null>(db, 'worker_tenants_to_release', { p_now: clockOf(options) })) ?? [];
-    const results = await Promise.allSettled(tenants.map((t) => deliverTenant(t.tenant_id, { ...options, db })));
-    for (const r of results) {
-      if (r.status === 'rejected') failed('a release')(r.reason);
-      else if (r.value.status === 'delivered' && r.value.releaseId) deliveredNow.add(r.value.releaseId);
-    }
+    tenants = ((await callRpc<Array<{ tenant_id: string }> | null>(db, 'worker_tenants_to_release', { p_now: clockOf(options) })) ?? []).map(
+      (t) => t.tenant_id,
+    );
   } catch (error) {
     failed('listing tenants to release')(error);
   }
-
-  // 3. One retry per delivery whose next attempt is due.
+  let retries = new Map<string, RetryRow[][]>();
   try {
-    await retryDeliveries(db, options, deliveredNow, failed);
+    retries = retriesByTenant((await callRpc<RetryRow[] | null>(db, 'worker_deliveries_to_retry', { p_now: clockOf(options) })) ?? []);
   } catch (error) {
     failed('listing deliveries to retry')(error);
   }
+  const building = new Set(tenants);
+  await Promise.all([
+    ...tenants.map(async (tenantId) => {
+      let result: Awaited<ReturnType<typeof deliverTenant>>;
+      try {
+        result = await deliverTenant(tenantId, { ...options, db });
+      } catch (error) {
+        failed('a release')(error);
+        return;
+      }
+      if (result.status === 'delivered') return;
+      await retryReleases(db, retries.get(tenantId) ?? [], options, failed);
+    }),
+    ...[...retries].filter(([tenantId]) => !building.has(tenantId)).map(([, groups]) => retryReleases(db, groups, options, failed)),
+  ]);
 
   // 4. Orphaned private originals.
   await removePrivateOrphans(db).catch(failed('removing orphaned originals'));
@@ -128,19 +145,26 @@ export async function runSweep(options: DeliveryOptions = {}): Promise<void> {
   if (errors.length > 0) throw new AggregateError(errors, `sweep: ${errors.length} step(s) failed`);
 }
 
-async function retryDeliveries(
+/** The rows to retry, by tenant and then by release (in the order the database lists them). */
+function retriesByTenant(rows: RetryRow[]): Map<string, RetryRow[][]> {
+  const byRelease = new Map<string, RetryRow[]>();
+  for (const row of rows) byRelease.set(row.release_id, [...(byRelease.get(row.release_id) ?? []), row]);
+  const byTenant = new Map<string, RetryRow[][]>();
+  for (const group of byRelease.values()) {
+    const tenantId = group[0]!.tenant_id;
+    byTenant.set(tenantId, [...(byTenant.get(tenantId) ?? []), group]);
+  }
+  return byTenant;
+}
+
+/** One retry per release group, concurrently; each failure is reported, none stops the others. */
+async function retryReleases(
   db: SupabaseClient,
+  groups: RetryRow[][],
   options: DeliveryOptions,
-  skip: Set<string>,
   failed: (step: string) => (error: unknown) => void,
 ): Promise<void> {
-  const rows = (await callRpc<RetryRow[] | null>(db, 'worker_deliveries_to_retry', { p_now: clockOf(options) })) ?? [];
-  const byRelease = new Map<string, RetryRow[]>();
-  for (const row of rows) {
-    if (skip.has(row.release_id)) continue;
-    byRelease.set(row.release_id, [...(byRelease.get(row.release_id) ?? []), row]);
-  }
-  const results = await Promise.allSettled([...byRelease.values()].map((group) => retryRelease(db, group, options)));
+  const results = await Promise.allSettled(groups.map((group) => retryRelease(db, group, options)));
   for (const r of results) if (r.status === 'rejected') failed('a delivery retry')(r.reason);
 }
 
