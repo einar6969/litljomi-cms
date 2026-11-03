@@ -32,6 +32,40 @@ test('creates a news entry, suggests the slug from the title and autosaves', asy
   await expect(page.getByRole('link', { name: 'Brauð ársins 2025' }).first()).toBeVisible();
 });
 
+// M2-10: the list's title search and status filter, with the state in the URL.
+test('the entry list searches titles and filters by status, kept in the URL', async ({ page }) => {
+  const word = `Leitarorð${randomBytes(4).toString('hex')}`;
+  await createNews(page);
+  await page.getByLabel(TITLE).fill(`Kleinur ${word}`);
+  await expect(page.getByRole('status')).toHaveText(t.editor.saved, SAVED);
+  await page.getByRole('link', { name: t.entries.back }).click();
+
+  // Case-insensitive substring: the lower-case word finds the entry, and only it.
+  const search = page.getByRole('search', { name: t.entries.filter.label });
+  await search.getByLabel(t.entries.filter.search).fill(word.toLowerCase());
+  await search.getByRole('button', { name: t.entries.filter.submit }).click();
+  await expect(page).toHaveURL(new RegExp(`[?&]q=${encodeURIComponent(word.toLowerCase())}(&|$)`));
+  await expect(page.getByRole('link', { name: `Kleinur ${word}` })).toBeVisible();
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+
+  // A draft is found under "Uppkast", not under "Birt"; a reload keeps the search and the filter.
+  await search.getByLabel(t.entries.filter.status).selectOption('published');
+  await search.getByRole('button', { name: t.entries.filter.submit }).click();
+  await expect(page).toHaveURL(/[?&]status=published(&|$)/);
+  await expect(page.getByText(t.entries.filter.none)).toBeVisible();
+  await page.reload();
+  await expect(search.getByLabel(t.entries.filter.search)).toHaveValue(word.toLowerCase());
+  await expect(search.getByLabel(t.entries.filter.status)).toHaveValue('published');
+  await search.getByLabel(t.entries.filter.status).selectOption('draft');
+  await search.getByRole('button', { name: t.entries.filter.submit }).click();
+  await expect(page.getByRole('link', { name: `Kleinur ${word}` })).toBeVisible();
+
+  // Clearing the filter goes back to the plain list.
+  await page.getByRole('link', { name: t.entries.filter.clear }).click();
+  await expect(page).toHaveURL(/\/t\/labak\/news$/);
+  await expect(search.getByLabel(t.entries.filter.search)).toHaveValue('');
+});
+
 test('a second tab editing the same entry gives the first the conflict notice and keeps its text', async ({ page, context }) => {
   await createNews(page);
   await page.getByLabel(TITLE).fill('Fyrsti flipi');
