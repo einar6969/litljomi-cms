@@ -6,6 +6,7 @@ import { DateTimeField } from './fields/DateTimeField';
 import { ImageField } from './fields/ImageField';
 import { LinkField } from './fields/LinkField';
 import { NumberField } from './fields/NumberField';
+import { ReferenceField } from './fields/ReferenceField';
 import { RichTextField } from './fields/RichTextField';
 import { SelectField } from './fields/SelectField';
 import { TextField } from './fields/TextField';
@@ -24,6 +25,8 @@ export type FieldProps = {
   min?: number;
   integer?: boolean;
   options?: SelectChoice[];
+  /** A reference field's allowed target types. */
+  to?: readonly string[];
 };
 
 /**
@@ -40,4 +43,5 @@ export const fieldRegistry: Record<string, ComponentType<FieldProps>> = {
   link: LinkField,
   image: ImageField,
   richText: RichTextField,
+  reference: ReferenceField,
 };

@@ -6,11 +6,7 @@ import type { SupabaseClient } from './supabase/types';
 /** A tenant the signed-in editor is a member of, as `api.my_tenants` returns it. */
 export type MyTenant = { id: string; slug: string; name: string; status: 'active' | 'suspended' };
 
-/**
- * True only for a tenant whose content may be edited now. Every editor route and action uses this
- * one rule; a missing tenant (not a member, or not found) counts as inactive.
- */
-export const isActive = (tenant: { status: string } | null | undefined): boolean => tenant?.status === 'active';
+export { isActive } from './tenant-status';
 
 const COLUMNS = 'id, slug, name, status';
 // Tenant slugs (plan decision 2); a URL segment of another form names no tenant.

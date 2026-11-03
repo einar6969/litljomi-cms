@@ -92,6 +92,11 @@ describe('demo notice type (schema evolution, M2-05)', () => {
     expect(v1).toEqual({ heading: 'Lokað á morgun' });
   });
 
+  it('orders by its date field, so sort_at (a timestamp) is never the title (M2-13)', () => {
+    expect(notice.orderBy).toBe('date');
+    expect(notice.queryColumns({ title: 'Lokað', date: '2026-11-04' })).toEqual({ title: 'Lokað', sortAt: '2026-11-04' });
+  });
+
   it('version 1 data is not valid at version 2 without the upcast', () => {
     expect(notice.publishValidator().safeParse({ heading: 'x' }).success).toBe(false);
   });

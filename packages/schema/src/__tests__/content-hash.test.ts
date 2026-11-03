@@ -39,6 +39,15 @@ describe('canonicalJson and contentHash', () => {
     expect(h('https://m.test/1.png')).toBe(h('https://m.test/1.png'));
     expect(h('https://m.test/1.png')).not.toBe(h('https://m.test/2.png'));
   });
+  it("hash changes when the asset's focal point is set, moved or cleared (plan M2-12)", () => {
+    const t = defineType({ name: 'p', version: 1, label: 'P', fields: { pic: image({ label: 'I' }) }, preview: { title: 'pic' }, orderBy: 'pic' });
+    const data = { pic: { _ref: A, _kind: 'asset', alt: 'a' } };
+    const h = (focal: { x: number; y: number } | null) =>
+      contentHash(projectEntry(t, data, fakeCtx({ assets: { [A]: { ...asset('https://m.test/1.png'), focal } } })));
+    const hashes = [h(null), h({ x: 0.5, y: 0.5 }), h({ x: 0.5, y: 0.6 })];
+    expect(new Set(hashes).size).toBe(3);
+    expect(h({ x: 0.5, y: 0.6 })).toBe(hashes[2]);
+  });
   // Documented in canonicalJson: only plain objects (prototype Object.prototype or null) are
   // hashed, so the hash covers exactly what JSON delivers to a site.
   it.each([

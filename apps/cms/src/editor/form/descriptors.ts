@@ -21,6 +21,8 @@ export type FieldDescriptor = {
   integer?: boolean;
   /** A select field's choices, in display order. */
   options?: SelectChoice[];
+  /** The content types a reference field may point to. */
+  to?: string[];
 };
 
 const isChoice = (x: unknown): x is SelectChoice =>
@@ -29,8 +31,8 @@ const isChoice = (x: unknown): x is SelectChoice =>
 export function describeFields(type: ContentType): FieldDescriptor[] {
   return Object.entries<AnyFieldKind>(type.fields).map(([key, field]) => {
     // Kind-specific options: `max` on text and number fields, `multiline` on text, `min` and
-    // `integer` on number, `options` on select. Each is passed only when the field has it.
-    const { max, multiline, min, integer, options } = field as { max?: unknown; multiline?: unknown; min?: unknown; integer?: unknown; options?: unknown };
+    // `integer` on number, `options` on select, `to` on reference. Each is passed only when the field has it.
+    const { max, multiline, min, integer, options, to } = field as { max?: unknown; multiline?: unknown; min?: unknown; integer?: unknown; options?: unknown; to?: unknown };
     return {
       key,
       kind: field.kind,
@@ -42,6 +44,7 @@ export function describeFields(type: ContentType): FieldDescriptor[] {
       ...(typeof integer === 'boolean' ? { integer } : {}),
       // Plain copies: the kind's options are frozen objects, and only plain data crosses to the client.
       ...(Array.isArray(options) ? { options: options.filter(isChoice).map(({ value, label }) => ({ value, label })) } : {}),
+      ...(field.kind === 'reference' && Array.isArray(to) ? { to: to.filter((x): x is string => typeof x === 'string') } : {}),
     };
   });
 }

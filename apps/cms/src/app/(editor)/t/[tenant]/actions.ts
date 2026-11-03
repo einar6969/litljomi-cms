@@ -1,7 +1,8 @@
 'use server';
 
 import { z } from 'zod';
-import { failureAmong, hasSession, loadEntryContext } from '@/editor/server/entry-context';
+import { authOrError, failureAmong, hasSession, loadEntryContext } from '@/editor/server/entry-context';
+import { updateDraftSchema, type UpdateDraftSchemaResult } from '@/editor/server/update-draft-schema';
 import { createEditorClient } from '@/lib/supabase/server';
 import { isActive, resolveTenant } from '@/lib/tenant';
 import { getType } from '@/modules/registry';
@@ -19,6 +20,12 @@ const MAX_NAME_LENGTH = 100;
 export type SaveDraftResult =
   | { ok: true; version: number }
   | { ok: false; code: 'version_conflict' | 'auth' | 'invalid' | 'error'; issues?: { path: (string | number)[]; message: string }[] };
+
+export type LoadDraftResult =
+  | { ok: true; version: number; data: Record<string, unknown> }
+  | { ok: false; code: 'auth' | 'invalid' | 'error' };
+
+export type { UpdateDraftSchemaResult };
 
 export type SetSlugResult =
   | { ok: true; slug: string }
@@ -80,6 +87,33 @@ export async function saveDraftAction(id: string, expectedVersion: number, data:
   }
 }
 
+const draftRow = z.object({ data: z.unknown(), draft_version: draftVersion });
+const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/**
+ * The entry's current draft and its version, read after a stale save so the editor can compare it
+ * with their own values (§5.5, M2-11). Read like the entry page reads it: `api.entry_detail` under
+ * the editor's session, in the tenant `loadEntryContext` found; data that is not an object reads as
+ * empty, as on the page.
+ */
+export async function loadDraftAction(id: string): Promise<LoadDraftResult> {
+  const args = entryId.safeParse(id);
+  if (!args.success) return { ok: false, code: 'invalid' };
+  try {
+    const client = await createEditorClient();
+    if (!(await hasSession(client))) return { ok: false, code: 'auth' };
+    const context = await loadEntryContext(client, args.data);
+    if (!context) return { ok: false, code: 'error' };
+    const result = await client.from('entry_detail').select('data, draft_version').eq('id', context.entryId).eq('tenant_id', context.tenantId).maybeSingle();
+    if (result.error) return { ok: false, code: authOrError({ error: result.error, status: result.status }) };
+    const row = draftRow.safeParse(result.data);
+    if (!row.success) return { ok: false, code: 'error' };
+    return { ok: true, version: row.data.draft_version, data: isObject(row.data.data) ? row.data.data : {} };
+  } catch {
+    return { ok: false, code: 'error' };
+  }
+}
+
 /** Sets the entry's slug before its first publication (§4.6); the database locks it afterwards. */
 export async function setSlugAction(id: string, slug: string): Promise<SetSlugResult> {
   const args = z.object({ id: entryId, slug: slugShape }).safeParse({ id, slug });
@@ -92,6 +126,23 @@ export async function setSlugAction(id: string, slug: string): Promise<SetSlugRe
     const result = await client.rpc('set_slug', { p_entry_id: context.entryId, p_slug: args.data.slug });
     if (result.error) return { ok: false, code: failureAmong({ error: result.error, status: result.status }, ['slug_taken', 'slug_locked']) };
     return { ok: true, slug: args.data.slug };
+  } catch {
+    return { ok: false, code: 'error' };
+  }
+}
+
+/**
+ * Updates an outdated draft (§5.3; plan M2-14): the server reads the stored draft, upcasts it to
+ * the type's current version and saves it as a normal versioned update (`updateDraftSchema`). The
+ * browser sends only the entry and the version it saw, never data.
+ */
+export async function updateDraftSchemaAction(id: string, expectedVersion: number): Promise<UpdateDraftSchemaResult> {
+  const args = z.object({ id: entryId, expectedVersion: draftVersion }).safeParse({ id, expectedVersion });
+  if (!args.success) return { ok: false, code: 'invalid' };
+  try {
+    const client = await createEditorClient();
+    if (!(await hasSession(client))) return { ok: false, code: 'auth' };
+    return await updateDraftSchema(client, args.data.id, args.data.expectedVersion);
   } catch {
     return { ok: false, code: 'error' };
   }

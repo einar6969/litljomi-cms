@@ -27,6 +27,12 @@ describe('module registry', () => {
     expect(getType('demo', 'event')?.name).toBe('event');
     expect(getType('nope', 'news')).toBeUndefined();
   });
+  // /t/[tenant]/assets/[assetId] is a static segment beside /t/[tenant]/[type]: a type named
+  // "assets" would have its entry pages shadowed by the asset detail (plan M2-12).
+  it('has no content type named after a static editor route segment', () => {
+    const reserved = new Set(['assets']);
+    for (const m of modules) for (const type of m.types) expect(reserved.has(type.name), `${m.tenant}/${type.name}`).toBe(false);
+  });
   it('does not resolve inherited object properties as tenants or types', () => {
     expect(getModule('constructor')).toBeUndefined();
     expect(getType('labak', 'constructor')).toBeUndefined();

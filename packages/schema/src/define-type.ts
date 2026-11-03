@@ -46,11 +46,16 @@ export function defineType<F extends Record<string, AnyFieldKind>>(d: TypeDefini
     const v = (data as Record<string, unknown>)[key];
     return typeof v === 'string' && v !== '' ? v : null;
   };
+  const orderKind = (d.fields[d.orderBy] as { kind?: string } | undefined)?.kind;
+  const datedOrderBy = orderKind === 'date' || orderKind === 'datetime';
   return {
     ...d,
     draftValidator: () => z.object(shapes.draft),
     publishValidator: () => z.object(shapes.publish),
-    queryColumns: (data) => ({ title: column(data, d.preview.title), sortAt: column(data, d.orderBy) }),
+    // `sort_at` is a timestamp column (§4.3): only a date or datetime field can fill it. A type
+    // ordered by another kind (the demo `notice`, by title) saves none, rather than a text value
+    // the database refuses.
+    queryColumns: (data) => ({ title: column(data, d.preview.title), sortAt: datedOrderBy ? column(data, d.orderBy) : null }),
     upcast: (data, fromVersion) => upcast(d, data, fromVersion),
   };
 }

@@ -92,11 +92,11 @@ select is_empty($$ select s from unnest(array[
     'api.worker_sites(uuid)',
     'api.worker_record_delivery(uuid,uuid,text,text,jsonb,timestamp with time zone)',
     'api.admin_create_tenant(text,text)',
-    'api.admin_create_site(uuid,text,text,text,text)',
+    'api.admin_create_site(uuid,text,text,text,text,text)',
     'api.admin_add_membership(uuid,uuid)',
     'api.worker_claim_request(uuid)',
     'api.worker_record_alert(uuid,text,jsonb)']) as s where to_regprocedure(s) is null $$,
-  'all sixteen worker and admin functions exist with the Interfaces'' signatures (Task 11, and Task 19''s two; M3-02''s p_now on worker_record_delivery)');
+  'all sixteen worker and admin functions exist with the Interfaces'' signatures (Task 11, and Task 19''s two; M3-02''s p_now on worker_record_delivery; M3-10''s p_preview_secret on admin_create_site)');
 select set_eq($$ select p.proname::text, pg_catalog.pg_get_function_result(p.oid) from pg_catalog.pg_proc p
      join pg_catalog.pg_namespace n on n.oid = p.pronamespace
      where n.nspname = 'api' and (p.proname like 'worker\_%' or p.proname like 'admin\_%') $$,
@@ -110,6 +110,9 @@ select set_eq($$ select p.proname::text, pg_catalog.pg_get_function_result(p.oid
             ('admin_create_tenant', 'uuid'), ('admin_create_site', 'uuid'),
             ('admin_add_membership', 'void'), ('worker_claim_request', 'cms.publish_requests'),
             ('worker_record_alert', 'void'),
+            -- M3-10 (103_preview_secrets).
+            ('worker_preview_sites', 'TABLE(id uuid, preview_url text, preview_secret text)'),
+            ('admin_set_preview_secret', 'void'),
             -- Task 21 (097_worker_sweep).
             ('worker_tenants_to_release', 'TABLE(tenant_id uuid)'),
             -- M3-02 (102_retry_backoff).
@@ -121,7 +124,10 @@ select set_eq($$ select p.proname::text, pg_catalog.pg_get_function_result(p.oid
             ('worker_pointer_check', 'TABLE(building boolean, latest_delivered integer)'),
             -- M3-07 (103_asset_trust).
             ('worker_asset_metadata', 'TABLE(id uuid, original_path text, mime text, bytes bigint, width integer, height integer, sha256 text)'),
-            ('worker_private_orphans', 'TABLE(name text, created_at timestamp with time zone)') $$,
+            ('worker_private_orphans', 'TABLE(name text, created_at timestamp with time zone)'),
+            -- M2-13 (104_draft_migration).
+            ('admin_outdated_drafts', 'TABLE(entry_id uuid, version integer, schema_version integer, data jsonb)'),
+            ('admin_migrate_draft', 'integer') $$,
   'worker and admin functions: return types, and no others');
 select is((select pg_catalog.pg_get_function_arguments('api.worker_claim_requests(integer)'::regprocedure)),
   'p_limit integer DEFAULT 10', 'worker_claim_requests: p_limit defaults to 10');

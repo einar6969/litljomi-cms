@@ -52,6 +52,17 @@ async function session(persona: PersonaName): Promise<Session> {
 export const editorClient = async (persona: PersonaName): Promise<SupabaseClient> => (await session(persona)).client;
 export const accessToken = async (persona: PersonaName): Promise<string> => (await session(persona)).accessToken;
 
+/**
+ * A client of the `api` schema carrying the persona's session in its headers, the way the CMS
+ * app's server client sends the editor's JWT (for app code tested with a real session).
+ */
+export const editorApiClient = async (persona: PersonaName): Promise<SupabaseClient<any, 'api'>> =>
+  createClient<any, 'api'>(env.apiUrl, env.publishableKey, {
+    ...options,
+    db: { schema: 'api' },
+    global: { headers: { Authorization: `Bearer ${await accessToken(persona)}` } },
+  });
+
 /** Headers for a raw fetch to the gateway, as a persona or as anon. */
 export const authHeaders = async (persona: PersonaName | 'anon'): Promise<Record<string, string>> =>
   persona === 'anon'

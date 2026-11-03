@@ -464,6 +464,43 @@ describe('worker and cron route exception', () => {
   });
 });
 
+// M3-10 (spec §7.5): the preview token route handler may import its entry,
+// privileged/preview/token-route, and nothing else from privileged/; the other rules still apply.
+describe('preview token route exception', () => {
+  const ROUTE = 'apps/cms/src/app/api/preview-token/route.ts';
+  it('lets the route import its entry', async () => {
+    const code = [
+      `import { previewTokenPost } from '@/privileged/preview/token-route'`,
+      `import { previewTokenPost } from '@/privileged/preview/token-route.ts'`,
+      `import { previewTokenPost } from '../../../privileged/preview/token-route'`,
+    ].join('; ');
+    expect(await ruleIds(ROUTE, code)).toEqual([]);
+  });
+  it.each([
+    [`import { createAdminClient } from '@/privileged/admin-client'`, IMPORT],
+    [`import { mintPreviewToken } from '@/privileged/preview/token'`, IMPORT],
+    [`import { sweep } from '@/privileged/worker/pipeline'`, IMPORT],
+    [`import { x } from '@/privileged/preview/token-route/../../admin-client'`, IMPORT],
+    [`import { x } from '@/privileged\\\\preview\\\\token-route'`, IMPORT],
+    [`import('@/privileged/admin-client')`, RESTRICTED_SYNTAX],
+  ])('still forbids %s', async (code, ruleId) => {
+    expect(await ruleIds(ROUTE, code)).toEqual([ruleId]);
+  });
+  it('keeps the secret-key and Supabase rules', async () => {
+    expect(await ruleIds(ROUTE, `const k = process.env.SUPABASE_SECRET_KEY`)).toEqual([RESTRICTED_SYNTAX]);
+    expect(await ruleIds(ROUTE, `import { createClient } from '@supabase/supabase-js'`)).toEqual([IMPORT]);
+  });
+  it.each([
+    'apps/cms/src/app/api/preview-token/handler.ts',
+    'apps/cms/src/app/api/preview-token/route.tsx',
+    'apps/cms/src/app/api/preview/route.ts',
+    'apps/cms/src/app/api/internal/worker/route.ts',
+    'apps/cms/src/app/(editor)/route.ts',
+  ])('does not cover %s', async (path) => {
+    expect(await ruleIds(path, `import { previewTokenPost } from '@/privileged/preview/token-route'`)).toEqual([IMPORT]);
+  });
+});
+
 // Decision 35 (Task 19): triggerWorker lives outside privileged/, in lib/, so the editor's publish
 // action can call it. It needs no Supabase credentials, and lib/ (outside lib/supabase) gets no
 // exception: privileged/, the secret key and Supabase libraries stay forbidden there.
