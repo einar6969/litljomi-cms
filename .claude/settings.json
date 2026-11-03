@@ -15,7 +15,13 @@
       "Write(/.env)",
       "Write(/.env.local)",
       "Write(/**/.env)",
-      "Write(/**/.env.local)"
+      "Write(/**/.env.local)",
+      "Read(/.env.staging.local)",
+      "Read(/**/.env.staging.local)",
+      "Edit(/.env.staging.local)",
+      "Edit(/**/.env.staging.local)",
+      "Write(/.env.staging.local)",
+      "Write(/**/.env.staging.local)"
     ],
     "ask": [
       "Bash(git push *)",

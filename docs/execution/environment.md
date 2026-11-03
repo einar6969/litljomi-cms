@@ -164,3 +164,8 @@ Einar approved the exact diff in chat on 2026-11-02 (patch to `cms-security-revi
 ## npm cache in the session's temp folder (2026-11-03)
 
 - The sandbox refused writes to `~/.npm/_cacache` (`EPERM`), so `npm pack`, `npm ci` and `npm install` failed for decision 43.3; the implementer stopped and reported. Einar in chat, 2026-11-03: "Yes, temp cache" (to the controller's proposal that npm use a cache in the session's temp folder, which the sandbox already allows). npm commands for the vendoring run with `npm_config_cache="$TMPDIR/npm-cache"`; no settings change.
+
+## Staging keys file and its deny rules (2026-11-03, G3)
+
+- Einar's ruling (G3, `gates.json`): staging keys live in `/Users/einarzoega/litljomi-cms/.env.staging.local`, created and filled by Einar; `.env.local` is not swapped. The file is git-ignored by `.env*`.
+- Diff D (`diff -u --label`, sha256 `f82422f50c1abaf1db2e6c09b169ead845329087bd007324113155968bf55ea1`): `Read`, `Edit` and `Write` deny rules for `/.env.staging.local` and `/**/.env.staging.local`. Einar in chat, 2026-11-03: "Approve diff D". Applied with the Edit tool; byte-identical to the shown file (`cmp`). Applied before Einar created the file.
