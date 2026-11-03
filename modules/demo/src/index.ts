@@ -63,6 +63,22 @@ const noticeType = defineType({
   },
 });
 
+/**
+ * A singleton test type (M2-09; spec §3.2, §10.1): the demo site's one "site info" entry. The
+ * editor opens it directly, creating it on first open. It has no site pages.
+ */
+const siteInfoType = defineType({
+  name: 'site-info',
+  version: 1,
+  label: 'Site info',
+  fields: {
+    title: text({ label: 'Site name', required: true }),
+    tagline: text({ label: 'Tagline' }),
+  },
+  preview: { title: 'title' },
+  orderBy: 'title',
+});
+
 const eventPath = (e: SiteEntry): string => {
   if (e.slug === null) throw new Error(`event entry ${e.id} has no slug`);
   return '/events/' + e.slug;
@@ -72,8 +88,11 @@ export default defineModule({
   tenant: 'demo',
   locale: 'is',
   branding: { name: 'Demo' },
-  types: [eventType, noticeType],
-  structure: [{ type: 'event', label: 'Events' }],
+  types: [eventType, noticeType, siteInfoType],
+  structure: [
+    { group: 'Content', items: [{ type: 'event', label: 'Events' }] },
+    { type: 'site-info', label: 'Site info', singleton: true },
+  ],
   site: {
     event: {
       path: eventPath,

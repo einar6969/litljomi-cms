@@ -297,6 +297,70 @@ describe('sweep', () => {
     expect(await scheduleOf(r.requestId)).toEqual({ first_failed_at: t0, next_attempt_at: null });
   });
 
+  // M3-03: a missed live check is retried on the same schedule: the sweep notifies the site again
+  // and runs the full live check.
+  it('a site serving a stale pointer for the first check is not_confirmed, then retried 1 minute later and live ok', async () => {
+    const r = await requested('Gamall vísir');
+    const t0 = Date.now();
+    // The first check: the site acknowledges the webhook but keeps rendering the previous pointer's
+    // bundle (a stale current.json), through the notification and the §7.4 resend.
+    revalidates = false;
+    try {
+      await processAndDeliver(r.requestId, { pollMs: 100, timeoutMs: 1_500, now: () => t0 });
+    } finally {
+      revalidates = true;
+    }
+    expect(await deliveryOf(r.requestId)).toMatchObject({ notify_status: 'ok', notify_attempts: 1, live_status: 'not_confirmed', last_error: { code: 'live_not_confirmed' } });
+    expect(await scheduleOf(r.requestId)).toEqual({ first_failed_at: t0, next_attempt_at: t0 + MINUTE });
+    const status = await editor.schema('api').from('publication_status').select('sites_not_confirmed, retries_exhausted, live_retrying').eq('entry_id', r.entryId).single();
+    expect(status.data).toEqual({ sites_not_confirmed: 1, retries_exhausted: false, live_retrying: true });
+
+    // Not due 30 seconds later.
+    const before = webhooks().length;
+    await sweep({ ...fast, now: () => t0 + 30_000 });
+    expect(webhooks().length).toBe(before);
+
+    // Due: notified again; the site now reads the current pointer, and the full live check passes.
+    await sweep({ ...fast, now: () => t0 + MINUTE });
+    const sent = webhooks().slice(before);
+    expect(sent).toHaveLength(1);
+    const d = await deliveryOf(r.requestId);
+    expect(JSON.parse(sent[0]!.body.toString('utf8'))).toEqual({ tenant: 'labak', release: d.number });
+    expect(d).toMatchObject({ notify_status: 'ok', notify_attempts: 2, live_status: 'ok', last_error: null });
+    expect(await scheduleOf(r.requestId)).toEqual({ first_failed_at: t0, next_attempt_at: null });
+    expect(news().find((e) => e.id === r.entryId)).toBeDefined();
+    const after = await editor.schema('api').from('publication_status').select('sites_live_ok, site_count, live_retrying').eq('entry_id', r.entryId).single();
+    expect(after.data).toEqual({ sites_live_ok: 1, site_count: 1, live_retrying: false });
+  });
+
+  it('a newer delivered release stops the retries of an older not_confirmed one', async () => {
+    const older = await requested('Eldri útgáfa');
+    const t0 = Date.now();
+    revalidates = false;
+    try {
+      await processAndDeliver(older.requestId, { pollMs: 100, timeoutMs: 1_500, now: () => t0 });
+    } finally {
+      revalidates = true;
+    }
+    expect(await deliveryOf(older.requestId)).toMatchObject({ live_status: 'not_confirmed', notify_attempts: 1 });
+    expect((await scheduleOf(older.requestId)).next_attempt_at).toBe(t0 + MINUTE);
+
+    // A newer publish is delivered and confirmed before the older one's retry is due.
+    const newer = await requested('Nýrri útgáfa');
+    await processAndDeliver(newer.requestId, { ...fast, now: () => t0 + 10_000 });
+    const n = await deliveryOf(newer.requestId);
+    expect(n).toMatchObject({ live_status: 'ok' });
+    expect(n.number).toBeGreaterThan((await deliveryOf(older.requestId)).number);
+
+    // The older release's retry is due, but it is superseded: the sweep does not notify for it.
+    const before = webhooks().length;
+    await sweep({ ...fast, now: () => t0 + MINUTE });
+    expect(webhooks().length).toBe(before);
+    expect(await deliveryOf(older.requestId)).toMatchObject({ live_status: 'not_confirmed', notify_attempts: 1 });
+    const status = await editor.schema('api').from('publication_status').select('live_retrying').eq('entry_id', older.entryId).single();
+    expect(status.data).toEqual({ live_retrying: false });
+  });
+
   it('a site answering 500 is retried on schedule and marked failed after 24 hours, with one alert and one email', { timeout: 180_000 }, async () => {
     const r = await requested('Sólarhringur');
     const t0 = Date.now();

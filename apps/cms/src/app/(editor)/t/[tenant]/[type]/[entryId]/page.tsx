@@ -1,18 +1,21 @@
+import { isSingleton } from '@litljomi/cms-schema';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { z } from 'zod';
 import { describeFields } from '@/editor/form/descriptors';
 import { EntryForm } from '@/editor/form/EntryForm';
+import { OutdatedDraft } from '@/editor/form/OutdatedDraft';
 import { t } from '@/i18n/is';
 import { createEditorClient } from '@/lib/supabase/server';
 import { currentTenant, isActive } from '@/lib/tenant';
-import { getType } from '@/modules/registry';
+import { getModule, getType } from '@/modules/registry';
 
 type Props = { params: Promise<{ tenant: string; type: string; entryId: string }> };
 
 type Detail = {
   data: unknown;
   slug: string | null;
+  schema_version: number;
   draft_version: number;
   first_published_at: string | null;
   status: 'draft' | 'published' | 'changed' | 'archived';
@@ -32,7 +35,7 @@ export default async function EntryPage({ params }: Props) {
   if (!type) notFound();
   const { data, error } = await (await createEditorClient())
     .from('entry_detail')
-    .select('data, slug, draft_version, first_published_at, status')
+    .select('data, slug, schema_version, draft_version, first_published_at, status')
     .eq('id', entryId)
     .eq('tenant_id', tenant.id)
     .eq('type', type.name)
@@ -40,25 +43,36 @@ export default async function EntryPage({ params }: Props) {
   if (error) throw new Error(`entry_detail: ${error.code}`);
   if (!data) notFound();
   const entry = data as Detail;
+  const published = entry.status === 'published' || entry.status === 'changed';
+  const fields = describeFields(type);
+  const fieldLabels = Object.fromEntries(fields.map((f) => [f.key, f.label]));
+  // A singleton has no list to go back to: its type's page would open this entry again.
+  const singleton = isSingleton(getModule(tenant.slug)!, type.name);
+  const tenantPath = `/t/${encodeURIComponent(tenant.slug)}`;
   return (
     <main className="flex flex-col gap-4">
       <p>
-        <Link href={`/t/${encodeURIComponent(tenant.slug)}/${encodeURIComponent(type.name)}`} className="inline-flex min-h-[44px] items-center text-[15px] font-medium">
-          {t.entries.back}
+        <Link href={singleton ? tenantPath : `${tenantPath}/${encodeURIComponent(type.name)}`} className="inline-flex min-h-[44px] items-center text-[15px] font-medium">
+          {singleton ? t.entries.backHome : t.entries.back}
         </Link>
       </p>
       <h1>{type.label}</h1>
-      <EntryForm
-        tenant={{ id: tenant.id, slug: tenant.slug }}
-        entryId={entryId}
-        fields={describeFields(type)}
-        titleKey={type.preview.title}
-        initialData={isObject(entry.data) ? entry.data : {}}
-        initialVersion={entry.draft_version}
-        initialSlug={entry.slug}
-        slugLocked={entry.first_published_at !== null}
-        published={entry.status === 'published' || entry.status === 'changed'}
-      />
+      {entry.schema_version < type.version ? (
+        // §5.3, M2-14: a draft written at an older version is updated before it can be edited.
+        <OutdatedDraft entryId={entryId} version={entry.draft_version} published={published} fieldLabels={fieldLabels} />
+      ) : (
+        <EntryForm
+          tenant={{ id: tenant.id, slug: tenant.slug }}
+          entryId={entryId}
+          fields={fields}
+          titleKey={type.preview.title}
+          initialData={isObject(entry.data) ? entry.data : {}}
+          initialVersion={entry.draft_version}
+          initialSlug={entry.slug}
+          slugLocked={entry.first_published_at !== null}
+          published={published}
+        />
+      )}
     </main>
   );
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defineModule, newsType, type ModuleManifest } from '../index.ts';
+import { defineModule, defineType, isSingleton, newsType, structureItems, text, type ModuleManifest } from '../index.ts';
 
 describe('newsType', () => {
   it('has the library shape', () => {
@@ -31,5 +31,60 @@ describe('defineModule', () => {
   it('returns the manifest unchanged', () => {
     const m: ModuleManifest = { tenant: 't', locale: 'is', branding: { name: 'T' }, types: [], structure: [], site: {} };
     expect(defineModule(m)).toBe(m);
+  });
+});
+
+describe('structure (M2-09; spec §3.2)', () => {
+  const type = (name: string) => defineType({ name, version: 1, label: name, fields: { title: text({ label: 'Title' }) }, preview: { title: 'title' }, orderBy: 'title' });
+  const manifest = (structure: ModuleManifest['structure']): ModuleManifest => ({
+    tenant: 't',
+    locale: 'is',
+    branding: { name: 'T' },
+    types: [type('news'), type('page'), type('settings')],
+    structure,
+    site: {},
+  });
+
+  it('accepts groups, order and singletons', () => {
+    const m = manifest([
+      { group: 'Efni', items: [{ type: 'page', label: 'Síður' }, { type: 'news', label: 'Fréttir' }] },
+      { type: 'settings', label: 'Stillingar', singleton: true },
+    ]);
+    expect(defineModule(m)).toBe(m);
+  });
+  it('refuses an unknown type, at the top level and in a group', () => {
+    expect(() => defineModule(manifest([{ type: 'nope', label: 'X' }]))).toThrow(/structure: unknown type "nope"/);
+    expect(() => defineModule(manifest([{ group: 'G', items: [{ type: 'nope', label: 'X' }] }]))).toThrow(/structure: unknown type "nope"/);
+  });
+  it('refuses a type listed twice, also across groups', () => {
+    expect(() => defineModule(manifest([{ type: 'news', label: 'A' }, { type: 'news', label: 'B' }]))).toThrow(/structure: type "news" is listed twice/);
+    expect(() =>
+      defineModule(manifest([{ group: 'G', items: [{ type: 'news', label: 'A' }] }, { group: 'H', items: [{ type: 'news', label: 'B' }] }])),
+    ).toThrow(/structure: type "news" is listed twice/);
+  });
+  it('refuses an empty group, a duplicate group and empty labels', () => {
+    expect(() => defineModule(manifest([{ group: 'G', items: [] }]))).toThrow(/structure: group "G" is empty/);
+    expect(() =>
+      defineModule(manifest([{ group: 'G', items: [{ type: 'news', label: 'A' }] }, { group: 'G', items: [{ type: 'page', label: 'B' }] }])),
+    ).toThrow(/structure: group "G" is listed twice/);
+    expect(() => defineModule(manifest([{ type: 'news', label: ' ' }]))).toThrow(/structure: type "news" has no label/);
+    expect(() => defineModule(manifest([{ group: '', items: [{ type: 'news', label: 'A' }] }]))).toThrow(/structure: a group has no label/);
+  });
+});
+
+describe('structureItems and isSingleton', () => {
+  const m = {
+    structure: [
+      { type: 'news', label: 'Fréttir' },
+      { group: 'G', items: [{ type: 'page', label: 'Síður' }, { type: 'settings', label: 'Stillingar', singleton: true }] },
+    ],
+  } as ModuleManifest;
+  it('lists the items in navigation order', () => {
+    expect(structureItems(m).map((i) => i.type)).toEqual(['news', 'page', 'settings']);
+  });
+  it('knows the singleton types', () => {
+    expect(isSingleton(m, 'settings')).toBe(true);
+    expect(isSingleton(m, 'news')).toBe(false);
+    expect(isSingleton(m, 'unlisted')).toBe(false);
   });
 });

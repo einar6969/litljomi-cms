@@ -211,37 +211,77 @@ describe('assetPreviewAction', () => {
 });
 
 describe('updateAssetAction', () => {
-  it('sets the focal point and the default alt text through update_asset', async () => {
-    await expect(updateAssetAction(ASSET, 0.1, 0.9, 'Brauð á borði')).resolves.toEqual({ ok: true });
-    expect(state.calls).toEqual([{ name: 'update_asset', args: { p_asset_id: ASSET, p_focal_x: 0.1, p_focal_y: 0.9, p_default_alt: 'Brauð á borði' } }]);
+  // The stored row (beforeEach): focal 0.5, 0.25 and default alt "Brauð".
+  it('sets the focal point through update_asset, keeping the stored default alt text', async () => {
+    await expect(updateAssetAction(ASSET, { focal: { x: 0.1, y: 0.9 } })).resolves.toEqual({ ok: true });
+    expect(state.calls).toEqual([{ name: 'update_asset', args: { p_asset_id: ASSET, p_focal_x: 0.1, p_focal_y: 0.9, p_default_alt: 'Brauð' } }]);
   });
 
-  it('accepts nulls, and rejects out-of-range or malformed values without calling the database', async () => {
-    await expect(updateAssetAction(ASSET, null, null, null)).resolves.toEqual({ ok: true });
-    state.calls = [];
+  it('sets the default alt text, keeping the stored focal point', async () => {
+    await expect(updateAssetAction(ASSET, { defaultAlt: 'Brauð á borði' })).resolves.toEqual({ ok: true });
+    expect(state.calls).toEqual([{ name: 'update_asset', args: { p_asset_id: ASSET, p_focal_x: 0.5, p_focal_y: 0.25, p_default_alt: 'Brauð á borði' } }]);
+  });
+
+  it('removes the focal point and clears the default alt text with nulls, and sets both at once', async () => {
+    await expect(updateAssetAction(ASSET, { focal: null })).resolves.toEqual({ ok: true });
+    await expect(updateAssetAction(ASSET, { defaultAlt: null })).resolves.toEqual({ ok: true });
+    await expect(updateAssetAction(ASSET, { focal: { x: 0, y: 1 }, defaultAlt: 'x' })).resolves.toEqual({ ok: true });
+    expect(state.calls.map((c) => c.args)).toEqual([
+      { p_asset_id: ASSET, p_focal_x: null, p_focal_y: null, p_default_alt: 'Brauð' },
+      { p_asset_id: ASSET, p_focal_x: 0.5, p_focal_y: 0.25, p_default_alt: null },
+      { p_asset_id: ASSET, p_focal_x: 0, p_focal_y: 1, p_default_alt: 'x' },
+    ]);
+  });
+
+  it('keeps a stored asset without a focal point without one', async () => {
+    state.tables.asset_list = { data: { id: ASSET, tenant_id: TENANT_ID, original_path: PATH, default_alt: null, focal_x: null, focal_y: null } };
+    await expect(updateAssetAction(ASSET, { defaultAlt: 'Brauð' })).resolves.toEqual({ ok: true });
+    expect(state.calls[0]?.args).toEqual({ p_asset_id: ASSET, p_focal_x: null, p_focal_y: null, p_default_alt: 'Brauð' });
+  });
+
+  it('rejects out-of-range, malformed or empty changes without reading or calling the database', async () => {
     for (const args of [
-      ['x', 0.5, 0.5, null],
-      [ASSET, -0.1, 0.5, null],
-      [ASSET, 0.5, 1.1, null],
-      [ASSET, Number.NaN, 0.5, null],
-      [ASSET, 0.5, null, null],
-      [ASSET, null, null, 'x'.repeat(1001)],
-      [ASSET, '0.5', 0.5, null],
+      ['x', { focal: { x: 0.5, y: 0.5 } }],
+      [ASSET, { focal: { x: -0.1, y: 0.5 } }],
+      [ASSET, { focal: { x: 0.5, y: 1.1 } }],
+      [ASSET, { focal: { x: Number.NaN, y: 0.5 } }],
+      [ASSET, { focal: { x: 0.5 } }],
+      [ASSET, { focal: { x: '0.5', y: 0.5 } }],
+      [ASSET, { focal: { x: 0.5, y: 0.5, z: 1 } }],
+      [ASSET, { defaultAlt: 'x'.repeat(1001) }],
+      [ASSET, { defaultAlt: 1 }],
+      [ASSET, {}],
+      [ASSET, { focal: undefined }],
+      [ASSET, { other: 1 }],
+      [ASSET, null],
+      [ASSET, 0.5, 0.5, null],
     ] as const) {
       await expect(updateAssetAction(...(args as unknown as Parameters<typeof updateAssetAction>))).resolves.toEqual({ ok: false, code: 'invalid' });
     }
     expect(state.calls).toEqual([]);
+    expect(state.queries).toEqual([]);
   });
 
-  it('refuses an asset of a suspended tenant and maps database errors to the generic error', async () => {
+  it('refuses an asset it cannot see or of a suspended tenant, and maps database errors to the generic error', async () => {
+    state.tables.asset_list = { data: null };
+    await expect(updateAssetAction(ASSET, { focal: null })).resolves.toEqual({ ok: false, code: 'error' });
+    state.tables.asset_list = { data: { id: ASSET, tenant_id: TENANT_ID, original_path: PATH, default_alt: null, focal_x: null, focal_y: null } };
     state.tables.my_tenants = { data: { id: TENANT_ID, slug: SLUG, name: 'T', status: 'suspended' } };
-    await expect(updateAssetAction(ASSET, 0.5, 0.5, null)).resolves.toEqual({ ok: false, code: 'error' });
+    await expect(updateAssetAction(ASSET, { focal: { x: 0.5, y: 0.5 } })).resolves.toEqual({ ok: false, code: 'error' });
     expect(state.calls).toEqual([]);
     state.tables.my_tenants = { data: { id: TENANT_ID, slug: SLUG, name: 'T', status: 'active' } };
     state.rpc.update_asset = { error: { code: 'P0001', message: 'not_found' } };
-    await expect(updateAssetAction(ASSET, 0.5, 0.5, null)).resolves.toEqual({ ok: false, code: 'error' });
+    await expect(updateAssetAction(ASSET, { focal: { x: 0.5, y: 0.5 } })).resolves.toEqual({ ok: false, code: 'error' });
     // Decision 39.3: the tenant suspended between the action's check and the call.
     state.rpc.update_asset = { error: { code: 'P0001', message: 'tenant_inactive' } };
-    await expect(updateAssetAction(ASSET, 0.5, 0.5, null)).resolves.toEqual({ ok: false, code: 'error' });
+    await expect(updateAssetAction(ASSET, { focal: { x: 0.5, y: 0.5 } })).resolves.toEqual({ ok: false, code: 'error' });
+  });
+
+  it('answers auth without a session or with an expired one', async () => {
+    state.user = null;
+    await expect(updateAssetAction(ASSET, { focal: null })).resolves.toEqual({ ok: false, code: 'auth' });
+    state.user = { id: 'u1' };
+    state.rpc.update_asset = { error: { code: 'PGRST301', message: 'JWT expired' }, status: 401 };
+    await expect(updateAssetAction(ASSET, { focal: null })).resolves.toEqual({ ok: false, code: 'auth' });
   });
 });
