@@ -1,4 +1,4 @@
-import { boolean, date, datetime, defineModule, defineType, link, number, reference, richText, select, text, type SiteEntry } from '@litljomi/cms-schema';
+import { boolean, date, datetime, defineModule, defineType, group, link, list, number, reference, richText, select, text, type SiteEntry } from '@litljomi/cms-schema';
 
 const eventType = defineType({
   name: 'event',
@@ -24,6 +24,14 @@ const eventType = defineType({
     }),
     doorsOpen: datetime({ label: 'Doors open' }),
     related: reference({ label: 'Related event', to: ['event'] }),
+    // A group holding a list of references (M2-06); optional, so existing events stay valid.
+    program: group({
+      label: 'Program',
+      fields: {
+        intro: text({ label: 'Introduction', multiline: true }),
+        highlights: list(reference({ label: 'Event', to: ['event'] }), { label: 'Highlights', max: 10 }),
+      },
+    }),
   },
   preview: { title: 'title' },
   orderBy: 'startDate',

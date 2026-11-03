@@ -102,6 +102,29 @@ export class FieldProjectionError extends Error {
 }
 
 /**
+ * Projects every field of a field set from already validated `stored` data: absent fields project
+ * as null, keys not in `fields` are dropped. A field's `FieldProjectionError` is rethrown with the
+ * field's key in front of its issue paths, so nested fields (`group`, `list`) report the full path
+ * relative to the outermost field set.
+ */
+export function projectFields(
+  fields: Record<string, AnyFieldKind>,
+  stored: Record<string, unknown>,
+  ctx: ProjectionContext,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, field] of Object.entries<AnyFieldKind>(fields)) {
+    try {
+      out[key] = field.project(stored[key], ctx);
+    } catch (error) {
+      if (!(error instanceof FieldProjectionError)) throw error;
+      throw new FieldProjectionError(error.issues.map((i) => ({ ...i, path: [key, ...i.path] })));
+    }
+  }
+  return out;
+}
+
+/**
  * Validates `data` with the publish validator, then projects every field: references resolved,
  * unknown keys dropped. Absent fields project as null. Throws `ProjectionError` when validation
  * fails or a field cannot be projected (`FieldProjectionError`, reported under the field's key).
@@ -109,18 +132,10 @@ export class FieldProjectionError extends Error {
 export function projectEntry(type: ContentType, data: unknown, ctx: ProjectionContext): Record<string, unknown> {
   const parsed = type.publishValidator().safeParse(data);
   if (!parsed.success) throw new ProjectionError(type.name, parsed.error.issues);
-  const stored = parsed.data as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
-  for (const [key, field] of Object.entries<AnyFieldKind>(type.fields)) {
-    try {
-      out[key] = field.project(stored[key], ctx);
-    } catch (error) {
-      if (!(error instanceof FieldProjectionError)) throw error;
-      throw new ProjectionError(
-        type.name,
-        error.issues.map((i) => ({ ...i, path: [key, ...i.path] })),
-      );
-    }
+  try {
+    return projectFields(type.fields, parsed.data as Record<string, unknown>, ctx);
+  } catch (error) {
+    if (!(error instanceof FieldProjectionError)) throw error;
+    throw new ProjectionError(type.name, error.issues);
   }
-  return out;
 }
