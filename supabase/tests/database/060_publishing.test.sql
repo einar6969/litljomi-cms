@@ -190,8 +190,9 @@ select set_eq($$ select * from tests.column_privs('service_role', 'cms.publish_r
 select set_eq($$ select * from tests.column_privs('service_role', 'cms.releases') where priv <> 'INSERT' $$,
   $$ values ('status', 'UPDATE'), ('bundle_path', 'UPDATE'), ('delivered_at', 'UPDATE'), ('error', 'UPDATE') $$,
   'service_role: update (status, bundle_path, delivered_at, error) on releases only');
-select is_empty($$ select * from tests.column_privs('service_role', 'cms.sites') where priv <> 'INSERT' $$,
-  'service_role: no update on sites');
+select set_eq($$ select * from tests.column_privs('service_role', 'cms.sites') where priv <> 'INSERT' $$,
+  $$ values ('preview_secret_ref', 'UPDATE') $$,
+  'service_role: update preview_secret_ref on sites only (M3-10, admin_set_preview_secret)');
 select set_eq($$ select * from tests.column_privs('service_role', 'cms.site_deliveries') where priv <> 'INSERT' $$,
   $$ values ('notify_status', 'UPDATE'), ('notify_attempts', 'UPDATE'), ('notified_at', 'UPDATE'),
             ('live_status', 'UPDATE'), ('live_confirmed_at', 'UPDATE'), ('last_error', 'UPDATE'),
