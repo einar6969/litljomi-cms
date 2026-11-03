@@ -23,11 +23,12 @@ import {
   DEMO_DELIVERY_BASE_URL,
   DEMO_SITE_MEDIA_HOST,
   DEMO_SITE_PORT,
+  DEMO_SITE_PREVIEW_SECRET,
   DEMO_SITE_READY_LINE,
   DEMO_SITE_URL,
   DEMO_SITE_WEBHOOK_SECRET,
 } from './support/demo-site.ts';
-import { NO_CLI_NETWORK_ENV, requireLoopback } from './support/local.ts';
+import { CMS_URL, NO_CLI_NETWORK_ENV, requireLoopback } from './support/local.ts';
 
 const demoSiteDir = join(import.meta.dirname, '..', '..', 'demo-site');
 const nextBin = () => join(dirname(createRequire(join(demoSiteDir, 'package.json')).resolve('next/package.json')), 'dist', 'bin', 'next');
@@ -86,6 +87,9 @@ export function siteEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEn
     CMS_DELIVERY_BASE_URL: requireLoopback(DEMO_DELIVERY_BASE_URL).href.replace(/\/$/, ''),
     CMS_TENANT: 'demo',
     CMS_WEBHOOK_SECRETS: DEMO_SITE_WEBHOOK_SECRET,
+    // Preview (M3-12): the seeded preview secret, and the local CMS whose preview endpoint draft mode reads.
+    CMS_PREVIEW_SECRETS: DEMO_SITE_PREVIEW_SECRET,
+    CMS_PREVIEW_BASE_URL: requireLoopback(CMS_URL).origin,
     CMS_MEDIA_HOST: DEMO_SITE_MEDIA_HOST,
   };
 }

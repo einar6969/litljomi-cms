@@ -33,6 +33,9 @@ export const DEMO_SITE = {
   baseUrl: 'http://localhost:3101',
   revalidateUrl: 'http://localhost:3101/api/cms/revalidate',
   webhookSecret: 's3cr3t',
+  /** The demo site's preview route and secret (M3-12; a local test value, stored in the local Vault). */
+  previewUrl: 'http://localhost:3101/api/cms/preview',
+  previewSecret: 'demo-preview-s3cr3t',
 } as const;
 
 /**

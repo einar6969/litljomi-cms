@@ -54,8 +54,9 @@ select columns_are('cms', 'publish_requests', array['id', 'tenant_id', 'entry_id
     'requested_by', 'requested_at', 'status', 'claimed_at', 'attempts', 'error', 'revision_id', 'release_id'],
   'publish_requests columns');
 select columns_are('cms', 'releases', array['id', 'tenant_id', 'number', 'status', 'bundle_path', 'created_at',
-    'delivered_at', 'error', 'next_attempt_at', 'public_assets', 'cleanup_claimed_at', 'cleanup_assets', 'cleaned_at'],
-  'releases columns (M3-02: next_attempt_at; M3-06: the retention columns)');
+    'delivered_at', 'error', 'next_attempt_at', 'public_assets', 'cleanup_claimed_at', 'cleanup_assets', 'cleaned_at',
+    'pointer_lag_ms', 'pointer_fresh'],
+  'releases columns (M3-02: next_attempt_at; M3-06: the retention columns; M3-08: the pointer lag)');
 select columns_are('cms', 'sites', array['id', 'tenant_id', 'base_url', 'revalidate_url', 'preview_url',
     'webhook_secret_ref', 'preview_secret_ref', 'active'],
   'sites columns');
@@ -190,8 +191,8 @@ select set_eq($$ select * from tests.column_privs('service_role', 'cms.publish_r
 select set_eq($$ select * from tests.column_privs('service_role', 'cms.releases') where priv <> 'INSERT' $$,
   $$ values ('status', 'UPDATE'), ('bundle_path', 'UPDATE'), ('delivered_at', 'UPDATE'), ('error', 'UPDATE'),
             ('public_assets', 'UPDATE'), ('cleanup_claimed_at', 'UPDATE'), ('cleanup_assets', 'UPDATE'),
-            ('cleaned_at', 'UPDATE') $$,
-  'service_role: update (status, bundle_path, delivered_at, error) and M3-06''s retention columns on releases only');
+            ('cleaned_at', 'UPDATE'), ('pointer_lag_ms', 'UPDATE'), ('pointer_fresh', 'UPDATE') $$,
+  'service_role: update (status, bundle_path, delivered_at, error), M3-06''s retention columns and M3-08''s pointer lag on releases only');
 select set_eq($$ select * from tests.column_privs('service_role', 'cms.sites') where priv <> 'INSERT' $$,
   $$ values ('preview_secret_ref', 'UPDATE') $$,
   'service_role: update preview_secret_ref on sites only (M3-10, admin_set_preview_secret)');

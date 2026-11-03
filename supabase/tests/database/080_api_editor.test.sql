@@ -127,7 +127,7 @@ insert into editor_views values
                                'sites_notified', 'sites_live_ok', 'sites_not_confirmed', 'retries_exhausted',
                                'live_retrying']), -- M3-03 appended live_retrying
   ('tenant_sites', array['id', 'tenant_id', 'base_url', 'preview_url', 'active']),
-  -- M2-16 added revision_list (20261103201500_revision_list.sql; 107_revision_list).
+  -- M2-16 added revision_list (20261103210500_revision_list.sql; 107_revision_list).
   ('revision_list', array['id', 'tenant_id', 'entry_id', 'draft_version', 'schema_version', 'data', 'title',
                           'requested_by', 'committed_at', 'is_published']);
 
