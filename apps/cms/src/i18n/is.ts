@@ -52,6 +52,18 @@ export const is = {
       changed: 'Breytt eftir birtingu',
       archived: 'Í skjalasafni',
     },
+    // M2-10: the list's title search and status filter. Drafts for Einar.
+    filter: {
+      label: 'Leit og sía',
+      search: 'Leita í titlum',
+      status: 'Staða',
+      all: 'Allar nema í skjalasafni',
+      // Published once and then taken off the site; the same words as the publication badge.
+      unpublished: 'Tekið af vef',
+      submit: 'Sía',
+      clear: 'Hreinsa síu',
+      none: 'Engar færslur passa við leitina.',
+    },
   },
   editor: {
     saving: 'Vistar…',
