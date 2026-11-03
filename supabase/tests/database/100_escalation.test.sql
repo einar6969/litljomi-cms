@@ -54,12 +54,12 @@ $$;
 grant execute on function tests.api_functions(), tests.api_views(), tests.sqlstate_of(text)
   to anon, authenticated, service_role;
 
--- The lists are not vacuous: 10 editor (M2-09 added create_singleton_entry), 24 worker and 6 admin
--- functions; 6 views.
--- A task that adds an api function or view updates these counts (and 010's 30).
-select is((select count(*)::int from tests.api_functions()), 40, 'api holds 40 functions');
-select is((select count(*)::int from tests.api_functions() where name ~ '^(worker|admin)_'), 30,
-  '30 of them are worker_* or admin_*');
+-- The lists are not vacuous: 10 editor (M2-09 added create_singleton_entry), 27 worker (M3-06
+-- added 3, M3-11 added 2) and 6 admin functions; 6 views.
+-- A task that adds an api function or view updates these counts (and 010's 33).
+select is((select count(*)::int from tests.api_functions()), 43, 'api holds 43 functions');
+select is((select count(*)::int from tests.api_functions() where name ~ '^(worker|admin)_'), 33,
+  '33 of them are worker_* or admin_*');
 select is((select count(*)::int from tests.api_views()), 6, 'api holds 6 views');
 
 select tests.seed();

@@ -16,6 +16,10 @@
 //      release delivered by step 2 of this same sweep is not retried in it.
 //   4. Originals in media-private with no assets row, older than a day, are removed
 //      (api.worker_private_orphans; M3-07).
+//   5. Releases older than the previous one, an hour after the newer delivery, are removed from
+//      `delivery` with the `media-public` objects no remaining release references, failed builds'
+//      objects included (api.worker_claim_release_cleanup; M3-06, §7.2). The hour is read at the
+//      options' clock.
 //
 // Steps 2 and 3 follow M3-02's schedule, kept by the database: after the n-th failed attempt the
 // next is due 2^(n-1) minutes later (1, 2, 4 … minutes), until 24 hours after the first failure;
@@ -32,6 +36,7 @@ import { alertIfBuildRetriesExhausted, supabaseReleaseStorage } from './build-re
 import { clockOf, confirmRelease, deliverTenant, type DeliveredRelease, type DeliveryOptions } from './deliver';
 import { removePrivateOrphans } from './media-orphans';
 import { processPendingRequests } from './process-request';
+import { removeExpiredReleaseFiles } from './retention';
 import { callRpc } from './rpc';
 
 /**
@@ -116,6 +121,9 @@ export async function runSweep(options: DeliveryOptions = {}): Promise<void> {
 
   // 4. Orphaned private originals.
   await removePrivateOrphans(db).catch(failed('removing orphaned originals'));
+
+  // 5. Expired releases and the public media only they referenced.
+  await removeExpiredReleaseFiles(db, { now: () => new Date(clockOf(options)) }).catch(failed('removing expired release files'));
 
   if (errors.length > 0) throw new AggregateError(errors, `sweep: ${errors.length} step(s) failed`);
 }

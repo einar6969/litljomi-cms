@@ -19,6 +19,12 @@
 // fails the build with an alert. If the finish is refused or fails after the pointer was written,
 // the pointer is left as it is (never written back to an older release) and an alert is raised;
 // the requests stay unlinked, so the next build delivers a newer release.
+//
+// Before writing anything public, the build records it (plan M3-06): the bundle's path is fixed by
+// the release row, and api.worker_record_release_media stores every asset the release references.
+// The sweep's retention step (retention.ts) deletes what expired releases recorded, failed builds
+// included, and clears public_path for the media it deletes, so whether to copy an asset is the
+// record's answer (no public object known), not the snapshot's.
 import {
   ProjectionError,
   UpcastError,
@@ -57,6 +63,13 @@ export const POINTER_CACHE_CONTROL = `public, max-age=${POINTER_MAX_AGE_S}`;
 export const POINTER_DEADLINE_MS = 270_000;
 /** Omitted entries past this many are stored with their error code only (Task 20 quality r1, Minor 6). */
 export const MAX_STORED_OMISSION_DETAILS = 50;
+/**
+ * How often, and how far apart, the build records its media again while a sweep is deleting some of
+ * it (M3-06): 6 attempts 5 s apart. A sweep deletes one batch in seconds; a build still waiting
+ * after that fails and is retried on M3-02's schedule.
+ */
+export const RECORD_MEDIA_ATTEMPTS = 6;
+export const RECORD_MEDIA_WAIT_MS = 5_000;
 
 const DELIVERY = 'delivery';
 const MEDIA_PUBLIC = 'media-public';
@@ -112,6 +125,8 @@ export type BuildOptions = {
   now?: () => Date;
   /** A monotonic clock in milliseconds, for the pointer deadline; defaults to `performance.now`. */
   clock?: () => number;
+  /** Waits between media records while a sweep is deleting (M3-06); defaults to a timer. */
+  sleep?: (ms: number) => Promise<void>;
 };
 
 type ReleaseRow = { id: string | null; tenant_id: string | null; number: number | null; status: string | null; bundle_path?: string | null };
@@ -219,10 +234,13 @@ export async function buildRelease(tenantId: string, options: BuildOptions = {})
     const generatedAt = now().toISOString();
     const bundle: Bundle = { format: 1, tenant: slug, release: number, generatedAt, entries: projected.entries };
 
-    // Step 4. Copy the media that included entries reference and that is not public yet.
+    // Step 4. Record every public object before writing it (M3-06, §7.2): the bundle path is fixed
+    // by the release row; the media is every asset the included entries reference. Then copy what
+    // is not public yet.
+    const toCopy = await at('record_media', () => recordMedia(db, releaseId, projected.referencedAssets, options.sleep ?? sleep));
     const publicAssets = await at('copy_media', async () => {
       const copied: Array<{ id: string; public_path: string }> = [];
-      for (const a of projected.assetsToCopy) {
+      for (const a of toCopy) {
         const to = publicMediaPath(slug, a.id, a.filename);
         await storage.copy({ bucket: MEDIA_PRIVATE, path: a.original_path }, { bucket: MEDIA_PUBLIC, path: to });
         copied.push({ id: a.id, public_path: to });
@@ -353,6 +371,35 @@ export async function buildRelease(tenantId: string, options: BuildOptions = {})
   }
 }
 
+/** A row of api.worker_record_release_media (M3-06). */
+type RecordedMedia = { asset_id: string; copy: boolean; deleting: boolean };
+
+/**
+ * Records the release's media (api.worker_record_release_media) and returns the assets to copy:
+ * those with no public object the database knows of. While a sweep is deleting any of them, waits
+ * and records again (the sweep's deletion must finish before the copy, or it would remove the
+ * copy); still deleting after RECORD_MEDIA_ATTEMPTS records is an error (the build fails).
+ */
+async function recordMedia(
+  db: SupabaseClient,
+  releaseId: string,
+  assets: SnapshotAsset[],
+  wait: (ms: number) => Promise<void>,
+): Promise<SnapshotAsset[]> {
+  const byId = new Map(assets.map((a) => [a.id, a]));
+  for (let attempt = 1; ; attempt++) {
+    const rows =
+      (await callRpc<RecordedMedia[] | null>(db, 'worker_record_release_media', { p_release_id: releaseId, p_asset_ids: [...byId.keys()] })) ?? [];
+    if (rows.length !== byId.size || rows.some((r) => !byId.has(r.asset_id))) throw new Error('worker_record_release_media returned other assets');
+    const deleting = rows.filter((r) => r.deleting).length;
+    if (deleting === 0) return rows.filter((r) => r.copy).map((r) => byId.get(r.asset_id)!);
+    if (attempt >= RECORD_MEDIA_ATTEMPTS) throw new Error(`a sweep is still deleting ${deleting} of the release's media`);
+    await wait(RECORD_MEDIA_WAIT_MS);
+  }
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 /** A row of api.worker_release_retry (M3-02). */
 type ReleaseRetry = { status: string; next_attempt_at: string | null; retries_exhausted: boolean };
 
@@ -416,7 +463,8 @@ type Projected = {
   entries: Record<string, BundleEntry[]>;
   omitted: OmittedEntry[];
   fallback: FallbackEntry[];
-  assetsToCopy: SnapshotAsset[];
+  /** Every resolvable asset the release's entries reference: recorded, and copied unless public. */
+  referencedAssets: SnapshotAsset[];
 };
 
 /**
@@ -558,8 +606,8 @@ function projectAll(
   const fallback = failedEntries
     .filter((e) => reused.has(e.entry_id))
     .map((e): FallbackEntry => ({ ...failedEntry(e), fromRelease: previousBundle!.release }));
-  const assetsToCopy = snapshot.assets.filter((a) => referenced.has(a.id) && !a.archived && a.public_path === null && validAsset(a));
-  return { entries, omitted, fallback, assetsToCopy };
+  const referencedAssets = snapshot.assets.filter((a) => referenced.has(a.id) && !a.archived && validAsset(a));
+  return { entries, omitted, fallback, referencedAssets };
 }
 
 /**

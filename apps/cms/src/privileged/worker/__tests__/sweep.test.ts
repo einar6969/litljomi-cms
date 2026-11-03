@@ -58,6 +58,7 @@ beforeEach(() => {
     worker_tenants_to_release: () => ({ data: [{ tenant_id: 't1' }] }),
     worker_deliveries_to_retry: () => ({ data: [] }),
     worker_private_orphans: () => ({ data: [] }),
+    worker_claim_release_cleanup: () => ({ data: [] }),
     worker_release_retry: () => ({ data: [{ status: 'failed', next_attempt_at: '2026-11-03T12:01:00Z', retries_exhausted: false }] }),
   };
 });
@@ -109,6 +110,7 @@ describe('runSweep', () => {
       'deliverTenant t1',
       'worker_deliveries_to_retry',
       'worker_private_orphans',
+      'worker_claim_release_cleanup',
     ]);
   });
 
@@ -132,7 +134,7 @@ describe('runSweep', () => {
       'claim failed',
       'worker_deliveries_to_retry: 08006 connection failure',
     ]);
-    // Steps 2, 3 and 4 still ran after the failures before them.
+    // Steps 2 to 5 still ran after the failures before them.
     expect(withoutRetryReads(order)).toEqual([
       'worker_fail_stale_releases',
       'processPendingRequests',
@@ -140,6 +142,7 @@ describe('runSweep', () => {
       'deliverTenant t1',
       'worker_deliveries_to_retry',
       'worker_private_orphans',
+      'worker_claim_release_cleanup',
     ]);
   });
 
@@ -154,6 +157,25 @@ describe('runSweep', () => {
     expect((error as AggregateError).errors.map((e: Error) => e.message)).toEqual([
       'worker_private_orphans: 57014 canceling statement due to statement timeout',
     ]);
+  });
+
+  it('a failing retention step is reported like any other step (M3-06)', async () => {
+    handlers.worker_claim_release_cleanup = () => ({ error: { code: '57014', message: 'canceling statement due to statement timeout' } });
+
+    const error = await runSweep().then(
+      () => null,
+      (e: unknown) => e,
+    );
+
+    expect((error as AggregateError).errors.map((e: Error) => e.message)).toEqual([
+      'worker_claim_release_cleanup: 57014 canceling statement due to statement timeout',
+    ]);
+  });
+
+  it('reads retention at its clock: the hour after delivery is the database\'s to decide (M3-06)', async () => {
+    await runSweep(clock);
+
+    expect(args.find((c) => c.fn === 'worker_claim_release_cleanup')?.args).toEqual({ p_now: '2026-11-03T12:00:00.000Z', p_limit: 20 });
   });
 
   it('reads the schedule at its clock: both selections get p_now (M3-02)', async () => {
