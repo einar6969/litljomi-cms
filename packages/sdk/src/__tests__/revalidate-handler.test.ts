@@ -145,3 +145,43 @@ describe('createRevalidateHandler', () => {
     expect((await handler(req({ body: exact }))).status).toBe(200);
   });
 });
+
+// M3-09: verification hardening (spec §7.3 item 2; deferred Minor, Task 27 security; decision 50.5).
+describe('createRevalidateHandler: M3-09 hardening', () => {
+  it('trims spaces around the secrets it is given', async () => {
+    const { revalidate, handler } = setup([' old ', '\tnew\n']);
+    expect((await handler(req({ secret: 'old' }))).status).toBe(200);
+    expect((await handler(req({ secret: 'new' }))).status).toBe(200);
+    expect(revalidate).toHaveBeenCalledTimes(2);
+  });
+  it.each([[['s1', '']], [['', 's1']], [['s1', '  ']]])('refuses a secret list with an empty entry (%j) with a plain 500, even for a valid signature', async (secrets) => {
+    const { revalidate, handler } = setup(secrets);
+    const res = await handler(req());
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ revalidated: false });
+    expect(revalidate).not.toHaveBeenCalled();
+  });
+  it('refuses an expired timestamp: 300 s old is accepted, 301 s old is not, nor 301 s ahead', async () => {
+    const { revalidate, handler } = setup();
+    expect((await handler(req({ ts: NOW - 300 }))).status).toBe(200);
+    expect((await handler(req({ ts: NOW - 301 }))).status).toBe(401);
+    expect((await handler(req({ ts: NOW + 301 }))).status).toBe(401);
+    expect(revalidate).toHaveBeenCalledTimes(1);
+  });
+  it('refuses a wrong signature: another secret, another timestamp, or a well-formed but made-up value', async () => {
+    const { revalidate, handler } = setup();
+    expect((await handler(req({ secret: 's2' }))).status).toBe(401);
+    expect((await handler(req({ sig: signWebhook(body, 's1', NOW - 1) }))).status).toBe(401);
+    expect((await handler(req({ sig: 'f'.repeat(64) }))).status).toBe(401);
+    expect(revalidate).not.toHaveBeenCalled();
+  });
+  it('accepts a replay of the same signed request within the window as harmless (decision 50.5: no nonce store)', async () => {
+    const { revalidate, handler } = setup();
+    const signed = req();
+    const replay = new Request(signed.url, { method: 'POST', body, headers: signed.headers });
+    expect((await handler(signed)).status).toBe(200);
+    expect((await handler(replay)).status).toBe(200);
+    // Each one only expires the cms tag again: the same call, with nothing taken from the body.
+    expect(revalidate.mock.calls).toEqual([['cms'], ['cms']]);
+  });
+});

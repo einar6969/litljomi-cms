@@ -1,4 +1,4 @@
-import { DEFAULT_TOLERANCE_SECONDS, SIGNATURE_HEADER, TIMESTAMP_HEADER, verifyWebhook } from './webhook.ts';
+import { DEFAULT_TOLERANCE_SECONDS, SIGNATURE_HEADER, TIMESTAMP_HEADER, normalizeWebhookSecrets, verifyWebhook } from './webhook.ts';
 
 /**
  * The largest webhook body the handler reads (the worker sends about 40 bytes). A larger body is
@@ -36,7 +36,13 @@ async function readCapped(req: Request, max: number): Promise<Uint8Array | null>
  * Route handler for the site's revalidation endpoint. The site passes its own `revalidateTag`, so
  * the SDK does not depend on a Next.js version. 401 on a bad signature or stale timestamp (checked
  * before the body is read), 413 on a body over MAX_WEBHOOK_BODY_BYTES, a plain 500 if `secrets()`
- * throws; otherwise revalidates the `cms` tag and answers 200.
+ * throws or returns an empty entry (each secret is trimmed first; parseWebhookSecrets reads
+ * `CMS_WEBHOOK_SECRETS`); otherwise revalidates the `cms` tag and answers 200.
+ *
+ * Replays: a request replayed with its signature and timestamp within the 5-minute window is
+ * accepted again, by design (M3-09, decision 50.5). It can only make the site expire its `cms`
+ * tag once more: nothing is read from the body, revalidation is idempotent and changes no content,
+ * and the next request renders from the same published pointer. So there is no nonce store.
  */
 export function createRevalidateHandler(o: {
   secrets: () => string[];
@@ -56,7 +62,7 @@ export function createRevalidateHandler(o: {
     if (declared !== null && !(/^\d{1,15}$/.test(declared) && Number(declared) <= MAX_WEBHOOK_BODY_BYTES)) return tooLarge();
     let secrets: string[];
     try {
-      secrets = o.secrets();
+      secrets = normalizeWebhookSecrets(o.secrets());
     } catch {
       return Response.json({ revalidated: false }, { status: 500 });
     }
