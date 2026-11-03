@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-03T08:04:03.204Z",
+  "updatedAt": "2026-11-03T15:20:28.354Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -1260,9 +1260,26 @@
     },
     {
       "id": 29,
-      "status": "blocked",
-      "commits": [],
-      "reviews": {},
+      "status": "done",
+      "commits": [
+        "8fce415"
+      ],
+      "reviews": {
+        "security": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-29-r1-security.md",
+          "at": "2026-11-03T15:18:56.012Z",
+          "atCommits": 1
+        },
+        "specQuality": {
+          "status": "pass",
+          "round": 1,
+          "report": "docs/execution/reviews/task-29-r2-spec-quality.md",
+          "at": "2026-11-03T15:20:06.290Z",
+          "atCommits": 1
+        }
+      },
       "gatesUsed": [
         "G0",
         "G1",
@@ -1278,29 +1295,30 @@
           "text": "Acceptance run on staging (sitting 4, decision 47) found failures, recorded not fixed (decision 47): A6 and A7 fail (2 of 4 live checks were not_confirmed: release 2 404/marker_missing, release 4 stale_hash; the site kept serving the previous pointer; not_confirmed is final, no retry) and criterion 2 fails (release 4). Deferred: criterion 3 (image 404 to 200), criterion 9 overwrite, criterion 11 password-403 re-run and email change. M1 is not accepted until Einar decides how to treat A6/A7 (plan fallback: report). See docs/verification/m1-report.md, sitting 4.",
           "at": "2026-11-03T06:52:00.562Z",
           "previousStatus": "in_progress",
-          "resolvedAt": null
+          "resolvedAt": "2026-11-03T15:16:50.400Z"
         },
         {
           "text": "Decision 48 (sitting 5): resend-timing fix deployed (dpl_D41E52Fv…, 0ca5aee) but cycle 1 failed: a first publish's stale page shows 404/marker_missing, never stale_hash, so no resend was due and live stayed not_confirmed (release 6, site still at release 5). Stopped per decision 48; no second code change. A6, A7, criterion 2 fail; criterion 3 and C4 not run. See docs/verification/m1-report.md, sitting 5.",
           "at": "2026-11-03T07:26:48.929Z",
           "previousStatus": "blocked",
-          "resolvedAt": null
+          "resolvedAt": "2026-11-03T15:16:50.400Z"
         },
         {
           "text": "Decision 48.1 (sitting 5): any-miss resend deployed (dpl_6tqG13ot…, 1bcc901). Cycle 1 ok (3.2 s); cycle 2 not_confirmed (stale_hash): the page regenerated ~4 s after the resend (pointer write + 31 s) still rendered the old release, so the old pointer outlives its 30 s max-age (Storage CDN or the site's revalidateTag('cms','max'); not proven). Stopped. A6, A7, criterion 2 fail; criterion 3 and C4 not run. See docs/verification/m1-report.md, sitting 5.",
           "at": "2026-11-03T07:41:43.642Z",
           "previousStatus": "blocked",
-          "resolvedAt": null
+          "resolvedAt": "2026-11-03T15:16:50.400Z"
         },
         {
           "text": "Decision 48.2 (sitting 5): demo route { expire: 0 } deployed (dpl_H4ZUkNHz…). Cycle 1 ok; cycle 2 not_confirmed: a blocking regeneration 33 s after the pointer write still rendered the old release, so the Storage CDN serves current.json beyond max-age=30 (A6 assumption fails). Stopped. See docs/verification/m1-report.md, sitting 5.",
           "at": "2026-11-03T08:04:03.204Z",
           "previousStatus": "blocked",
-          "resolvedAt": null
+          "resolvedAt": "2026-11-03T15:16:50.400Z"
         }
       ],
-      "notes": "Items 2–11 run in demo through the connectors (decision 47). Pass: 4 (unpublish), 5 (isolation, with A1–A4 71/71), 6 (malformed), 7 (stale/superseded), 8 (CMS paused), 10 (A8). Fail: 2, A6, A7. Deferred: 3, 9 (overwrite), 11 (password-403 re-run, email change); phone check and key rotation to before LABAK go-live. Not marked done: the plan's acceptance needs every M1 criterion to pass.",
-      "startedAt": "2026-11-03T06:51:43.224Z"
+      "notes": "Items 2–11 run in demo through the connectors (decision 47). Pass: 4 (unpublish), 5 (isolation, with A1–A4 71/71), 6 (malformed), 7 (stale/superseded), 8 (CMS paused), 10 (A8). Fail: 2, A6, A7. Deferred: 3, 9 (overwrite), 11 (password-403 re-run, email change); phone check and key rotation to before LABAK go-live. Not marked done: the plan's acceptance needs every M1 criterion to pass. Sitting 6 (decision 49): pointer-freshness fix 8fce415 deployed (dpl_7Ji9FgxU…); demo three of three cycles live; LABAK scenario live (publish, edit, unpublish). Final: criteria 1–10 pass, 11 partly pass (rest deferred with reasons); A6 and A7 pass. See docs/verification/m1-report.md, 'M1 results (final)'.",
+      "startedAt": "2026-11-03T06:51:43.224Z",
+      "doneAt": "2026-11-03T15:20:06.321Z"
     }
   ],
   "validationGates": {
@@ -1350,14 +1368,14 @@
       "at": "2026-11-02T08:35:46.875Z"
     },
     "A6": {
-      "status": "fail",
+      "status": "pass",
       "evidence": "docs/verification/m1-report.md",
-      "at": "2026-11-03T06:51:43.255Z"
+      "at": "2026-11-03T15:16:50.462Z"
     },
     "A7": {
-      "status": "fail",
+      "status": "pass",
       "evidence": "docs/verification/m1-report.md",
-      "at": "2026-11-03T06:51:43.283Z"
+      "at": "2026-11-03T15:16:50.493Z"
     },
     "A8": {
       "status": "pass",
@@ -1434,9 +1452,9 @@
       "approval": "Einar in chat, 2026-11-02: \"C3 rulings (Einar, 2026-11-02). C3 is approved. Record these as decisions:\" and \"Apply the exclusion-removal diff exactly as shown (sha256 `9d62ac1e…b8ed`). Then fast-forward `main` to `m1/phase-1` (local only, no push).\" Rulings recorded as plan decision 42."
     },
     "C4": {
-      "status": "pending",
-      "report": null,
-      "at": null,
+      "status": "reported",
+      "report": "docs/execution/checkpoints/C4.md",
+      "at": "2026-11-03T15:20:28.354Z",
       "approvedByEinar": false
     }
   }

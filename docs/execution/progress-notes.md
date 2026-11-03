@@ -196,3 +196,14 @@ Einar in chat: "1. Turn off “Automatically expose new tables” in sitting 2, 
 - **Diagnosis (after 48.1):** the sites' `revalidateTag(tag, 'max')` serves the regeneration after a webhook from the cached pointer (Next.js 16 stale-while-revalidate); Next's docs prescribe `{ expire: 0 }` for webhooks. **Plan/spec conflict reported, not chosen:** §7.3 says `revalidateTag('cms')` (immediate), plan Task 26 says `'max'`. Proposed fix in `m1-report.md`, sitting 5, "Diagnosis". Waiting for Einar.
 - **Decision 48.2:** demo route `{ expire: 0 }` (`888cf6b`, review PASS), deployed `dpl_H4ZUkNHz…` (Einar: "Pushed, deploy it"). Re-run: cycle 1 ok (1.6 s); cycle 2 `not_confirmed`: a blocking regeneration at 08:02:38, 33 s after the pointer write, still rendered release 9, so **the Supabase Storage CDN serves the old `current.json` beyond its 30 s max-age** (A6's assumption fails). Stopped. Options in `m1-report.md`; controller recommends notifying only once the public pointer URL serves N.
 - **Session closed.** Issues documented in `checkpoints/C4.md`, "Addendum: sitting 5" (seven open issues, state left behind, four decisions for Einar). M1 not accepted; Task 29 blocked; C4 unrecorded. `origin` at `96c83bd`; the docs commits after it are local. Next session: read the C4 addendum first.
+
+### Sitting 6: M1 accepted (2026-11-03, eleventh controller session, decision 49)
+
+- State checked against the brief: `m1/phase-1` `ce62dec` clean, `origin` `96c83bd`, sandbox npm-only, CMS `dpl_6tqG13ot…`, demo `dpl_H4ZUkNHz…`, LABAK untouched. Decision 49 recorded (plan, G6 and G7 extensions, `120dcca`).
+- **Fix 49.1** `8fce415` (quality r1 PASS, five Minors fixed; r2 PASS). OrbStack was stopped and the sandbox could not start it; Einar started it, and the integration tests ran.
+- **Fix 49.2** LABAK `hub-integration` `376402b`. Einar pushed both repositories (`96c83bd..7e77dca`, `56bb9dd..376402b`).
+- **Vercel:** two Ignored Build Steps set; `dpl_7Ji9FgxU…` deployed. `labak-hub` READY on `376402b`; `landssamband-bakarameistara` build CANCELED, still `aec9f95`.
+- **Supabase connector** first refused the project (signed in to another organisation); Einar reconnected it, and nothing was worked around.
+- **Demo:** three of three cycles live; pointer lag 0.6/53.3/52.0 s. **LABAK scenario:** all states live within 2 s of notification.
+- **Task 29 done** (security r1 PASS with three Minors deferred; spec-and-quality r1 FAIL on documentation, fixed; r2 PASS). **C4 recorded.** **M1 accepted.**
+- **For Einar:** push `m1/phase-1`; `main` stays where it is; work through the go-live list (C4 addenda).

@@ -207,3 +207,33 @@ Einar, on his laptop, in the CMS (`vefumsjon-staging.litljomi.is`, `einsi@litljo
 - Lags are from database timestamps (delivered → notified). The `[cms-worker]` runtime log query timed out for this window (Vercel connector), so the per-publish `pointer` lines were not read back here; the demo cycles' lines were.
 - Left in `labak`: entry `80c32b34…`, unpublished (the only item touched, decision 49); its image's public copy stays in `media-public` (no removal of published media in M1). LABAK's other content unchanged.
 - **Criterion 3 and the LABAK scenario pass.**
+
+### Timing: what "within 60 s" is measured from
+
+Einar's decision 49 (sitting 6, step 6: "every state reached Live within 60 s of the notification"; also plan A7, spec §11) measures each state from the site's notification to Live: 1.5 s, 0.6 s and 1.8 s in LABAK, 1.7 s, 0.8 s and 0.7 s in `demo`. Measured from the editor's request, LABAK's three states took **58.0 s** (publish: 15:12:17.53 → 15:13:15.58), 14.8 s and 16.0 s; the LABAK run used the editor's fast path (claimed 0.27–0.47 s after each request: 15:11:56.62, 15:12:17.87, 15:13:51.88, 15:14:33.35). The demo cycles, written through the connector, went through the per-minute sweep (claim 26–55 s after the request; run-method limit, sitting 5 issue 6), so their request-to-Live times (about 59–92 s) are not editor timings. **Known limitation:** the Storage CDN's pointer lag (measured 0.6–54 s, typically about 52–54 s for back-to-back publishes) now sits between "Delivered" and the notification. It takes most of a minute, and the editor sees "Í birtingu…" meanwhile. A first publish took 58 s from request to Live, inside 60 s with a small margin. Reducing it (for example a shorter pointer `max-age`, or the SDK reading the pointer with a cache-busting query, both spec changes) is for Einar to decide, on the go-live list.
+
+## M1 results (final, supersedes the per-sitting tables above)
+
+| # | Criterion (Task 29, spec §13.2) | Result | Where |
+|---|---|---|---|
+| 1 | Magic-link sign-in, item with image and rich text, publish, five states end at ✓ within 60 s | **pass** (1.5 s from notification; 58.0 s from request on the first publish; see Timing) | sitting 6, LABAK scenario (A11 from sitting 3) |
+| 2 | Edit and republish moves Live to the new hash | **pass** | sitting 6: demo cycle 2, LABAK release 4 (sitting 4's failure superseded) |
+| 3 | Image `media-public` 404 before publish, 200 after | **pass** | sitting 6, LABAK: no public object before 15:12:19, after the commit (inferred from the object's creation time; no HTTP 404 was probed before publish); live check over its URL ok at release 3 |
+| 4 | Unpublish passes every `absent` check | **pass** | sitting 4 (demo), sitting 6 (LABAK release 5, own path 404) |
+| 5 | Isolation both ways | **pass** | sitting 4 (A1–A4 on staging, 71/71, decision 46) |
+| 6 | Malformed `save_draft` + `request_publish` never committed | **pass** | sitting 4 |
+| 7 | Stale save rejected; changed draft `superseded` | **pass** | sitting 4 |
+| 8 | CMS paused, sites keep serving | **pass** | sitting 4 |
+| 9 | `current.json` overwrite visible at its public URL within about a minute (A6) | **pass** | sitting 6: the worker's own public polls after each overwrite, fresh after 0.6 s, 53.3 s, 52.0 s (and about 54 s in LABAK); the manual overwrite itself is a `storage.*` write and was not done (decision 47.3) |
+| 10 | Sweep every minute for 10 minutes (A8) | **pass** | sitting 4 |
+| 11 | Passwordless and email change | **partly pass, rest deferred** | sitting 4: hook and no `password` AMR row pass (read only); the password-403 re-run (needs `auth.*` writes) and the email change (needs an inbox) deferred |
+
+Validation gates: A1–A5 pass; **A6 pass** (lag measured, above); **A7 pass**; A8, A9, A11, A13, A14, A15 pass; A10 and A12 belong to M2 and M3.
+
+**Substitution.** Plan Task 29's `apps/cms/e2e/m1-acceptance.spec.ts` was not written: decisions 43 (browser tests are Einar's), 46 (the `boundary-check` adapter for A1–A4) and 47 (the connector method) replaced it with the runs recorded here.
+
+**Deferred to the LABAK go-live list** (with reasons): criterion 11's password-403 re-run (`auth.*` writes, outside decision 47.3) and email change (needs an inbox); criterion 9's manual overwrite (a `storage.*` write; the property itself is now measured by the worker); the phone check and the staging secret-key rotation (decision 47.2); the pointer lag above; the `region=iad1` in the CMS runtime logs against the deployment's `fra1` (not investigated); `not_confirmed` stays final (sitting 5 issue 3).
+
+**Known limitations (unchanged):** withdrawal from third-party caches (CDN, browsers, search engines) is best-effort; M1 has no fallback rule (an entry that cannot be projected is left out and shown as "delivery failed"); the pointer lag between Delivered and the notification (see Timing); `not_confirmed` is final until the tenant's next publish.
+
+**M1 accepted** on these results (Task 29 done, checkpoint C4).

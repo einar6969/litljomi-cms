@@ -192,3 +192,9 @@ Parked items from Task 1, recorded in its notes in `state.json` with their IDs; 
 | 28 (G3 env file) | security r1 | `cms provision` must follow the scripts' `.env.staging.local` rules when designed; section 13 "Set on" omits `.env.local` (`task-28-envfile-r1-security.md`) | Task 28 provisioning / C4 | open |
 | 46 boundary-check | security r1, Minors 1–6 | Delete check passes on any response; "refused" = any non-2xx (429/5xx); delivery probe path under `<slug>/releases/`; a live session left per test editor per run; runbook leftovers list and P-3/section 14 counts; secret-key comment (`decision-46-r1-security.md`) | Task 29 / C4 | open |
 | 48 resend timing | quality r2, optional Minor | `live-check.ts`: comment the invariant `resendAt < nextPoll <= deadline` in the poll loop (done in decision 48.1); one real-timer `absent` test flaked once in four runs (400 ms window) (`decision-48-r2-quality.md`) | M2 | open |
+
+## Task 29 security r1 (2026-11-03, decision 49.1 code)
+
+- `apps/cms/src/privileged/worker/sweep.ts:87-98`: notify retries run after every tenant's delivery, which may now include the pointer poll (≤ 120 s); one tenant's slow pointer can delay other tenants' retries within a sweep. Timing only.
+- `apps/cms/src/privileged/worker/pointer-fresh.ts:115`: cap the pointer body size before `response.json()` (defence in depth).
+- `apps/cms/src/privileged/worker/pipeline.ts:15-18`: take `runDeadline` from the request's arrival rather than the start of the `after()` job.
