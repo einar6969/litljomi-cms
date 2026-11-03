@@ -1,10 +1,12 @@
 import type { ComponentType } from 'react';
-import type { SelectChoice } from './descriptors';
+import type { FieldDescriptor, SelectChoice } from './descriptors';
 import { BooleanField } from './fields/BooleanField';
 import { DateField } from './fields/DateField';
 import { DateTimeField } from './fields/DateTimeField';
+import { GroupField } from './fields/GroupField';
 import { ImageField } from './fields/ImageField';
 import { LinkField } from './fields/LinkField';
+import { ListField } from './fields/ListField';
 import { NumberField } from './fields/NumberField';
 import { ReferenceField } from './fields/ReferenceField';
 import { RichTextField } from './fields/RichTextField';
@@ -18,15 +20,19 @@ export type FieldProps = {
   required: boolean;
   value: unknown;
   onChange: (value: unknown) => void;
-  /** A text field's longest length, or a number field's largest value. */
+  /** A text field's longest length, a number field's largest value, or a list's most items. */
   max?: number;
   multiline?: boolean;
-  /** A number field's smallest value. */
+  /** A number field's smallest value, or a list's fewest items on publish. */
   min?: number;
   integer?: boolean;
   options?: SelectChoice[];
   /** A reference field's allowed target types. */
   to?: readonly string[];
+  /** A list's item field (M2-15). */
+  of?: FieldDescriptor;
+  /** A group's nested fields (M2-15). */
+  fields?: readonly FieldDescriptor[];
 };
 
 /**
@@ -44,4 +50,6 @@ export const fieldRegistry: Record<string, ComponentType<FieldProps>> = {
   image: ImageField,
   richText: RichTextField,
   reference: ReferenceField,
+  list: ListField,
+  group: GroupField,
 };
