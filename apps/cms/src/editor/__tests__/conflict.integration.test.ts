@@ -8,7 +8,9 @@ import { PERSONAS, TENANT } from '../../../../../tests/integration/src/fixtures.
 import { closeAll, draftVersion, ownerQuery } from '../../../../../tests/integration/src/sql.ts';
 
 // Every action call runs with the session of the tab that makes it.
-const session = vi.hoisted(() => ({ current: null as unknown }));
+// The holder is shared through globalThis: the integration files run in one process without
+// isolation, so the actions module, and the mock it was loaded with, is the first file's.
+const session = vi.hoisted(() => ((globalThis as { editorSession?: { current: unknown } }).editorSession ??= { current: null }));
 vi.mock('@/lib/supabase/server', () => ({ createEditorClient: async () => session.current }));
 
 const { loadDraftAction, saveDraftAction } = await import('@/app/(editor)/t/[tenant]/actions');
