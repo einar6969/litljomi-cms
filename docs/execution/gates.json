@@ -164,8 +164,20 @@
       "params": {}
     },
     "G6": {
-      "status": "pending",
-      "params": {}
+      "status": "approved",
+      "by": "Einar",
+      "at": "2026-11-03",
+      "scope": "Decision 43.7 with decision 44.3: three new Vercel projects vefumsjon-staging, demo-staging (from einar6969/litljomi-cms, main) and labak-hub (LABAK repository, hub-integration only; created without a Git connection, connected at G7); fra1, X-Robots-Tag noindex, custom domains public and *.vercel.app behind Standard Protection, env per .env.example, per-minute cron on vefumsjon-staging. Every vercel command names one of the three projects; never landssamband-bakarameistara, its domains or labak.litljomi.is; no vercel dns, rm, remove or alias, no deletes; in the pane never tokens, billing, team members or other team settings; Einar enters every secret. Host api.vercel.com for this gate only (diff 95b0b897…70d8), removed when G6 is done; Einar then signs out of vercel.com in the pane and keeps the CLI login until C4.",
+      "note": "Einar in chat, 2026-11-03: \"3. G6: approved, with hosts diff `95b0b897…70d8`.\" … full quote: plan decision 44.",
+      "params": {
+        "projects": [
+          "vefumsjon-staging",
+          "demo-staging",
+          "labak-hub"
+        ],
+        "region": "fra1",
+        "hostsDiffSha256": "95b0b8978618e30ac9b745eefb6fc4934caed9e1c233880a4cace818d09b70d8"
+      }
     },
     "G7": {
       "status": "approved",
