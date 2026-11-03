@@ -177,7 +177,14 @@
         ],
         "region": "fra1",
         "hostsDiffSha256": "95b0b8978618e30ac9b745eefb6fc4934caed9e1c233880a4cace818d09b70d8"
-      }
+      },
+      "amendments": [
+        {
+          "at": "2026-11-03",
+          "scope": "The controller may use the Vercel MCP connector for G6 actions instead of the browser pane. All G6 limits stay (decision 44.3): only vefumsjon-staging, demo-staging and labak-hub; never landssamband-bakarameistara, its domains or labak.litljomi.is; no DNS, alias, remove or delete calls of any kind; no tokens, billing, members or team settings; Einar enters every secret.",
+          "note": "Einar in chat, 2026-11-03: \"this is getting ridiculous me having to log in in your browser pane. use the mcp connectors.\""
+        }
+      ]
     },
     "G7": {
       "status": "approved",
