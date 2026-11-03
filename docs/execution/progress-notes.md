@@ -183,3 +183,12 @@ Einar in chat: "1. Turn off “Automatically expose new tables” in sitting 2, 
 - **Test content left in `demo`:** see the report and the undo row in `m1-gates.md`. LABAK untouched.
 - **Push:** `m1/phase-1` (this sitting's commit on top of `f11ae79`) is not pushed: the sandbox denied `github.com:443`, also with the host listed for the command; not worked around. Einar: `git push origin m1/phase-1` from his terminal.
 - **For Einar:** push `m1/phase-1` and remove the worktrees (commands above); sign out of supabase.com in the pane; `vercel logout`; decide the A6/A7 treatment (C4, "Decisions needed"); push `main` when you choose.
+
+### Sitting 5: resend fix deployed, cycle 1 failed, M1 not accepted (2026-11-03, tenth controller session, decision 48)
+
+- State checked against the brief: `m1/phase-1` `4c04e58` clean, equal to `origin`, no worktrees, sandbox npm-only. **Corrections to sitting 4's notes:** the three lane worktrees are gone (`git worktree list` shows only the main checkout), and `m1/phase-1` is on `origin` (at `4c04e58` before this sitting, `0ca5aee` after Einar's push).
+- **Fix** `c193b70`, `0ca5aee` (decision 48): the resend waits until the pointer's max-age + 1 s after it was written. Tests, typecheck, lint, integration pass; quality r1 PASS (five Minors fixed), r2 PASS (one optional Minor deferred).
+- **Deploy:** Einar pushed `m1/phase-1` (`4c04e58..0ca5aee`); the controller created `dpl_D41E52Fvuga3qT5D1zDCL3xr494s` (the one deployment decision 48 allows; recorded under G6 in `gates.json`). CMS answers 200.
+- **Re-run, cycle 1 failed** (`m1-report.md`, "sitting 5"): release 6 `not_confirmed` (`status 404`, `marker_missing`); the site still serves release 5. A first publish's stale page carries no marker, so the stale-hash resend never applies. Stopped per decision 48: no second code change, cycles 2–3, criterion 3 and the close not run. Task 29 blocked (updated with `state.mjs block`), C4 not recorded, M1 not accepted.
+- **Nothing pushed after the fix**; this docs commit is local on `m1/phase-1`.
+- **For Einar:** decide the next fix (the resend, or a later re-check, also when a `present` page shows no marker or a 404 while the CDN may still hold the old pointer; or a fresh fetch of the pointer before notifying); push this docs commit when you choose.

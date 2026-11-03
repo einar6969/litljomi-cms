@@ -224,6 +224,11 @@
           "at": "2026-11-03",
           "scope": "Decision 47.3: the controller may use the Vercel MCP connector for reads (deployments, logs, runtime logs, web_fetch_vercel_url, project and domain info) on vefumsjon-staging, demo-staging and labak-hub; landssamband-bakarameistara read only. The only writes: pause_project, then unpause_project, on vefumsjon-staging for the \"CMS paused\" item, unpaused right after with the CMS and the cron verified. Never: deploys, environment variable changes, domain, alias or DNS calls, deleting anything, or any write to landssamband-bakarameistara.",
           "note": "Einar in chat, 2026-11-03 (sitting 4 of decision 43, decision 47): \"Vercel MCP connector: … The only writes: `pause_project`, then `unpause_project`, on `vefumsjon-staging` for the “CMS paused” item. Unpause right after, and verify the CMS answers again and the cron resumes.\" Full quote: plan decision 47."
+        },
+        {
+          "at": "2026-11-03",
+          "scope": "Decision 48: the controller may create one production deployment of the decision-48 fix commit on vefumsjon-staging through the Vercel connector. Created dpl_D41E52Fvuga3qT5D1zDCL3xr494s (m1/phase-1 0ca5aee, pushed by Einar from his terminal). Nothing else: no pause, no environment variable changes, nothing on landssamband-bakarameistara.",
+          "note": "Einar in chat, 2026-11-03 (decision 48): \"Deploy the commit to `vefumsjon-staging` production the way docs/runbooks/staging.md does. The Vercel connector may create that one deployment.\" and \"The only extra write allowed is that one `vefumsjon-staging` deployment. No pause, no environment variable changes, nothing on `landssamband-bakarameistara`.\" Full quote: plan decision 48."
         }
       ],
       "hostsRemoved": {

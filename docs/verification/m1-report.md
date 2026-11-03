@@ -107,3 +107,29 @@ Results only: no secret, key or token value is ever written here. Created resour
 ### Left in `demo` by this sitting
 
 - Entry `7cd90ebb-b0c1-4fde-a6c4-0d4e5e3f0673` (`event`, slug `m1-prufa-a6a7`, unpublished; the draft is v7 with deliberately malformed content; the slug is locked); 6 publish and unpublish requests (4 `committed`, including the unpublish, 1 `superseded`, 1 `failed_validation`), their revisions, releases 2–5 (`demo/releases/2–5.json`, `demo/current.json`), their `site_deliveries`. Also left from before: Einar's published "Prufa" event, the A1–A4 test entry `ce02f26c…` and 14-byte test objects in `media-private` (both tenants). None can be removed without SQL writes (decision 47.3). Nothing was left in `labak`.
+
+## Task 29: resend fix and re-run (sitting 5, decision 48; tenth controller session, 2026-11-03)
+
+**Fix.** `c193b70` and `0ca5aee` on `m1/phase-1`: the live check's single resend waits until `POINTER_MAX_AGE_S` (30) × 1000 + `RESEND_MARGIN_MS` (1000) after the pointer was written (`buildRelease` returns `pointerWrittenAt`, `deliver.ts` passes it in); once, inside the window; at once when that moment has passed or no write time is known (the sweep's retry). Cache header unchanged (`public, max-age=30`), SDK unchanged. Fake-clock tests: stale at 3 s gives no resend before 31 s, then exactly one; moment already past; no write time; moment past the window. The existing "exactly one resend" test is kept. Typecheck, lint, `check:slugs`, unit 1345/1345, CMS integration 35/35 on the local stack. Quality review r1 PASS (five Minors, fixed in `0ca5aee`), r2 PASS (`reviews/decision-48-r*-quality.md`).
+
+**Deploy.** Einar pushed `m1/phase-1` (`4c04e58..0ca5aee`) from his terminal (Vercel builds from GitHub). Controller, Vercel connector, one deployment: `dpl_D41E52Fvuga3qT5D1zDCL3xr494s`, production, `m1/phase-1` `0ca5aeea65aa562a7d04544f9d7031c2c8ff4880`, `fra1`, READY in about 21 s, aliased to `vefumsjon-staging.litljomi.is`. `https://vefumsjon-staging.litljomi.is/login` 200, `data-dpl-id="dpl_D41E52Fv…"`, `x-robots-tag: noindex`.
+
+**Method.** Decision 47's: Supabase connector on `rwpgpfsmhhtimauvpoyt` (tenants `labak` `e9e5badd…`, `demo` `02ed0155…` confirmed by a read); writes only `api.save_draft` and `api.request_publish` as `einsi+a-demo@litljomi.is` (`4cf97f88…`) in one transaction; Vercel reads. Test entry `7cd90ebb-b0c1-4fde-a6c4-0d4e5e3f0673` (`event`, `m1-prufa-a6a7`), unpublished since release 5.
+
+### Cycle 1: publish (failed; run stopped)
+
+| Step | Time (UTC) |
+|---|---|
+| Draft v8 saved, request `66007704-38e5-48e7-a840-99ece5f93806` | 07:23:28.72 |
+| Claimed by the sweep | 07:24:03.87 (35.2 s) |
+| `demo/current.json` written (release 6, `public, max-age=30`) | 07:24:05.70 |
+| Release 6 delivered | 07:24:06.11 |
+| `demo-staging` notified, ok | 07:24:06.68 |
+| Live check | **`not_confirmed`**: `/events/m1-prufa-a6a7` `status 404`, `/events` `marker_missing` |
+| Resend moment under the fix | 07:24:36.70 (write + 31 s); **not sent** (see below) |
+
+- At 07:25:34 the article URL still answered **404** from the CDN cache (`x-vercel-cache: HIT`, `date` 06:46:06, `cms-release` **5**, the unpublish release): the site did not regenerate the page from release 6.
+- **Why the fix did not apply.** The resend is triggered only when a page shows the entry's marker with a *different hash* (`stale_hash`). For an entry going from unpublished to published, a page built from the old pointer shows no marker at all (`status 404`, `marker_missing`), so no resend was ever due, under the old code or the fix. This is the same pattern as sitting 4's release 2. The fix covers sitting 4's release 4 (`stale_hash`), which cycle 2 would have exercised; it was not run.
+- **Vercel runtime logs** for `vefumsjon-staging` and `demo-staging`, 07:23:50–07:25:30: no lines (those routes log nothing on success), so they neither confirm nor refute a resend; the code path above shows none was due.
+- **Result.** A6, A7 and criterion 2 still **fail**. Per decision 48, stopped after the first failing cycle; no second code change. Cycles 2 and 3, Einar's LABAK scenario (criterion 3) and the close were not run. Task 29 stays blocked; C4 is not recorded; M1 is not accepted.
+- **Left in `demo`:** entry `7cd90ebb…` is now published at draft v8 (revision `f303c016…`, release 6), title "M1 prófun ákv. 48 – lota 1"; the site still serves release 5 for it (404) until the next `demo` publish. LABAK untouched.
