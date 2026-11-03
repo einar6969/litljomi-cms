@@ -6,7 +6,7 @@ vi.mock('next/navigation', () => ({
     throw new Error(`REDIRECT ${to}`);
   }),
 }));
-const auth = vi.hoisted(() => ({ verifyOtp: vi.fn() }));
+const auth = vi.hoisted(() => ({ verifyOtp: vi.fn(), getSession: vi.fn(), admin: { signOut: vi.fn() } }));
 vi.mock('@/lib/supabase/server', () => ({ createEditorClient: vi.fn(async () => ({ auth })) }));
 
 const { createEditorClient } = await import('@/lib/supabase/server');
@@ -17,6 +17,9 @@ const { confirmSignIn } = await import('../actions');
 const HASH = '16b012167d533434e7798fb52bd2c600ea40eac016b347f9d5dd10f3';
 const PKCE_HASH = `pkce_${HASH}`;
 const FAILED = 'REDIRECT /login?error=link';
+const OLD_TOKEN = 'eyJold.access.token';
+const NEW_TOKEN = 'eyJnew.access.token';
+const signedIn = () => auth.getSession.mockResolvedValue({ data: { session: { access_token: OLD_TOKEN } }, error: null });
 
 const form = (fields: Record<string, string | Blob | undefined>) => {
   const data = new FormData();
@@ -29,7 +32,9 @@ let logs: ReturnType<typeof vi.spyOn>;
 let warns: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
   vi.clearAllMocks();
-  auth.verifyOtp.mockResolvedValue({ data: { session: {}, user: {} }, error: null });
+  auth.verifyOtp.mockResolvedValue({ data: { session: { access_token: NEW_TOKEN }, user: {} }, error: null });
+  auth.getSession.mockResolvedValue({ data: { session: null }, error: null });
+  auth.admin.signOut.mockResolvedValue({ data: null, error: null });
   errors = vi.spyOn(console, 'error').mockImplementation(() => {});
   logs = vi.spyOn(console, 'log').mockImplementation(() => {});
   warns = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -119,6 +124,64 @@ describe('confirmSignIn', () => {
   it('goes back to the sign-in page when the client cannot be created', async () => {
     vi.mocked(createEditorClient).mockRejectedValueOnce(new Error('NEXT_PUBLIC_SUPABASE_URL is not set'));
     await expect(confirmSignIn(form({ token_hash: HASH, type: 'email' }))).rejects.toThrow(FAILED);
+  });
+
+  // Decision 42.2 (Q1): pressing the button with a session already in the browser replaces it. The
+  // token is verified first, so a bad link leaves the visitor's session as it was; only after Auth
+  // has issued the new session (written over the old cookies) is the old session revoked.
+  describe('with a session already in the browser', () => {
+    it('verifies the link first, then revokes only the old session', async () => {
+      signedIn();
+      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email', next: '/t/acme' }))).rejects.toThrow('REDIRECT /t/acme');
+      expect(auth.verifyOtp).toHaveBeenCalledExactlyOnceWith({ token_hash: HASH, type: 'email' });
+      expect(auth.admin.signOut).toHaveBeenCalledExactlyOnceWith(OLD_TOKEN, 'local');
+      expect(auth.getSession.mock.invocationCallOrder[0]!).toBeLessThan(auth.verifyOtp.mock.invocationCallOrder[0]!);
+      expect(auth.verifyOtp.mock.invocationCallOrder[0]!).toBeLessThan(auth.admin.signOut.mock.invocationCallOrder[0]!);
+      expect(consoleText()).toBe('[[],[],[]]');
+    });
+
+    it.each([
+      ['the token hash is malformed', () => undefined, { token_hash: '123456', type: 'email' }],
+      ['the type is not allowed', () => undefined, { token_hash: HASH, type: 'recovery' }],
+      ['Auth refuses the link', () => auth.verifyOtp.mockResolvedValue({ data: {}, error: { status: 403, code: 'otp_expired', message: 'expired' } }), { token_hash: HASH, type: 'email' }],
+      ['Auth throws', () => auth.verifyOtp.mockRejectedValue(new Error('network failed')), { token_hash: HASH, type: 'email' }],
+    ])('leaves the old session alone when %s', async (_case, arrange, fields) => {
+      signedIn();
+      arrange();
+      await expect(confirmSignIn(form(fields))).rejects.toThrow(FAILED);
+      expect(auth.admin.signOut).not.toHaveBeenCalled();
+    });
+
+    it('revokes nothing when Auth issued the same session (nothing to replace)', async () => {
+      auth.getSession.mockResolvedValue({ data: { session: { access_token: NEW_TOKEN } }, error: null });
+      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email' }))).rejects.toThrow('REDIRECT /');
+      expect(auth.admin.signOut).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['answers an error', () => auth.admin.signOut.mockResolvedValue({ data: null, error: { status: 401, code: 'bad_jwt', message: `invalid JWT ${OLD_TOKEN}` } })],
+      ['throws', () => auth.admin.signOut.mockRejectedValue(new Error(`network failed for ${OLD_TOKEN}`))],
+    ])('still signs in when revoking the old session %s, and never logs either token', async (_case, arrange) => {
+      signedIn();
+      arrange();
+      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email', next: '/t/acme' }))).rejects.toThrow('REDIRECT /t/acme');
+      expect(consoleText()).not.toContain(OLD_TOKEN);
+      expect(consoleText()).not.toContain(HASH);
+    });
+
+    it('signs in without revoking when the old session cannot be read', async () => {
+      auth.getSession.mockRejectedValue(new Error('cookie unreadable'));
+      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email' }))).rejects.toThrow('REDIRECT /');
+      expect(auth.admin.signOut).not.toHaveBeenCalled();
+      auth.getSession.mockResolvedValue({ data: { session: null }, error: { status: 400, code: 'refresh_token_not_found', message: 'x' } });
+      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email' }))).rejects.toThrow('REDIRECT /');
+      expect(auth.admin.signOut).not.toHaveBeenCalled();
+    });
+  });
+
+  it('revokes nothing when there was no session', async () => {
+    await expect(confirmSignIn(form({ token_hash: HASH, type: 'email' }))).rejects.toThrow('REDIRECT /');
+    expect(auth.admin.signOut).not.toHaveBeenCalled();
   });
 
   it('logs nothing about a successful sign-in', async () => {

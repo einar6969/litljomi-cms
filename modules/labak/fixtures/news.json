@@ -8,5 +8,6 @@
     "type": "doc",
     "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Fyrsta sýning vetrarins er í næstu viku." }] }]
   },
-  "source": { "href": "https://example.is/frett" }
+  "source": { "href": "https://example.is/frett" },
+  "sourceLabel": "Lesa fréttina á example.is"
 }

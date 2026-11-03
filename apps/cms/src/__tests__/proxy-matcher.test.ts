@@ -10,6 +10,9 @@ describe('proxy matcher', () => {
     expect(url('/fonts/AlbertSans-VariableFont_wght.woff2')).toBe(false);
     expect(url('/_next/static/chunk.js')).toBe(false);
     expect(url('/favicon.ico')).toBe(false);
+    // The app router's icon (src/app/icon.svg), with or without its cache-busting query.
+    expect(url('/icon.svg')).toBe(false);
+    expect(url('/icon.svg?b6c1d2e3f4a5b6c7')).toBe(false);
     expect(url('/api/worker/x')).toBe(false);
   });
 
@@ -18,5 +21,9 @@ describe('proxy matcher', () => {
     expect(url('/t/demo/event')).toBe(true);
     expect(url('/fontsx/a.woff2')).toBe(true);
     expect(url('/t/demo/fonts/a')).toBe(true);
+    expect(url('/icon.svgx')).toBe(true);
+    expect(url('/icon.svg/x')).toBe(true);
+    expect(url('/icon')).toBe(true);
+    expect(url('/t/demo/icon.svg')).toBe(true);
   });
 });

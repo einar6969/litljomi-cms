@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import { t } from '@/i18n/is';
+import { createEditorClient } from '@/lib/supabase/server';
 import { Button } from '@/ui/Button';
+import { Notice } from '@/ui/Notice';
 import { Wordmark } from '@/ui/Wordmark';
 import { confirmSignIn } from './actions';
 
@@ -16,10 +18,12 @@ const first = (value: Param): string => (Array.isArray(value) ? (value[0] ?? '')
  * The magic link's landing page (spec §4.4; decision 41.1). Opening it verifies nothing (email
  * security scanners open links automatically): it shows one "Halda áfram" button, and only that
  * button's POST (confirmSignIn) uses the link. The link's values go to the action unchecked; the
- * action checks them.
+ * action checks them. A visitor who already has a session is told so (decision 42.2, Q1), without
+ * naming either account; that session is replaced only when the button is pressed.
  */
 export default async function ConfirmPage({ searchParams }: Props) {
   const { token_hash, type, next } = await searchParams;
+  const signedIn = await hasSession();
   return (
     <main className="flex max-w-[480px] flex-col gap-6 pt-12 md:pt-24">
       <Wordmark />
@@ -27,6 +31,11 @@ export default async function ConfirmPage({ searchParams }: Props) {
         <h1>{t.confirm.title}</h1>
         <p className="text-muted">{t.confirm.intro}</p>
       </div>
+      {signedIn ? (
+        <Notice tone="info" role="status">
+          {t.confirm.signedIn}
+        </Notice>
+      ) : null}
       <form action={confirmSignIn} className="flex flex-col gap-4">
         <input type="hidden" name="token_hash" value={first(token_hash)} />
         <input type="hidden" name="type" value={first(type)} />
@@ -37,4 +46,14 @@ export default async function ConfirmPage({ searchParams }: Props) {
       </form>
     </main>
   );
+}
+
+/** Whether Auth verifies the visitor's session; anything that fails counts as no session. */
+async function hasSession(): Promise<boolean> {
+  try {
+    const { data, error } = await (await createEditorClient()).auth.getUser();
+    return !error && data.user !== null && data.user !== undefined;
+  } catch {
+    return false;
+  }
 }

@@ -9,7 +9,8 @@
 // with this repository's supabase/templates and config.toml.
 import { afterAll, describe, expect, it } from 'vitest';
 import {
-  adminAuth, auth, brief, claims, clearMail, confirmLink, deleteThrowawayUsers, newUser, pkce, requestEmail, sleep, waitMail,
+  adminAuth, auth, brief, claims, clearMail, confirmLink, deleteThrowawayUsers, generateLinkSession, newUser, pkce, requestEmail, sleep,
+  waitMail,
 } from './auth-api.ts';
 import { closeAll } from './sql.ts';
 
@@ -101,5 +102,38 @@ describe('the CMS confirm link (decision 41.1) signs in through the passwordless
     const madeUp = await auth('/verify', { body: { type: 'email', token_hash: '0'.repeat(56) } });
     expect(madeUp.status, brief(madeUp)).toBe(403);
     expect(madeUp.json.access_token).toBeUndefined();
+  });
+});
+
+// Decision 42.2 (Q1): when a signed-in visitor presses "Halda áfram" for another link, confirmSignIn
+// writes the new session over the old cookies and then revokes the old session with
+// `auth.admin.signOut(oldAccessToken, 'local')`, i.e. POST /logout?scope=local with the old token.
+// This checks that call ends the old session only, and leaves the new one (and the old account's
+// other sessions) working.
+describe('replacing a session (decision 42.2)', () => {
+  it('logout with scope=local and the old access token ends that session only', async () => {
+    const before = await newUser('replace-old');
+    const after = await newUser('replace-new');
+    const old = await generateLinkSession(before.email, 'magiclink');
+    const elsewhere = await generateLinkSession(before.email, 'magiclink');
+    const fresh = await generateLinkSession(after.email, 'magiclink');
+    for (const r of [old, elsewhere, fresh]) expect(r.status, brief(r)).toBe(200);
+
+    const out = await auth('/logout?scope=local', { token: old.json.access_token });
+    expect(out.status, brief(out)).toBe(204);
+
+    const refreshOld = await auth('/token?grant_type=refresh_token', { body: { refresh_token: old.json.refresh_token } });
+    expect(refreshOld.status, brief(refreshOld)).not.toBe(200);
+    expect(refreshOld.json.access_token).toBeUndefined();
+    const userOld = await auth('/user', { method: 'GET', token: old.json.access_token });
+    expect(userOld.status, brief(userOld)).not.toBe(200);
+
+    const userNew = await auth('/user', { method: 'GET', token: fresh.json.access_token });
+    expect(userNew.status, brief(userNew)).toBe(200);
+    expect(userNew.json.id).toBe(after.id);
+    const refreshNew = await auth('/token?grant_type=refresh_token', { body: { refresh_token: fresh.json.refresh_token } });
+    expect(refreshNew.status, brief(refreshNew)).toBe(200);
+    const userElsewhere = await auth('/user', { method: 'GET', token: elsewhere.json.access_token });
+    expect(userElsewhere.status, brief(userElsewhere)).toBe(200);
   });
 });

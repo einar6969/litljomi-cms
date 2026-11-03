@@ -37,6 +37,28 @@ describe('labak module', () => {
     const { secondaryImage: _omit, ...rest } = fixture;
     expect(news.publishValidator().safeParse(rest).success).toBe(true);
   });
+  // Decision 42.2 (Q2): the label of the site's source button, an optional single-line text after
+  // the library fields (additive; the library type is untouched).
+  it('adds an optional, single-line sourceLabel of at most 80 characters', () => {
+    expect(Object.keys(news.fields)).toEqual(['title', 'date', 'excerpt', 'image', 'body', 'source', 'secondaryImage', 'sourceLabel']);
+    expect(Object.keys(newsType.fields)).not.toContain('sourceLabel');
+    const field = news.fields.sourceLabel as { kind: string; label: string; required: boolean; max?: number; multiline?: boolean };
+    expect(field).toMatchObject({ kind: 'text', label: 'Texti á heimildahnappi', required: false, max: 80, multiline: false });
+    expect(fixture.sourceLabel).toBeTypeOf('string');
+    const { sourceLabel: _omit, ...rest } = fixture;
+    expect(news.publishValidator().safeParse(rest).success).toBe(true);
+    expect(news.publishValidator().safeParse({ ...fixture, sourceLabel: 'x'.repeat(80) }).success).toBe(true);
+    expect(news.publishValidator().safeParse({ ...fixture, sourceLabel: 'x'.repeat(81) }).success).toBe(false);
+    expect(news.publishValidator().safeParse({ ...fixture, sourceLabel: 'Lesa\nmeira' }).success).toBe(false);
+    expect(news.draftValidator().safeParse({ sourceLabel: 'x'.repeat(81) }).success).toBe(false);
+  });
+  it('projects sourceLabel into the delivery bundle as a string or null', () => {
+    expect(news.fields.sourceLabel!.tsType()).toBe('string | null');
+    // A text field's projection needs no context (no references to resolve).
+    const ctx = {} as Parameters<(typeof news.fields)[string]['project']>[1];
+    expect(news.fields.sourceLabel!.project(undefined, ctx)).toBeNull();
+    expect(news.fields.sourceLabel!.project('Lesa frétt á mbl.is', ctx)).toBe('Lesa frétt á mbl.is');
+  });
   it('builds the path from the slug and refuses an entry without one', () => {
     expect(site.path(entry(1))).toBe('/frettir/frett-1');
     expect(() => site.path({ ...entry(1), slug: null })).toThrow();
