@@ -10,7 +10,7 @@ import { useAutosave, type TheirVersion } from '../autosave';
 import { PublishPanel } from '../publish/PublishPanel';
 import { changedFields } from './conflict';
 import type { FieldDescriptor } from './descriptors';
-import { fieldRegistry } from './field-registry';
+import { FieldInput } from './FieldInput';
 import { SlugField } from './SlugField';
 import { EditorTenantProvider, type EditorTenant } from './tenant-context';
 
@@ -76,34 +76,15 @@ export function EntryForm({ tenant, entryId, fields, titleKey, initialData, init
     <EditorTenantProvider value={tenant}>
       <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
         <form onSubmit={(e) => e.preventDefault()} className="flex min-w-0 flex-col gap-5">
-          {fields.map((field) => {
-            const Component = fieldRegistry[field.kind];
-            const id = `field-${field.key}`;
-            if (!Component) {
-              return (
-                <div key={field.key} className="flex flex-col gap-1.5">
-                  <span className="text-[15px] font-medium">{field.label}</span>
-                  <Notice role="note">{t.editor.unsupportedField}</Notice>
-                </div>
-              );
-            }
-            return (
-              <Component
-                key={`${field.key}:${generation}`}
-                id={id}
-                label={field.label}
-                required={field.required}
-                max={field.max}
-                multiline={field.multiline}
-                min={field.min}
-                integer={field.integer}
-                options={field.options}
-                to={field.to}
-                value={data[field.key]}
-                onChange={(value) => change(field.key, value)}
-              />
-            );
-          })}
+          {fields.map((field) => (
+            <FieldInput
+              key={`${field.key}:${generation}`}
+              field={field}
+              id={`field-${field.key}`}
+              value={data[field.key]}
+              onChange={(value) => change(field.key, value)}
+            />
+          ))}
           <SlugField entryId={entryId} initialSlug={initialSlug} title={title} locked={slugLocked} setSlug={setSlugAction} />
           {autosave.state === 'conflict' ? (
             <ConflictNotice theirs={autosave.theirs} fields={fields} mine={data} retry={autosave.retry} keepMine={autosave.keepMine} reloadTheirs={reloadTheirs} />
