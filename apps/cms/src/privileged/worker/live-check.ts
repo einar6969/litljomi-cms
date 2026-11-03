@@ -92,8 +92,9 @@ export function createPageFetcher(maxConcurrent = MAX_CONCURRENT_FETCHES): PageF
  *   nothing about the page).
  * - media: every URL answers 200.
  *
- * When a page shows the entry's marker with a different hash on any poll after the first (the first
- * request triggers regeneration), `resend()` is called, once per run, but no earlier than the
+ * When a page check fails on any poll after the first (the first request triggers regeneration), for
+ * whatever reason (decision 48.1: a page built from an old pointer shows the old hash, no marker,
+ * a 404 or a marker it should not), `resend()` is called, once per run, but no earlier than the
  * pointer's max-age plus RESEND_MARGIN_MS after `pointerWrittenAt` (a site regenerating sooner may
  * read the old pointer from the CDN again, decision 48), within the window; at once when that
  * moment has passed. Each check is fetched through `fetchPage` without following redirects, with
@@ -107,7 +108,7 @@ export async function runLiveChecks(o: LiveCheckInput): Promise<{ live: boolean;
   const base = o.baseUrl.replace(/\/+$/, '');
   const fetchPage = o.fetchPage ?? createPageFetcher();
 
-  type Item = { key: string; path: string; evaluate: () => Promise<{ pass: boolean; reason: string; stale: boolean }> };
+  type Item = { key: string; path: string; page: boolean; evaluate: () => Promise<{ pass: boolean; reason: string }> };
   const failures: LiveCheckFailure[] = [];
   const items: Item[] = [];
   o.checks.forEach((check, i) => {
@@ -115,35 +116,36 @@ export async function runLiveChecks(o: LiveCheckInput): Promise<{ live: boolean;
       failures.push({ path: check.path, reason: 'invalid_path' });
       return;
     }
-    items.push({ key: `check:${i}`, path: check.path, evaluate: () => evaluateCheck(check, `${base}${check.path}`) });
+    items.push({ key: `check:${i}`, path: check.path, page: true, evaluate: () => evaluateCheck(check, `${base}${check.path}`) });
   });
   o.mediaUrls.forEach((url, i) => {
     items.push({
       key: `media:${i}`,
       path: url,
+      page: false,
       evaluate: async () => {
         const r = await fetchPage(url, deadline, 0);
-        return { pass: r.status === 200, reason: r.error ?? `status ${r.status}`, stale: false };
+        return { pass: r.status === 200, reason: r.error ?? `status ${r.status}` };
       },
     });
   });
 
-  async function evaluateCheck(check: LiveCheck, url: string): Promise<{ pass: boolean; reason: string; stale: boolean }> {
+  async function evaluateCheck(check: LiveCheck, url: string): Promise<{ pass: boolean; reason: string }> {
     const r = await fetchPage(url, deadline, MAX_PAGE_BYTES);
-    if (r.error) return { pass: false, reason: r.error, stale: false };
+    if (r.error) return { pass: false, reason: r.error };
     const scanned = scanEntryMarkers(r.body ?? '');
     if (check.expect === 'present') {
-      if (o.entry.contentHash === null) return { pass: false, reason: 'no_content_hash', stale: false };
+      if (o.entry.contentHash === null) return { pass: false, reason: 'no_content_hash' };
       const mine = scanned.markers.filter((m) => m.id === o.entry.id);
-      if (r.status !== 200) return { pass: false, reason: `status ${r.status}`, stale: false };
-      if (mine.some((m) => m.hash === o.entry.contentHash)) return { pass: true, reason: '', stale: false };
-      return mine.length > 0 ? { pass: false, reason: 'stale_hash', stale: true } : { pass: false, reason: 'marker_missing', stale: false };
+      if (r.status !== 200) return { pass: false, reason: `status ${r.status}` };
+      if (mine.some((m) => m.hash === o.entry.contentHash)) return { pass: true, reason: '' };
+      return { pass: false, reason: mine.length > 0 ? 'stale_hash' : 'marker_missing' };
     }
-    if (scanned.ids.includes(o.entry.id)) return { pass: false, reason: 'marker_present', stale: false };
+    if (scanned.ids.includes(o.entry.id)) return { pass: false, reason: 'marker_present' };
     // A page the scan could not read to its end proves nothing about the rest (inconclusive).
-    if (!scanned.complete) return { pass: false, reason: 'scan_incomplete', stale: false };
+    if (!scanned.complete) return { pass: false, reason: 'scan_incomplete' };
     const wanted = check.path === o.ownPath ? 404 : 200;
-    return r.status === wanted ? { pass: true, reason: '', stale: false } : { pass: false, reason: `status ${r.status}`, stale: false };
+    return r.status === wanted ? { pass: true, reason: '' } : { pass: false, reason: `status ${r.status}` };
   }
 
   const pending = new Map(items.map((item) => [item.key, item]));
@@ -151,10 +153,10 @@ export async function runLiveChecks(o: LiveCheckInput): Promise<{ live: boolean;
   // Never past the window: the loop ends at the deadline (with the default window, write + 31 s is
   // always inside it, since the pointer is written before the window opens).
   const resendAt = (o.pointerWrittenAt ?? -Infinity) + POINTER_MAX_AGE_S * 1_000 + RESEND_MARGIN_MS;
-  let staleSeen = false;
+  let missSeen = false;
   let resent = false;
   const resendWhenDue = async () => {
-    if (!staleSeen || resent || Date.now() < resendAt) return;
+    if (!missSeen || resent || Date.now() < resendAt) return;
     resent = true;
     try {
       await o.resend();
@@ -163,25 +165,28 @@ export async function runLiveChecks(o: LiveCheckInput): Promise<{ live: boolean;
     }
   };
   for (let round = 1; ; round++) {
-    let stale = false;
+    let missed = false;
     await Promise.all(
       [...pending.values()].map(async (item) => {
         const result = await item.evaluate();
         if (result.pass) pending.delete(item.key);
-        else lastReason.set(item.key, result.reason);
-        if (result.stale) stale = true;
+        else {
+          lastReason.set(item.key, result.reason);
+          if (item.page) missed = true;
+        }
       }),
     );
     if (pending.size === 0) break;
-    // Deliberately sticky: once a page regenerated from an old pointer, the resend goes out when due
-    // even if a later poll shows another failure, since the CDN may still hold the old pointer.
-    if (stale && round > 1) staleSeen = true;
+    // Deliberately sticky: once a page missed, the resend goes out when due while any check is still
+    // pending, even if that page has passed or failed differently since.
+    if (missed && round > 1) missSeen = true;
     await resendWhenDue();
     const left = deadline - Date.now();
     if (left <= 0) break;
     const nextPoll = Date.now() + Math.min(pollMs, left);
-    // A resend due before the next poll is sent at its moment; the poll keeps its time.
-    if (staleSeen && !resent && resendAt < nextPoll) {
+    // A resend due before the next poll is sent at its moment; the poll keeps its time. Since
+    // resendAt < nextPoll <= deadline here, the resend never falls outside the window.
+    if (missSeen && !resent && resendAt < nextPoll) {
       await sleep(resendAt - Date.now());
       await resendWhenDue();
     }

@@ -196,6 +196,32 @@ describe('resend', () => {
       await done;
       expect(resend).toHaveBeenCalledTimes(1);
     });
+    // Decision 48.1 ("Resend on any miss"): a page built from the old pointer may show no marker.
+    const missing = (page: { status: number; body: string }) =>
+      async (url: string): Promise<{ status: number; body: string | null }> => (url.endsWith(OWN) ? page : { status: 404, body: null });
+    it.each([
+      ['a first publish: the own page still answers 404', present(), { status: 404, body: html(releaseMeta(5), '<main></main>') }],
+      ['a first publish: the page has no marker', present(), { status: 200, body: html(releaseMeta(5), '<main></main>') }],
+      ['an unpublish: the page still shows the marker', absent(), { status: 200, body: html(releaseMeta(5), entryMarker(ID, OLD)) }],
+    ])('%s at 3 s: no resend before max-age + 1 s, then exactly one', async (_name, check, page) => {
+      const resend = vi.fn(async () => {});
+      const done = runLiveChecks({ baseUrl: 'https://site.test', checks: [check], ownPath: OWN, entry: { id: ID, contentHash: NEW }, mediaUrls: [], resend, fetchPage: missing(page), pointerWrittenAt: Date.now() });
+      await vi.advanceTimersByTimeAsync(POINTER_MAX_AGE_S * 1_000 + 1_000 - 1);
+      expect(resend).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(resend).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(DEFAULT_TIMEOUT_MS);
+      expect((await done).live).toBe(false);
+      expect(resend).toHaveBeenCalledTimes(1);
+    });
+    it('a failing media URL alone does not resend (the site does not serve it)', async () => {
+      const resend = vi.fn(async () => {});
+      const fetchPage: PageFetcher = async (url) => (url.endsWith(OWN) ? { status: 200, body: html(releaseMeta(6), entryMarker(ID, NEW)) } : { status: 404, body: null });
+      const done = runLiveChecks({ baseUrl: 'https://site.test', checks: [present()], ownPath: OWN, entry: { id: ID, contentHash: NEW }, mediaUrls: ['https://media.test/a.jpg'], resend, fetchPage, pointerWrittenAt: Date.now() });
+      await vi.advanceTimersByTimeAsync(DEFAULT_TIMEOUT_MS);
+      expect((await done).live).toBe(false);
+      expect(resend).not.toHaveBeenCalled();
+    });
     it('never resends after the window closes when the moment falls past it', async () => {
       const resend = vi.fn(async () => {});
       let settled = false;

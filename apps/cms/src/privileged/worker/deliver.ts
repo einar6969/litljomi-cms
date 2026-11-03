@@ -197,7 +197,7 @@ export async function confirmSite(
   }
   await record(db, release.releaseId, site.id, 'ok', null, null);
 
-  // One resend per site and delivery, whichever entry saw the stale hash first (§7.4).
+  // One resend per site and delivery, whichever entry's page missed first (§7.4, decision 48.1).
   const resend = once(() => notifySite(site, payload));
   // One fetcher per site and delivery, created after the notification: the targets share identical
   // page fetches and at most MAX_CONCURRENT_FETCHES run at a time against the site.
