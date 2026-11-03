@@ -3,7 +3,7 @@
 // step, the storage calls' exact options, and https media URLs (decision 34.3: real URLs are
 // https; the local stack's are http, so the integration tests prove media at the storage level).
 // The database's side runs against the local stack in build-release.integration.test.ts.
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { z } from 'zod';
 import {
   ProjectionError,
@@ -661,6 +661,7 @@ describe('buildRelease: the pointer only moves forward', () => {
     mem.fail.copy = () => true;
     handlers.worker_finish_release = () => ({ error: { code: 'P0001', message: 'forbidden' } });
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    onTestFinished(() => logged.mockRestore()); // also when an assertion below fails
 
     const result = await build();
 
@@ -668,7 +669,6 @@ describe('buildRelease: the pointer only moves forward', () => {
     expect(finishCalls().map((f) => f.p_status)).toEqual(['failed']);
     expect(alertMock).toHaveBeenCalledWith('release.failed', expect.objectContaining({ step: 'copy_media', pointerWritten: false }));
     expect(logged).toHaveBeenCalledWith(expect.stringContaining('could not be marked failed'), expect.anything());
-    logged.mockRestore();
   });
 });
 

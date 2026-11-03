@@ -115,6 +115,8 @@ describe('supabase/config.toml security settings', () => {
   it('[auth.email.template.magic_link] has no one-time code', () => {
     const html = readFileSync(join(repoRoot, 'supabase/templates/magic_link.html'), 'utf8');
     expect(html).not.toMatch(/\{\{\s*\.Token\s*\}\}/);
+    // "kóð" is the stem of kóði (code) in every form; a later wording that needs the word for
+    // something else must narrow this check, not drop it.
     expect(html).not.toMatch(/kóð/i);
   });
 
