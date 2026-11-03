@@ -87,14 +87,40 @@ export class ProjectionError extends Error {
 }
 
 /**
- * Validates `data` with the publish validator (throws `ProjectionError` on failure), then
- * projects every field: references resolved, unknown keys dropped. Absent fields project as null.
+ * Thrown by a field's `project` when a value that passed the publish validator still cannot be
+ * delivered, for a reason only the projection context can tell (a reference to an entry of a type
+ * the field does not allow). Its issue paths are relative to the field; `projectEntry` prefixes the
+ * field key and rethrows it as a `ProjectionError`.
+ */
+export class FieldProjectionError extends Error {
+  readonly issues: z.core.$ZodIssue[];
+  constructor(issues: z.core.$ZodIssue[]) {
+    super(issues.map((i) => i.message).join('; '));
+    this.name = 'FieldProjectionError';
+    this.issues = issues;
+  }
+}
+
+/**
+ * Validates `data` with the publish validator, then projects every field: references resolved,
+ * unknown keys dropped. Absent fields project as null. Throws `ProjectionError` when validation
+ * fails or a field cannot be projected (`FieldProjectionError`, reported under the field's key).
  */
 export function projectEntry(type: ContentType, data: unknown, ctx: ProjectionContext): Record<string, unknown> {
   const parsed = type.publishValidator().safeParse(data);
   if (!parsed.success) throw new ProjectionError(type.name, parsed.error.issues);
   const stored = parsed.data as Record<string, unknown>;
   const out: Record<string, unknown> = {};
-  for (const [key, field] of Object.entries<AnyFieldKind>(type.fields)) out[key] = field.project(stored[key], ctx);
+  for (const [key, field] of Object.entries<AnyFieldKind>(type.fields)) {
+    try {
+      out[key] = field.project(stored[key], ctx);
+    } catch (error) {
+      if (!(error instanceof FieldProjectionError)) throw error;
+      throw new ProjectionError(
+        type.name,
+        error.issues.map((i) => ({ ...i, path: [key, ...i.path] })),
+      );
+    }
+  }
   return out;
 }

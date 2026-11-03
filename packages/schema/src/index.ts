@@ -1,6 +1,7 @@
 export { refSchema, type Ref, type RefKind } from './ref.ts';
 export type { FieldKind, FieldOptionOverrides } from './field-kind.ts';
 export {
+  FieldProjectionError,
   ProjectionError,
   projectEntry,
   resolveAsset,
@@ -18,6 +19,7 @@ export { date, type DateOptions } from './fields/date.ts';
 export { link, type LinkOptions, type LinkValue, type LinkProjected, type LinkField } from './fields/link.ts';
 export { image, type ImageOptions, type ImageValue } from './fields/image.ts';
 export { richText, type RichTextOptions } from './fields/rich-text.ts';
+export { reference, type ReferenceOptions, type ReferenceValue, type ReferenceField } from './fields/reference.ts';
 export { slugify } from './slugify.ts';
 export { newsType } from './library/news.ts';
 export {

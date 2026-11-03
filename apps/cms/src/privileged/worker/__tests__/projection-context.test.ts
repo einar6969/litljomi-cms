@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { defineModule, newsType, resolveAsset, resolveEntry, type SiteEntry } from '@litljomi/cms-schema';
+import {
+  ProjectionError,
+  defineModule,
+  defineType,
+  newsType,
+  projectEntry,
+  reference,
+  resolveAsset,
+  resolveEntry,
+  text,
+  type SiteEntry,
+} from '@litljomi/cms-schema';
 import { buildProjectionContext, contextFromRead, publicMediaUrl, type ReadRef } from '../projection-context';
 
 const site = defineModule({
@@ -96,6 +107,29 @@ describe('contextFromRead', () => {
     expect(resolveEntry(ctx, 'e3')).toBeNull();
     expect(resolveAsset(ctx, 'a1')?.url).toBe('https://media.example/prufa/a1/a.jpg');
     expect(resolveAsset(ctx, 'a2')).toBeNull();
+  });
+
+  it('resolves a reference field through the read: published target to its summary, unpublished to null, other type refused (M2-04)', () => {
+    const E1 = '11111111-1111-4111-8111-111111111111';
+    const E2 = '22222222-2222-4222-8222-222222222222';
+    const E3 = '33333333-3333-4333-8333-333333333333';
+    const page = defineType({
+      name: 'page',
+      version: 1,
+      label: 'Síða',
+      fields: { title: text({ label: 'Titill' }), related: reference({ label: 'Tengt', to: ['news'] }) },
+      preview: { title: 'title' },
+      orderBy: 'title',
+    });
+    const ctx = contextFromRead(
+      [ref({ id: E1 }), ref({ id: E2, published: false, type: null, slug: null, title: null }), ref({ id: E3, type: 'event', slug: 'x' })],
+      site,
+      mediaUrl,
+    );
+    const related = (id: string) => projectEntry(page, { related: { _ref: id, _kind: 'entry' } }, ctx).related;
+    expect(related(E1)).toEqual({ id: E1, type: 'news', slug: 'braud', title: 'Brauð', path: '/frettir/braud' });
+    expect(related(E2)).toBeNull();
+    expect(() => related(E3)).toThrow(ProjectionError);
   });
 });
 

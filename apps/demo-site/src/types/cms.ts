@@ -27,4 +27,5 @@ export interface EventEntry {
   location: string | null;
   description: ProjectedRichTextDoc | null;
   registration: { href: string } | { entry: EntrySummary | null } | null;
+  related: EntrySummary | null;
 }

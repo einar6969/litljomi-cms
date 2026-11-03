@@ -25,6 +25,10 @@ describe('demo module', () => {
     expect(event.orderBy).toBe('startDate');
     expect(event.version).toBe(1);
   });
+  it('has an optional reference to another event (plan M2-04)', () => {
+    const related = event.fields.related as AnyFieldKind & { to: readonly string[] };
+    expect(related).toMatchObject({ kind: 'reference', required: false, to: ['event'] });
+  });
   it('builds paths and checks', () => {
     const s = demo.site.event!;
     expect(s.path(e)).toBe('/events/opid-hus');

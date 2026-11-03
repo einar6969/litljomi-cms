@@ -1,4 +1,4 @@
-import { date, defineModule, defineType, link, richText, text, type SiteEntry } from '@litljomi/cms-schema';
+import { date, defineModule, defineType, link, reference, richText, text, type SiteEntry } from '@litljomi/cms-schema';
 
 const eventType = defineType({
   name: 'event',
@@ -11,6 +11,7 @@ const eventType = defineType({
     location: text({ label: 'Location' }),
     description: richText({ label: 'Description' }),
     registration: link({ label: 'Registration' }),
+    related: reference({ label: 'Related event', to: ['event'] }),
   },
   preview: { title: 'title' },
   orderBy: 'startDate',
