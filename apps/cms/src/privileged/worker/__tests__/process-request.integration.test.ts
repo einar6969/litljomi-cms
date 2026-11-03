@@ -11,6 +11,7 @@ import { PERSONAS, TENANT } from '../../../../../../tests/integration/src/fixtur
 import { closeAll, ownerQuery } from '../../../../../../tests/integration/src/sql.ts';
 import { getType } from '@/modules/registry';
 import { processPendingRequests, processRequestById } from '../process-request';
+import { TEST_JPEG, TEST_JPEG_METADATA } from './test-image';
 
 let editor: SupabaseClient;
 
@@ -24,29 +25,31 @@ afterAll(async () => {
   await closeAll();
 });
 
+
 const rpc = async <T>(fn: string, args: Record<string, unknown>): Promise<T> => {
   const { data, error } = await editor.schema('api').rpc(fn, args);
   if (error) throw new Error(`${fn}: ${error.code} ${error.message}`);
   return data as T;
 };
 
-const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0xff, 0xd9]);
+const JPEG = TEST_JPEG;
 
 /**
- * An asset of labak, registered as the owner, with a placeholder original in media-private: the
- * worker checks that the original exists before it commits a publish (Task 30, decision 36.4).
+ * An asset of labak, registered as the owner, with its original in media-private: the worker
+ * checks that the original exists (Task 30, decision 36.4) and that the stored metadata is what
+ * its bytes say (M3-07) before it commits a publish.
  */
 async function labakAsset(): Promise<string> {
   const id = randomUUID();
+  const m = TEST_JPEG_METADATA;
   const { error } = await secretClient()
     .storage.from('media-private')
     .upload(`${TENANT.labak}/${id}/a.jpg`, JPEG, { contentType: 'image/jpeg' });
   if (error) throw error;
   await ownerQuery(
     `insert into cms.assets (id, tenant_id, original_path, filename, mime, bytes, width, height, sha256, created_by)
-     values ($1::uuid, $2::uuid, $2::text || '/' || $1::text || '/a.jpg', 'a.jpg', 'image/jpeg', 1000, 800, 600,
-             repeat('a', 64), $3::uuid)`,
-    [id, TENANT.labak, PERSONAS.editor_labak.id],
+     values ($1::uuid, $2::uuid, $2::text || '/' || $1::text || '/a.jpg', 'a.jpg', 'image/jpeg', $4, $5, $6, $7, $3::uuid)`,
+    [id, TENANT.labak, PERSONAS.editor_labak.id, m.p_bytes, m.p_width, m.p_height, m.p_sha256],
   );
   return id;
 }

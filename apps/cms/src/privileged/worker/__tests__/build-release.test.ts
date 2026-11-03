@@ -484,6 +484,169 @@ describe('buildRelease: entries left out (fail closed, §7.1)', () => {
   });
 });
 
+describe('buildRelease: fallback to the previous projection (§7.1, plan M3-05)', () => {
+  // E2's revision no longer projects (title is required) after, say, a faulty deploy.
+  const failingE2 = (o: Partial<SnapEntry> = {}) => entry(E2, { pic: { _ref: A2, _kind: 'asset', alt: '' } }, { refs: [picRef(A2)], ...o });
+  /** E2 as release 2 delivered it: built from `revisionId`, a public image A2. */
+  const previousE2 = (revisionId: string) => ({
+    id: E2,
+    revisionId,
+    contentHash: 'h'.repeat(64),
+    slug: 's-2222',
+    title: 'Tvö áður',
+    sortAt: null,
+    firstPublishedAt: '2026-11-01T10:00:00.000Z',
+    lastPublishedAt: '2026-11-01T10:00:00.000Z',
+    schemaVersion: 2,
+    data: { title: 'Tvö áður', pic: { id: A2, url: `https://media.test/prufa/${A2}/a.jpg` }, related: null },
+  });
+  const withPrevious = (entries: Record<string, unknown[]>) => {
+    mem.put('delivery/prufa/releases/2.json', { format: 1, tenant: 'prufa', release: 2, generatedAt: STAMP, entries });
+    mem.put('delivery/prufa/current.json', OLD_POINTER);
+    previous = { id: 'prev', number: 2, bundle_path: 'prufa/releases/2.json', status: 'delivered' };
+  };
+  const ids = (b: Bundle | undefined) => Object.values(b!.entries).flat().map((e) => e.id);
+
+  beforeEach(() => {
+    snapshot.entries[1] = failingE2();
+    snapshot.assets = [asset(A1), asset(A2, { public_path: `prufa/${A2}/a.jpg` })];
+  });
+
+  it('reuses the previous record when it was built from the published revision and its references are allowed', async () => {
+    const prev = previousE2(snapshot.entries[1]!.revision_id);
+    withPrevious({ article: [prev] });
+
+    const result = await build();
+
+    expect(result.status).toBe('delivered');
+    expect(result.bundle!.entries['article']).toEqual([expect.objectContaining({ id: E1 }), prev]);
+    // E2 is in the release, so E1's link to it resolves.
+    expect((result.bundle!.entries['article']![0]!.data as { related: { entry: { id: string } } }).related.entry.id).toBe(E2);
+    expect(result.omitted).toEqual([]);
+    const fallback = [
+      { entryId: E2, requestIds: ['r2'], error: { code: 'projection_failed', issues: [expect.objectContaining({ path: ['title'] })] }, fromRelease: 2 },
+    ];
+    expect(result.fallback).toEqual(fallback);
+    const finish = finishCalls()[0]!;
+    expect(finish.p_status).toBe('delivered');
+    expect(finish.p_error).toEqual({ fallback });
+    expect(finish.p_request_ids).toEqual(['r1', 'r2', 'r3']);
+    expect(alertMock).toHaveBeenCalledTimes(1);
+    expect(alertMock).toHaveBeenCalledWith('release.entry_fallback', { tenantId: TENANT, releaseId: RELEASE, number: 3, fallback });
+  });
+
+  it('covers a failure before projection too (a revision that cannot be upcast after a transform deploy)', async () => {
+    snapshot.entries[1] = entry(E2, { heading: 'boom' }, { schema_version: 1, refs: [] });
+    withPrevious({ article: [previousE2(snapshot.entries[1].revision_id)] });
+
+    const result = await build();
+
+    expect(ids(result.bundle)).toEqual([E1, E2]);
+    expect(result.fallback).toEqual([expect.objectContaining({ entryId: E2, error: expect.objectContaining({ code: 'upcast_failed' }) })]);
+  });
+
+  it('refuses when the published revision differs from the previous record\'s: the entry is left out', async () => {
+    withPrevious({ article: [previousE2('ffffffff-0000-4000-8000-000000000000')] });
+
+    const result = await build();
+
+    expect(ids(result.bundle)).toEqual([E1]);
+    expect((result.bundle!.entries['article']![0]!.data as { related: unknown }).related).toEqual({ entry: null });
+    expect(result.fallback).toBeUndefined();
+    expect(result.omitted).toEqual([expect.objectContaining({ entryId: E2, requestIds: ['r2'] })]);
+    expect(finishCalls()[0]!.p_error).toEqual({ omitted: result.omitted });
+    expect(alertMock).toHaveBeenCalledWith('release.entry_omitted', expect.objectContaining({ omitted: result.omitted }));
+    expect(alertMock).not.toHaveBeenCalledWith('release.entry_fallback', expect.anything());
+  });
+
+  it('refuses when a referenced asset is archived now', async () => {
+    snapshot.assets = [asset(A1), asset(A2, { public_path: `prufa/${A2}/a.jpg`, archived: true })];
+    withPrevious({ article: [previousE2(snapshot.entries[1]!.revision_id)] });
+
+    const result = await build();
+
+    expect(ids(result.bundle)).toEqual([E1]);
+    expect(result.omitted.map((o) => o.entryId)).toEqual([E2]);
+  });
+
+  it('refuses when a referenced entry is no longer published (absent from the snapshot)', async () => {
+    snapshot.entries[1] = failingE2({ refs: [picRef(A2), relRef(E3)] });
+    withPrevious({ article: [previousE2(snapshot.entries[1].revision_id)] });
+
+    const result = await build();
+
+    expect(ids(result.bundle)).toEqual([E1]);
+    expect(result.omitted.map((o) => o.entryId)).toEqual([E2]);
+  });
+
+  it('refuses when a referenced entry is left out of this release, and the refusal cascades', async () => {
+    // E3 fails and has no previous record; E2 (failing, same revision) references E3; E1 references E2.
+    snapshot.entries[1] = failingE2({ refs: [picRef(A2), relRef(E3)] });
+    snapshot.entries.push(entry(E3, {}));
+    withPrevious({ article: [previousE2(snapshot.entries[1].revision_id)] });
+
+    const result = await build();
+
+    expect(ids(result.bundle)).toEqual([E1]);
+    expect(result.omitted.map((o) => o.entryId)).toEqual([E2, E3]);
+    expect((result.bundle!.entries['article']![0]!.data as { related: unknown }).related).toEqual({ entry: null });
+  });
+
+  it('two failed entries that reference each other both fall back when both qualify', async () => {
+    snapshot.entries[1] = failingE2({ refs: [picRef(A2), relRef(E3)] });
+    snapshot.entries.push(entry(E3, {}, { refs: [relRef(E2)] }));
+    const prev3 = { ...previousE2(snapshot.entries[2]!.revision_id), id: E3, slug: 's-3333' };
+    withPrevious({ article: [previousE2(snapshot.entries[1].revision_id), prev3] });
+
+    const result = await build();
+
+    expect(ids(result.bundle)).toEqual([E1, E2, E3]);
+    expect(result.fallback!.map((f) => f.entryId)).toEqual([E2, E3]);
+  });
+
+  it('never adds an entry the database does not publish now, whatever the previous release contained', async () => {
+    // E3 was in release 2 but is unpublished, archived or was never published: not in the snapshot.
+    withPrevious({ article: [previousE2(snapshot.entries[1]!.revision_id), { ...previousE2('x'), id: E3 }] });
+
+    const result = await build();
+
+    expect(ids(result.bundle)).toEqual([E1, E2]);
+    expect(result.fallback!.map((f) => f.entryId)).toEqual([E2]);
+  });
+
+  it('reuses only a record of the same type', async () => {
+    withPrevious({ pair: [previousE2(snapshot.entries[1]!.revision_id)] });
+
+    const result = await build();
+
+    expect(ids(result.bundle)).toEqual([E1]);
+    expect(result.omitted.map((o) => o.entryId)).toEqual([E2]);
+  });
+
+  it('copies a reused record\'s media that is not public yet', async () => {
+    snapshot.assets = [asset(A1), asset(A2)];
+    withPrevious({ article: [previousE2(snapshot.entries[1]!.revision_id)] });
+
+    const result = await build();
+
+    expect(ids(result.bundle)).toEqual([E1, E2]);
+    expect(finishCalls()[0]!.p_public_assets).toEqual([
+      { id: A1, public_path: `prufa/${A1}/a.jpg` },
+      { id: A2, public_path: `prufa/${A2}/a.jpg` },
+    ]);
+  });
+
+  it('a release that fails afterwards records its fallback entries in its error', async () => {
+    withPrevious({ article: [previousE2(snapshot.entries[1]!.revision_id)] });
+    mem.fail.upload = (p) => p.endsWith('3.json');
+
+    const result = await build();
+
+    expect(result.status).toBe('failed');
+    expect(finishCalls()[0]!.p_error).toMatchObject({ code: 'build_failed', step: 'bundle_upload', fallback: [expect.objectContaining({ entryId: E2 })] });
+  });
+});
+
 describe('buildRelease: busy and failures', () => {
   it('returns busy when a build is running (begin_release returns a row of nulls)', async () => {
     handlers.worker_begin_release = () => ({ data: { id: null, tenant_id: null, number: null, status: null } });
