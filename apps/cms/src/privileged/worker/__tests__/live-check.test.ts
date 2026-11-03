@@ -430,3 +430,71 @@ describe('page fetches', () => {
     expect(site.requests.map((r) => r.path)).toEqual(['/a']);
   });
 });
+
+// M3-09: the re-send rules of decisions 48, 48.1 and 49, each named after §7.4's wording, on a fake
+// clock and a fake fetcher. The pointer is written as the window opens, as deliver.ts does.
+describe('§7.4 re-send on a stale hash (M3-09)', () => {
+  const T0 = 1_000_000;
+  beforeEach(() => {
+    vi.useFakeTimers({ now: T0 });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+  /** Runs one present check of OWN to its end; `serve` gives the page for each poll, told whether the resend went out. */
+  async function runStale(serve: (resent: boolean) => string) {
+    const events: Array<{ what: 'resend' | 'result'; at: number }> = [];
+    let resent = false;
+    const resend = vi.fn(async () => {
+      resent = true;
+      events.push({ what: 'resend', at: Date.now() });
+    });
+    const done = runLiveChecks({
+      baseUrl: 'https://site.test',
+      checks: [present()],
+      ownPath: OWN,
+      entry: { id: ID, contentHash: NEW },
+      mediaUrls: [],
+      resend,
+      fetchPage: async () => ({ status: 200, body: serve(resent) }),
+      pointerWrittenAt: T0,
+    }).then((r) => {
+      events.push({ what: 'result', at: Date.now() });
+      return r;
+    });
+    await vi.advanceTimersByTimeAsync(DEFAULT_TIMEOUT_MS + 1_000);
+    return { result: await done, resend, events };
+  }
+  const oldPage = () => html(releaseMeta(5), entryMarker(ID, OLD));
+
+  it('"If a page regenerates but still shows the old hash …, the worker sends the webhook again within the same 60-second window"', async () => {
+    const { resend, events } = await runStale(oldPage);
+    expect(resend).toHaveBeenCalledTimes(1);
+    const at = events.find((e) => e.what === 'resend')!.at;
+    // Not before a CDN can stop serving the old pointer (decision 48), and inside the window.
+    expect(at).toBeGreaterThanOrEqual(T0 + POINTER_MAX_AGE_S * 1_000 + 1_000);
+    expect(at).toBeLessThan(T0 + DEFAULT_TIMEOUT_MS);
+  });
+  it('"Only then does it report live not confirmed": the result comes after the one resend, at the end of the window', async () => {
+    const { result, events } = await runStale(oldPage);
+    expect(events.map((e) => e.what)).toEqual(['resend', 'result']);
+    expect(events[1]!.at).toBeGreaterThanOrEqual(T0 + DEFAULT_TIMEOUT_MS);
+    expect(result).toEqual({ live: false, failures: [{ path: OWN, reason: 'stale_hash' }] });
+  });
+  it('a page that shows the new hash after the resend is confirmed live within the window', async () => {
+    const { result, resend, events } = await runStale((resent) => html(releaseMeta(6), entryMarker(ID, resent ? NEW : OLD)));
+    expect(result).toEqual({ live: true, failures: [] });
+    expect(resend).toHaveBeenCalledTimes(1);
+    expect(events.at(-1)!.at).toBeLessThan(T0 + DEFAULT_TIMEOUT_MS);
+  });
+  it.each([
+    ['the old hash in the entry block', entryMarker(ID, OLD), 'stale_hash'],
+    ['no entry marker at all', '<main></main>', 'marker_missing'],
+    ['the new hash on another entry’s marker', entryMarker('another-entry', NEW), 'marker_missing'],
+  ])('"A newer release marker in the layout … cannot satisfy a present check": not even after the resend, with %s', async (_name, block, reason) => {
+    // The layout moves to a release newer than the one delivered once the resend goes out.
+    const { result, resend } = await runStale((resent) => html(releaseMeta(resent ? 99 : 6), `<main>${block}</main>`));
+    expect(resend).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ live: false, failures: [{ path: OWN, reason }] });
+  });
+});

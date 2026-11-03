@@ -12,6 +12,24 @@ export function signWebhook(body: string | Uint8Array, secret: string, timestamp
 const HEX_SHA256 = /^[0-9a-f]{64}$/;
 
 /**
+ * The secrets in a comma-separated list such as `CMS_WEBHOOK_SECRETS` (two during rotation), each
+ * trimmed of surrounding whitespace. Throws on an empty entry (an empty value, `"a,"`, `"a, ,b"`):
+ * a mistyped list is refused, not read as fewer secrets. The error names no secret.
+ */
+export function parseWebhookSecrets(value: string): string[] {
+  return normalizeWebhookSecrets(value.split(','));
+}
+
+/** Each secret trimmed; throws (naming no secret) when one is not a string or is empty once trimmed. */
+export function normalizeWebhookSecrets(secrets: readonly unknown[]): string[] {
+  return secrets.map((secret, i) => {
+    const trimmed = typeof secret === 'string' ? secret.trim() : '';
+    if (trimmed === '') throw new Error(`webhook secret list: entry ${i + 1} of ${secrets.length} is empty`);
+    return trimmed;
+  });
+}
+
+/**
  * True when `signature` matches one of `secrets` (two are live during rotation) and the timestamp
  * is within `toleranceSeconds` (default 300) of `nowSeconds`, in either direction. Malformed
  * input returns false and never throws. Every secret is checked, with constant-time comparison.

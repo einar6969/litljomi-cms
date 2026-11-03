@@ -233,6 +233,8 @@ beforeEach(() => {
     }),
     worker_pointer_check: () => ({ data: [{ building: true, latest_delivered: null }] }),
     worker_finish_release: () => ({ data: null }),
+    // M3-02: after a failure, the tenant's next build is scheduled (retries left).
+    worker_release_retry: () => ({ data: [{ status: 'failed', next_attempt_at: '2026-11-03T12:01:00Z', retries_exhausted: false }] }),
   };
 });
 
@@ -664,6 +666,35 @@ describe('buildRelease: busy and failures', () => {
     expect(alertMock).toHaveBeenCalledWith('release.failed', expect.objectContaining({ tenantId: TENANT, releaseId: RELEASE, code, step, pointerWritten }));
     return result;
   };
+
+  // M3-02: the database schedules the tenant's next build; when it scheduled none, the platform
+  // admin is alerted once more, that the build retries are exhausted.
+  it('a failed build whose retries are left raises release.failed only', async () => {
+    mem.fail.upload = (p) => p.endsWith('.json');
+    await expectFailed('bundle_upload', false);
+    expect(calls.filter((c) => c.fn === 'worker_release_retry').map((c) => c.args)).toEqual([{ p_release_id: RELEASE }]);
+    expect(alertMock.mock.calls.map((c) => c[0])).toEqual(['release.failed']);
+  });
+
+  it('a failed build that exhausts the retries (24 hours after the first failure) also raises release.retries_exhausted', async () => {
+    mem.fail.upload = (p) => p.endsWith('.json');
+    handlers.worker_release_retry = () => ({ data: [{ status: 'failed', next_attempt_at: null, retries_exhausted: true }] });
+    await expectFailed('bundle_upload', false);
+    expect(alertMock.mock.calls).toEqual([
+      ['release.failed', expect.objectContaining({ releaseId: RELEASE })],
+      ['release.retries_exhausted', { tenantId: TENANT, releaseId: RELEASE, number: 3 }],
+    ]);
+  });
+
+  it('a failing read of the build retry is logged and does not change the result', async () => {
+    mem.fail.upload = (p) => p.endsWith('.json');
+    handlers.worker_release_retry = () => ({ error: { code: '08006', message: 'connection failure' } });
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expectFailed('bundle_upload', false);
+    expect(alertMock.mock.calls.map((c) => c[0])).toEqual(['release.failed']);
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining('could not be read'), expect.anything());
+    logged.mockRestore();
+  });
 
   it('a pointer upload failure leaves the pointer at the old release and fails the release', async () => {
     mem.put('delivery/prufa/current.json', OLD_POINTER);
