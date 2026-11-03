@@ -43,4 +43,33 @@ describe('POST /api/cms/revalidate', () => {
     expect(res.status).toBe(401);
     expect(revalidateTag).not.toHaveBeenCalled();
   });
+  it('reads CMS_WEBHOOK_SECRETS with spaces around the secrets (M3-09)', async () => {
+    vi.stubEnv('CMS_WEBHOOK_SECRETS', ` ${'o'.repeat(32)} , ${SECRET} `);
+    const { POST } = await import('../route');
+    const body = JSON.stringify({ tenant: 'demo', release: 8 });
+    const stamp = Math.floor(Date.now() / 1000);
+    const res = await POST(
+      new Request('https://demo.test/api/cms/revalidate', {
+        method: 'POST',
+        body,
+        headers: { [SIGNATURE_HEADER]: signWebhook(body, SECRET, stamp), [TIMESTAMP_HEADER]: String(stamp) },
+      }),
+    );
+    expect(res.status).toBe(200);
+  });
+  it('refuses CMS_WEBHOOK_SECRETS with an empty entry with a plain 500 (M3-09)', async () => {
+    vi.stubEnv('CMS_WEBHOOK_SECRETS', `${SECRET},`);
+    const { POST } = await import('../route');
+    const body = '{}';
+    const stamp = Math.floor(Date.now() / 1000);
+    const res = await POST(
+      new Request('https://demo.test/api/cms/revalidate', {
+        method: 'POST',
+        body,
+        headers: { [SIGNATURE_HEADER]: signWebhook(body, SECRET, stamp), [TIMESTAMP_HEADER]: String(stamp) },
+      }),
+    );
+    expect(res.status).toBe(500);
+    expect(revalidateTag).not.toHaveBeenCalled();
+  });
 });

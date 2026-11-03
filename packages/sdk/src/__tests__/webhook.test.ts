@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { signWebhook, verifyWebhook } from '../index.ts';
+import { parseWebhookSecrets, signWebhook, verifyWebhook } from '../index.ts';
 
 const NOW = 1_800_000_000;
 const body = '{"release":3}';
@@ -43,5 +43,24 @@ describe('webhook signing', () => {
     expect(check({ secrets: [] })).toBe(false);
     expect(check({ secrets: [''], signature: signWebhook(body, '', NOW) })).toBe(false);
     expect(check({ signature: 5 as unknown as string })).toBe(false);
+  });
+});
+
+// M3-09 (deferred Minor, Task 27 security): CMS_WEBHOOK_SECRETS was split on "," without a trim.
+describe('parseWebhookSecrets', () => {
+  it('splits on commas and trims spaces around each secret', () => {
+    expect(parseWebhookSecrets('s1')).toEqual(['s1']);
+    expect(parseWebhookSecrets(' old , new ')).toEqual(['old', 'new']);
+    expect(parseWebhookSecrets('old,\tnew\n')).toEqual(['old', 'new']);
+  });
+  it.each([[''], ['   '], ['s1,'], [',s1'], ['s1,,s2'], ['s1, ,s2']])('refuses an empty entry in %j', (value) => {
+    expect(() => parseWebhookSecrets(value)).toThrow(/empty/);
+  });
+  it('does not put a secret in its error message', () => {
+    expect(() => parseWebhookSecrets('leyndarmal,')).toThrow(expect.objectContaining({ message: expect.not.stringContaining('leyndarmal') }));
+  });
+  it('a secret given with spaces still verifies the signature made with the bare secret', () => {
+    const secrets = parseWebhookSecrets(' s1 ');
+    expect(verifyWebhook({ body, signature: signWebhook(body, 's1', NOW), timestamp: NOW, secrets, nowSeconds: NOW })).toBe(true);
   });
 });
