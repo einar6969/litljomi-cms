@@ -160,8 +160,18 @@
       }
     },
     "G5": {
-      "status": "pending",
-      "params": {}
+      "status": "approved",
+      "by": "Einar",
+      "at": "2026-11-03",
+      "scope": "Decision 43.6: only three CNAMEs in litljomi.is, added by Einar: vefumsjon-staging → 69cdbc6710f9f9df.vercel-dns-017.com., demo-staging → 529d21ae137f44ca.vercel-dns-017.com., labak-hub → e05d898bd734d208.vercel-dns-017.com. (Vercel's recommended targets, 2026-11-03). No email records; labak.is untouched.",
+      "note": "Einar in chat, 2026-11-03: \"approved, i will update to Pro later.\" (to the G5 request listing the three CNAMEs).",
+      "params": {
+        "records": {
+          "vefumsjon-staging": "69cdbc6710f9f9df.vercel-dns-017.com.",
+          "demo-staging": "529d21ae137f44ca.vercel-dns-017.com.",
+          "labak-hub": "e05d898bd734d208.vercel-dns-017.com."
+        }
+      }
     },
     "G6": {
       "status": "approved",
