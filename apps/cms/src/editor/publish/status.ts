@@ -9,7 +9,7 @@ import { t } from '@/i18n/is';
 
 export type RequestStatus = 'pending' | 'validating' | 'committed' | 'failed_validation' | 'superseded' | 'rejected' | 'failed';
 
-/** One row of `api.publication_status` (20261103002000_retry_backoff.sql): an entry's latest request. */
+/** One row of `api.publication_status` (20261103193000_not_confirmed_retry.sql): an entry's latest request. */
 export type PublicationStatusRow = {
   request_id: string;
   tenant_id: string;
@@ -34,6 +34,11 @@ export type PublicationStatusRow = {
    * hours, or the request's build did.
    */
   retries_exhausted: boolean;
+  /**
+   * A site's live check missed (not_confirmed) and the sweep will check it again (M3-03): the
+   * request's release is the tenant's latest delivered one and its retries are not exhausted.
+   */
+  live_retrying: boolean;
 };
 
 /**
@@ -50,7 +55,7 @@ export type DisplayOptions = {
 /** The columns the panel reads, in the view's order. */
 export const PUBLICATION_STATUS_COLUMNS =
   'request_id, tenant_id, entry_id, action, status, error, requested_at, release_number, release_status, omitted, ' +
-  'missing_assets, site_count, sites_notified, sites_live_ok, sites_not_confirmed, retries_exhausted';
+  'missing_assets, site_count, sites_notified, sites_live_ok, sites_not_confirmed, retries_exhausted, live_retrying';
 
 /** "Í birtingu…": a request on its way. The panel also shows it while it waits for its own new request's row. */
 export const IN_PROGRESS: Readonly<DisplayState> = Object.freeze({ label: t.publish.inProgress, tone: 'pending' });
@@ -66,9 +71,12 @@ export const isFinal = (state: DisplayState): boolean => state.tone !== 'pending
  *   "committed" here too);
  * - every active site notified, a live check still running → "Bíður eftir vefnum";
  * - every active site's live_status ok → "Birt á vef ✓" (publish) or "Tekið af vef" (unpublish, neutral);
- * - left out of the release, or its retries exhausted (24 hours of failed builds or notifications,
- *   M3-02) → "Birting á vef mistókst";
- * - every site settled, one not confirmed → "Ekki staðfest á vef";
+ * - left out of the release, or its retries exhausted (24 hours of failed builds, notifications or
+ *   live checks, M3-02 and M3-03) → "Birting á vef mistókst";
+ * - every site settled, one not confirmed and checked again later (M3-03) → "Ekki enn staðfest á
+ *   vef, reynt aftur…", pending (it changes on its own);
+ * - every site settled, one not confirmed and no retry left (its release superseded by a newer
+ *   one) → "Ekki staðfest á vef";
  * - delivered in a tenant with no active site → "Enginn vefur tengdur", a final warning (decision 39.3);
  * - the request's own failures: failed_validation, superseded, rejected, failed.
  *
@@ -109,6 +117,8 @@ function deliveryState(row: PublicationStatusRow): DisplayState {
   // §7.4, M3-02: the sweep stops retrying 24 hours after the first failure and alerts.
   if (row.retries_exhausted) return deliveryFailed;
   if (row.sites_live_ok + row.sites_not_confirmed === sites) {
+    // M3-03: the sweep notifies the site again and re-runs the live check on M3-02's schedule.
+    if (row.live_retrying) return { label: t.publish.notConfirmedRetrying, tone: 'pending', detail: t.publish.notConfirmedRetryingDetail };
     return { label: t.publish.notConfirmed, tone: 'error', detail: t.publish.notConfirmedDetail };
   }
   if (row.sites_notified === sites) return { label: t.publish.revalidated, tone: 'pending' };

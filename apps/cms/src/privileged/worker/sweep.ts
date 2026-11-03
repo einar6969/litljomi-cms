@@ -10,9 +10,10 @@
 //      and confirmed on its sites (api.worker_tenants_to_release), unless its latest build failed
 //      and the next build attempt is not due yet.
 //   3. Deliveries of each tenant's latest delivered release that still need a notification or a
-//      live check are retried when their next attempt is due (api.worker_deliveries_to_retry). A
-//      release superseded by a newer delivered one is never retried, and a release delivered by
-//      step 2 of this same sweep is not retried in it.
+//      live check, or whose live check missed (not_confirmed, M3-03), are retried when their next
+//      attempt is due (api.worker_deliveries_to_retry): the site is notified again and the full
+//      live check runs. A release superseded by a newer delivered one is never retried, and a
+//      release delivered by step 2 of this same sweep is not retried in it.
 //   4. Originals in media-private with no assets row, older than a day, are removed
 //      (api.worker_private_orphans; M3-07).
 //   5. Releases older than the previous one, an hour after the newer delivery, are removed from

@@ -28,6 +28,9 @@ describe('generateDeliveryTypes', () => {
     expect(out).toContain('  body: ProjectedRichTextDoc | null;');
     expect(out).toContain('export interface PublicAsset {');
     expect(out).toContain('export interface EntrySummary {');
+  });
+  it('declares the focal point optional, as the SDK does (additive to format 1, plan M2-12)', () => {
+    expect(out).toContain('  focal?: { x: number; y: number } | null;');
     expect(out).toContain("import type { ProjectedRichTextDoc } from '@litljomi/rich-text';");
   });
   it('is deterministic and handles several types', () => {

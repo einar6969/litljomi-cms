@@ -124,7 +124,8 @@ insert into editor_views values
   -- Task 25 replaced this view (20261102001500_publication_status.sql; 099_publication_status).
   ('publication_status', array['request_id', 'tenant_id', 'entry_id', 'action', 'status', 'error', 'requested_at',
                                'release_number', 'release_status', 'omitted', 'missing_assets', 'site_count',
-                               'sites_notified', 'sites_live_ok', 'sites_not_confirmed', 'retries_exhausted']),
+                               'sites_notified', 'sites_live_ok', 'sites_not_confirmed', 'retries_exhausted',
+                               'live_retrying']), -- M3-03 appended live_retrying
   ('tenant_sites', array['id', 'tenant_id', 'base_url', 'preview_url', 'active']);
 
 select is_empty($$ select v.name from editor_views v

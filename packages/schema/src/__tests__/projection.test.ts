@@ -80,6 +80,19 @@ describe('projectEntry', () => {
     expect(out.related).toEqual({ href: 'https://example.com/' });
   });
 
+  // Plan M2-12: the focal point is delivered with the image, additive to bundle format 1.
+  it("projects the asset's focal point with the image, and null for an asset without one", () => {
+    const withFocal = projectEntry(t, data, fakeCtx({ assets: { [A]: asset('https://m.test/a.jpg') } }));
+    expect(withFocal.pic).toMatchObject({ focal: { x: 0.5, y: 0.25 }, alt: 'per-use alt' });
+    const without = projectEntry(t, data, fakeCtx({ assets: { [A]: { ...asset('https://m.test/a.jpg'), focal: null } } }));
+    expect(without.pic).toHaveProperty('focal', null);
+  });
+
+  it('copies the focal point, never passing on other keys of the context', () => {
+    const extra = { ...asset('https://m.test/a.jpg'), focal: { x: 0.1, y: 0.9, z: 1 }, secret: 'x' } as unknown as PublicAsset;
+    expect(projectEntry(t, data, fakeCtx({ assets: { [A]: extra } })).pic).toEqual({ ...asset('https://m.test/a.jpg'), focal: { x: 0.1, y: 0.9 }, alt: 'per-use alt' });
+  });
+
   it('an image with a missing asset projects as null', () => {
     expect(projectEntry(t, data, fakeCtx({})).pic).toBeNull();
   });

@@ -9,7 +9,8 @@ export interface PublicAsset {
   height: number;
   mime: string;
   alt: string;
-  focal: { x: number; y: number } | null;
+  /** Null when none is set; absent in a bundle written before focal points were delivered. */
+  focal?: { x: number; y: number } | null;
 }
 
 export interface EntrySummary {
@@ -39,4 +40,9 @@ export interface NoticeEntry {
   title: string | null;
   body: string | null;
   date: string | null;
+}
+
+export interface SiteInfoEntry {
+  title: string | null;
+  tagline: string | null;
 }

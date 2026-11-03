@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { AnyFieldKind, ReleaseView, SiteEntry } from '@litljomi/cms-schema';
+import { isSingleton, structureItems, type AnyFieldKind, type ReleaseView, type SiteEntry } from '@litljomi/cms-schema';
 import fixture from '../../fixtures/event.json';
 import demo from '../index.ts';
 
@@ -8,10 +8,14 @@ const e: SiteEntry = { id: '00000000-0000-4000-8000-000000000001', type: 'event'
 const release = (present: boolean): ReleaseView => ({ entries: (t) => (t === 'event' && present ? [e] : []) });
 
 describe('demo module', () => {
-  it('declares the tenant and two types, event and the schema-evolution test type notice; there is no news type', () => {
+  it('declares the tenant and three types, event, the schema-evolution test type notice and the singleton site-info; there is no news type', () => {
     expect(demo.tenant).toBe('demo');
-    expect(demo.types.map((t) => t.name)).toEqual(['event', 'notice']);
-    expect(demo.structure.map((s) => s.type)).toEqual(['event']);
+    expect(demo.types.map((t) => t.name)).toEqual(['event', 'notice', 'site-info']);
+    expect(structureItems(demo).map((s) => s.type)).toEqual(['event', 'site-info']);
+    expect(demo.structure[0]).toMatchObject({ group: 'Content' });
+    expect(isSingleton(demo, 'site-info')).toBe(true);
+    expect(isSingleton(demo, 'event')).toBe(false);
+    expect(demo.site['site-info']).toBeUndefined();
     expect(demo.site.notice).toBeUndefined();
     expect(demo.types.some((t) => t.name === 'news')).toBe(false);
     expect(demo.site.news).toBeUndefined();

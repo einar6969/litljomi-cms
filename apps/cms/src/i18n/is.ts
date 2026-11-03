@@ -35,6 +35,11 @@ export const is = {
     inactive: 'Vefur óvirkur',
     inactiveBody: 'Ekki er hægt að breyta efni þessa vefs eins og er.',
     contentTypes: 'Efnisflokkar',
+    navigation: 'Efni vefsins',
+  },
+  singleton: {
+    opening: 'Opna…',
+    openFailed: 'Ekki tókst að opna færsluna. Reyndu aftur.',
   },
   entries: {
     new: 'Ný færsla',
@@ -46,6 +51,7 @@ export const is = {
     status: 'Staða',
     updated: 'Breytt',
     back: 'Til baka í lista',
+    backHome: 'Til baka í efnisflokka',
     statuses: {
       draft: 'Uppkast',
       published: 'Birt',
@@ -118,7 +124,13 @@ export const is = {
       saveDefaultAlt: 'Nota sem sjálfgefinn alt-texta myndarinnar',
       defaultAltSaved: 'Sjálfgefinn alt-texti vistaður',
       focal: 'Smelltu á myndina til að velja þungamiðju',
+      focalLabel: 'Þungamiðja myndarinnar',
+      focalHelp: 'Smelltu á myndina eða færðu þungamiðjuna með örvatökkunum (með Shift í minni skrefum). Vefurinn sker myndina þannig að þungamiðjan sjáist.',
+      focalAt: 'Þungamiðja: {x} % frá vinstri, {y} % ofan frá.',
+      focalNone: 'Engin þungamiðja valin: myndin er skorin um miðjuna.',
+      clearFocal: 'Fjarlægja þungamiðju',
       focalSaved: 'Þungamiðja vistuð',
+      details: 'Upplýsingar um myndina (opnast í nýjum flipa)',
       updateError: 'Ekki tókst að vista. Reyndu aftur.',
     },
     reference: {
@@ -184,9 +196,21 @@ export const is = {
     deliveryFailedDetail: 'Kerfisstjóra hefur verið gert viðvart.',
     notConfirmed: 'Ekki staðfest á vef',
     notConfirmedDetail: 'Færslan var send á vefinn en ekki tókst að staðfesta að hún birtist þar.',
+    // M3-03 (drafts for Einar): "live not confirmed, retrying", while the sweep retries the live check.
+    notConfirmedRetrying: 'Ekki enn staðfest á vef, reynt aftur…',
+    notConfirmedRetryingDetail: 'Færslan var send á vefinn en hefur ekki enn sést þar. Kerfið reynir aftur sjálfkrafa.',
     noSite: 'Enginn vefur tengdur',
     requestFailed: 'Ekki tókst að senda beiðnina. Reyndu aftur.',
     statusUnavailable: 'Ekki tókst að sækja stöðu birtingar.',
+  },
+  asset: {
+    title: 'Mynd',
+    back: 'Á forsíðu vefsins',
+    filename: 'Skráarheiti',
+    size: 'Stærð',
+    defaultAlt: 'Sjálfgefinn alt-texti',
+    defaultAltHelp: 'Lýsing sem á við myndina almennt. Á vefnum gildir alt-texti hvers staðar sem myndin er notuð.',
+    saveDefaultAlt: 'Vista sjálfgefinn alt-texta',
   },
   notFound: {
     title: 'Síðan fannst ekki',
