@@ -40,6 +40,7 @@ A permission denial, sandbox refusal or unexpected prompt is reported to the con
 - `pnpm typecheck`: TypeScript over the repository checks.
 - `pnpm test`: the Vitest workspace.
 - `pnpm check:slugs`: fails if a tenant slug literal appears in core code.
+- `pnpm check:schema`: fails on a breaking content-type change without a version bump and transform, against `modules/*/schema.snapshot.json`; `pnpm check:schema --update` records intentional changes.
 - `pnpm harness:test`: the execution-state tests, via `node --test`.
 
 - `pnpm db:start` / `pnpm db:stop`: start or stop the local Supabase stack (needs Docker; OrbStack).
