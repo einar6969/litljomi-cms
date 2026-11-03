@@ -213,7 +213,8 @@
       "note": "Einar in chat, 2026-11-02: \"G7, for Task 27: I approve G7 with `branch=hub-integration` and `push=false`.\" and \"Create `hub-integration` from LABAK’s `main` at `aec9f95`, and commit locally on that branch only.\" and \"Never commit to, merge into or push `main`; no push at all; no Vercel, DNS or hosting action.\"",
       "params": {
         "branch": "hub-integration",
-        "push": false,
+        "push": true,
+        "pushBranches": ["hub-integration"],
         "base": "aec9f95"
       },
       "extensions": [
@@ -221,6 +222,12 @@
           "at": "2026-11-03",
           "scope": "Decision 43.3: local commits on LABAK's hub-integration for the vendored SDK (npm pack of @litljomi/cms-sdk and @litljomi/rich-text 0.1.0 into vendor/, package.json pointed at them, vendor/README.md with source commit, version and checksum; the staging-only noindex header). push stays false until G7 push (decision 43.8) is approved separately. Never main.",
           "note": "Einar in chat, 2026-11-03: \"3. The SDK for LABAK: `npm pack` `@litljomi/cms-sdk` and `@litljomi/rich-text` (0.1.0) into `vendor/` on `hub-integration`, and point `package.json` at them.\" \"Add vendor/README.md with the source commit, version and checksum of each file.\" \"Acceptance: a fresh clone of the branch, with nothing from my Mac, passes `npm ci` and `npm run build`.\" Full message: plan decision 43."
+        },
+        {
+          "at": "2026-11-03",
+          "scope": "Decision 43.8, the G7 push: push=true for hub-integration only. Never main, never a force-push. Safeguard first: Einar's Ignored Build Step on landssamband-bakarameistara (decision 43.8, runbook G6.0); labak-hub builds hub-integration only.",
+          "note": "Einar in chat, 2026-11-03: \"G7 push: I approve G7 with `push=true` for `hub-integration` only. Never `main`, never a force-push. Record it in `gates.json` and `m1-gates.md`.\"",
+          "record": "Reported by Einar in chat, 2026-11-03: \"Ignored Build Step: I set it on `landssamband-bakarameistara`, exactly as in decision 43.8.\"; \"Push: I pushed `hub-integration` from my own terminal (`56bb9dd`); `main` is unchanged at `aec9f95`.\"; \"`labak-hub`: I connected it to `einar6969/landssamband-bakarameistara` and set its Production Branch to `hub-integration`.\" Advisor's read-only check (Einar's report): build dpl_A5Xo29xx… CANCELED by the Ignored Build Step, production still aec9f95. Controller, read only: origin/hub-integration 56bb9dd, LABAK main aec9f95; the G7.1 pre-push checks run after the push on 56bb9dd: no vercel.json; scan finds only the local fixture CMS_WEBHOOK_SECRETS=laba… (5, README.md), nothing in commit messages or the two vendored tarballs."
         }
       ]
     }

@@ -153,3 +153,10 @@ Einar in chat: "1. Turn off “Automatically expose new tables” in sitting 2, 
 
 - G4 done (SendGrid SMTP, Icelandic templates, 100 emails/hour); G5 done (three CNAMEs verified); G6 done for the CMS (`vefumsjon-staging` live, checks pass, per-minute cron running) and set up for both sites (projects, domains, variables, webhook secrets). Provisioning done with the reviewed `provision` tool (two fixes: Turborepo env → `next build`; vite-node silent exit → sync stdin, exit 1 by default). Einar signed in by magic link; first LABAK publish committed, release 1 delivered after the secret key on Vercel was corrected.
 - Left for sitting 3: a first demo publish and the `demo-staging` deploy; G7 (Einar's Ignored Build Step on `landssamband-bakarameistara`, pre-push checks, push `hub-integration`, connect and deploy `labak-hub`); Task 29; C4.
+
+### Sitting 3 started (2026-11-03, eighth controller session)
+
+- State checked against Einar's brief: all as expected (litljomi-cms `m1/phase-1` `4fd331f` clean, `main` `5568098`, origin at `4d25371`, sandbox npm-only, worktrees `lane-a-alt`, `lane-a-next`, `lane-b`; LABAK `hub-integration` `56bb9dd` = origin, `main` `aec9f95`; Vercel: `vefumsjon-staging` READY, `demo-staging` only the two earlier ERROR builds, `labak-hub` none). Supabase state taken from the sitting 2 record (no gate covers the Supabase connector).
+- **Recorded:** G7 push approved (`push=true`, `hub-integration` only); Einar's Ignored Build Step on `landssamband-bakarameistara`; Einar's push of `56bb9dd`; the cancelled build there (production still `aec9f95`); `labak-hub` connected with Production Branch `hub-integration`; A11 headers (dkim, spf, dmarc pass; DMARC `p=none`). G7.1 pre-push checks run after the push on `56bb9dd`: as expected. Details: `m1-gates.md`, `m1-report.md`.
+- **LABAK go-live list, additions for C4:** litljomi.is DMARC is `p=none`.
+- Next: sitting 3 step 1, the `labak-hub` checks before its first deployment.
