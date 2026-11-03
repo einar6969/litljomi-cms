@@ -43,6 +43,8 @@ This runbook sets up the M1 staging environment: the GitHub repository, the host
   | G3 | `<project-ref>.supabase.co` (the executor's public checks, sections 5 and 6; Einar's own `supabase` commands run in his terminal) |
   | G4, G5 | none (Einar works in SendGrid, Supabase and the DNS host himself, and runs the `dig` checks) |
   | G6 | `api.vercel.com`, `vefumsjon-staging.litljomi.is`, `demo-staging.litljomi.is`, `labak-hub.litljomi.is` |
+  | G7 | `github.com` (G7.1's `git push` of `hub-integration` and its `git ls-remote` checks, in the LABAK checkout); `labak-hub.litljomi.is` (G7.1's live check and the `labak-hub` checks of G6.3 that wait for G7.1, since the G6 diff is removed by then). Shown to Einar as an exact diff with the G7 push request; removed when G7.1 is done |
+  | Task 29 | `vefumsjon-staging.litljomi.is`, `demo-staging.litljomi.is`, `labak-hub.litljomi.is` and `<project-ref>.supabase.co`, for the controller's own read-only `curl` checks (status codes, headers, the public delivery files); no secret is used. Einar's browser tests and every acceptance run that needs the staging key (the admin link route, section 14) run in his own terminal, outside the sandbox, and need no entry here. Shown to Einar as an exact diff when Task 29 starts; removed when Task 29 is done |
 - **Undo records.** Every hosted item created or changed under this runbook (repository, organisation, project, key, setting, record, deployment) is recorded the same day, with how to undo it, in `docs/verification/m1-gates.md`, table "Hosted items and how to undo them (Task 28)" (columns Item, Where, Created (date, gate), Monthly cost, How to undo), and in the session's handoff notes. No secret value goes into either.
 - **Cost.** The only new cost is **Vercel Pro, $20 a month** (Einar upgrades the team at G6.1). SendGrid is Einar's existing paid plan; the Supabase organisation is on the Free plan (Pro comes with production, §2.2) and the GitHub repository is on GitHub Free. A step that would add any other cost stops: report it; Einar decides.
 - "§" numbers refer to the spec (`docs/architecture.md`); "section N" refers to this runbook. **A1–A15** are the spec's validation gates (§11.1, the A-numbered table). "**Task 29 item N**" is item N of Task 29 Step 2 in the plan (one M1 acceptance test each). The two numberings are unrelated: Task 29 item 11 is the passwordless and email-change test, A11 is custom SMTP delivery.
@@ -70,6 +72,8 @@ This runbook sets up the M1 staging environment: the GitHub repository, the host
 ## 3. Deployment sequence
 
 Task 28 follows this order, in the three sittings of decision 43 (a stop and a short summary at the end of each). Each step lists what it depends on. Every hosted item is recorded with how to undo it as it is created (section 1, "Undo records").
+
+G2.5 (sitting 1, order 5) is local work on the LABAK branch under the G7 extension of 2026-11-03 (no push); it is separate from the G7 push (G7.1, decision 43.8), which is approved on its own in sitting 3.
 
 | Order | Step | Gate | Depends on |
 |---|---|---|---|
@@ -114,18 +118,23 @@ The order is section 3's: G2.4 (pins) and G2.0 (history scan) come **before** th
      ```sh
      git log --all --format= --name-only | grep -E '(^|/)\.env' | grep -vE '(^|/)\.env\.example$' | sort -u
      ```
-  2. Key, token and secret-assignment shapes, each match cut to its prefix and four characters, with a count:
+  2. Key, token and secret-assignment shapes, each match cut to its prefix and four characters, with a count. `RE` covers Supabase keys (`sb_secret_`, `sb_publishable_`, legacy `eyJ…` JWTs) and personal access tokens (`sbp_`), GitHub tokens, SendGrid keys (`SG.`), Resend keys, `vercel_`-prefixed tokens, private keys, Postgres URLs with a password (`postgres://user:pw@`, `postgresql://…`), and any assignment of a non-empty value, quoted or not, to an upper-case name ending in `TOKEN`, `SECRET`, `SECRETS`, `PASSWORD`, `PASS` or `KEY` (`SUPABASE_DB_PASSWORD=`, `VERCEL_TOKEN=`, `NODE_AUTH_TOKEN=`, `SUPABASE_SECRET_KEY=` and the rest). A Vercel token without a recognisable prefix is caught only by such an assignment (confirm Vercel's current token format at execution time). `CUT` prints the prefix and four characters:
      ```sh
-     RE='sb_(secret|publishable)_[A-Za-z0-9_-]{8,}|eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|SG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}|re_[A-Za-z0-9]{8,}_[A-Za-z0-9]{8,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|(SUPABASE_SECRET_KEY|SUPABASE_SERVICE_ROLE_KEY|CMS_INTERNAL_SECRET|CRON_SECRET|CMS_WEBHOOK_SECRETS|SMTP_PASS[A-Z]*|NODE_AUTH_TOKEN)=[^[:space:]$"'"'"'`]+'
-     git rev-list --all | xargs git grep -ohIE "$RE" \
-       | sed -E 's/^(sb_secret_|sb_publishable_|github_pat_|gh[pousr]_|SG\.|re_|eyJ|-----BEGIN|[A-Z_]+=)?(.{0,4}).*/\1\2…/' \
-       | sort | uniq -c
+     RE='sb_(secret|publishable)_[A-Za-z0-9_-]{8,}|sbp_[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|SG\.[A-Za-z0-9_-]{8,}|re_[A-Za-z0-9]{8,}_[A-Za-z0-9]{8,}|vercel_[A-Za-z0-9_-]{16,}|postgres(ql)?://[^:/@[:space:]]+:[^@/[:space:]]+@|-----BEGIN [A-Z ]*PRIVATE KEY-----|[A-Z_]*(TOKEN|SECRET|SECRETS|PASSWORD|PASS|KEY)=["'"'"']?[^[:space:]$"'"'"'`]+'
+     CUT='s/^(sb_secret_|sb_publishable_|sbp_|github_pat_|gh[pousr]_|SG\.|re_|vercel_|postgres(ql)?:\/\/|eyJ|-----BEGIN|[A-Z_]+=["'"'"']?)?(.{0,4}).*/\1\3…/'
+     git rev-list --all | xargs git grep -ohIE "$RE" | sed -E "$CUT" | sort | uniq -c
      ```
   3. Where they are (path and the number of commits holding it):
      ```sh
      git rev-list --all | xargs git grep -lIE "$RE" | sed -E 's/^[0-9a-f]{40}://' | sort | uniq -c
      ```
-- **Verify:** the executor lists every finding for Einar (path, commits, shape, the four-character prefix) and classifies it. Expected, and acceptable: the test fixtures' fake values (for example `sb_secret_test…`, `sb_publishable_test…`, `CRON_SECRET=loca…`) and Supabase's public local development keys. Anything else, or anything the executor cannot classify: **stop**; nothing is pushed, and Einar decides (rewriting history is his decision, never automatic). The scan was tried on 2026-11-03 over 260 commits (about 10 s); confirm at execution time that it still prints only the shapes above.
+  4. Commit messages, the same shapes (expected: no output from either command; the second prints only abbreviated commit hashes, never a subject):
+     ```sh
+     git log --all --format=%B | grep -ohE "$RE" | sed -E "$CUT" | sort | uniq -c
+     git log --all -E --grep="$RE" --format=%h
+     ```
+  `git grep -I` skips binary files; this repository commits no archives, and the LABAK branch's tarballs are scanned unpacked before G7.1.
+- **Verify:** the executor lists every finding for Einar (path, commits, shape, the four-character prefix) and classifies it. **Expected, and acceptable,** the local test values: `sb_publishable_test_value` and `sb_secret_test_value` (`sb_publishable_test…`, `sb_secret_test…`), the local database URL `postgres:postgres@127.0.0.1:54322` (`postgresql://post…`), `labak-local-secret` (`CMS_WEBHOOK_SECRETS=laba…`), `s3cr3t` (`CMS_WEBHOOK_SECRETS=s3cr…`), `local-cron` (`CRON_SECRET=loca…`), `local-internal` (`CMS_INTERNAL_SECRET=loca…`), `e2e-secret-old` and `e2e-secret-new` (the demo site's e2e harness, if a pattern catches them), the fake `supabase status` output in `tools/checks/__tests__/e2e-loopback.test.ts` (`PUBLISHABLE_KEY="pk…`, `SECRET_KEY="sk…`), and Supabase's public local development keys. Anything else, or anything the executor cannot classify: **stop**; nothing is pushed, and Einar decides (rewriting history is his decision, never automatic). The widened scan was tried on 2026-11-03 over every ref (about 25 s): it printed only the expected values above and nothing from commit messages; confirm at execution time that it still does.
 
 ### G2.1 Create the private repository
 - **Owner:** Einar approves at G2; executor runs `gh` (or hands it to Einar, section 1).
@@ -827,7 +836,7 @@ Never touched under this runbook: the existing project `landssamband-bakarameist
 - **Owner:** Executor sets non-secret values; **Einar enters every secret value** (section 12) from his own terminal, or in the project's Environment Variables settings, so no secret passes through an agent session. Production environment only (the staging hostnames are the projects' production domains); secret values marked sensitive if the CLI or dashboard offers it (confirm at execution time).
 - **Settings:** the variables in section 13 for each project, **except `CMS_WEBHOOK_SECRETS`** on the two site projects: it holds the site's webhook secret, which is created with the site in P-2 (section 11), after G6.5; P-2 sets and verifies it. `CRON_SECRET` and `CMS_INTERNAL_SECRET` are generated fresh and piped straight into the CLI, never printed, never in a file, the clipboard or shell history (section 12).
 - **Selecting the Vercel project.** `vercel env` acts on the project linked to its working directory, so a wrong directory would put a value, possibly a secret, on the wrong project (for example one site's webhook secret on the other site). Each project therefore gets its own empty directory outside the repository, `~/vercel-link/<project>` (`<project>` is a name from G6.1's table), linked once by Einar: `mkdir -p ~/vercel-link/<project>`, then `vercel link --cwd ~/vercel-link/<project> --project <project> --scope <team>`. If `vercel link` offers to pull environment variables (for example into `.env.local`), Einar declines; the executor reads only `.vercel/project.json` there (confirm the prompts at execution time). Every `vercel env` command in this runbook names that directory with `--cwd ~/vercel-link/<project>` and never relies on the current directory. Before the first value is added to a project, the executor compares the project ID in `~/vercel-link/<project>/.vercel/project.json` (not secret) with the one on that project's Settings page and records the match. Confirm the flags and the file at execution time (`vercel link --help`, `vercel env --help`); if the project cannot be selected and checked this way, stop and report.
-- **Verify:** for each project, `vercel env ls production --cwd ~/vercel-link/<project>` lists exactly the names in section 13 for that project (values are not shown), except `CMS_WEBHOOK_SECRETS` on the two site projects (P-2 adds it); no Supabase variable other than those section 13 lists is present on a site project; `SITE_NOINDEX` is on `labak-hub` only.
+- **Verify:** for each project, `vercel env ls production --cwd ~/vercel-link/<project>` lists exactly the names in section 13 for that project (values are not shown), except `CMS_WEBHOOK_SECRETS` on the two site projects (P-2 adds it); no Supabase variable other than those section 13 lists is present on a site project; `SITE_NOINDEX` is on `labak-hub` only, and set there with the value `1` (Einar or the executor reads the value on the project's Environment Variables page; it is not secret). The header itself is checked live in G6.5 and, for `labak-hub`, after G7.1.
 
 ### G6.3 Deployment protection: Standard Protection on all three projects
 - **Owner:** Executor (project Settings → Deployment Protection).
@@ -852,12 +861,30 @@ Never touched under this runbook: the existing project `landssamband-bakarameist
 ### G6.5 Deploy the CMS and the demo site
 - **Owner:** Executor.
 - **Settings:** deploy `vefumsjon-staging` and `demo-staging` from `main` (a redeploy from the dashboard after G6.2, or the next push to `main`). The demo site is deployed **without `CMS_WEBHOOK_SECRETS`, on purpose**: its webhook secret does not exist until P-2, which sets the variable and redeploys the site. `labak-hub` is first built by the G7.1 push. Nothing is published to a site before P-3.
-- **Verify:** each project's latest production deployment is Ready; `curl -s -o /dev/null -w '%{http_code}' https://<host>/` returns `200` for `vefumsjon-staging.litljomi.is` and `demo-staging.litljomi.is`.
+- **Verify:** each project's latest production deployment is Ready; `curl -s -o /dev/null -w '%{http_code}' https://<host>/` returns `200` for `vefumsjon-staging.litljomi.is` and `demo-staging.litljomi.is`, and `curl -sI https://<host>/ | grep -i '^x-robots-tag'` shows `X-Robots-Tag: noindex` for both. For `labak-hub` (first built by G7.1): `SITE_NOINDEX=1` is set on the project (G6.2), and after G7.1 `curl -sI https://labak-hub.litljomi.is/ | grep -i '^x-robots-tag'` shows `X-Robots-Tag: noindex` (G7.1's Verify). A missing header on any of the three hosts: stop and report.
 
 ### G7.1 Push `hub-integration` (G7, `push=true` for that branch only)
 - **Owner:** Executor, in the LABAK checkout, only after G7 with `push=true` is recorded **and** Einar has confirmed G6.0's Ignored Build Step to the controller.
+- **Before the push** (read only, in the LABAK checkout; both checks pass, or nothing is pushed):
+  1. **No `vercel.json` that overrides G6.0.** A `vercel.json` with `ignoreCommand` or a `git` key (for example `git.deploymentEnabled`) on `hub-integration` would take precedence over the Ignored Build Step Einar set on `landssamband-bakarameistara`. Expected: no output (the branch had no `vercel.json` on 2026-11-03):
+     ```sh
+     git ls-tree -r --name-only hub-integration | grep -E '(^|/)vercel\.json$' | while read -r f; do
+       printf '%s: ' "$f"; git show "hub-integration:$f" | jq 'has("ignoreCommand") or has("git")'
+     done
+     ```
+     A file listed with `false` is reported and recorded; one with `true`, or one `jq` cannot parse: **stop and report**, nothing is pushed.
+  2. **G2.0's history scan over what the push adds.** With `RE` and `CUT` set exactly as in G2.0 step 2, over the commits on `hub-integration` that are not on `main`, their commit messages, and the vendored tarballs unpacked (`git grep -I` skips them as binary):
+     ```sh
+     git rev-list main..hub-integration | xargs git grep -ohIE "$RE" | sed -E "$CUT" | sort | uniq -c
+     git rev-list main..hub-integration | xargs git grep -lIE "$RE" | sed -E 's/^[0-9a-f]{40}://' | sort | uniq -c
+     git log main..hub-integration --format=%B | grep -ohE "$RE" | sed -E "$CUT" | sort | uniq -c
+     git ls-tree --name-only hub-integration vendor/ | grep '\.tgz$' | while read -r f; do
+       git show "hub-integration:$f" | tar -xzOf - | grep -ohaE "$RE"
+     done | sed -E "$CUT" | sort | uniq -c
+     ```
+     The executor shows Einar the findings, classified as in G2.0, before the push. Expected: only the local fixture value `labak-local-secret` (`CMS_WEBHOOK_SECRETS=laba…`, tried on 2026-11-03); nothing from the commit messages or the tarballs. Anything else: **stop**; nothing is pushed, and Einar decides.
 - **Settings:** `git push -u origin hub-integration` in the LABAK repository. **Only `hub-integration`**: never `main`, never another branch or a tag, never `--all`, `--mirror` or a force-push. The branch carries G2.5's vendored SDK files and the `SITE_NOINDEX` code.
-- **Verify:** `git ls-remote --heads origin hub-integration` matches the local branch head and `git ls-remote --heads origin main` is unchanged from before the push (recorded before); `labak-hub` shows a Ready production deployment of `hub-integration`, and `curl -s -o /dev/null -w '%{http_code}' https://labak-hub.litljomi.is/` returns `200`; Einar checks G6.0's Deployments list on `landssamband-bakarameistara` (no built deployment of `hub-integration`; otherwise stop and report). The pushed branch is in the undo table (undo: Einar deletes the remote branch; labak-hub's deployments go with the project).
+- **Verify:** `git ls-remote --heads origin hub-integration` matches the local branch head and `git ls-remote --heads origin main` is unchanged from before the push (recorded before); `labak-hub` shows a Ready production deployment of `hub-integration`, and `curl -s -o /dev/null -w '%{http_code}' https://labak-hub.litljomi.is/` returns `200`, and `curl -sI https://labak-hub.litljomi.is/ | grep -i '^x-robots-tag'` shows `X-Robots-Tag: noindex` (otherwise stop and report: `SITE_NOINDEX=1` is missing or not read); Einar checks G6.0's Deployments list on `landssamband-bakarameistara` (no built deployment of `hub-integration`; otherwise stop and report). The pushed branch is in the undo table (undo: Einar deletes the remote branch; labak-hub's deployments go with the project).
 
 ## 11. Tenants, sites and the staging editor (Task 28 Step 5)
 
