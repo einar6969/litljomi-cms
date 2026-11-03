@@ -2,6 +2,7 @@ import type { ComponentType } from 'react';
 import { DateField } from './fields/DateField';
 import { ImageField } from './fields/ImageField';
 import { LinkField } from './fields/LinkField';
+import { ReferenceField } from './fields/ReferenceField';
 import { RichTextField } from './fields/RichTextField';
 import { TextField } from './fields/TextField';
 
@@ -14,6 +15,8 @@ export type FieldProps = {
   onChange: (value: unknown) => void;
   max?: number;
   multiline?: boolean;
+  /** A reference field's allowed target types. */
+  to?: readonly string[];
 };
 
 /**
@@ -26,4 +29,5 @@ export const fieldRegistry: Record<string, ComponentType<FieldProps>> = {
   link: LinkField,
   image: ImageField,
   richText: RichTextField,
+  reference: ReferenceField,
 };
