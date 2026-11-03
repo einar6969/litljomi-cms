@@ -161,3 +161,10 @@ Result: **`immutable` can be set.** storage-js's `headers` option replaces the `
 The same probe recorded what the worker relies on for copies and uploads that collide: a second server-side copy to an existing destination, and an upload with `upsert: false` to an existing path, both fail with `{ message: 'The resource already exists', status: 400, statusCode: '409' }`. The worker counts the copy case as success (decision 35) and treats the upload case as a failure (bundle paths are never reused).
 
 Limits: this is the local Storage API. Whether a CDN in front of hosted Storage keeps these headers is part of A6, checked on staging (Task 29). The probe's objects were removed afterwards.
+
+## Hosted items and how to undo them (Task 28)
+
+Every hosted item created or changed in Task 28 and Task 29 is added here the day it is created (staging runbook, section 1, "Undo records"), and repeated in the session's handoff notes. No secret value is ever written here: a key or token is named, never shown.
+
+| Item | Where | Created (date, gate) | Monthly cost | How to undo |
+|---|---|---|---|---|
