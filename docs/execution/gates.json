@@ -234,6 +234,11 @@
           "at": "2026-11-03",
           "scope": "Decision 48.1: one more production deployment on vefumsjon-staging through the Vercel connector, of m1/phase-1 1bcc901 (the any-miss resend fix), pushed by Einar. Same limits: no pause, no environment variable changes, nothing on landssamband-bakarameistara.",
           "note": "Einar in chat, 2026-11-03, to the controller's question \"Push, then approve one more vefumsjon-staging deployment of 1bcc901?\": \"Pushed, deploy it\"."
+        },
+        {
+          "at": "2026-11-03",
+          "scope": "Decision 48.2: one production deployment on demo-staging through the Vercel connector, of m1/phase-1 96c83bd (the demo route's revalidateTag { expire: 0 }), pushed by Einar. No environment variable changes, nothing on landssamband-bakarameistara.",
+          "note": "Einar in chat, 2026-11-03, to the controller's question \"Push, then approve one demo-staging production deployment of the branch tip?\": \"Pushed, deploy it\"."
         }
       ],
       "hostsRemoved": {
