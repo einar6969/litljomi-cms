@@ -200,6 +200,8 @@ Einar in chat, 2026-11-03 (twelfth controller session), recorded as decision 50 
 | 1 | The Supabase images were not pullable; the local stack could not start |
 | 2 | `pnpm db:test` 1,405, `pnpm test:integration` 110 and unit (`pnpm test`) 1,381, all pass; images pulled from `ghcr.io`; `example.com` refused (network limit holds); nothing written to GitHub |
 
+Pending (decision 50.5, M2-1): Einar adds Playwright's browser download host to the "Limited" list; the first UI thread reports the exact host it is refused. Record the host here once added.
+
 ### Gate for cloud work
 
 No GitHub Pro, so `main` has no branch protection. The gate is: the Project instructions below, **Einar merges every pull request**, and the advisor checks each one. Backed by the `main` guard (`.github/workflows/main-guard.yml`, decision 50.3): on every push to `main` it fails unless each new commit belongs to a pull request merged into `main` or the push came from `einar6969`; a force-push or deletion by anyone else also fails. A failure is the alert; it reverts nothing. Permissions `contents: read` and `pull-requests: read`, only the default `GITHUB_TOKEN`, actions pinned to the same SHAs as `ci.yml`.
