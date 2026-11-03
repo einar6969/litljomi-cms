@@ -83,6 +83,15 @@ export const is = {
       focalSaved: 'Þungamiðja vistuð',
       updateError: 'Ekki tókst að vista. Reyndu aftur.',
     },
+    reference: {
+      none: '— Engin færsla valin —',
+      loading: 'Sæki færslur…',
+      missing: 'Valin færsla finnst ekki (henni hefur verið eytt eða hún sett í skjalasafn)',
+      loadError: 'Ekki tókst að sækja færslurnar.',
+      truncated: 'Aðeins fyrstu 200 færslurnar eru sýndar.',
+      notListed: 'Valin færsla (ekki meðal þeirra sem sýndar eru)',
+      unpublished: 'Þessi færsla er ekki birt. Birta þarf hana áður en hægt er að birta færsluna sem vísar í hana.',
+    },
     richText: {
       toolbar: 'Sniðmótun',
       bold: 'Feitletrað',

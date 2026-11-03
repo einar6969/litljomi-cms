@@ -11,12 +11,14 @@ export type FieldDescriptor = {
   required: boolean;
   max?: number;
   multiline?: boolean;
+  /** The content types a reference field may point to. */
+  to?: string[];
 };
 
 export function describeFields(type: ContentType): FieldDescriptor[] {
   return Object.entries<AnyFieldKind>(type.fields).map(([key, field]) => {
-    // `max` and `multiline` exist on text fields only.
-    const { max, multiline } = field as { max?: unknown; multiline?: unknown };
+    // `max` and `multiline` exist on text fields only, `to` on reference fields only.
+    const { max, multiline, to } = field as { max?: unknown; multiline?: unknown; to?: unknown };
     return {
       key,
       kind: field.kind,
@@ -24,6 +26,7 @@ export function describeFields(type: ContentType): FieldDescriptor[] {
       required: field.required,
       ...(typeof max === 'number' ? { max } : {}),
       ...(typeof multiline === 'boolean' ? { multiline } : {}),
+      ...(field.kind === 'reference' && Array.isArray(to) ? { to: to.filter((x): x is string => typeof x === 'string') } : {}),
     };
   });
 }
