@@ -2,7 +2,8 @@ import 'server-only';
 import { z } from 'zod';
 import { canonicalUuid } from '@litljomi/rich-text';
 import { PREVIEW_TOKEN_TTL_SECONDS, signPreviewToken } from '@litljomi/cms-sdk';
-import { isActive } from '@/lib/tenant';
+// Not '@/lib/tenant': that module loads the editor's cookie-bound client (next/headers).
+import { isActive } from '@/lib/tenant-status';
 import type { SupabaseClient } from '@/lib/supabase/types';
 
 /**
