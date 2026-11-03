@@ -88,7 +88,7 @@ export function AssetDetail({ assetId, url: initialUrl, filename, width, height,
         </dd>
         <dt className="font-medium">{t.asset.size}</dt>
         <dd data-testid="asset-size">
-          {width} × {height} px
+          {t.asset.dimensions.replace('{width}', String(width)).replace('{height}', String(height))}
         </dd>
       </dl>
       <form

@@ -275,10 +275,18 @@ export const is = {
     defaultAlt: 'Sjálfgefinn alt-texti',
     defaultAltHelp: 'Lýsing sem á við myndina almennt. Á vefnum gildir alt-texti hvers staðar sem myndin er notuð.',
     saveDefaultAlt: 'Vista sjálfgefinn alt-texta',
+    // M2-19 (draft for Einar): `{width}` and `{height}` are the image's size in pixels.
+    dimensions: '{width} × {height} px',
   },
   notFound: {
     title: 'Síðan fannst ekki',
     back: 'Á forsíðu',
+  },
+  // M2-19 (drafts for Einar): the page shown when a page fails to load, instead of the framework's English one.
+  error: {
+    title: 'Eitthvað fór úrskeiðis',
+    body: 'Ekki tókst að sýna síðuna. Breytingar sem höfðu verið vistaðar eru óhultar. Reyndu aftur eftir augnablik.',
+    retry: 'Reyna aftur',
   },
 } as const;
 
