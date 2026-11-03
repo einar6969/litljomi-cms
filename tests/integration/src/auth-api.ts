@@ -90,7 +90,7 @@ export async function generateLinkSession(email: string, type: 'magiclink' | 're
 }
 
 // Mailpit (the local SMTP sink).
-type MailMessage = { ID: string; To: { Address: string }[]; HTML: string; Text: string; Subject: string };
+export type MailMessage = { ID: string; To: { Address: string }[]; HTML: string; Text: string; Subject: string };
 const mailApi = `${env.mailUrl}/api/v1`;
 
 export async function clearMail() {
@@ -98,7 +98,8 @@ export async function clearMail() {
   if (!res.ok) throw new Error(`Mailpit: clearing the mailbox answered ${res.status}`);
 }
 
-async function mailsTo(to: string): Promise<MailMessage[]> {
+/** Every message to an address in Mailpit now, with its body. */
+export async function mailsTo(to: string): Promise<MailMessage[]> {
   const res = await fetch(`${mailApi}/messages`);
   if (!res.ok) throw new Error(`Mailpit: listing messages answered ${res.status}`);
   const list = (await res.json()) as { messages?: MailMessage[] };

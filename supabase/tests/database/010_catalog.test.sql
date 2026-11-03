@@ -55,19 +55,20 @@ select is_empty($$ select p.oid::regprocedure::text from pg_proc p join pg_names
     and (p.proacl is null or exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0)) $$,
   'no api function is executable by PUBLIC');
 -- worker_* and admin_* (§4.6, §8.1 item 2; plan Task 11): EXECUTE for
--- service_role only; the owner (postgres) is the only other grantee. 28 = 22
+-- service_role only; the owner (postgres) is the only other grantee. 29 = 23
 -- worker_* (11 from Task 11, worker_claim_request and worker_record_alert from
 -- Task 19, worker_tenants_to_release and worker_deliveries_to_retry from
 -- Task 21, worker_fail_stale_releases and worker_pointer_check from Task 30,
 -- worker_next_attempt_at and worker_release_retry from M3-02, worker_asset_metadata and
--- worker_private_orphans from M3-07, worker_preview_sites from M3-10)
+-- worker_private_orphans from M3-07, worker_preview_sites from M3-10,
+-- worker_claim_alert_email from M3-04)
 -- + 6 admin_* functions (3 from Task 11, admin_set_preview_secret from M3-10,
 -- admin_outdated_drafts and admin_migrate_draft from M2-13; the same counts as
 -- 100_escalation); a task that adds
 -- one updates both files.
 select is((select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-           where n.nspname = 'api' and p.proname ~ '^(worker|admin)_'), 28,
-  'api holds the 28 worker_* and admin_* functions (so the checks below are not vacuous)');
+           where n.nspname = 'api' and p.proname ~ '^(worker|admin)_'), 29,
+  'api holds the 29 worker_* and admin_* functions (so the checks below are not vacuous)');
 select is_empty($$ select p.oid::regprocedure::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'api' and p.proname ~ '^(worker|admin)_'
     and (not has_function_privilege('service_role', p.oid, 'execute')

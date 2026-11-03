@@ -9,6 +9,7 @@ import { createServer } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { SIGNATURE_HEADER, TIMESTAMP_HEADER, verifyWebhook, type Bundle, type BundleEntry, type Pointer } from '@litljomi/cms-sdk';
+import { mailsTo, sleep, waitMail } from '../../../../../../tests/integration/src/auth-api.ts';
 import { editorClient, publicUrl, secretClient } from '../../../../../../tests/integration/src/clients.ts';
 import { env } from '../../../../../../tests/integration/src/env.ts';
 import { TENANT } from '../../../../../../tests/integration/src/fixtures.ts';
@@ -296,10 +297,16 @@ describe('sweep', () => {
     expect(await scheduleOf(r.requestId)).toEqual({ first_failed_at: t0, next_attempt_at: null });
   });
 
-  it('a site answering 500 is retried on schedule and marked failed after 24 hours, with one alert', { timeout: 180_000 }, async () => {
+  it('a site answering 500 is retried on schedule and marked failed after 24 hours, with one alert and one email', { timeout: 180_000 }, async () => {
     const r = await requested('Sólarhringur');
     const t0 = Date.now();
     const due: number[] = [];
+    // M3-04: alert emails go to the local stack's Mailpit through the hosted SMTP code path.
+    const adminEmail = `alerts-${randomUUID().slice(0, 8)}@test.local`;
+    vi.stubEnv('CMS_ALERT_SMTP_HOST', '127.0.0.1');
+    vi.stubEnv('CMS_ALERT_SMTP_PORT', '54325');
+    vi.stubEnv('CMS_ALERT_EMAIL_FROM', 'cms-alerts@test.local');
+    vi.stubEnv('CMS_ALERT_EMAIL_TO', adminEmail);
     webhookStatus = 500;
     try {
       await processAndDeliver(r.requestId, { ...fast, now: () => t0 });
@@ -331,9 +338,34 @@ describe('sweep', () => {
 
     // Never retried again, even days later; the site now answers, but nothing calls it.
     const before = webhooks().length;
-    await sweep({ ...fast, now: () => t0 + 3 * DAY });
+    try {
+      await sweep({ ...fast, now: () => t0 + 3 * DAY });
+    } finally {
+      vi.stubEnv('CMS_ALERT_SMTP_HOST', '');
+    }
     expect(await deliveryOf(r.requestId)).toMatchObject({ notify_status: 'failed', notify_attempts: 12 });
     expect(webhooks().length).toBe(before);
+
+    // Exactly one email for this delivery's exhaustion (twelve failed notifications and the later
+    // sweep): the tenant, the release and the reason, and no secret or content. Other alerts raised
+    // meanwhile (other fixtures' work in the shared database) are other incidents, emailed apart.
+    await waitMail(adminEmail, 1);
+    await sleep(1_000);
+    const all = (await mailsTo(adminEmail)).map((m) => ({ ...m, Text: m.Text.replace(/\r\n/g, '\n') }));
+    const mails = all.filter((m) => m.Subject.includes('delivery.retries_exhausted') && m.Text.includes(d.release_id!));
+    expect(mails).toHaveLength(1);
+    const mail = mails[0]!;
+    expect(mail.Subject).toBe(`[Litljómi CMS] delivery.retries_exhausted (tenant ${TENANT.labak})`);
+    expect(mail.Text).toContain(`Tenant: ${TENANT.labak}\n`);
+    expect(mail.Text).toMatch(new RegExp(`Release: \\d+ \\(${d.release_id}\\)\n`));
+    expect(mail.Text).toContain('Reason: notify_failed\n');
+    expect(mail.Text).toContain(`siteId: ${siteId}\n`);
+    for (const m of all) {
+      for (const leaked of [SECRET, 'Sólarhringur', 'Meginmál', 'Inngangur', r.slug]) {
+        expect(m.Text).not.toContain(leaked);
+        expect(m.Subject).not.toContain(leaked);
+      }
+    }
   });
 
   // Plan Task 30 (decision 36.2): a worker killed mid-build no longer blocks the tenant.

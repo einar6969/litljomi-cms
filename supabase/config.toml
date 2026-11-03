@@ -109,7 +109,9 @@ enabled = true
 # Port to use for the email testing server web interface.
 port = 54324
 # Uncomment to expose additional ports for testing user applications that send emails.
-# smtp_port = 54325
+# The SMTP port is exposed for the CMS's alert emails (plan M3-04): the worker's tests send to
+# Mailpit on 127.0.0.1:54325 through the same SMTP code that sends through SendGrid when hosted.
+smtp_port = 54325
 # pop3_port = 54326
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
