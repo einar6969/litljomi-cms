@@ -961,6 +961,12 @@ The same set as `.env.example` (`tools/checks/__tests__/env-example.test.ts` che
 | `CMS_INTERNAL_SECRET` | CMS app (worker trigger, header `x-cms-internal-secret`) | **Yes** | 32 random bytes, generated and piped into the CLI by Einar (section 12) | `vefumsjon-staging` |
 | `CRON_SECRET` | CMS app (`/api/cron/sweep`), Vercel Cron | **Yes** | 32 random bytes, generated and piped into the CLI by Einar (section 12) | `vefumsjon-staging` |
 | `CMS_PUBLIC_URL` | CMS app (worker trigger URL, magic-link redirect) | No | `https://vefumsjon-staging.litljomi.is` | `vefumsjon-staging` |
+| `CMS_ALERT_SMTP_HOST` | CMS app (`privileged/worker/alert-email.ts`, alert emails, plan M3-04) | No | `smtp.sendgrid.net` (SendGrid, decision 50.5). Unset: no alert email (alerts stay in the server log and the audit log) | `vefumsjon-staging` (M3 local acceptance step 8) |
+| `CMS_ALERT_SMTP_PORT` | CMS app (alert emails) | No | `587` (STARTTLS, required for any non-loopback host); `465` for implicit TLS. Default `587` | `vefumsjon-staging` |
+| `CMS_ALERT_SMTP_USER` | CMS app (alert emails) | No | `apikey` (SendGrid's SMTP user name) | `vefumsjon-staging` |
+| `CMS_ALERT_SMTP_PASSWORD` | CMS app (alert emails) | **Yes** | A SendGrid API key with Mail Send only; entered by Einar (section 12) | `vefumsjon-staging` |
+| `CMS_ALERT_EMAIL_FROM` | CMS app (alert emails) | No | A sender verified in SendGrid for litljomi.is (confirm at execution time) | `vefumsjon-staging` |
+| `CMS_ALERT_EMAIL_TO` | CMS app (alert emails) | No | The platform admin's address(es), comma-separated | `vefumsjon-staging` |
 | `CMS_DELIVERY_BASE_URL` | Sites (SDK release reading) | No | Public URL of the `delivery` bucket, as Storage shows it (expected `https://<project-ref>.supabase.co/storage/v1/object/public/delivery`; confirm at execution time) | `demo-staging`, `labak-hub` |
 | `CMS_TENANT` | Sites | No | The site's tenant slug: `demo` or `labak` | `demo-staging` (`demo`), `labak-hub` (`labak`) |
 | `CMS_WEBHOOK_SECRETS` | Sites (revalidation route) | **Yes** | The site's webhook secret from P-2; two, comma-separated, during rotation; entered by Einar | Each site project, its own secret only |

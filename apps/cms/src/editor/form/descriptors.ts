@@ -12,10 +12,10 @@ export type FieldDescriptor = {
   kind: string;
   label: string;
   required: boolean;
-  /** A text field's longest length, or a number field's largest value. */
+  /** A text field's longest length, a number field's largest value, or a list's most items. */
   max?: number;
   multiline?: boolean;
-  /** A number field's smallest value. */
+  /** A number field's smallest value, or a list's fewest items on publish. */
   min?: number;
   /** A number field takes whole numbers only. */
   integer?: boolean;
@@ -23,28 +23,56 @@ export type FieldDescriptor = {
   options?: SelectChoice[];
   /** The content types a reference field may point to. */
   to?: string[];
+  /** A list's item field (M2-15). */
+  of?: FieldDescriptor;
+  /** A group's nested fields, in order (M2-15). */
+  fields?: FieldDescriptor[];
 };
 
 const isChoice = (x: unknown): x is SelectChoice =>
   typeof x === 'object' && x !== null && typeof (x as SelectChoice).value === 'string' && typeof (x as SelectChoice).label === 'string';
 
+const isKind = (x: unknown): x is AnyFieldKind =>
+  typeof x === 'object' && x !== null && typeof (x as AnyFieldKind).kind === 'string' && typeof (x as AnyFieldKind).label === 'string';
+
+/** The descriptor of one field, nested fields included (a list's item field, a group's fields). */
+function describeField(key: string, field: AnyFieldKind): FieldDescriptor {
+  // Kind-specific options: `max` on text, number and list fields, `multiline` on text, `min` on
+  // number and list, `integer` on number, `options` on select, `to` on reference, `of` on list,
+  // `fields` on group. Each is passed only when the field has it.
+  const { max, multiline, min, integer, options, to, of, fields } = field as {
+    max?: unknown;
+    multiline?: unknown;
+    min?: unknown;
+    integer?: unknown;
+    options?: unknown;
+    to?: unknown;
+    of?: unknown;
+    fields?: unknown;
+  };
+  return {
+    key,
+    kind: field.kind,
+    label: field.label,
+    required: field.required,
+    ...(typeof max === 'number' ? { max } : {}),
+    ...(typeof multiline === 'boolean' ? { multiline } : {}),
+    ...(typeof min === 'number' ? { min } : {}),
+    ...(typeof integer === 'boolean' ? { integer } : {}),
+    // Plain copies: the kind's options are frozen objects, and only plain data crosses to the client.
+    ...(Array.isArray(options) ? { options: options.filter(isChoice).map(({ value, label }) => ({ value, label })) } : {}),
+    ...(field.kind === 'reference' && Array.isArray(to) ? { to: to.filter((x): x is string => typeof x === 'string') } : {}),
+    // On publish a list refuses an empty item whatever its item field's own flag, so each item is
+    // marked required.
+    ...(field.kind === 'list' && isKind(of) ? { of: { ...describeField(key, of), required: true } } : {}),
+    ...(field.kind === 'group' && typeof fields === 'object' && fields !== null ? { fields: describeFieldSet(fields as Record<string, AnyFieldKind>) } : {}),
+  };
+}
+
+function describeFieldSet(fields: Record<string, AnyFieldKind>): FieldDescriptor[] {
+  return Object.entries<AnyFieldKind>(fields).map(([key, field]) => describeField(key, field));
+}
+
 export function describeFields(type: ContentType): FieldDescriptor[] {
-  return Object.entries<AnyFieldKind>(type.fields).map(([key, field]) => {
-    // Kind-specific options: `max` on text and number fields, `multiline` on text, `min` and
-    // `integer` on number, `options` on select, `to` on reference. Each is passed only when the field has it.
-    const { max, multiline, min, integer, options, to } = field as { max?: unknown; multiline?: unknown; min?: unknown; integer?: unknown; options?: unknown; to?: unknown };
-    return {
-      key,
-      kind: field.kind,
-      label: field.label,
-      required: field.required,
-      ...(typeof max === 'number' ? { max } : {}),
-      ...(typeof multiline === 'boolean' ? { multiline } : {}),
-      ...(typeof min === 'number' ? { min } : {}),
-      ...(typeof integer === 'boolean' ? { integer } : {}),
-      // Plain copies: the kind's options are frozen objects, and only plain data crosses to the client.
-      ...(Array.isArray(options) ? { options: options.filter(isChoice).map(({ value, label }) => ({ value, label })) } : {}),
-      ...(field.kind === 'reference' && Array.isArray(to) ? { to: to.filter((x): x is string => typeof x === 'string') } : {}),
-    };
-  });
+  return describeFieldSet(type.fields);
 }

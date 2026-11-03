@@ -50,6 +50,11 @@ jobs:
   database:
     # Becomes meaningful after Task 2 adds the db:test and test:integration scripts.
     runs-on: ubuntu-latest
+    env:
+      # M3-01: the Supabase CLI's own registry setting (2.121.0, internal/utils/docker.go
+      # GetRegistry). With it set, every image is pulled from ghcr.io only, with no
+      # fallback to public.ecr.aws or Docker Hub (Docker Hub's rate limit, decision 50.4).
+      SUPABASE_INTERNAL_IMAGE_REGISTRY: ghcr.io
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
