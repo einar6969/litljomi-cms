@@ -9,6 +9,7 @@
     "start": "next start",
     "test": "vitest run --project cms --root ../..",
     "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:delivery": "vitest run --config vitest.delivery.config.ts",
     "e2e": "playwright test"
   },
   "dependencies": {

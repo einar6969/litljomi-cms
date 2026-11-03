@@ -44,6 +44,11 @@ let rendered: Bundle | null = null;
 let webhookStatus: number | null = null;
 /** When false, the fake site acknowledges webhooks but never reloads (a stale site). */
 let revalidates = true;
+/**
+ * Entries whose block the fake site keeps rendering with an old content hash, by id, while its
+ * layout and every other entry follow the release it loaded (a page that regenerated only in part).
+ */
+const frozenHashes = new Map<string, string>();
 
 const JPEG = TEST_JPEG;
 
@@ -56,7 +61,8 @@ async function loadBundle(): Promise<Bundle | null> {
 }
 
 const news = (): BundleEntry[] => rendered?.entries['news'] ?? [];
-const listing = () => html(releaseMeta(rendered?.release ?? 0), `<ul>${news().map((e) => `<li>${entryMarker(e.id, e.contentHash)}${e.title}</li>`).join('')}</ul>`);
+const hashOf = (e: BundleEntry) => frozenHashes.get(e.id) ?? e.contentHash;
+const listing = () => html(releaseMeta(rendered?.release ?? 0), `<ul>${news().map((e) => `<li>${entryMarker(e.id, hashOf(e))}${e.title}</li>`).join('')}</ul>`);
 
 async function startLabakSite(): Promise<FakeSite> {
   const s = await startFakeSite(PORT);
@@ -77,7 +83,7 @@ async function startLabakSite(): Promise<FakeSite> {
     if (req.path === '/' || req.path === '/frettir') return { status: 200, html: listing() };
     const slug = /^\/frettir\/([a-z0-9-]+)$/.exec(req.path)?.[1];
     const entry = slug ? news().find((e) => e.slug === slug) : undefined;
-    if (entry) return { status: 200, html: html(releaseMeta(rendered!.release), `<article>${entryMarker(entry.id, entry.contentHash)}<h1>${entry.title}</h1></article>`) };
+    if (entry) return { status: 200, html: html(releaseMeta(rendered!.release), `<article>${entryMarker(entry.id, hashOf(entry))}<h1>${entry.title}</h1></article>`) };
     return { status: 404, html: html('', '<h1>404</h1>') };
   };
   return s;
@@ -165,27 +171,41 @@ async function labakAsset(): Promise<string> {
   return id;
 }
 
+const newsData = async (title: string) => ({
+  title,
+  date: '2026-11-02',
+  excerpt: 'Inngangur.',
+  image: { _ref: await labakAsset(), _kind: 'asset', alt: 'Brauð' },
+  body: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Meginmál.' }] }] },
+});
+
 /** A labak news entry with a draft, and a publish request for it (the fast path not run). */
-async function requested(title: string): Promise<{ entryId: string; slug: string; requestId: string }> {
+async function requested(title: string): Promise<{ entryId: string; slug: string; requestId: string; version: number }> {
   const slug = `t21-${randomUUID().slice(0, 8)}`;
   const entryId = await rpc<string>('create_entry', { p_tenant_id: TENANT.labak, p_type: 'news', p_slug: slug });
-  const data = {
-    title,
-    date: '2026-11-02',
-    excerpt: 'Inngangur.',
-    image: { _ref: await labakAsset(), _kind: 'asset', alt: 'Brauð' },
-    body: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Meginmál.' }] }] },
-  };
   const version = await rpc<number>('save_draft', {
     p_entry_id: entryId,
     p_expected_version: 1,
-    p_data: data,
+    p_data: await newsData(title),
     p_schema_version: 1,
     p_title: null,
     p_sort_at: null,
   });
   const requestId = await rpc<string>('request_publish', { p_entry_id: entryId, p_expected_draft_version: version });
-  return { entryId, slug, requestId };
+  return { entryId, slug, requestId, version };
+}
+
+/** A new draft of an entry, saved over draft `version`, and a publish request for it. */
+async function rerequested(entryId: string, version: number, title: string): Promise<string> {
+  const next = await rpc<number>('save_draft', {
+    p_entry_id: entryId,
+    p_expected_version: version,
+    p_data: await newsData(title),
+    p_schema_version: 1,
+    p_title: null,
+    p_sort_at: null,
+  });
+  return rpc<string>('request_publish', { p_entry_id: entryId, p_expected_draft_version: next });
 }
 
 type Delivery = { notify_status: string; notify_attempts: number; live_status: string; last_error: unknown; number: number };
@@ -217,10 +237,8 @@ async function scheduleOf(requestId: string): Promise<{ first_failed_at: number 
 }
 
 describe('processAndDeliver', () => {
-  let published: { entryId: string; slug: string; requestId: string };
-
   it('committed → delivered → notify_status ok → live_status ok against the fake site', async () => {
-    published = await requested('Fljótleiðin');
+    const published = await requested('Fljótleiðin');
     const before = webhooks().length;
 
     await processAndDeliver(published.requestId, fast);
@@ -249,6 +267,10 @@ describe('processAndDeliver', () => {
   });
 
   it('an unpublish is live when the own path is 404 and no listing carries the marker', async () => {
+    const published = await requested('Afturkallað');
+    await processAndDeliver(published.requestId, fast);
+    expect(await deliveryOf(published.requestId)).toMatchObject({ live_status: 'ok' });
+
     const requestId = await rpc<string>('request_unpublish', { p_entry_id: published.entryId });
     await processAndDeliver(requestId, fast);
     expect(await deliveryOf(requestId)).toMatchObject({ status: 'committed', notify_status: 'ok', live_status: 'ok' });
@@ -271,6 +293,36 @@ describe('processAndDeliver', () => {
     } finally {
       revalidates = true;
       rendered = await loadBundle();
+    }
+  });
+
+  it("a present check fails while the page shows the old hash, even when the layout's release marker is newer", async () => {
+    const r = await requested('Fyrri útgáfa');
+    await processAndDeliver(r.requestId, fast);
+    expect(await deliveryOf(r.requestId)).toMatchObject({ live_status: 'ok' });
+    const oldHash = news().find((e) => e.id === r.entryId)!.contentHash;
+
+    // The site revalidates and renders the new release in its layout, but the entry's block keeps
+    // the old content hash: on the entry's own page and in the listing.
+    frozenHashes.set(r.entryId, oldHash);
+    try {
+      const requestId = await rerequested(r.entryId, r.version, 'Seinni útgáfa');
+      await processAndDeliver(requestId, { pollMs: 100, timeoutMs: 1_500 });
+
+      const d = await deliveryOf(requestId);
+      expect(d).toMatchObject({ status: 'committed', notify_status: 'ok', live_status: 'not_confirmed', last_error: { code: 'live_not_confirmed' } });
+      // What the worker saw: the layout's marker names the new release, newer than the one that
+      // carried the old hash, and the entry's block still shows the old hash.
+      expect(rendered?.release).toBe(d.number);
+      expect(news().find((e) => e.id === r.entryId)!.contentHash).not.toBe(oldHash);
+      const own = await (await fetch(`${BASE_URL}/frettir/${r.slug}`)).text();
+      expect(own).toContain(releaseMeta(d.number));
+      expect(own).toContain(entryMarker(r.entryId, oldHash));
+      expect((d.last_error as { failures: unknown[] }).failures).toContainEqual(
+        expect.objectContaining({ entryId: r.entryId, path: `/frettir/${r.slug}`, reason: 'stale_hash' }),
+      );
+    } finally {
+      frozenHashes.delete(r.entryId);
     }
   });
 });

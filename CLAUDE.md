@@ -45,4 +45,5 @@ A permission denial, sandbox refusal or unexpected prompt is reported to the con
 
 - `pnpm db:start` / `pnpm db:stop`: start or stop the local Supabase stack (needs Docker; OrbStack).
 - `pnpm db:reset`: rebuild the local database from migrations.
+- `pnpm test:delivery`: the §8.5 Delivery suite against the local stack (the tests `apps/cms/delivery-suite.ts` maps to each case; CI runs them inside `pnpm test:integration`).
 - `pnpm db:test`: the pgTAP suite over `supabase/tests/database/*.test.sql` (`tools/db/test.mjs`). Always use this script, never `supabase test db` directly (it would run `_helpers.sql` outside a transaction).

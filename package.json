@@ -13,6 +13,7 @@
     "check:slugs": "node tools/checks/no-tenant-slugs.ts",
     "check:schema": "pnpm --filter @litljomi/cli cli check-schema",
     "test:integration": "pnpm --filter @litljomi/integration-tests test && pnpm --filter cms test:integration",
+    "test:delivery": "pnpm --filter cms test:delivery",
     "test:e2e-local": "pnpm --filter @litljomi/integration-tests test:e2e-local",
     "harness:test": "node --test \"tools/harness/__tests__/*.test.mjs\"",
     "db:start": "SUPABASE_TELEMETRY_DISABLED=1 supabase start",
