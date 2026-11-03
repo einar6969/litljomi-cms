@@ -169,3 +169,7 @@ Einar approved the exact diff in chat on 2026-11-02 (patch to `cms-security-revi
 
 - Einar's ruling (G3, `gates.json`): staging keys live in `/Users/einarzoega/litljomi-cms/.env.staging.local`, created and filled by Einar; `.env.local` is not swapped. The file is git-ignored by `.env*`.
 - Diff D (`diff -u --label`, sha256 `f82422f50c1abaf1db2e6c09b169ead845329087bd007324113155968bf55ea1`): `Read`, `Edit` and `Write` deny rules for `/.env.staging.local` and `/**/.env.staging.local`. Einar in chat, 2026-11-03: "Approve diff D". Applied with the Edit tool; byte-identical to the shown file (`cmp`). Applied before Einar created the file.
+
+## `.claude/settings.local.json` emptied (2026-11-03)
+
+Diff sha256 `08f849b7b55c53b78720ba654ece2e518b87a9a8f11ba3d104a3ebe24af00bde` (all 16 one-off or stale allow entries removed, including `Bash(git apply *)` and `Bash(git branch *)`). Einar in chat, 2026-11-03: "Approve both". Applied with the Write tool; byte-identical to the shown file (`cmp`). The file is not tracked by git.

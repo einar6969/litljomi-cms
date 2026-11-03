@@ -145,8 +145,19 @@
       "progress": "Sitting 1 (2026-11-03): G3.1–G3.5 and G3.7's URLs done; decision 36.7 passes on staging (57014 at 10.57 s); section 7.2 run 1 passes. Remaining: templates and the email rate limit (after G4's SMTP), Vault site secrets (P-2, after G6). Einar approved two deviations: G3.3 before G3.2c (\"Yes, do G3.3 first\") and the dashboard's own grant statements when creating the hook (\"Yes, create the hook\")."
     },
     "G4": {
-      "status": "pending",
-      "params": {}
+      "status": "approved",
+      "by": "Einar",
+      "at": "2026-11-03",
+      "scope": "Decision 43.5: Einar's existing SendGrid (litljomi.is already authenticated); Einar creates a restricted key with Mail Send only and enters Supabase's SMTP settings himself (smtp.sendgrid.net, 587, user apikey, sender innskraning@litljomi.is, name \"Litljómi vefumsjón\"). In the same signed-in pane session the controller uploads the four Icelandic templates with their subjects, raises the email rate limit from 30 to 100 an hour, turns off the Data API's \"Automatically expose new tables\" and re-checks that only api is exposed (Einar's answer 1), and section 7.2 is re-run. The test invitation (G4.3) follows provisioning. No sandbox hosts, no DNS records, no new cost.",
+      "note": "Einar in chat, 2026-11-03: \"Approve both\" (the settings.local.json diff and G4 as described in the controller's G4 request).",
+      "params": {
+        "provider": "SendGrid",
+        "smtpHost": "smtp.sendgrid.net",
+        "port": 587,
+        "user": "apikey",
+        "sender": "innskraning@litljomi.is",
+        "senderName": "Litljómi vefumsjón"
+      }
     },
     "G5": {
       "status": "pending",
