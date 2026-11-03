@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { FieldKind } from './field-kind.ts';
+import { assertVersioning, upcast, type Transform } from './upcast.ts';
 
 export type AnyFieldKind = FieldKind<any, any>;
 
@@ -10,7 +11,8 @@ export interface TypeDefinition<F extends Record<string, AnyFieldKind>> {
   fields: F;
   preview: { title: keyof F & string; media?: keyof F & string };
   orderBy: keyof F & string;
-  transforms?: Record<number, (data: unknown) => unknown>;
+  /** Keyed n: turns data written at version n into data at version n+1 (§5.3). */
+  transforms?: Record<number, Transform>;
 }
 
 // F defaults to `any`, not `Record<string, AnyFieldKind>`: `keyof F` in `preview` and `orderBy` makes
@@ -26,6 +28,12 @@ export interface ContentType<F extends Record<string, AnyFieldKind> = any> exten
    * string and null otherwise, so a non-string field (a number, an image) yields null.
    */
   queryColumns(data: unknown): { title: string | null; sortAt: string | null };
+  /**
+   * Data written at `fromVersion`, brought to `version` through the transforms in order (§5.3).
+   * The given data is never modified. Throws `UpcastError` on a gap, a newer version or a failing
+   * transform.
+   */
+  upcast(data: unknown, fromVersion: number): unknown;
 }
 
 /**
@@ -49,6 +57,7 @@ export function defineType<F extends Record<string, AnyFieldKind>>(d: TypeDefini
     throw new Error('defineType: fields must be a plain object (its prototype is not Object.prototype or null; a literal "__proto__" key sets it)');
   }
   for (const key of Object.keys(d.fields)) assertFieldKey(key);
+  assertVersioning(d);
   const draftShape: Record<string, z.ZodType> = {};
   const publishShape: Record<string, z.ZodType> = {};
   for (const [key, field] of Object.entries(d.fields)) {
@@ -65,5 +74,6 @@ export function defineType<F extends Record<string, AnyFieldKind>>(d: TypeDefini
     draftValidator: () => z.object(draftShape),
     publishValidator: () => z.object(publishShape),
     queryColumns: (data) => ({ title: column(data, d.preview.title), sortAt: column(data, d.orderBy) }),
+    upcast: (data, fromVersion) => upcast(d, data, fromVersion),
   };
 }

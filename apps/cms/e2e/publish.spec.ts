@@ -10,7 +10,7 @@ import { randomBytes } from 'node:crypto';
 import type { Page } from '@playwright/test';
 import { parseEntryMarkers } from '@litljomi/cms-sdk/src/parse-markers.ts';
 import { t } from '../src/i18n/is';
-import { demoPointer as pointer, ensureDemoSite, getJson, newDemoEvent as newEvent } from './support/demo-release';
+import { demoPointer, ensureDemoSite, getJson, newDemoEvent, TITLE } from './support/demo-release';
 import { DEMO_DELIVERY_BASE_URL, DEMO_SITE_URL } from './support/demo-site';
 import { requireLoopback } from './support/local';
 import { sessionState } from './support/session';
@@ -18,8 +18,6 @@ import { expect, test } from './support/test';
 
 test.use({ storageState: sessionState('editor_demo') });
 
-// The demo module's own field label (an English fixture tenant, decision 37.6).
-const TITLE = 'Title';
 const SAVED = { timeout: 10_000 };
 // The worker's build, notification and live check (polling up to 60 s, §7.4), plus the 2 s poll.
 const CONFIRMED = { timeout: 150_000 };
@@ -31,7 +29,7 @@ type Bundle = { entries: Record<string, Array<{ id: string; slug: string | null;
 
 /** The content hash the demo tenant's current release gives the entry, or null when it is absent. */
 async function currentHash(entryId: string): Promise<string | null> {
-  const p = await pointer();
+  const p = await demoPointer();
   if (!p) return null;
   const bundle = await getJson<Bundle>(`${DEMO_DELIVERY_BASE_URL}/demo/${p.bundle}`);
   return bundle?.entries['event']?.find((e) => e.id === entryId)?.contentHash ?? null;
@@ -50,7 +48,7 @@ test('publish, edit and republish, then unpublish a demo event, each confirmed o
   await ensureDemoSite(page);
 
   // Publish: the states progress to "Birt á vef ✓".
-  const { entryId, slug } = await newEvent(page, `Viðburður ${randomBytes(3).toString('hex')}`);
+  const { entryId, slug } = await newDemoEvent(page, `Viðburður ${randomBytes(3).toString('hex')}`);
   await expect(state(page)).toHaveText(t.publish.none);
   await page.getByRole('button', { name: t.publish.publish }).click();
   await expect(state(page)).toHaveText(ON_THE_WAY);

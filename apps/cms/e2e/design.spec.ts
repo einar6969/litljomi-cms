@@ -2,12 +2,13 @@
 // gitignored apps/cms/e2e-screenshots/. Step 1 (`step1-*.png`): the sign-in page, the entry list and
 // the edit form in each publish state that can be reached on the local stack. Step 2 (`step2-*.png`):
 // the tenant picker (as a user with no tenant), the tenant home, not found, the image field, the
-// conflict and signed-out notices, "Enginn vefur tengdur", and the magic link's confirm page (Task 32,
-// which also asserts the status tones: "Tekið af vef" neutral, "Enginn vefur tengdur" a warning). The suspended-tenant notice and a
-// picker with several tenants cannot be reached: the e2e support has no database access (a tenant's
-// status is changed only by the owner/CLI) and no seeded user belongs to two tenants. Each screen at 375 px must not
-// scroll sideways. Run as `pnpm --filter cms e2e design`. Every request is to a loopback address
-// (support/test.ts aborts the rest); the only thing written is the PNG files.
+// conflict and signed-out notices, "Enginn vefur tengdur", and the magic link's confirm page (Task
+// 32, which also asserts the status tones: "Tekið af vef" neutral, "Enginn vefur tengdur" a
+// warning). The suspended-tenant notice and a picker with several tenants cannot be reached: the e2e
+// support has no database access (a tenant's status is changed only by the owner/CLI) and no seeded
+// user belongs to two tenants. Each screen at 375 px must not scroll sideways. Run as
+// `pnpm --filter cms e2e design`. Every request is to a loopback address (support/test.ts aborts the
+// rest); the only thing written is the PNG files.
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';

@@ -31,4 +31,10 @@ export interface EventEntry {
   freeEntry: boolean | null;
   category: "concert" | "workshop" | "talk" | null;
   doorsOpen: string | null;
+  related: EntrySummary | null;
+}
+
+export interface NoticeEntry {
+  title: string | null;
+  body: string | null;
 }

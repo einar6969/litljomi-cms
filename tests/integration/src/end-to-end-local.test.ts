@@ -39,6 +39,9 @@ const INTERNAL_SECRET = randomBytes(24).toString('hex');
 
 // Insurance for an interrupted run (SIGINT, SIGTERM, a crashed worker) where afterAll never runs:
 // the spawned servers would otherwise keep ports 3100/3101 and fail the next run's guard.
+// The signal handlers end the process with process.exit, which is right only because this file runs
+// in a forked child process (`pool: 'forks'` in vitest.e2e-local.config.ts); under the threads pool
+// it would stop only the worker thread, which Vitest reports as an error, not the run.
 function killStarted(): void {
   for (const child of started) if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
 }

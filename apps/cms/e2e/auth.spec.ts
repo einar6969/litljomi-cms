@@ -138,7 +138,7 @@ test.describe('without a session', () => {
     await page.goto('/login');
     const href = await page.locator('head link[rel="icon"]').getAttribute('href');
     expect(href).toMatch(/^\/icon\.svg(?:\?|$)/);
-    const icon = await page.request.get(href!, { maxRedirects: 0 });
+    const icon = await page.request.get(href ?? '', { maxRedirects: 0 });
     expect(icon.status()).toBe(200);
     expect(icon.headers()['content-type']).toContain('image/svg+xml');
   });

@@ -25,7 +25,9 @@ export SUPABASE_NO_UPDATE_NOTIFIER=1
 export SUPABASE_TELEMETRY_DISABLED=1
 export NEXT_TELEMETRY_DISABLED=1
 # stdout (the keys) is captured and never printed; stderr is left alone so a failure of
-# `supabase status` (no Docker, no stack, a CLI error) is shown, not hidden.
+# `supabase status` (no Docker, no stack, a CLI error) is shown, not hidden. The CLI writes the keys
+# to stdout only: with CLI 2.121.0 its stderr carries status lines and warnings ("Stopped services:
+# …", a deprecation notice) or the error, never a key (checked 2026-11-03, M2-02).
 status=$(cd "$root" && supabase status -o env) || {
   echo "cms-next.sh: 'supabase status -o env' failed (see its message above); is the local stack running (pnpm db:start)?" >&2
   exit 1
@@ -34,9 +36,14 @@ value() { printf '%s\n' "$status" | sed -n "s/^$1=//p" | head -n 1 | tr -d '"'; 
 api_url=$(value API_URL)
 publishable=$(value PUBLISHABLE_KEY)
 secret=$(value SECRET_KEY)
+# Loopback host and a port of digits only, so userinfo (`http://localhost:x@host`) or a path cannot
+# name another host.
 case "$api_url" in
-  http://127.0.0.1:*|http://localhost:*) ;;
-  *) echo "cms-next.sh: refusing a non-local stack: '$api_url'" >&2; exit 1 ;;
+  http://127.0.0.1:*|http://localhost:*) port=${api_url#http://*:} ;;
+  *) port= ;;
+esac
+case "$port" in
+  ''|*[!0-9]*) echo "cms-next.sh: refusing a non-local stack: '$api_url'" >&2; exit 1 ;;
 esac
 if [ -z "$publishable" ] || [ -z "$secret" ]; then
   echo "cms-next.sh: supabase status gave no keys; is the local stack running (pnpm db:start)?" >&2

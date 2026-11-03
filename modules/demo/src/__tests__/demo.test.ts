@@ -8,9 +8,11 @@ const e: SiteEntry = { id: '00000000-0000-4000-8000-000000000001', type: 'event'
 const release = (present: boolean): ReleaseView => ({ entries: (t) => (t === 'event' && present ? [e] : []) });
 
 describe('demo module', () => {
-  it('declares the tenant and exactly one type, event; there is no news type', () => {
+  it('declares the tenant and two types, event and the schema-evolution test type notice; there is no news type', () => {
     expect(demo.tenant).toBe('demo');
-    expect(demo.types.map((t) => t.name)).toEqual(['event']);
+    expect(demo.types.map((t) => t.name)).toEqual(['event', 'notice']);
+    expect(demo.structure.map((s) => s.type)).toEqual(['event']);
+    expect(demo.site.notice).toBeUndefined();
     expect(demo.types.some((t) => t.name === 'news')).toBe(false);
     expect(demo.site.news).toBeUndefined();
   });
@@ -24,6 +26,10 @@ describe('demo module', () => {
     expect(Object.values<AnyFieldKind>(event.fields).some((f) => f.kind === 'image')).toBe(false);
     expect(event.orderBy).toBe('startDate');
     expect(event.version).toBe(1);
+  });
+  it('has an optional reference to another event (plan M2-04)', () => {
+    const related = event.fields.related as AnyFieldKind & { to: readonly string[] };
+    expect(related).toMatchObject({ kind: 'reference', required: false, to: ['event'] });
   });
   it('has an optional field of each scalar kind, filled in its fixture (M2-03)', () => {
     const byKind = Object.fromEntries(Object.entries<AnyFieldKind>(event.fields).map(([k, f]) => [f.kind, { key: k, f }]));
@@ -57,5 +63,26 @@ describe('demo module', () => {
     const noSlug: SiteEntry = { ...e, slug: null };
     expect(() => s.path(noSlug)).toThrow(/has no slug/);
     expect(() => s.checks(noSlug, release(true), null)).toThrow(/has no slug/);
+  });
+});
+
+describe('demo notice type (schema evolution, M2-05)', () => {
+  const notice = demo.types.find((t) => t.name === 'notice')!;
+
+  it('is at version 2 with the transform 1 → 2', () => {
+    expect(notice.version).toBe(2);
+    expect(Object.keys(notice.transforms ?? {})).toEqual(['1']);
+  });
+
+  it('upcasts version 1 data (heading) to version 2 (title), which the publish validator accepts', () => {
+    const v1 = { heading: 'Lokað á morgun' };
+    const v2 = notice.upcast(v1, 1);
+    expect(v2).toEqual({ title: 'Lokað á morgun' });
+    expect(notice.publishValidator().safeParse(v2).success).toBe(true);
+    expect(v1).toEqual({ heading: 'Lokað á morgun' });
+  });
+
+  it('version 1 data is not valid at version 2 without the upcast', () => {
+    expect(notice.publishValidator().safeParse({ heading: 'x' }).success).toBe(false);
   });
 });

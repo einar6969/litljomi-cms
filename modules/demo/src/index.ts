@@ -1,4 +1,4 @@
-import { boolean, date, datetime, defineModule, defineType, link, number, richText, select, text, type SiteEntry } from '@litljomi/cms-schema';
+import { boolean, date, datetime, defineModule, defineType, link, number, reference, richText, select, text, type SiteEntry } from '@litljomi/cms-schema';
 
 const eventType = defineType({
   name: 'event',
@@ -23,9 +23,33 @@ const eventType = defineType({
       ],
     }),
     doorsOpen: datetime({ label: 'Doors open' }),
+    related: reference({ label: 'Related event', to: ['event'] }),
   },
   preview: { title: 'title' },
   orderBy: 'startDate',
+});
+
+/**
+ * A test type for schema evolution (M2-05; spec §5.3). Version 1 had one text field, `heading`;
+ * version 2 renamed it to `title` and added `body`, so it ships the transform 1 → 2. It has no
+ * site pages and is not in the editor's structure.
+ */
+const noticeType = defineType({
+  name: 'notice',
+  version: 2,
+  label: 'Notice',
+  fields: {
+    title: text({ label: 'Title', required: true }),
+    body: text({ label: 'Body', multiline: true }),
+  },
+  preview: { title: 'title' },
+  orderBy: 'title',
+  transforms: {
+    1: (data) => {
+      const { heading, ...rest } = data as Record<string, unknown>;
+      return { ...rest, title: heading };
+    },
+  },
 });
 
 const eventPath = (e: SiteEntry): string => {
@@ -37,7 +61,7 @@ export default defineModule({
   tenant: 'demo',
   locale: 'is',
   branding: { name: 'Demo' },
-  types: [eventType],
+  types: [eventType, noticeType],
   structure: [{ type: 'event', label: 'Events' }],
   site: {
     event: {

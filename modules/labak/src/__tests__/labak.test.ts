@@ -1,4 +1,4 @@
-import { newsType, type ReleaseView, type SiteEntry } from '@litljomi/cms-schema';
+import { newsType, type ProjectionContext, type ReleaseView, type SiteEntry } from '@litljomi/cms-schema';
 import { describe, expect, it } from 'vitest';
 import fixture from '../../fixtures/news.json';
 import labak, { HOME_LATEST_COUNT } from '../index.ts';
@@ -54,8 +54,12 @@ describe('labak module', () => {
   });
   it('projects sourceLabel into the delivery bundle as a string or null', () => {
     expect(news.fields.sourceLabel!.tsType()).toBe('string | null');
-    // A text field's projection needs no context (no references to resolve).
-    const ctx = {} as Parameters<(typeof news.fields)[string]['project']>[1];
+    // A text field's projection needs no context (no references to resolve): any use of it throws.
+    const ctx = new Proxy({} as ProjectionContext, {
+      get: (_target, key) => {
+        throw new Error(`a text projection read the context (${String(key)})`);
+      },
+    });
     expect(news.fields.sourceLabel!.project(undefined, ctx)).toBeNull();
     expect(news.fields.sourceLabel!.project('Lesa frétt á mbl.is', ctx)).toBe('Lesa frétt á mbl.is');
   });
