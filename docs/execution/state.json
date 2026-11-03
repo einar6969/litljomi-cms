@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-03T07:26:48.929Z",
+  "updatedAt": "2026-11-03T07:41:43.642Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -1283,6 +1283,12 @@
         {
           "text": "Decision 48 (sitting 5): resend-timing fix deployed (dpl_D41E52Fv…, 0ca5aee) but cycle 1 failed: a first publish's stale page shows 404/marker_missing, never stale_hash, so no resend was due and live stayed not_confirmed (release 6, site still at release 5). Stopped per decision 48; no second code change. A6, A7, criterion 2 fail; criterion 3 and C4 not run. See docs/verification/m1-report.md, sitting 5.",
           "at": "2026-11-03T07:26:48.929Z",
+          "previousStatus": "blocked",
+          "resolvedAt": null
+        },
+        {
+          "text": "Decision 48.1 (sitting 5): any-miss resend deployed (dpl_6tqG13ot…, 1bcc901). Cycle 1 ok (3.2 s); cycle 2 not_confirmed (stale_hash): the page regenerated ~4 s after the resend (pointer write + 31 s) still rendered the old release, so the old pointer outlives its 30 s max-age (Storage CDN or the site's revalidateTag('cms','max'); not proven). Stopped. A6, A7, criterion 2 fail; criterion 3 and C4 not run. See docs/verification/m1-report.md, sitting 5.",
+          "at": "2026-11-03T07:41:43.642Z",
           "previousStatus": "blocked",
           "resolvedAt": null
         }
