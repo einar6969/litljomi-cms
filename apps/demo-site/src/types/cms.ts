@@ -27,5 +27,9 @@ export interface EventEntry {
   location: string | null;
   description: ProjectedRichTextDoc | null;
   registration: { href: string } | { entry: EntrySummary | null } | null;
+  capacity: number | null;
+  freeEntry: boolean | null;
+  category: "concert" | "workshop" | "talk" | null;
+  doorsOpen: string | null;
   related: EntrySummary | null;
 }
