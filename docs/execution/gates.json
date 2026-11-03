@@ -128,7 +128,16 @@
         "region": "eu-central-1",
         "plan": "Free",
         "envFile": "/Users/einarzoega/litljomi-cms/.env.staging.local"
-      }
+      },
+      "hosts": {
+        "at": "2026-11-03",
+        "diffSha256": "b4cfb6c0c3c071ab9a71898cee5d1d8623b329bddb8b64cc0b120378396c7212",
+        "adds": [
+          "rwpgpfsmhhtimauvpoyt.supabase.co"
+        ],
+        "note": "Einar in chat, 2026-11-03: \"Approved, signed in\" (to the hosts diff and his sign-in in the pane). Removal diff 93c8e245…1136 proposed at the end of sitting 1."
+      },
+      "progress": "Sitting 1 (2026-11-03): G3.1–G3.5 and G3.7's URLs done; decision 36.7 passes on staging (57014 at 10.57 s); section 7.2 run 1 passes. Remaining: templates and the email rate limit (after G4's SMTP), Vault site secrets (P-2, after G6). Einar approved two deviations: G3.3 before G3.2c (\"Yes, do G3.3 first\") and the dashboard's own grant statements when creating the hook (\"Yes, create the hook\")."
     },
     "G4": {
       "status": "pending",
