@@ -977,7 +977,7 @@ Before Task 29, run the full local suite (Task 29 Step 1) and the hook verificat
 - **Einar runs every browser test** (`pnpm --filter cms e2e …` and the staging acceptance spec) in his own terminal, from **one exact command** the controller gives him, and pastes the output back; the controller reads it. Agents do not run browser tests.
 - **Automated sign-in** uses the Auth admin `generateLink` route with the staging secret key from Einar's environment only (his `.env.staging.local` or his shell; never printed, never committed, never in an agent session), which is one more reason the spec runs in his terminal.
 - **The staging account** is `einsi@litljomi.is`, an editor of both `labak` and `demo` (P-3). No other editor, and no access for anyone else in M1.
-- **On staging, prove A6, A7, A8, A11 and A15**, and **re-run A1–A4 against hosted Supabase** (the integration suite's `http-boundary.test.ts` and `storage-boundary.test.ts`; the local suite refuses a hosted URL, so how it is pointed at staging is Task 29's, open item in section 16).
+- **On staging, prove A6, A7, A8, A11 and A15**, and **re-run A1–A4 against hosted Supabase** with `boundary-check` (below, decision 46). It replaces re-running the integration suite's `http-boundary.test.ts` and `storage-boundary.test.ts`, which need the local seed and owner SQL; the local suite keeps refusing a hosted URL.
 - **Einar's manual check:** request a magic link on his laptop, open it on his phone, press "Halda áfram", publish a test article from the phone, and see it on `https://labak-hub.litljomi.is`.
 
 | What Task 29 checks | Depends on (this runbook) | Gate |
@@ -985,7 +985,7 @@ Before Task 29, run the full local suite (Task 29 Step 1) and the hook verificat
 | Magic-link sign-in delivered by custom SMTP (SendGrid) with Icelandic templates | Section 8, G3.6, G5.1 | A11 |
 | Publish reaches "Birt á vef ✓" on `labak-hub.litljomi.is` within 60 s | G6.3, G7.1, P-2 | A7, A15 |
 | Image public only after publish; republish moves Live; unpublish passes every `absent` check | Section 11 | — |
-| Isolation both ways through the API and storage (`http-boundary.test.ts`, `storage-boundary.test.ts` against staging), and A2–A3 with them | G3.2, G3.3 | A1–A4 |
+| Isolation both ways through the API and storage, and A2–A3 with them (`boundary-check`, below; decision 46) | G3.2, G3.3, P-1, a delivered release per tenant | A1–A4 |
 | Malformed RPC never committed; stale save rejected; changed draft `superseded` | G3.2 | — |
 | With the CMS deployment paused, both sites keep serving (Einar pauses it or approves pausing, G6) | G6.5, G7.1 | — |
 | `current.json` overwritten and polled: new release within about a minute | `CMS_DELIVERY_BASE_URL` | A6 |
@@ -994,6 +994,32 @@ Before Task 29, run the full local suite (Task 29 Step 1) and the hook verificat
 | The phone check: link requested on the laptop, opened on the phone, "Halda áfram", article published from the phone and seen on `labak-hub.litljomi.is` | Sections 8 and 11 | Einar's manual check |
 
 Each run's secrets come from Einar's local environment only; the report records results, never values.
+
+### A1–A4 on staging: `boundary-check` (decision 46)
+
+**Owner:** Einar, in his own terminal, from the repository root (it reads the secret key); the controller reads the output he pastes back. One line:
+
+```sh
+pnpm --silent --filter @litljomi/cli cli boundary-check --labak-tenant-id e9e5badd-375f-485a-a249-c47469d49e15 --demo-tenant-id 02ed0155-2bfc-44ce-99d3-e904e0a0d491 --expect-ref rwpgpfsmhhtimauvpoyt
+```
+
+It is `provision`'s sibling and has the same safety rules (section 11, "What the tool does and refuses"): `.env.staging.local` read as text, never executed, with the `env_value` rules, now also for `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (used for the anon and editor requests); `--expect-ref` required; HTTP only, to `https://<project-ref>.supabase.co` only, keys and tokens in headers only, no redirect followed; no database connection and no SQL. It prints no key, token, link or response body, only statuses, error codes and messages, and ids.
+
+**Setup, before any check.** If a setup step fails, the tool prints `FAILED: setup: …`, runs no checks and prints no `RESULT` line.
+1. It confirms, read-only (`api.worker_previous_release` with the secret key), that each tenant id is the tenant its flag names, from the slug in its latest release's bundle path. Swapped ids, or a tenant with no delivered release, are refused before anything is created or changed.
+2. It finds or creates the two test editors, `einsi+a-labak@litljomi.is` and `einsi+a-demo@litljomi.is`, through the Auth admin API: created confirmed (`email_confirm`), with no password and no invitation, so no email is sent. An existing user is reused.
+3. It gives each a session through `generate_link` and the hashed token's verification (as in section 7.2, H4; no email).
+4. It adds the one membership (`api.admin_add_membership`, idempotent). It refuses to go on if a test editor is a member of any other tenant (`api.my_tenants`).
+
+**Checks, one line each:**
+- **A1:** schemas `cms`, `private`, `public` and `graphql_public` refused (406 `PGRST106`) for anon, each editor and the secret key, both as a table read (`Accept-Profile`) and as an RPC (`Content-Profile`). GraphQL is refused for anon and each editor.
+- **A2:** each editor creates, or reuses (found by the title "A1–A4 grensupróf (prófun)"), one draft in its own tenant (`news` in `labak`, `event` in `demo`) and saves it. Creating an entry in, or saving the draft of, the other tenant is refused (`P0001 not_found`). Its `api.entry_list` shows no row of another tenant.
+- **A3:** `api.worker_previous_release` succeeds with the secret key and is refused (`42501`) for anon and each editor. It is read-only, and unlike `worker_sites` it returns no secret.
+- **A4:** each editor uploads, or finds and downloads, its own 14-byte JPEG at `media-private/<tenant-id>/<fixed id>/a.jpg` and reads it back. "Already existed" counts only after a download with the same bytes, and the line says so. Refused: an upload into the other tenant's prefix; reading the other tenant's test object; an upsert or update of its own object (it is then downloaded again, unchanged); a delete of its own object (still there afterwards); any upload to `media-public` or `delivery`. The refused writes use fresh paths each run, so an earlier object can never make a refusal look like a pass. The secret key is never used for a storage write or delete.
+
+**What it leaves on staging:** two users with one membership each, two drafts titled "A1–A4 grensupróf (prófun)", and two 14-byte objects in `media-private`. These drafts show in the CMS lists ("Fréttir" for `labak`, "Events" for `demo`): never publish them. Each run saves the drafts once more, so their version goes up. Nothing is ever deleted; these leftovers cannot be removed without SQL and are removed only with the production cut-over.
+
+**Reading the output:** `target: <project-ref>.supabase.co` first, then one line per check: `PASS <gate> <description> (<observed status and code>)` or `FAIL <gate> <description> (observed …, expected …)`. A transport error fails only its own check. After the checks come the test user ids and the entry and object ids, marked created or reused, and last `RESULT: <n> passed, <m> failed`. **A run passed only if it printed `RESULT: <n> passed, 0 failed`** (71 checks today). As for `provision`, never trust the exit code alone (`0` all passed, `1` refused or any check failed, `2` wrong arguments). Record the run (date, the RESULT line, any FAIL lines, the ids) in `docs/verification/m1-report.md`.
 
 ## 15. Known limitations
 
@@ -1021,7 +1047,7 @@ The full list is decision 18's (plan, "Implementation-level decisions") and deci
 | Per-site preview secret: decision 43.1 asks for one, but M1 has no consumer (preview is M3; `api.admin_create_site` stores none and no variable reads one), so this runbook creates none (section 12). Einar decides whether one is created now anyway, and where it would go | Controller raises with Einar | Before G6.2 |
 | Who enters secret values: Einar, so no secret passes through an agent session (sections 1 and 12) | Einar confirms | G3, G6 |
 | Steps that need the secret key or another secret value are Einar's (section 1), including the section 7.2 and G3.2c scripts, every `provision` command, the secrets of section 12 and section 6's Management API route | Einar confirms | G3 |
-| Task 29's re-run of A1–A4 against hosted Supabase: the integration suite (`tests/integration/src/env.ts`) refuses any non-loopback stack, so Task 29 needs a reviewed way to point those two files at staging, run by Einar in his own terminal (it needs the secret key) | Controller raises with Einar | Before Task 29 |
+| Task 29's re-run of A1–A4 against hosted Supabase: the integration suite (`tests/integration/src/env.ts`) refuses any non-loopback stack. **Decided** (decision 46): `boundary-check` in `tools/cli` (section 14), run by Einar in his own terminal | Einar approved ("Approve adapter") | Done; run before Task 29's report |
 | The LABAK repository and Vercel: the approvals to connect it to `labak-hub` (section 1), and Einar's confirmation of G6.0's Ignored Build Step before G7.1 | Einar approves and confirms; controller raises | G6; the G7 push request |
 | `deny` rules for agents on `.env`, `.env.local` and `.env.staging.local`: **done**. Edit and Write denies for `.env` and `.env.local` (diff B, Einar 2026-11-03, `0bfb23f`); Read, Edit and Write denies for `.env.staging.local` (diff D, Einar 2026-11-03, `6504caf`), applied before Einar created the file | Einar approved | Done |
 | `ask` rules for risky hosted Supabase commands (`supabase config push`, `supabase db reset --linked`, `supabase migration repair`): today the project settings have no `ask` rule for them, so G3.2b's "never `supabase config push`" is behavioural only; adding the rules is a `.claude/**` change for Einar to approve | Controller raises with Einar | Before G3 |

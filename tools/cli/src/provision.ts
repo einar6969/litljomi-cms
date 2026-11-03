@@ -1,7 +1,8 @@
 // `provision`: tenants, sites and editors on the hosted staging project (plan Task 28 Step 5,
 // decision 44; runbook docs/runbooks/staging.md section 11). Run by Einar only, in his own terminal.
 //
-// Safety rules (decision 44, runbook sections 1 and 7.2):
+// Safety rules (decision 44, runbook sections 1 and 7.2; all but the stdin rule live in ./hosted.ts,
+// shared with `boundary-check`):
 // - The env file is read as text, never executed, with the rules of the runbook's `env_value`: each
 //   needed name exactly once on a plain NAME=value line, its value matching a fixed pattern. A
 //   refusal names the variable, never its value.
@@ -10,13 +11,29 @@
 // - The webhook secret is read from standard input only.
 // - Output is the target host, ids and statuses. Server errors are shown as the HTTP status and the
 //   error's code and message fields only; any occurrence of the key or the secret is redacted.
-import { isAbsolute } from 'node:path';
+import {
+  DEFAULT_ENV_FILE,
+  Failure,
+  UUID_RE,
+  UsageError,
+  clean,
+  flagValue as one,
+  guardedFetch,
+  parseArgs,
+  readTarget,
+  redactAll,
+  requiredFlag as required,
+  type ArgSpec,
+  type FetchFn,
+  type ParsedArgs as Parsed,
+  type Target,
+} from './hosted.ts';
 
-export const DEFAULT_ENV_FILE = '/Users/einarzoega/litljomi-cms/.env.staging.local';
+export { DEFAULT_ENV_FILE, envValue } from './hosted.ts';
 const FINISH_PREFIX = 'pnpm --silent --filter @litljomi/cli cli provision';
 
 export interface ProvisionDeps {
-  fetch: (url: string, init: RequestInit) => Promise<Response>;
+  fetch: FetchFn;
   /** The env file's text. */
   readTextFile: (path: string) => Promise<string>;
   /** All of standard input as text, or null when standard input is a terminal. */
@@ -35,10 +52,6 @@ export const PROVISION_USAGE = [
   '       provision editor (--email <address> | --user-id <uuid>) --tenant-id <uuid> [--tenant-id <uuid> ...] --expect-ref <ref> [--env-file=<absolute path>]',
 ].join('\n');
 
-const REF_RE = /^[a-z0-9]{20}$/;
-const URL_RE = /^https:\/\/[a-z0-9]{20}\.supabase\.co$/;
-const KEY_RE = /^[A-Za-z0-9._-]+$/;
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 // cms.tenants' slug constraint.
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 // An https origin with a lowercase DNS host: no port, path, query or trailing slash.
@@ -50,21 +63,10 @@ const EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 // Printable ASCII without space or comma (CMS_WEBHOOK_SECRETS is comma-separated); 32–256 characters.
 const SECRET_RE = /^[\x21-\x2b\x2d-\x7e]{32,256}$/;
 
-class UsageError extends Error {}
-
-/** A refusal or failure: its message is printed as is and the command exits 1. */
-class Failure extends Error {}
-
 // ---------------------------------------------------------------------------------------------
 // Arguments
 
-interface Parsed {
-  positionals: string[];
-  flags: Map<string, string[]>;
-}
-
-const COMMON_FLAGS = ['--expect-ref', '--env-file'];
-const COMMANDS: Record<string, { positionals: number; flags: string[]; repeatable?: string[] }> = {
+const COMMANDS: Record<string, ArgSpec> = {
   tenant: { positionals: 1, flags: ['--name'] },
   site: { positionals: 0, flags: ['--tenant-id', '--base-url', '--revalidate-path'] },
   editor: { positionals: 0, flags: ['--email', '--user-id', '--tenant-id'], repeatable: ['--tenant-id'] },
@@ -73,92 +75,7 @@ const COMMANDS: Record<string, { positionals: number; flags: string[]; repeatabl
 function parse(command: string, args: string[]): Parsed {
   const spec = COMMANDS[command];
   if (spec === undefined) throw new UsageError(`unknown provision command`);
-  const known = new Set([...spec.flags, ...COMMON_FLAGS]);
-  const positionals: string[] = [];
-  const flags = new Map<string, string[]>();
-  for (let i = 0; i < args.length; i++) {
-    const raw = args[i] as string;
-    if (raw.startsWith('--')) {
-      // `--flag=value` and `--flag value` are both accepted; `--env-file=<path>` is the documented form
-      // because vite-node swallows a separate `--env-file <path>` when run through `pnpm … cli`.
-      const eq = raw.indexOf('=');
-      const arg = eq === -1 ? raw : raw.slice(0, eq);
-      // Only the flag's name is ever printed, never a value.
-      if (!known.has(arg)) throw new UsageError(`unknown option ${arg}`);
-      const value = eq === -1 ? args[i + 1] : raw.slice(eq + 1);
-      if (value === undefined || (eq === -1 && value.startsWith('--'))) throw new UsageError(`${arg} needs a value`);
-      const values = flags.get(arg) ?? [];
-      if (values.length > 0 && !(spec.repeatable ?? []).includes(arg)) throw new UsageError(`${arg} given twice`);
-      values.push(value);
-      flags.set(arg, values);
-      if (eq === -1) i++;
-    } else {
-      positionals.push(raw);
-    }
-  }
-  if (positionals.length !== spec.positionals) throw new UsageError('unexpected or missing arguments');
-  if (!flags.has('--expect-ref')) throw new UsageError('--expect-ref is required');
-  const envFile = flags.get('--env-file')?.[0];
-  if (envFile !== undefined && !isAbsolute(envFile)) throw new UsageError('--env-file must be an absolute path');
-  return { positionals, flags };
-}
-
-const one = (p: Parsed, name: string): string | undefined => p.flags.get(name)?.[0];
-
-function required(p: Parsed, name: string, pattern: RegExp): string {
-  const value = one(p, name);
-  if (value === undefined) throw new UsageError(`${name} is required`);
-  if (!pattern.test(value)) throw new UsageError(`${name} has an unexpected form`);
-  return value;
-}
-
-// ---------------------------------------------------------------------------------------------
-// The env file (runbook section 7.2, `env_value`)
-
-/** NAME's value from the env file's text; refuses, naming only NAME, as the runbook's env_value does. */
-export function envValue(text: string, name: string, allowed: RegExp, file: string): string {
-  const assigned = new RegExp(`^\\s*(export\\s+)?${name}\\s*=`);
-  let count = 0;
-  let plain = false;
-  let value = '';
-  for (const line of text.split('\n')) {
-    if (!assigned.test(line)) continue;
-    count += 1;
-    plain = line.startsWith(`${name}=`);
-    if (plain) value = line.slice(name.length + 1);
-  }
-  if (count !== 1 || !plain) {
-    throw new Failure(`FAILED: ${name} must be on exactly one plain ${name}=value line in ${file} (found ${count}); nothing was sent`);
-  }
-  if (!allowed.test(value)) throw new Failure(`FAILED: ${name} in ${file} has an unexpected form (value not shown); nothing was sent`);
-  return value;
-}
-
-interface Target {
-  origin: string;
-  key: string;
-  ref: string;
-  envFile: string;
-}
-
-async function readTarget(p: Parsed, deps: ProvisionDeps): Promise<Target> {
-  const ref = one(p, '--expect-ref') as string;
-  if (!REF_RE.test(ref)) {
-    throw new Failure("FAILED: --expect-ref must be the staging project's reference (20 lowercase letters or digits); nothing was sent");
-  }
-  const envFile = one(p, '--env-file') ?? DEFAULT_ENV_FILE;
-  let text: string;
-  try {
-    text = await deps.readTextFile(envFile);
-  } catch {
-    throw new Failure(`FAILED: ${envFile} could not be read; nothing was sent`);
-  }
-  const url = envValue(text, 'NEXT_PUBLIC_SUPABASE_URL', URL_RE, envFile);
-  const key = envValue(text, 'SUPABASE_SECRET_KEY', KEY_RE, envFile);
-  if (url !== `https://${ref}.supabase.co`) {
-    throw new Failure(`FAILED: ${envFile} points at ${url.slice('https://'.length)}, not ${ref}.supabase.co; nothing was sent`);
-  }
-  return { origin: url, key, ref, envFile };
+  return parseArgs(args, spec);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -168,15 +85,10 @@ type ApiResult =
   | { ok: true; body: unknown }
   | { ok: false; detail: string; errorCode: string | undefined; message: string | undefined };
 
-/** Replaces each secret with [redacted], then control characters, then truncates (so no part of a secret survives). */
-const redactAll = (value: string, secrets: readonly string[]) => secrets.reduce((v, s) => v.split(s).join('[redacted]'), value);
-const clean = (value: string, secrets: readonly string[] = []) =>
-  redactAll(value, secrets).replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, 200);
-
 class Api {
   constructor(
     private readonly target: Target,
-    private readonly fetchFn: ProvisionDeps['fetch'],
+    private readonly fetchFn: FetchFn,
     /** The key and the webhook secret, redacted from anything the server sends back. */
     private readonly secrets: readonly string[],
   ) {}
@@ -191,49 +103,21 @@ class Api {
   }
 
   private async post(path: string, body: Record<string, unknown>, extra: Record<string, string>): Promise<ApiResult> {
-    const url = new URL(path, this.target.origin);
-    if (url.origin !== this.target.origin) throw new Failure('FAILED: refusing a request outside the target project');
-    let response: Response;
-    try {
-      response = await this.fetchFn(url.href, {
-        method: 'POST',
-        headers: {
-          apikey: this.target.key,
-          Authorization: `Bearer ${this.target.key}`,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          ...extra,
-        },
-        body: JSON.stringify(body),
-        redirect: 'error',
-      });
-    } catch (e) {
-      // Only an error code from the cause (for example ENOTFOUND); never the error's text.
-      const cause = (e as { cause?: { code?: unknown } } | null)?.cause?.code;
-      return {
-        ok: false,
-        detail: `network error (${typeof cause === 'string' ? clean(cause, this.secrets) : 'no response'})`,
-        errorCode: undefined,
-        message: undefined,
-      };
-    }
-    let parsed: unknown = null;
-    try {
-      const text = await response.text();
-      parsed = text === '' ? null : (JSON.parse(text) as unknown);
-    } catch {
-      parsed = null;
-    }
-    if (response.ok) return { ok: true, body: parsed };
-    // PostgREST errors have code and message; Auth errors have error_code and msg.
-    const fields = (parsed ?? {}) as Record<string, unknown>;
-    const pick = (...names: string[]) => names.map((n) => fields[n]).find((v): v is string => typeof v === 'string');
-    const rawCode = pick('error_code', 'code');
-    const rawMessage = pick('message', 'msg');
-    const code = rawCode === undefined ? undefined : clean(rawCode, this.secrets);
-    const message = rawMessage === undefined ? undefined : clean(rawMessage, this.secrets);
-    const detail = ['HTTP', String(response.status), code, message].filter((v) => v !== undefined).join(' ');
-    return { ok: false, detail, errorCode: code, message };
+    const result = await guardedFetch(this.fetchFn, this.target.origin, this.secrets, {
+      method: 'POST',
+      path,
+      headers: {
+        apikey: this.target.key,
+        Authorization: `Bearer ${this.target.key}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...extra,
+      },
+      body: JSON.stringify(body),
+    });
+    if (result.kind === 'network') return { ok: false, detail: result.detail, errorCode: undefined, message: undefined };
+    if (result.ok) return { ok: true, body: result.body };
+    return { ok: false, detail: result.detail, errorCode: result.errorCode, message: result.message };
   }
 }
 
@@ -390,7 +274,7 @@ export async function runProvision(args: string[], io: ProvisionIo, deps: Provis
   }
 
   try {
-    const target = await readTarget(parsed, deps);
+    const target = await readTarget(parsed, deps.readTextFile);
     secrets.push(target.key);
     log(`target: ${target.origin.slice('https://'.length)}`);
     const ctx: Context = { api: new Api(target, deps.fetch, secrets), target, secrets, log, error };
