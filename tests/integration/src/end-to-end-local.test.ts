@@ -10,11 +10,15 @@
 //   4. waits for the demo site's delivery of that release: live_status must be 'ok' (confirmed);
 //   5. stops the CMS and fetches /events/x again: still 200 with the same marker.
 //
+// Steps 2 to 5 run once per Next.js major the SDK supports (plan M3-13; spec §7.3, A12): the demo
+// site on Next.js 16 (apps/demo-site), then its copy on Next.js 15 (apps/demo-site-next15, synced
+// from apps/demo-site by its sync.mjs). The CMS is started again before each.
+//
 // The CMS is run through scripts/cms-next.sh, which reads the stack's URL and keys from
 // `supabase status` at run time; this file never handles the secret key. No .env file is written.
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { rmSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -29,7 +33,16 @@ import { closeAll, ownerQuery } from './sql.ts';
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const demoSiteDir = join(repoRoot, 'apps', 'demo-site');
 const cmsScript = join(repoRoot, 'tests', 'integration', 'scripts', 'cms-next.sh');
-const nextBin = join(dirname(createRequire(join(demoSiteDir, 'package.json')).resolve('next/package.json')), 'dist', 'bin', 'next');
+const nextDirIn = (appDir: string) => dirname(createRequire(join(appDir, 'package.json')).resolve('next/package.json'));
+
+/** The demo site's builds, one per supported Next.js major; `dir` returns the app to build. */
+const SITE_BUILDS = [
+  { major: 16, dir: async () => demoSiteDir },
+  {
+    major: 15,
+    dir: async () => ((await import(join(repoRoot, 'apps', 'demo-site-next15', 'sync.mjs'))) as { syncDemoSite(): string }).syncDemoSite(),
+  },
+] as const;
 
 const SLUG = 'x';
 const SITE_URL = DEMO_SITE.baseUrl; // http://localhost:3101
@@ -117,6 +130,14 @@ async function waitFor<T>(what: string, fn: () => Promise<T | null | undefined>,
 let cms: Proc | undefined;
 let site: Proc | undefined;
 let cmsUrl = '';
+let cmsPortArg = '';
+let cmsEnv: NodeJS.ProcessEnv = {};
+
+/** Starts the built CMS app (again, after a site's test stopped it). */
+async function startCms(): Promise<void> {
+  cms = run('sh', [cmsScript, 'start', '-p', cmsPortArg, '-H', '127.0.0.1'], repoRoot, cmsEnv);
+  await waitUntilServing(cms, cmsUrl, 'the CMS app');
+}
 
 const editorRpc = async <T>(fn: string, args: Record<string, unknown>): Promise<T> => {
   const { data, error } = await (await editorClient('editor_demo')).schema('api').rpc(fn, args);
@@ -170,11 +191,11 @@ beforeAll(async () => {
   // The CMS app, built and started against the local stack.
   const cmsPort = await freePort();
   cmsUrl = `http://127.0.0.1:${cmsPort}`;
-  const cmsEnv = { CMS_INTERNAL_SECRET: INTERNAL_SECRET, CRON_SECRET: randomBytes(24).toString('hex'), CMS_PUBLIC_URL: cmsUrl };
+  cmsEnv = { CMS_INTERNAL_SECRET: INTERNAL_SECRET, CRON_SECRET: randomBytes(24).toString('hex'), CMS_PUBLIC_URL: cmsUrl };
+  cmsPortArg = String(cmsPort);
   const build = run('sh', [cmsScript, 'build'], repoRoot, cmsEnv);
   if ((await build.done) !== 0) throw new Error(`CMS next build failed:\n${build.output().slice(-4000)}`);
-  cms = run('sh', [cmsScript, 'start', '-p', String(cmsPort), '-H', '127.0.0.1'], repoRoot, cmsEnv);
-  await waitUntilServing(cms, cmsUrl, 'the CMS app');
+  await startCms();
 
   // A first demo release, so the site's build has content to read.
   const delivered = await ownerQuery(`select 1 from cms.releases where tenant_id = $1 and status = 'delivered'`, [TENANT.demo]);
@@ -187,21 +208,6 @@ beforeAll(async () => {
     });
   }
 
-  // The demo site on the seeded site's port and secret. Its build output is removed first: Next.js
-  // keeps fetched data in .next/cache across builds, and bundles are cached as immutable by path
-  // (releases/N.json, §7.3), while a database reset starts release numbers again, so an earlier
-  // run's releases/N.json would be served instead of this run's. (Production never reuses a path.)
-  rmSync(join(demoSiteDir, '.next'), { recursive: true, force: true });
-  const siteEnv = {
-    CMS_DELIVERY_BASE_URL: `${env.apiUrl}/storage/v1/object/public/delivery`,
-    CMS_TENANT: 'demo',
-    CMS_WEBHOOK_SECRETS: DEMO_SITE.webhookSecret,
-    CMS_MEDIA_HOST: MEDIA_HOST,
-  };
-  const siteBuild = run(process.execPath, [nextBin, 'build'], demoSiteDir, siteEnv);
-  if ((await siteBuild.done) !== 0) throw new Error(`demo-site next build failed:\n${siteBuild.output().slice(-4000)}`);
-  site = run(process.execPath, [nextBin, 'start', '-p', '3101'], demoSiteDir, siteEnv);
-  await waitUntilServing(site, `${SITE_URL}/events`, 'the demo site');
 }, 900_000);
 
 afterAll(async () => {
@@ -211,9 +217,36 @@ afterAll(async () => {
   await closeAll();
 });
 
-describe('local end to end (editor_demo → worker → demo site)', () => {
+describe.each(SITE_BUILDS)('local end to end (editor_demo → worker → demo site on Next.js $major)', (build) => {
+  beforeAll(async () => {
+    if (cms === undefined || cms.child.exitCode !== null || cms.child.signalCode !== null) await startCms();
+    const siteDir = await build.dir();
+    const nextDir = nextDirIn(siteDir);
+    const version = (JSON.parse(readFileSync(join(nextDir, 'package.json'), 'utf8')) as { version: string }).version;
+    expect(Number(version.split('.')[0]), `${siteDir} resolves next@${version}`).toBe(build.major);
+    // The demo site on the seeded site's port and secret. Its build output is removed first: Next.js
+    // keeps fetched data in .next/cache across builds, and bundles are cached as immutable by path
+    // (releases/N.json, §7.3), while a database reset starts release numbers again, so an earlier
+    // run's releases/N.json would be served instead of this run's. (Production never reuses a path.)
+    rmSync(join(siteDir, '.next'), { recursive: true, force: true });
+    const siteEnv = {
+      CMS_DELIVERY_BASE_URL: `${env.apiUrl}/storage/v1/object/public/delivery`,
+      CMS_TENANT: 'demo',
+      CMS_WEBHOOK_SECRETS: DEMO_SITE.webhookSecret,
+      CMS_MEDIA_HOST: MEDIA_HOST,
+    };
+    const nextBin = join(nextDir, 'dist', 'bin', 'next');
+    const siteBuild = run(process.execPath, [nextBin, 'build'], siteDir, siteEnv);
+    if ((await siteBuild.done) !== 0) throw new Error(`demo-site (Next.js ${build.major}) next build failed:\n${siteBuild.output().slice(-4000)}`);
+    site = run(process.execPath, [nextBin, 'start', '-p', '3101'], siteDir, siteEnv);
+    await waitUntilServing(site, `${SITE_URL}/events`, `the demo site (Next.js ${build.major})`);
+  }, 900_000);
+  afterAll(async () => {
+    await stop(site);
+  });
+
   it('publishing /events/x reaches live_status ok, and the site keeps serving it with the CMS stopped', async () => {
-    const title = `Viðburður x ${new Date().toISOString()}`;
+    const title = `Viðburður x ${build.major} ${new Date().toISOString()}`;
     const { entryId, requestId } = await requestEvent(SLUG, title);
     await triggerWorker(requestId);
 
@@ -230,7 +263,7 @@ describe('local end to end (editor_demo → worker → demo site)', () => {
       );
       return d && d.live_status !== 'pending' ? d : d?.notify_status === 'failed' ? d : null;
     });
-    console.info('[e2e-local]', { requestId, entryId, release: release.number, delivery });
+    console.info('[e2e-local]', { next: build.major, requestId, entryId, release: release.number, delivery });
     expect(release.status).toBe('committed');
     expect(delivery).toMatchObject({ notify_status: 'ok', live_status: 'ok', last_error: null });
 

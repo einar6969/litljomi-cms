@@ -34,12 +34,15 @@ export default defineWorkspace([
       environment: 'jsdom',
     },
   },
-  {
+  // The SDK suite runs once per supported Next.js major (spec §7.3, plan M3-13). CMS_SDK_NEXT names
+  // the package next-compat.test.ts loads: npm aliases of next@15 and next@16 (packages/sdk).
+  ...(['next15', 'next16'] as const).map((next) => ({
     test: {
-      name: 'sdk',
+      name: `sdk-${next}`,
       include: ['packages/sdk/src/__tests__/**/*.test.{ts,tsx}'],
+      env: { CMS_SDK_NEXT: next },
     },
-  },
+  })),
   {
     // Unit tests of the CMS app. Tests against the local stack are named *.integration.test.ts and
     // run only through `pnpm test:integration` (apps/cms/vitest.integration.config.ts).

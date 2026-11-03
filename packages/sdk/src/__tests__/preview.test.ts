@@ -48,7 +48,7 @@ describe('createPreviewHandler', () => {
     const { enableDraftMode, get } = setup();
     const t = token();
     const tampered = `${t.slice(0, -2)}${t.endsWith('AA') ? 'BB' : 'AA'}`;
-    const cases = [
+    const cases: Array<Record<string, string>> = [
       {},
       { token: '' },
       { token: 'not-a-token' },

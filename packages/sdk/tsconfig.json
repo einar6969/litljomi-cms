@@ -1,0 +1,8 @@
+{
+  // Type-checks the SDK on its own (`pnpm typecheck`), with both Next.js majors' declarations in
+  // reach (next15, next16; plan M3-13). A separate project so that Next.js's global type additions
+  // (a required NODE_ENV in ProcessEnv) stay out of the root project.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "types": ["node"], "lib": ["ES2023", "DOM", "DOM.Iterable"], "jsx": "react-jsx" },
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
+}

@@ -1,13 +1,29 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { rmSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startFixtureServer, type FixtureServer } from './fixture-server.ts';
 
-const appDir = join(dirname(fileURLToPath(import.meta.url)), '..');
-const nextBin = join(dirname(createRequire(join(appDir, 'package.json')).resolve('next/package.json')), 'dist', 'bin', 'next');
+const demoSiteDir = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+/**
+ * The demo fixture site's builds (plan M3-13): `next16` is apps/demo-site itself; `next15` is
+ * apps/demo-site-next15, the same source copied there by its sync.mjs and built with Next.js 15.
+ */
+export const SITE_BUILDS = ['next16', 'next15'] as const;
+export type SiteBuild = (typeof SITE_BUILDS)[number];
+
+async function appDirFor(build: SiteBuild): Promise<string> {
+  if (build === 'next16') return demoSiteDir;
+  const sync = (await import(join(demoSiteDir, '..', 'demo-site-next15', 'sync.mjs'))) as { syncDemoSite(): string };
+  return sync.syncDemoSite();
+}
+
+const nextDirIn = (appDir: string) => dirname(createRequire(join(appDir, 'package.json')).resolve('next/package.json'));
+const nextBinIn = (appDir: string) => join(nextDirIn(appDir), 'dist', 'bin', 'next');
+const nextVersionIn = (appDir: string) => (JSON.parse(readFileSync(join(nextDirIn(appDir), 'package.json'), 'utf8')) as { version: string }).version;
 
 export const WEBHOOK_SECRETS = ['e2e-secret-old', 'e2e-secret-new'];
 export const MEDIA_HOST = 'media.example.test';
@@ -16,6 +32,8 @@ export interface RunningSite {
   url: string;
   /** The fixture bundle server; null when the site reads another delivery base URL. */
   fixtures: FixtureServer | null;
+  /** The Next.js version the site was built and started with. */
+  nextVersion: string;
   stop(): Promise<void>;
 }
 
@@ -28,8 +46,8 @@ async function freePort(): Promise<number> {
   return port;
 }
 
-function runNext(args: string[], env: NodeJS.ProcessEnv): { child: ChildProcess; output: () => string; done: Promise<number> } {
-  const child = spawn(process.execPath, [nextBin, ...args], { cwd: appDir, env, stdio: ['ignore', 'pipe', 'pipe'] });
+function runNext(appDir: string, args: string[], env: NodeJS.ProcessEnv): { child: ChildProcess; output: () => string; done: Promise<number> } {
+  const child = spawn(process.execPath, [nextBinIn(appDir), ...args], { cwd: appDir, env, stdio: ['ignore', 'pipe', 'pipe'] });
   let log = '';
   child.stdout?.on('data', (d: Buffer) => (log += d.toString()));
   child.stderr?.on('data', (d: Buffer) => (log += d.toString()));
@@ -43,9 +61,10 @@ function runNext(args: string[], env: NodeJS.ProcessEnv): { child: ChildProcess;
 /**
  * Builds the site and starts it (`next build`, `next start`) against the fixture bundle server, or
  * against `deliveryBaseUrl` when given (the local stack's `delivery` bucket, for the CMS worker's
- * integration tests; plan M3-05).
+ * integration tests; plan M3-05). `build` picks the Next.js major (default `next16`, apps/demo-site).
  */
-export async function startSite(o: { deliveryBaseUrl?: string } = {}): Promise<RunningSite> {
+export async function startSite(o: { deliveryBaseUrl?: string; build?: SiteBuild } = {}): Promise<RunningSite> {
+  const appDir = await appDirFor(o.build ?? 'next16');
   const fixtures = o.deliveryBaseUrl === undefined ? await startFixtureServer() : null;
   // Next.js keeps fetched data in .next/cache across builds: a pointer fetched by an earlier build
   // would be served instead of the current one (the local stack's pointer changes between runs).
@@ -61,10 +80,10 @@ export async function startSite(o: { deliveryBaseUrl?: string } = {}): Promise<R
   };
   let child: ChildProcess | undefined;
   try {
-    const build = runNext(['build'], env);
+    const build = runNext(appDir, ['build'], env);
     if ((await build.done) !== 0) throw new Error(`next build failed:\n${build.output().slice(-4000)}`);
     const port = await freePort();
-    const start = runNext(['start', '-p', String(port), '-H', '127.0.0.1'], env);
+    const start = runNext(appDir, ['start', '-p', String(port), '-H', '127.0.0.1'], env);
     child = start.child;
     const url = `http://127.0.0.1:${port}`;
     const deadline = Date.now() + 60_000;
@@ -83,6 +102,7 @@ export async function startSite(o: { deliveryBaseUrl?: string } = {}): Promise<R
     return {
       url,
       fixtures,
+      nextVersion: nextVersionIn(appDir),
       async stop() {
         started.kill('SIGTERM');
         await exited; // the port and the .next handles are released before the run ends
