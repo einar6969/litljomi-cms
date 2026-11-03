@@ -142,6 +142,101 @@ describe('the autosave controller', () => {
   });
 });
 
+describe('conflict resolution (M2-11)', () => {
+  type Load = NonNullable<ConstructorParameters<typeof AutosaveController>[0]['loadLatest']>;
+  const THEIRS = { version: 6, data: { title: 'Þeirra' } };
+  const loadAnswering = (...results: Awaited<ReturnType<Load>>[]) => {
+    const queue = [...results];
+    return vi.fn<Load>(async () => queue.shift() ?? { ok: false, code: 'error' });
+  };
+
+  const inConflict = async (load: Load, ...after: Result[]) => {
+    const save = saveAnswering({ ok: false, code: 'version_conflict' }, ...after);
+    const c = controllerFor(save, { loadLatest: load });
+    c.schedule({ title: 'Mitt' });
+    await pause();
+    return { c, save };
+  };
+
+  it('a conflict loads the newer version and holds it next to the pending data', async () => {
+    const load = loadAnswering({ ok: true, ...THEIRS });
+    const { c } = await inConflict(load);
+    expect(load).toHaveBeenCalledExactlyOnceWith(ENTRY);
+    expect(c.getSnapshot()).toEqual({ version: 3, state: 'conflict', theirs: { status: 'ready', ...THEIRS } });
+    expect(c.pendingData()).toEqual({ title: 'Mitt' });
+  });
+
+  it('shows loading while the newer version is read', async () => {
+    let finish!: (r: Awaited<ReturnType<Load>>) => void;
+    const load = vi.fn<Load>(() => new Promise((resolve) => (finish = resolve)));
+    const { c } = await inConflict(load);
+    expect(c.getSnapshot().theirs).toEqual({ status: 'loading' });
+    finish({ ok: true, ...THEIRS });
+    await pause(0);
+    expect(c.getSnapshot().theirs).toEqual({ status: 'ready', ...THEIRS });
+  });
+
+  it('"keep mine" saves the latest local data at the newer version and clears the conflict', async () => {
+    const load = loadAnswering({ ok: true, ...THEIRS });
+    const { c, save } = await inConflict(load, { ok: true, version: 7 });
+    c.schedule({ title: 'Mitt, lengra' }); // edits during the conflict are kept, not sent
+    await pause();
+    expect(save).toHaveBeenCalledTimes(1);
+    c.keepMine();
+    await pause(0);
+    expect(save).toHaveBeenNthCalledWith(2, ENTRY, 6, { title: 'Mitt, lengra' });
+    expect(c.getSnapshot()).toEqual({ version: 7, state: 'saved', theirs: undefined });
+  });
+
+  it('"keep mine" that meets a yet newer version is a new conflict with that version', async () => {
+    const load = loadAnswering({ ok: true, ...THEIRS }, { ok: true, version: 8, data: { title: 'Þriðja' } });
+    const { c, save } = await inConflict(load, { ok: false, code: 'version_conflict' });
+    c.keepMine();
+    await pause(0);
+    expect(save).toHaveBeenNthCalledWith(2, ENTRY, 6, { title: 'Mitt' });
+    expect(c.getSnapshot()).toEqual({ version: 6, state: 'conflict', theirs: { status: 'ready', version: 8, data: { title: 'Þriðja' } } });
+  });
+
+  it('"reload theirs" returns their data, drops the pending data and continues from their version', async () => {
+    const load = loadAnswering({ ok: true, ...THEIRS });
+    const { c, save } = await inConflict(load, { ok: true, version: 7 });
+    expect(c.takeTheirs()).toEqual(THEIRS.data);
+    expect(c.getSnapshot()).toEqual({ version: 6, state: 'idle', theirs: undefined });
+    expect(c.pendingData()).toBeNull();
+    c.schedule({ title: 'Þeirra, breytt' });
+    await pause();
+    expect(save).toHaveBeenNthCalledWith(2, ENTRY, 6, { title: 'Þeirra, breytt' });
+  });
+
+  it('neither choice does anything before the newer version is loaded', async () => {
+    const load = loadAnswering({ ok: false, code: 'error' });
+    const { c, save } = await inConflict(load);
+    expect(c.getSnapshot().theirs).toEqual({ status: 'failed' });
+    expect(c.takeTheirs()).toBeNull();
+    c.keepMine();
+    await pause(0);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(c.getSnapshot().state).toBe('conflict');
+    expect(c.pendingData()).toEqual({ title: 'Mitt' });
+  });
+
+  it('retry after a failed load reads the newer version again, and still saves nothing', async () => {
+    const load = loadAnswering({ ok: false, code: 'error' }, { ok: true, ...THEIRS });
+    const { c, save } = await inConflict(load);
+    c.retry();
+    await pause(0);
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(c.getSnapshot().theirs).toEqual({ status: 'ready', ...THEIRS });
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it('a load that throws is a failed load', async () => {
+    const load = vi.fn<Load>().mockRejectedValue(new Error('Failed to fetch'));
+    const { c } = await inConflict(load);
+    expect(c.getSnapshot().theirs).toEqual({ status: 'failed' });
+  });
+});
+
 describe('useAutosave', () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

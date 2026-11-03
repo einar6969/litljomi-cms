@@ -13,7 +13,7 @@
 -- draft at version 1.
 begin;
 \ir _helpers.sql
-select plan(26);
+select plan(29);
 
 -- Every function in api, with a call statement passing a typed null for each
 -- parameter. Reads only pg_catalog, so any role can run it.
@@ -54,11 +54,11 @@ $$;
 grant execute on function tests.api_functions(), tests.api_views(), tests.sqlstate_of(text)
   to anon, authenticated, service_role;
 
--- The lists are not vacuous: 9 editor, 21 worker and 5 admin functions; 6 views.
--- A task that adds an api function or view updates these counts (and 010's 26).
-select is((select count(*)::int from tests.api_functions()), 35, 'api holds 35 functions');
-select is((select count(*)::int from tests.api_functions() where name ~ '^(worker|admin)_'), 26,
-  '26 of them are worker_* or admin_*');
+-- The lists are not vacuous: 9 editor, 22 worker and 6 admin functions; 6 views.
+-- A task that adds an api function or view updates these counts (and 010's 28).
+select is((select count(*)::int from tests.api_functions()), 37, 'api holds 37 functions');
+select is((select count(*)::int from tests.api_functions() where name ~ '^(worker|admin)_'), 28,
+  '28 of them are worker_* or admin_*');
 select is((select count(*)::int from tests.api_views()), 6, 'api holds 6 views');
 
 select tests.seed();
@@ -88,6 +88,10 @@ select throws_ok($$ select * from api.worker_sites(tests.tenant('labak')) $$, '4
   'editor_labak cannot read site secrets');
 select throws_ok($$ select api.admin_create_site(tests.tenant('labak'), 'http://x', 'http://x/r', null, 'x') $$, '42501', null,
   'editor_labak cannot create a site');
+select throws_ok($$ select * from api.worker_preview_sites(tests.tenant('labak')) $$, '42501', null,
+  'editor_labak cannot read preview secrets (M3-10)');
+select throws_ok($$ select api.admin_set_preview_secret(gen_random_uuid(), 'x') $$, '42501', null,
+  'editor_labak cannot set a preview secret (M3-10)');
 select throws_ok($$ select api.admin_add_membership(tests.tenant('demo'), tests.persona('editor_labak')) $$, '42501', null,
   'editor_labak cannot add itself to another tenant');
 select throws_ok($$ select api.admin_create_tenant('ny', 'Ný') $$, '42501', null, 'editor_labak cannot create a tenant');
@@ -126,6 +130,7 @@ select throws_ok($$ select api.request_publish(gen_random_uuid(), 1) $$, '42501'
   'anon cannot request publication');
 select throws_ok($$ select * from api.worker_claim_requests(1) $$, '42501', null, 'anon cannot claim requests');
 select throws_ok($$ select * from api.worker_sites(tests.tenant('labak')) $$, '42501', null, 'anon cannot read site secrets');
+select throws_ok($$ select * from api.worker_preview_sites(tests.tenant('labak')) $$, '42501', null, 'anon cannot read preview secrets (M3-10)');
 
 -- ---------------------------------------------------------------------------
 -- service_role is the worker, not an editor: no editor function (they rely on
