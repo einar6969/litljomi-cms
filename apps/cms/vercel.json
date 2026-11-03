@@ -1,1 +1,5 @@
-{ "crons": [{ "path": "/api/cron/sweep", "schedule": "* * * * *" }] }
+{
+  "regions": ["fra1"],
+  "headers": [{ "source": "/(.*)", "headers": [{ "key": "X-Robots-Tag", "value": "noindex" }] }],
+  "crons": [{ "path": "/api/cron/sweep", "schedule": "* * * * *" }]
+}
