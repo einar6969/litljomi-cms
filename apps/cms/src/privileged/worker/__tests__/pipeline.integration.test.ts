@@ -223,6 +223,15 @@ describe('processAndDeliver', () => {
     expect(rendered?.release).toBe(d.number);
     expect(site.hits(`/frettir/${published.slug}`)).toBeGreaterThan(0);
     expect(site.hits('/frettir')).toBeGreaterThan(0);
+    // M3-08: the release records its pointer lag. The local stack has no CDN in front of Storage,
+    // so the public pointer serves the release within the bound (fresh).
+    const [lag] = await ownerQuery<{ pointer_lag_ms: number | null; pointer_fresh: boolean | null }>(
+      'select pointer_lag_ms, pointer_fresh from cms.releases where id = $1',
+      [d.release_id],
+    );
+    expect(lag?.pointer_fresh).toBe(true);
+    expect(lag?.pointer_lag_ms).toBeGreaterThanOrEqual(0);
+    expect(lag?.pointer_lag_ms).toBeLessThan(120_000);
   });
 
   it('an unpublish is live when the own path is 404 and no listing carries the marker', async () => {

@@ -9,7 +9,8 @@
 // again and runs the full live check, until it passes, a newer release supersedes it, or the 24
 // hours run out (then the alert, and the editor sees "delivery failed").
 // Before a fresh delivery notifies any site, the worker waits, within a bound, until the pointer's
-// public URL serves the release (decision 49.1).
+// public URL serves the release (decision 49.1), and stores how long that took on the release
+// (M3-08: the pointer lag, a measured limitation).
 import type { LiveCheck, ModuleManifest, ReleaseView, SiteEntry } from '@litljomi/cms-schema';
 import type { Bundle, BundleEntry } from '@litljomi/cms-sdk';
 import { getModule } from '@/modules/registry';
@@ -20,7 +21,7 @@ import { alert } from './alerts';
 import { buildRelease, type BuildOptions, type BuildResult, type LinkedRequest } from './build-release';
 import { DEFAULT_TIMEOUT_MS, createPageFetcher, runLiveChecks, type LiveCheckFailure } from './live-check';
 import { notifySite } from './notify';
-import { waitForPublicPointer, type PointerSeams } from './pointer-fresh';
+import { waitForPublicPointer, type PointerSeams, type PointerWaitResult } from './pointer-fresh';
 import { publicMediaUrl } from './projection-context';
 import { callRpc } from './rpc';
 
@@ -328,19 +329,22 @@ export async function confirmRelease(
   const targets = liveTargets(module, release, mediaPrefix());
   const active = (await callRpc<WorkerSite[] | null>(db, 'worker_sites', { p_tenant_id: release.tenantId })) ?? [];
   const sites = retry ? active.filter((site) => retry.has(site.id)) : active;
-  if (release.pointerWrittenAt !== undefined && sites.length > 0) await awaitPublicPointer(release, release.pointerWrittenAt, options);
+  if (release.pointerWrittenAt !== undefined && sites.length > 0) await awaitPublicPointer(db, release, release.pointerWrittenAt, options);
   const results = await Promise.allSettled(sites.map((site) => confirmSite(db, release, site, targets, options)));
   const errors = results.flatMap((r) => (r.status === 'rejected' ? [r.reason] : []));
   if (errors.length > 0) throw new AggregateError(errors, `release ${release.number}: ${errors.length} site confirmation(s) failed`);
 }
 
 /**
- * Waits for the public pointer (pointer-fresh.ts) and logs the outcome, one line per delivered
- * release (decision 49.1). Its bound leaves the live check's window (`timeoutMs`) and the finish
- * margin before the run deadline. Never throws: when the project URL cannot be read, it logs and
- * returns, and the sites are notified without the wait.
+ * Waits for the public pointer (pointer-fresh.ts), logs the outcome, one line per delivered
+ * release (decision 49.1), and stores the lag on the release (M3-08): from the pointer write to the
+ * first public read that served the release (`fresh`), or to the end of the bound (not fresh, "bound
+ * reached"). Its bound leaves the live check's window (`timeoutMs`) and the finish margin before the
+ * run deadline. Never throws: when the project URL cannot be read, it logs and returns, the sites
+ * are notified without the wait, and no lag is stored; when storing the lag fails, it logs and the
+ * delivery goes on (the lag is a measurement, never a reason to hold a delivery back).
  */
-async function awaitPublicPointer(release: DeliveredRelease, pointerWrittenAt: number, options: DeliveryOptions): Promise<void> {
+async function awaitPublicPointer(db: SupabaseClient, release: DeliveredRelease, pointerWrittenAt: number, options: DeliveryOptions): Promise<void> {
   let projectUrl: string;
   try {
     projectUrl = supabaseUrl();
@@ -358,6 +362,24 @@ async function awaitPublicPointer(release: DeliveredRelease, pointerWrittenAt: n
     ...options.pointer,
   });
   console.info('[cms-worker] pointer', { tenant: release.tenantSlug, release: release.number, ...result });
+  await recordPointerLag(db, release, result);
+}
+
+/**
+ * Stores a delivered release's pointer lag through api.worker_record_pointer_lag (M3-08), whole
+ * milliseconds. The database keeps the first measurement; a release that already has one returns
+ * false, which is not an error. Never throws: a failure is logged.
+ */
+async function recordPointerLag(db: SupabaseClient, release: DeliveredRelease, result: PointerWaitResult): Promise<void> {
+  try {
+    await callRpc<boolean | null>(db, 'worker_record_pointer_lag', {
+      p_release_id: release.releaseId,
+      p_lag_ms: Math.max(0, Math.round(result.lagMs)),
+      p_fresh: result.fresh,
+    });
+  } catch (error) {
+    console.error(`[cms-worker] release ${release.number}: the pointer lag was not recorded`, error);
+  }
 }
 
 /**
