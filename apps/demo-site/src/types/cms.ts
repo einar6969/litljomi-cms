@@ -38,4 +38,5 @@ export interface EventEntry {
 export interface NoticeEntry {
   title: string | null;
   body: string | null;
+  date: string | null;
 }

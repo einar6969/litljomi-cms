@@ -121,7 +121,10 @@ select set_eq($$ select p.proname::text, pg_catalog.pg_get_function_result(p.oid
             ('worker_pointer_check', 'TABLE(building boolean, latest_delivered integer)'),
             -- M3-07 (103_asset_trust).
             ('worker_asset_metadata', 'TABLE(id uuid, original_path text, mime text, bytes bigint, width integer, height integer, sha256 text)'),
-            ('worker_private_orphans', 'TABLE(name text, created_at timestamp with time zone)') $$,
+            ('worker_private_orphans', 'TABLE(name text, created_at timestamp with time zone)'),
+            -- M2-13 (104_draft_migration).
+            ('admin_outdated_drafts', 'TABLE(entry_id uuid, version integer, schema_version integer, data jsonb)'),
+            ('admin_migrate_draft', 'integer') $$,
   'worker and admin functions: return types, and no others');
 select is((select pg_catalog.pg_get_function_arguments('api.worker_claim_requests(integer)'::regprocedure)),
   'p_limit integer DEFAULT 10', 'worker_claim_requests: p_limit defaults to 10');
