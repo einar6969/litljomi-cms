@@ -142,7 +142,14 @@
           "note": "Einar in chat, 2026-11-03: \"Approve removal\". Re-requested as an exact diff when a later Supabase step needs the host."
         }
       },
-      "progress": "Sitting 1 (2026-11-03): G3.1–G3.5 and G3.7's URLs done; decision 36.7 passes on staging (57014 at 10.57 s); section 7.2 run 1 passes. Remaining: templates and the email rate limit (after G4's SMTP), Vault site secrets (P-2, after G6). Einar approved two deviations: G3.3 before G3.2c (\"Yes, do G3.3 first\") and the dashboard's own grant statements when creating the hook (\"Yes, create the hook\")."
+      "progress": "Sitting 1 (2026-11-03): G3.1–G3.5 and G3.7's URLs done; decision 36.7 passes on staging (57014 at 10.57 s); section 7.2 run 1 passes. Remaining: templates and the email rate limit (after G4's SMTP), Vault site secrets (P-2, after G6). Einar approved two deviations: G3.3 before G3.2c (\"Yes, do G3.3 first\") and the dashboard's own grant statements when creating the hook (\"Yes, create the hook\").",
+      "extensions": [
+        {
+          "at": "2026-11-03",
+          "scope": "Decision 46: the A1–A4 boundary check against staging, run by Einar only from his terminal with .env.staging.local and --expect-ref. It may create two never-invited, pre-confirmed test editors (einsi+a-labak@litljomi.is, einsi+a-demo@litljomi.is) through the Auth admin API with one membership each, two draft entries and two small test objects in media-private; nothing is deleted; they stay until production. HTTP to https://<ref>.supabase.co only. Security review only.",
+          "note": "Einar in chat, 2026-11-03: \"Approve adapter\" (C4 question 1)."
+        }
+      ]
     },
     "G4": {
       "status": "approved",
