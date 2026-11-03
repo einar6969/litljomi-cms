@@ -188,6 +188,20 @@ async function deliveryOf(requestId: string): Promise<Delivery & { status: strin
 }
 const webhooks = () => site.requests.filter((r) => r.path === '/api/cms/revalidate');
 
+const MINUTE = 60_000;
+const DAY = 24 * 60 * MINUTE;
+/** The retry schedule of a request's delivery to the fake site, in epoch ms (M3-02). */
+async function scheduleOf(requestId: string): Promise<{ first_failed_at: number | null; next_attempt_at: number | null }> {
+  const [row] = await ownerQuery<{ first_failed_at: Date | null; next_attempt_at: Date | null }>(
+    `select sd.first_failed_at, sd.next_attempt_at
+     from cms.publish_requests pr
+     join cms.site_deliveries sd on sd.release_id = pr.release_id and sd.site_id = $2
+     where pr.id = $1`,
+    [requestId, siteId],
+  );
+  return { first_failed_at: row?.first_failed_at?.getTime() ?? null, next_attempt_at: row?.next_attempt_at?.getTime() ?? null };
+}
+
 describe('processAndDeliver', () => {
   let published: { entryId: string; slug: string; requestId: string };
 
@@ -250,11 +264,14 @@ describe('sweep', () => {
     expect(d.release_id).not.toBeNull();
   });
 
-  it('retries a failed notification once per sweep, then confirms live', async () => {
+  // M3-02: the schedule is kept by the database at the worker's clock; the tests move that clock
+  // (the functions' p_now) instead of waiting.
+  it('retries a failed notification when its next attempt is due (1 minute later), then confirms live', async () => {
     const r = await requested('Endurtekning');
+    const t0 = Date.now();
     webhookStatus = 500;
     try {
-      await processAndDeliver(r.requestId, fast);
+      await processAndDeliver(r.requestId, { ...fast, now: () => t0 });
     } finally {
       webhookStatus = null;
     }
@@ -265,10 +282,58 @@ describe('sweep', () => {
       live_status: 'pending',
       last_error: { code: 'notify_failed', status: 500 },
     });
+    expect(await scheduleOf(r.requestId)).toEqual({ first_failed_at: t0, next_attempt_at: t0 + MINUTE });
 
-    await sweep(fast);
+    // Not due yet: a sweep 30 seconds later leaves it alone.
+    const before = webhooks().length;
+    await sweep({ ...fast, now: () => t0 + 30_000 });
+    expect(await deliveryOf(r.requestId)).toMatchObject({ notify_status: 'failed', notify_attempts: 1 });
+    expect(webhooks().length).toBe(before);
+
+    await sweep({ ...fast, now: () => t0 + MINUTE });
 
     expect(await deliveryOf(r.requestId)).toMatchObject({ notify_status: 'ok', notify_attempts: 2, live_status: 'ok', last_error: null });
+    expect(await scheduleOf(r.requestId)).toEqual({ first_failed_at: t0, next_attempt_at: null });
+  });
+
+  it('a site answering 500 is retried on schedule and marked failed after 24 hours, with one alert', { timeout: 180_000 }, async () => {
+    const r = await requested('Sólarhringur');
+    const t0 = Date.now();
+    const due: number[] = [];
+    webhookStatus = 500;
+    try {
+      await processAndDeliver(r.requestId, { ...fast, now: () => t0 });
+      for (let i = 0; i < 20; i++) {
+        const { next_attempt_at: next } = await scheduleOf(r.requestId);
+        if (next === null) break;
+        due.push((next - t0) / MINUTE);
+        const { notify_attempts: attempts } = await deliveryOf(r.requestId);
+        // A second before it is due, the sweep does not retry; at its time, it does.
+        await sweep({ ...fast, now: () => next - 1_000 });
+        expect((await deliveryOf(r.requestId)).notify_attempts).toBe(attempts);
+        await sweep({ ...fast, now: () => next });
+        expect((await deliveryOf(r.requestId)).notify_attempts).toBe(attempts + 1);
+      }
+    } finally {
+      webhookStatus = null;
+    }
+
+    // Attempts at 0, 1, 3, 7 … 1023 minutes and at 24 hours; that failure ends the retries.
+    expect(due).toEqual([1, 3, 7, 15, 31, 63, 127, 255, 511, 1023, 1440]);
+    const d = await deliveryOf(r.requestId);
+    expect(d).toMatchObject({ notify_status: 'failed', notify_attempts: 12, live_status: 'pending', last_error: { code: 'notify_failed', status: 500 } });
+    expect(await scheduleOf(r.requestId)).toEqual({ first_failed_at: t0, next_attempt_at: null });
+    const alerts = await ownerQuery<{ details: Record<string, unknown> }>(
+      'select details from cms.audit_log where action = $1 and details ->> $2 = $3',
+      ['system.alert.delivery.retries_exhausted', 'releaseId', d.release_id],
+    );
+    expect(alerts.map((a) => a.details)).toEqual([expect.objectContaining({ siteId, attempts: 12, code: 'notify_failed', status: 500 })]);
+
+    // Never retried again, even days later; the site now answers, but nothing calls it.
+    const before = webhooks().length;
+    await sweep({ ...fast, now: () => t0 + 3 * DAY });
+    expect(await deliveryOf(r.requestId)).toMatchObject({ notify_status: 'failed', notify_attempts: 12 });
+    expect(webhooks().length).toBe(before);
   });
 
   // Plan Task 30 (decision 36.2): a worker killed mid-build no longer blocks the tenant.

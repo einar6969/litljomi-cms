@@ -3,16 +3,23 @@
 //
 //   0. Building releases older than STALE_RELEASE_SECONDS (a worker killed mid-build) are failed,
 //      one alert each (api.worker_fail_stale_releases), so they no longer block their tenant's
-//      builds; their requests are in no release, so step 2 builds them in this same sweep.
+//      builds; their requests are in no release, so step 2 builds them once the tenant's next build
+//      attempt is due (M3-02).
 //   1. Pending requests (and validating ones whose claim is older than 5 minutes) are processed.
 //   2. Every active tenant with committed requests in no release gets a release built, delivered
-//      and confirmed on its sites (api.worker_tenants_to_release).
+//      and confirmed on its sites (api.worker_tenants_to_release), unless its latest build failed
+//      and the next build attempt is not due yet.
 //   3. Deliveries of each tenant's latest delivered release that still need a notification or a
-//      live check are retried once per sweep, up to MAX_NOTIFY_ATTEMPTS attempts
-//      (api.worker_deliveries_to_retry). A release superseded by a newer delivered one is never
-//      retried, and a release delivered by step 2 of this same sweep is not retried in it.
+//      live check are retried when their next attempt is due (api.worker_deliveries_to_retry). A
+//      release superseded by a newer delivered one is never retried, and a release delivered by
+//      step 2 of this same sweep is not retried in it.
 //   4. Originals in media-private with no assets row, older than a day, are removed
 //      (api.worker_private_orphans; M3-07).
+//
+// Steps 2 and 3 follow M3-02's schedule, kept by the database: after the n-th failed attempt the
+// next is due 2^(n-1) minutes later (1, 2, 4 … minutes), until 24 hours after the first failure;
+// then the retries are exhausted and the platform admin is alerted. The sweep reads the schedule
+// at the options' clock (`now`, `Date.now` by default), so tests simulate the 24 hours.
 //
 // A failing step does not stop the next one; the sweep throws at the end if any step failed, so
 // the cron route reports it.
@@ -20,9 +27,9 @@ import type { Bundle } from '@litljomi/cms-sdk';
 import type { SupabaseClient } from '../../lib/supabase/types';
 import { createAdminClient } from '../admin-client';
 import { alert } from './alerts';
-import { supabaseReleaseStorage } from './build-release';
+import { alertIfBuildRetriesExhausted, supabaseReleaseStorage } from './build-release';
+import { clockOf, confirmRelease, deliverTenant, type DeliveredRelease, type DeliveryOptions } from './deliver';
 import { removePrivateOrphans } from './media-orphans';
-import { MAX_NOTIFY_ATTEMPTS, confirmRelease, deliverTenant, type DeliveredRelease, type DeliveryOptions } from './deliver';
 import { processPendingRequests } from './process-request';
 import { callRpc } from './rpc';
 
@@ -37,8 +44,10 @@ export type StaleRelease = { release_id: string; tenant_id: string; number: numb
 
 /**
  * Fails every building release older than STALE_RELEASE_SECONDS and alerts once per release
- * (`release.stale_failed`). The database records the failure (`stale_building`) and audits it;
- * a worker still running that build is refused when it finishes.
+ * (`release.stale_failed`), and once more when that failure exhausted the tenant's build retries
+ * (`release.retries_exhausted`, M3-02). The database records the failure (`stale_building`),
+ * schedules the tenant's next build and audits it; a worker still running that build is refused
+ * when it finishes.
  */
 export async function failStaleReleases(db: SupabaseClient): Promise<StaleRelease[]> {
   const failed = (await callRpc<StaleRelease[] | null>(db, 'worker_fail_stale_releases', {})) ?? [];
@@ -50,6 +59,7 @@ export async function failStaleReleases(db: SupabaseClient): Promise<StaleReleas
       createdAt: r.created_at,
       maxAgeSeconds: STALE_RELEASE_SECONDS,
     });
+    await alertIfBuildRetriesExhausted(db, { tenantId: r.tenant_id, releaseId: r.release_id, number: r.number });
   }
   return failed;
 }
@@ -86,7 +96,7 @@ export async function runSweep(options: DeliveryOptions = {}): Promise<void> {
   // 2. Releases for committed requests that are in none yet.
   const deliveredNow = new Set<string>();
   try {
-    const tenants = (await callRpc<Array<{ tenant_id: string }> | null>(db, 'worker_tenants_to_release', {})) ?? [];
+    const tenants = (await callRpc<Array<{ tenant_id: string }> | null>(db, 'worker_tenants_to_release', { p_now: clockOf(options) })) ?? [];
     const results = await Promise.allSettled(tenants.map((t) => deliverTenant(t.tenant_id, { ...options, db })));
     for (const r of results) {
       if (r.status === 'rejected') failed('a release')(r.reason);
@@ -96,7 +106,7 @@ export async function runSweep(options: DeliveryOptions = {}): Promise<void> {
     failed('listing tenants to release')(error);
   }
 
-  // 3. One retry per delivery that still needs it.
+  // 3. One retry per delivery whose next attempt is due.
   try {
     await retryDeliveries(db, options, deliveredNow, failed);
   } catch (error) {
@@ -115,7 +125,7 @@ async function retryDeliveries(
   skip: Set<string>,
   failed: (step: string) => (error: unknown) => void,
 ): Promise<void> {
-  const rows = (await callRpc<RetryRow[] | null>(db, 'worker_deliveries_to_retry', { p_max_attempts: MAX_NOTIFY_ATTEMPTS })) ?? [];
+  const rows = (await callRpc<RetryRow[] | null>(db, 'worker_deliveries_to_retry', { p_now: clockOf(options) })) ?? [];
   const byRelease = new Map<string, RetryRow[]>();
   for (const row of rows) {
     if (skip.has(row.release_id)) continue;
@@ -144,6 +154,6 @@ async function retryRelease(db: SupabaseClient, rows: RetryRow[], options: Deliv
     previousBundle: first.previous_bundle_path ? await read(first.previous_bundle_path, null) : null,
     requests: first.requests.map((r) => ({ id: r.id, entryId: r.entry_id, action: r.action })),
   };
-  // Only the sites listed for retry, with their attempts so far (one deactivated since is skipped).
-  await confirmRelease(db, release, options, new Map(rows.map((row) => [row.site_id, row.notify_attempts])));
+  // Only the sites listed for retry (one deactivated since is skipped).
+  await confirmRelease(db, release, options, new Set(rows.map((row) => row.site_id)));
 }

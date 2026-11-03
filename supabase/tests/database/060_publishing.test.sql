@@ -54,13 +54,14 @@ select columns_are('cms', 'publish_requests', array['id', 'tenant_id', 'entry_id
     'requested_by', 'requested_at', 'status', 'claimed_at', 'attempts', 'error', 'revision_id', 'release_id'],
   'publish_requests columns');
 select columns_are('cms', 'releases', array['id', 'tenant_id', 'number', 'status', 'bundle_path', 'created_at',
-    'delivered_at', 'error'],
+    'delivered_at', 'error', 'next_attempt_at'],
   'releases columns');
 select columns_are('cms', 'sites', array['id', 'tenant_id', 'base_url', 'revalidate_url', 'preview_url',
     'webhook_secret_ref', 'preview_secret_ref', 'active'],
   'sites columns');
 select columns_are('cms', 'site_deliveries', array['release_id', 'site_id', 'tenant_id', 'notify_status',
-    'notify_attempts', 'notified_at', 'live_status', 'live_confirmed_at', 'last_error'],
+    'notify_attempts', 'notified_at', 'live_status', 'live_confirmed_at', 'last_error', 'first_failed_at',
+    'next_attempt_at'],
   'site_deliveries columns');
 
 select set_eq($$ select a.attname::text from pg_catalog.pg_attribute a
@@ -193,8 +194,9 @@ select is_empty($$ select * from tests.column_privs('service_role', 'cms.sites')
   'service_role: no update on sites');
 select set_eq($$ select * from tests.column_privs('service_role', 'cms.site_deliveries') where priv <> 'INSERT' $$,
   $$ values ('notify_status', 'UPDATE'), ('notify_attempts', 'UPDATE'), ('notified_at', 'UPDATE'),
-            ('live_status', 'UPDATE'), ('live_confirmed_at', 'UPDATE'), ('last_error', 'UPDATE') $$,
-  'service_role: update the status columns of site_deliveries only');
+            ('live_status', 'UPDATE'), ('live_confirmed_at', 'UPDATE'), ('last_error', 'UPDATE'),
+            ('first_failed_at', 'UPDATE'), ('next_attempt_at', 'UPDATE') $$,
+  'service_role: update the status and retry columns of site_deliveries only (M3-02)');
 
 select table_privs_are('cms', 'publish_requests', 'anon', array[]::text[], 'anon: nothing on publish_requests');
 select table_privs_are('cms', 'releases', 'anon', array[]::text[], 'anon: nothing on releases');

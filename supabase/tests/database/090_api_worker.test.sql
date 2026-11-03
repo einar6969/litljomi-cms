@@ -90,13 +90,13 @@ select is_empty($$ select s from unnest(array[
     'api.worker_finish_release(uuid,text,text,jsonb,uuid[],jsonb)',
     'api.worker_previous_release(uuid)',
     'api.worker_sites(uuid)',
-    'api.worker_record_delivery(uuid,uuid,text,text,jsonb)',
+    'api.worker_record_delivery(uuid,uuid,text,text,jsonb,timestamp with time zone)',
     'api.admin_create_tenant(text,text)',
     'api.admin_create_site(uuid,text,text,text,text)',
     'api.admin_add_membership(uuid,uuid)',
     'api.worker_claim_request(uuid)',
     'api.worker_record_alert(uuid,text,jsonb)']) as s where to_regprocedure(s) is null $$,
-  'all sixteen worker and admin functions exist with the Interfaces'' signatures (Task 11, and Task 19''s two)');
+  'all sixteen worker and admin functions exist with the Interfaces'' signatures (Task 11, and Task 19''s two; M3-02''s p_now on worker_record_delivery)');
 select set_eq($$ select p.proname::text, pg_catalog.pg_get_function_result(p.oid) from pg_catalog.pg_proc p
      join pg_catalog.pg_namespace n on n.oid = p.pronamespace
      where n.nspname = 'api' and (p.proname like 'worker\_%' or p.proname like 'admin\_%') $$,
@@ -106,16 +106,20 @@ select set_eq($$ select p.proname::text, pg_catalog.pg_get_function_result(p.oid
             ('worker_release_snapshot', 'jsonb'), ('worker_finish_release', 'void'),
             ('worker_previous_release', 'cms.releases'),
             ('worker_sites', 'TABLE(id uuid, base_url text, revalidate_url text, webhook_secrets text[])'),
-            ('worker_record_delivery', 'void'), ('admin_create_tenant', 'uuid'), ('admin_create_site', 'uuid'),
+            ('worker_record_delivery', 'TABLE(notify_attempts integer, next_attempt_at timestamp with time zone, retries_exhausted boolean)'),
+            ('admin_create_tenant', 'uuid'), ('admin_create_site', 'uuid'),
             ('admin_add_membership', 'void'), ('worker_claim_request', 'cms.publish_requests'),
             ('worker_record_alert', 'void'),
             -- Task 21 (097_worker_sweep).
             ('worker_tenants_to_release', 'TABLE(tenant_id uuid)'),
+            -- M3-02 (102_retry_backoff).
+            ('worker_next_attempt_at', 'timestamp with time zone'),
+            ('worker_release_retry', 'TABLE(status text, next_attempt_at timestamp with time zone, retries_exhausted boolean)'),
             ('worker_deliveries_to_retry', 'TABLE(release_id uuid, tenant_id uuid, tenant_slug text, release_number integer, bundle_path text, previous_bundle_path text, site_id uuid, notify_status text, notify_attempts integer, live_status text, requests jsonb)'),
             -- Task 30 (098_worker_recovery).
             ('worker_fail_stale_releases', 'TABLE(release_id uuid, tenant_id uuid, number integer, created_at timestamp with time zone)'),
             ('worker_pointer_check', 'TABLE(building boolean, latest_delivered integer)'),
-            -- M3-07 (102_asset_trust).
+            -- M3-07 (103_asset_trust).
             ('worker_asset_metadata', 'TABLE(id uuid, original_path text, mime text, bytes bigint, width integer, height integer, sha256 text)'),
             ('worker_private_orphans', 'TABLE(name text, created_at timestamp with time zone)') $$,
   'worker and admin functions: return types, and no others');
@@ -781,25 +785,25 @@ select throws_ok($$ select api.admin_create_site(tests.tenant('demo'), 'http://x
 -- ---------------------------------------------------------------------------
 -- worker_record_delivery (§7.4).
 select lives_ok($$ select api.worker_record_delivery((select id from ids where name = 'labak3'), tests.pub('e941'),
-                    'ok', 'pending', null) $$, 'a delivery is recorded');
+                    'ok', 'pending', null, now()) $$, 'a delivery is recorded');
 select is((select row(tenant_id, notify_status, notify_attempts, notified_at, live_status, live_confirmed_at, last_error)::text
            from cms.site_deliveries where release_id = (select id from ids where name = 'labak3') and site_id = tests.pub('e941')),
   row(tests.tenant('labak'), 'ok', 1, now(), 'pending', null::timestamptz, null::jsonb)::text,
   'the delivery row: the release''s tenant, notified now, one attempt');
 select lives_ok($$ select api.worker_record_delivery((select id from ids where name = 'labak3'), tests.pub('e941'),
-                    null, 'ok', null) $$, 'the live status is recorded');
+                    null, 'ok', null, now()) $$, 'the live status is recorded');
 select is((select row(notify_status, notify_attempts, live_status, live_confirmed_at)::text
            from cms.site_deliveries where release_id = (select id from ids where name = 'labak3') and site_id = tests.pub('e941')),
   row('ok', 1, 'ok', now())::text, 'live is confirmed; a null notify status changes nothing');
 select lives_ok($$ select api.worker_record_delivery((select id from ids where name = 'labak3'), tests.pub('e941'),
-                    'failed', null, '{"status": 500}') $$, 'a failed notification is recorded');
+                    'failed', null, '{"status": 500}', now()) $$, 'a failed notification is recorded');
 select is((select row(notify_status, notify_attempts, last_error)::text
            from cms.site_deliveries where release_id = (select id from ids where name = 'labak3') and site_id = tests.pub('e941')),
   row('failed', 2, '{"status": 500}'::jsonb)::text, 'a second attempt, with its error');
 select throws_ok($$ select api.worker_record_delivery((select id from ids where name = 'labak3'),
-                    (select id from ids where name = 'site_demo'), 'ok', 'ok', null) $$,
+                    (select id from ids where name = 'site_demo'), 'ok', 'ok', null, now()) $$,
   'P0001', 'forbidden', 'a labak release cannot be recorded for a demo site');
-select throws_ok($$ select api.worker_record_delivery(gen_random_uuid(), tests.pub('e941'), 'ok', 'ok', null) $$,
+select throws_ok($$ select api.worker_record_delivery(gen_random_uuid(), tests.pub('e941'), 'ok', 'ok', null, now()) $$,
   'P0001', 'not_found', 'worker_record_delivery: an unknown release is not_found');
 select is((select count(*)::int from cms.site_deliveries where site_id = (select id from ids where name = 'site_demo')), 0,
   'the refused call recorded nothing');

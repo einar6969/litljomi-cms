@@ -1,4 +1,4 @@
--- supabase/tests/database/102_asset_trust.test.sql
+-- supabase/tests/database/103_asset_trust.test.sql
 -- M3-07 (20261103000700_asset_trust.sql; spec §4.5, §4.6, §5.6; decision 50.5):
 --   1. register_asset and update_asset lock the tenant row FOR SHARE: the lock-only grant
 --      (UPDATE (name) to authenticated) and policy (tenants_lock_member, WITH CHECK false) let an

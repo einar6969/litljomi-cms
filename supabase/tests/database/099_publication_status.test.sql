@@ -10,8 +10,8 @@
 --   sites     5991, 5992 labak active; 5993 labak INACTIVE; 5994 demo active
 --   assets    f991 a.jpg, f992 b.jpg labak; f993 c.png demo
 --   releases  a991 labak #1 delivered, error.omitted = [c993]; a992 #2 delivered; a993 #3 delivered
---   deliveries a991: 5991 ok/not_confirmed; 5992 failed (10 attempts)/pending
---              a992: 5991 ok/ok; 5992 ok/ok; 5993 (inactive) failed (10 attempts)/pending
+--   deliveries a991: 5991 ok/not_confirmed; 5992 failed (10 attempts, no next attempt: exhausted)/pending
+--              a992: 5991 ok/ok; 5992 ok/ok; 5993 (inactive) failed (exhausted)/pending
 --              a993: none recorded yet
 --   entries and requests (labak news):
 --     c991  e991 committed in a991 two hours ago, then e992 pending (the latest)
@@ -25,7 +25,7 @@
 --   demo: c999 with e99a pending
 begin;
 \ir _helpers.sql
-select plan(14);
+select plan(18);
 
 create function tests.k(p_key text) returns uuid
 language plpgsql
@@ -118,17 +118,17 @@ select ok(not has_table_privilege('anon', 'api.publication_status', 'SELECT')
 -- The states, as the labak editor.
 select tests.act_as(tests.persona('editor_labak'));
 select results_eq($$ select entry_id, request_id, action, status, release_number, release_status, omitted, missing_assets,
-            site_count, sites_notified, sites_live_ok, sites_not_confirmed, notify_attempts
+            site_count, sites_notified, sites_live_ok, sites_not_confirmed, retries_exhausted
      from api.publication_status order by entry_id $$,
   $$ values
-     (tests.entry('c991'), tests.k('e992'), 'publish'::text, 'pending'::text, null::int, null::text, false, null::text[], 2, 0, 0, 0, 0),
-     (tests.entry('c992'), tests.k('e993'), 'publish', 'committed', 2, 'delivered', false, null, 2, 2, 2, 0, 0),
-     (tests.entry('c993'), tests.k('e994'), 'publish', 'committed', 1, 'delivered', true, null, 2, 1, 0, 1, 10),
-     (tests.entry('c994'), tests.k('e995'), 'publish', 'committed', 1, 'delivered', false, null, 2, 1, 0, 1, 10),
-     (tests.entry('c995'), tests.k('e996'), 'publish', 'failed_validation', null, null, false, array['b.jpg', 'a.jpg'], 2, 0, 0, 0, 0),
-     (tests.entry('c996'), tests.k('e997'), 'unpublish', 'committed', null, null, false, null, 2, 0, 0, 0, 0),
-     (tests.entry('c997'), tests.k('e998'), 'publish', 'superseded', null, null, false, null, 2, 0, 0, 0, 0),
-     (tests.entry('c998'), tests.k('e999'), 'publish', 'committed', 3, 'delivered', false, null, 2, 0, 0, 0, 0) $$,
+     (tests.entry('c991'), tests.k('e992'), 'publish'::text, 'pending'::text, null::int, null::text, false, null::text[], 2, 0, 0, 0, false),
+     (tests.entry('c992'), tests.k('e993'), 'publish', 'committed', 2, 'delivered', false, null, 2, 2, 2, 0, false),
+     (tests.entry('c993'), tests.k('e994'), 'publish', 'committed', 1, 'delivered', true, null, 2, 1, 0, 1, true),
+     (tests.entry('c994'), tests.k('e995'), 'publish', 'committed', 1, 'delivered', false, null, 2, 1, 0, 1, true),
+     (tests.entry('c995'), tests.k('e996'), 'publish', 'failed_validation', null, null, false, array['b.jpg', 'a.jpg'], 2, 0, 0, 0, false),
+     (tests.entry('c996'), tests.k('e997'), 'unpublish', 'committed', null, null, false, null, 2, 0, 0, 0, false),
+     (tests.entry('c997'), tests.k('e998'), 'publish', 'superseded', null, null, false, null, 2, 0, 0, 0, false),
+     (tests.entry('c998'), tests.k('e999'), 'publish', 'committed', 3, 'delivered', false, null, 2, 0, 0, 0, false) $$,
   'one row per entry''s latest request: omitted, missing images, and counts over the active sites only');
 select is((select count(*)::int from api.publication_status where entry_id = tests.entry('c991')), 1,
   'an entry with two requests has one row (its latest)');
@@ -148,6 +148,32 @@ select tests.act_as(tests.persona('editor_labak'));
 select results_eq($$ select site_count, sites_notified, sites_live_ok from api.publication_status where entry_id = tests.entry('c992') $$,
   $$ values (3, 2, 2) $$,
   'a new active site without a delivery counts as not yet live');
+
+-- M3-02: retries_exhausted. A failed notification with its next attempt still due is not exhausted.
+select tests.act_as_owner();
+update cms.site_deliveries set next_attempt_at = now() + interval '8 minutes', first_failed_at = now()
+  where release_id = tests.k('a991') and site_id = tests.k('5992');
+select tests.act_as(tests.persona('editor_labak'));
+select is((select retries_exhausted from api.publication_status where entry_id = tests.entry('c994')), false,
+  'a failed notification with a next attempt is not exhausted');
+-- A committed request in no release: exhausted only when the tenant's latest release, begun after
+-- the request was made, failed with no next build attempt.
+select tests.act_as_owner();
+insert into cms.releases (id, tenant_id, number, status, created_at, next_attempt_at) values
+  (tests.k('a994'), tests.tenant('labak'), 4, 'failed', now(), now() + interval '1 minute');
+select tests.act_as(tests.persona('editor_labak'));
+select is((select retries_exhausted from api.publication_status where entry_id = tests.entry('c996')), false,
+  'a committed request whose failed build has a next attempt is not exhausted');
+select tests.act_as_owner();
+update cms.releases set next_attempt_at = null where id = tests.k('a994');
+select tests.act_as(tests.persona('editor_labak'));
+select is((select retries_exhausted from api.publication_status where entry_id = tests.entry('c996')), true,
+  'a committed request whose build retries are exhausted is exhausted');
+select tests.act_as_owner();
+update cms.releases set created_at = now() - interval '3 hours' where id = tests.k('a994');
+select tests.act_as(tests.persona('editor_labak'));
+select is((select retries_exhausted from api.publication_status where entry_id = tests.entry('c996')), false,
+  'an exhausted build begun before the request was made does not count for it');
 
 -- Tenant isolation.
 select tests.act_as(tests.persona('editor_demo'));
