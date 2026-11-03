@@ -141,6 +141,16 @@ describe('resend', () => {
     expect((await run({ checks: [present()], resend })).live).toBe(true);
     expect(resend).not.toHaveBeenCalled();
   });
+  it.each([
+    ['answered 404', (n: number) => (n === 1 ? page('<main></main>', 404) : page(entryMarker(ID, NEW)))],
+    ['had no marker', (n: number) => page(n === 1 ? '<main></main>' : entryMarker(ID, NEW))],
+  ])('does not resend when the page %s only on the first poll', async (_name, at) => {
+    let n = 0;
+    site.pages.set(OWN, () => at(++n));
+    const resend = vi.fn(async () => {});
+    expect((await run({ checks: [present()], resend })).live).toBe(true);
+    expect(resend).not.toHaveBeenCalled();
+  });
   it('confirms after the resend when the page then shows the new hash', async () => {
     let resent = false;
     site.pages.set(OWN, () => page(entryMarker(ID, resent ? NEW : OLD)));
@@ -203,7 +213,7 @@ describe('resend', () => {
       ['a first publish: the own page still answers 404', present(), { status: 404, body: html(releaseMeta(5), '<main></main>') }],
       ['a first publish: the page has no marker', present(), { status: 200, body: html(releaseMeta(5), '<main></main>') }],
       ['an unpublish: the page still shows the marker', absent(), { status: 200, body: html(releaseMeta(5), entryMarker(ID, OLD)) }],
-    ])('%s at 3 s: no resend before max-age + 1 s, then exactly one', async (_name, check, page) => {
+    ])('%s from the second poll: no resend before max-age + 1 s, then exactly one', async (_name, check, page) => {
       const resend = vi.fn(async () => {});
       const done = runLiveChecks({ baseUrl: 'https://site.test', checks: [check], ownPath: OWN, entry: { id: ID, contentHash: NEW }, mediaUrls: [], resend, fetchPage: missing(page), pointerWrittenAt: Date.now() });
       await vi.advanceTimersByTimeAsync(POINTER_MAX_AGE_S * 1_000 + 1_000 - 1);
@@ -213,6 +223,20 @@ describe('resend', () => {
       await vi.advanceTimersByTimeAsync(DEFAULT_TIMEOUT_MS);
       expect((await done).live).toBe(false);
       expect(resend).toHaveBeenCalledTimes(1);
+    });
+    it('a page that missed and then passed still resends when due while a media URL is pending (sticky)', async () => {
+      const resend = vi.fn(async () => {});
+      let polls = 0;
+      const fetchPage: PageFetcher = async (url) => {
+        if (!url.endsWith(OWN)) return { status: 404, body: null };
+        polls++;
+        return polls <= 2 ? { status: 404, body: html(releaseMeta(5), '<main></main>') } : { status: 200, body: html(releaseMeta(6), entryMarker(ID, NEW)) };
+      };
+      const done = runLiveChecks({ baseUrl: 'https://site.test', checks: [present()], ownPath: OWN, entry: { id: ID, contentHash: NEW }, mediaUrls: ['https://media.test/a.jpg'], resend, fetchPage, pointerWrittenAt: Date.now() });
+      await vi.advanceTimersByTimeAsync(POINTER_MAX_AGE_S * 1_000 + 1_000);
+      expect(resend).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(DEFAULT_TIMEOUT_MS);
+      expect((await done).failures).toEqual([{ path: 'https://media.test/a.jpg', reason: 'status 404' }]);
     });
     it('a failing media URL alone does not resend (the site does not serve it)', async () => {
       const resend = vi.fn(async () => {});
