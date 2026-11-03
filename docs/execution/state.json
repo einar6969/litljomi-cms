@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-03T06:16:55.478Z",
+  "updatedAt": "2026-11-03T06:52:00.562Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -1236,21 +1236,53 @@
     },
     {
       "id": 28,
-      "status": "pending",
-      "commits": [],
+      "status": "done",
+      "commits": [
+        "4d25371",
+        "5568098",
+        "13fcd44",
+        "8f0cdd7"
+      ],
       "reviews": {},
-      "gatesUsed": [],
+      "gatesUsed": [
+        "G0",
+        "G1",
+        "G2",
+        "G3",
+        "G4",
+        "G5",
+        "G6",
+        "G7"
+      ],
       "blockers": [],
-      "notes": ""
+      "notes": "Marked done by Einar's decision 47.1 (\"Mark Task 28 done on the C4 evidence.\"), edited by the controller, not by `state.mjs done` (the task has no task-level reviews of its own; its tools were reviewed separately: `cms provision` under decision 44, merged 4d25371, fix 5568098; `boundary-check` under decision 46, merged 8f0cdd7, security review PASS). Evidence: docs/verification/m1-report.md (Task 28 record) and docs/execution/checkpoints/C4.md.",
+      "doneAt": "2026-11-03T06:51:43.193Z"
     },
     {
       "id": 29,
-      "status": "pending",
+      "status": "blocked",
       "commits": [],
       "reviews": {},
-      "gatesUsed": [],
-      "blockers": [],
-      "notes": ""
+      "gatesUsed": [
+        "G0",
+        "G1",
+        "G2",
+        "G3",
+        "G4",
+        "G5",
+        "G6",
+        "G7"
+      ],
+      "blockers": [
+        {
+          "text": "Acceptance run on staging (sitting 4, decision 47) found failures, recorded not fixed (decision 47): A6 and A7 fail (2 of 4 live checks were not_confirmed: release 2 404/marker_missing, release 4 stale_hash; the site kept serving the previous pointer; not_confirmed is final, no retry) and criterion 2 fails (release 4). Deferred: criterion 3 (image 404 to 200), criterion 9 overwrite, criterion 11 password-403 re-run and email change. M1 is not accepted until Einar decides how to treat A6/A7 (plan fallback: report). See docs/verification/m1-report.md, sitting 4.",
+          "at": "2026-11-03T06:52:00.562Z",
+          "previousStatus": "in_progress",
+          "resolvedAt": null
+        }
+      ],
+      "notes": "Items 2–11 run in demo through the connectors (decision 47). Pass: 4 (unpublish), 5 (isolation, with A1–A4 71/71), 6 (malformed), 7 (stale/superseded), 8 (CMS paused), 10 (A8). Fail: 2, A6, A7. Deferred: 3, 9 (overwrite), 11 (password-403 re-run, email change); phone check and key rotation to before LABAK go-live. Not marked done: the plan's acceptance needs every M1 criterion to pass.",
+      "startedAt": "2026-11-03T06:51:43.224Z"
     }
   ],
   "validationGates": {
@@ -1300,14 +1332,14 @@
       "at": "2026-11-02T08:35:46.875Z"
     },
     "A6": {
-      "status": "pending",
-      "evidence": null,
-      "at": null
+      "status": "fail",
+      "evidence": "docs/verification/m1-report.md",
+      "at": "2026-11-03T06:51:43.255Z"
     },
     "A7": {
-      "status": "pending",
-      "evidence": null,
-      "at": null
+      "status": "fail",
+      "evidence": "docs/verification/m1-report.md",
+      "at": "2026-11-03T06:51:43.283Z"
     },
     "A8": {
       "status": "pass",

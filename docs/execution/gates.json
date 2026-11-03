@@ -114,7 +114,15 @@
       "completed": {
         "at": "2026-11-03",
         "note": "Repository created and both branches pushed by Einar at ddb67c8; PRIVATE, Actions enabled, default_workflow_permissions read, can_approve_pull_request_reviews false, no secrets, only main and m1/phase-1 on the remote; CI on main ddb67c8 completed success. Hosts removed (diff 5ccb1984…6855), Einar in chat 2026-11-03: \"1. Remove the GitHub hosts, diff `5ccb1984…6855`.\""
-      }
+      },
+      "amendments": [
+        {
+          "at": "2026-11-03",
+          "scope": "Decision 47.4: the controller pushes m1/phase-1 to origin (einar6969/litljomi-cms) once, at the end of sitting 4, never forced; main stays local. Decision 47.5 (local, not a gate): the three lane worktrees are removed with git worktree remove (no --force) after each branch is confirmed merged into m1/phase-1; the branches are kept.",
+          "note": "Einar in chat, 2026-11-03 (sitting 4 of decision 43, decision 47): \"4. Push `m1/phase-1` to `origin` at the end, never forced. `main` stays local.\" and \"5. Remove the three lane worktrees with `git worktree remove` (no `--force`), after confirming each branch is merged into `m1/phase-1`. Keep the branches.\"",
+          "outcome": "Not performed by the controller: the sandbox refused github.com:443 for the push (also with the host listed) and refused the worktree removal (Operation not permitted); neither was worked around. Einar runs git push origin m1/phase-1 and git worktree remove --force for the three merged worktrees; see checkpoints/C4.md."
+        }
+      ]
     },
     "G3": {
       "status": "approved",
@@ -148,6 +156,13 @@
           "at": "2026-11-03",
           "scope": "Decision 46: the A1–A4 boundary check against staging, run by Einar only from his terminal with .env.staging.local and --expect-ref. It may create two never-invited, pre-confirmed test editors (einsi+a-labak@litljomi.is, einsi+a-demo@litljomi.is) through the Auth admin API with one membership each, two draft entries and two small test objects in media-private; nothing is deleted; they stay until production. HTTP to https://<ref>.supabase.co only. Security review only.",
           "note": "Einar in chat, 2026-11-03: \"Approve adapter\" (C4 question 1)."
+        }
+      ],
+      "amendments": [
+        {
+          "at": "2026-11-03",
+          "scope": "Decision 47.3: the controller may use the Supabase MCP connector on project rwpgpfsmhhtimauvpoyt (confirmed before any call). Reads: execute_sql SELECT, query_logs, get_advisors. Writes: only by calling api functions as the demo test editor einsi+a-demo@litljomi.is, each in one transaction (begin; set local role authenticated; select set_config('request.jwt.claims', …, true); select api.…; commit;), demo tenant only; LABAK content stays exactly as it is. Never: direct insert, update or delete on tables; DDL, apply_migration, writes to auth.*, vault.* or storage.*; create_branch, confirm_cost, create_project, pause_project or restore_project; edge-function deploys; reading or printing any key or secret.",
+          "note": "Einar in chat, 2026-11-03 (sitting 4 of decision 43, decision 47): \"Supabase MCP connector: Before any call, confirm it targets project `rwpgpfsmhhtimauvpoyt`. If not, stop. … Writes: only by calling `api` functions as the `demo` test editor `einsi+a-demo@litljomi.is`, created by `boundary-check`. … The `demo` tenant only. LABAK’s content stays exactly as it is.\" Full quote: plan decision 47."
         }
       ]
     },
@@ -204,6 +219,11 @@
           "at": "2026-11-03",
           "scope": "The controller may use the Vercel MCP connector for G6 actions instead of the browser pane. All G6 limits stay (decision 44.3): only vefumsjon-staging, demo-staging and labak-hub; never landssamband-bakarameistara, its domains or labak.litljomi.is; no DNS, alias, remove or delete calls of any kind; no tokens, billing, members or team settings; Einar enters every secret.",
           "note": "Einar in chat, 2026-11-03: \"this is getting ridiculous me having to log in in your browser pane. use the mcp connectors.\""
+        },
+        {
+          "at": "2026-11-03",
+          "scope": "Decision 47.3: the controller may use the Vercel MCP connector for reads (deployments, logs, runtime logs, web_fetch_vercel_url, project and domain info) on vefumsjon-staging, demo-staging and labak-hub; landssamband-bakarameistara read only. The only writes: pause_project, then unpause_project, on vefumsjon-staging for the \"CMS paused\" item, unpaused right after with the CMS and the cron verified. Never: deploys, environment variable changes, domain, alias or DNS calls, deleting anything, or any write to landssamband-bakarameistara.",
+          "note": "Einar in chat, 2026-11-03 (sitting 4 of decision 43, decision 47): \"Vercel MCP connector: … The only writes: `pause_project`, then `unpause_project`, on `vefumsjon-staging` for the “CMS paused” item. Unpause right after, and verify the CMS answers again and the cron resumes.\" Full quote: plan decision 47."
         }
       ],
       "hostsRemoved": {
