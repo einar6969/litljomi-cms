@@ -3,6 +3,8 @@
 // shown before its proof exists: "Birt á vef ✓" only when every active site's live_status is 'ok'
 // for the request's delivered release. No text promises removal from caches ("Withdrawal and
 // failure visibility").
+// The constant only, from its own module: the package's index would bring the validators into the panel's bundle.
+import { DRAFT_OUTDATED } from '@litljomi/cms-schema/src/upcast.ts';
 import { t } from '@/i18n/is';
 
 export type RequestStatus = 'pending' | 'validating' | 'committed' | 'failed_validation' | 'superseded' | 'rejected' | 'failed';
@@ -147,6 +149,8 @@ function invalidState(row: PublicationStatusRow, labels: Readonly<Record<string,
     const files = (row.missing_assets ?? []).filter((f) => typeof f === 'string' && f !== '');
     return named(files.length > 0 ? files : [t.publish.missingImage], t.publish.missingImageDetail);
   }
+  // §5.3, M2-05: the draft was written at an older schema version; the editor updates it first (M2-14).
+  if (error.code === DRAFT_OUTDATED) return { label: `${t.publish.invalid} ${t.publish.outdated}`, tone: 'error', detail: t.publish.outdatedDetail };
   if (error.code === 'slug_required') return named([t.editor.slug.label], t.publish.invalidDetail);
   const keys = fieldKeysOf(error);
   return named(
