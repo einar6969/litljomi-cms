@@ -2,9 +2,12 @@
 // CMS (`next start` on `CMS_PORT`, support/local.ts), the local stack and its Mailpit. Task 32 (decision 41.1): the link
 // works in a browser other than the one that asked for it, and opening it alone (as an email
 // security scanner does) signs nobody in and does not use it up. Decision 42.2 (Q1): a visitor who
-// is already signed in is told so, keeps that session until pressing "Halda áfram", and the press
-// replaces it (the old session is revoked); a bad link changes nothing.
+// is already signed in is told so; a bad link changes nothing. M3-14: the page drops the token hash
+// from the address bar once loaded; a link for another account then names that account and asks
+// before replacing the visitor's session ("Skipta um aðgang" revokes the old session, "Hætta við"
+// keeps it).
 import { randomBytes } from 'node:crypto';
+import type { Browser, Page } from '@playwright/test';
 import { t } from '../src/i18n/is';
 import { CMS_URL } from './support/local';
 import { messageIds, waitForNewMessage } from './support/mailpit';
@@ -12,6 +15,24 @@ import { PERSONA_EMAILS } from './support/personas';
 import { sessionState } from './support/session';
 import { followLink, openLink, requestLink, requestMagicLink, signIn } from './support/sign-in';
 import { expect, newLoopbackContext, test } from './support/test';
+
+/** A magic link for `email`, requested in another browser (so this one keeps its session). */
+async function linkFromAnotherBrowser(browser: Browser, email: string): Promise<URL> {
+  const requester = await newLoopbackContext(browser);
+  try {
+    return await requestMagicLink(await requester.newPage(), email);
+  } finally {
+    await requester.close();
+  }
+}
+
+/** In a new tab of the same browser: still signed in as editor_demo. */
+async function expectStillDemo(page: Page): Promise<void> {
+  const tab = await page.context().newPage();
+  expect((await tab.goto('/t/demo'))?.status()).toBe(200);
+  await expect(tab.getByRole('heading', { level: 1 })).toHaveText('Demo');
+  await tab.close();
+}
 
 test.describe('without a session', () => {
   test('editor_labak signs in through the Mailpit link and lands on /t/labak', async ({ page }) => {
@@ -81,32 +102,48 @@ test.describe('without a session', () => {
     }
   });
 
-  test('a signed-in editor opening another account\'s link is told so, and only the press replaces the session', async ({ page, browser }) => {
+  test('the confirm page drops the token hash from the address bar, and its button still signs in', async ({ page, browser }) => {
+    const link = await requestMagicLink(page, PERSONA_EMAILS.editor_demo);
+    const tokenHash = link.searchParams.get('token_hash')!;
+    const visitor = await newLoopbackContext(browser);
+    try {
+      const visitorPage = await visitor.newPage();
+      await openLink(visitorPage, link);
+      await expect(visitorPage).toHaveURL(`${CMS_URL}/auth/confirm`);
+      await visitorPage.getByRole('button', { name: t.confirm.submit }).click();
+      await visitorPage.waitForURL(`${CMS_URL}/t/demo`);
+      await expect(visitorPage.getByRole('heading', { level: 1 })).toHaveText('Demo');
+      // The history entry was replaced, not kept: going back shows the address without the hash.
+      await visitorPage.goBack();
+      expect(new URL(visitorPage.url()).pathname).toBe('/auth/confirm');
+      expect(visitorPage.url()).not.toContain(tokenHash);
+    } finally {
+      await visitor.close();
+    }
+  });
+
+  test('a signed-in editor pressing another account\'s link is shown that account and asked; "Skipta um aðgang" replaces the session', async ({ page, browser }) => {
     expect((await signIn(page, PERSONA_EMAILS.editor_demo)).href).toBe(`${CMS_URL}/t/demo`);
     const demoSession = await page.context().storageState();
+    const link = await linkFromAnotherBrowser(browser, PERSONA_EMAILS.editor_labak);
 
-    // editor_labak's link, requested in another browser and opened in this signed-in one.
-    const requester = await newLoopbackContext(browser);
-    let link: URL;
-    try {
-      link = await requestMagicLink(await requester.newPage(), PERSONA_EMAILS.editor_labak);
-    } finally {
-      await requester.close();
-    }
     await openLink(page, link);
-    await expect(page.getByRole('main').getByRole('status')).toHaveText(t.confirm.signedIn);
+    await expect(page.getByRole('main').getByRole('status')).toHaveText(`${t.confirm.signedIn} ${t.confirm.signedInDetail}`);
     await expect(page.getByRole('main').getByRole('button')).toHaveCount(1);
     await expect(page.getByRole('main')).not.toContainText(PERSONA_EMAILS.editor_demo);
     await expect(page.getByRole('main')).not.toContainText(PERSONA_EMAILS.editor_labak);
 
-    // Before the press nothing has changed: this browser is still editor_demo.
-    const tab = await page.context().newPage();
-    expect((await tab.goto('/t/demo'))?.status()).toBe(200);
-    await expect(tab.getByRole('heading', { level: 1 })).toHaveText('Demo');
-    await tab.close();
+    // The press verifies the link but changes nothing yet: it names the link's account and asks.
+    await page.getByRole('button', { name: t.confirm.submit }).click();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(t.confirm.replaceTitle);
+    await expect(page.getByRole('main')).toContainText(`${t.confirm.replaceAccount} ${PERSONA_EMAILS.editor_labak}.`);
+    await expect(page.getByRole('main')).not.toContainText(PERSONA_EMAILS.editor_demo);
+    await expect(page.getByRole('main').getByRole('button')).toHaveCount(2);
+    await expectStillDemo(page);
 
-    // The press replaces the session: now editor_labak, who has no access to demo.
-    expect((await followLink(page, link)).href).toBe(`${CMS_URL}/t/labak`);
+    // "Skipta um aðgang": now editor_labak, who has no access to demo.
+    await page.getByRole('button', { name: t.confirm.replace }).click();
+    await page.waitForURL(`${CMS_URL}/t/labak`);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Landssamband bakarameistara');
     expect((await page.goto('/t/demo'))?.status()).toBe(404);
 
@@ -121,12 +158,32 @@ test.describe('without a session', () => {
     }
   });
 
+  test('a signed-in editor answering "Hætta við" stays signed in as before', async ({ page, browser }) => {
+    expect((await signIn(page, PERSONA_EMAILS.editor_demo)).href).toBe(`${CMS_URL}/t/demo`);
+    const link = await linkFromAnotherBrowser(browser, PERSONA_EMAILS.editor_labak);
+
+    await openLink(page, link);
+    await page.getByRole('button', { name: t.confirm.submit }).click();
+    await expect(page.getByRole('main')).toContainText(PERSONA_EMAILS.editor_labak);
+    await page.getByRole('button', { name: t.confirm.keep }).click();
+    await page.waitForURL((url) => url.pathname !== '/auth/confirm');
+    await expectStillDemo(page);
+
+    // The question is gone, and the link is used up.
+    await page.goto('/auth/confirm');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(t.confirm.title);
+    await openLink(page, link);
+    await page.getByRole('button', { name: t.confirm.submit }).click();
+    await expect(page).toHaveURL(`${CMS_URL}/login?error=link`);
+    await expectStillDemo(page);
+  });
+
   test('a signed-in editor pressing a bad link stays signed in as before', async ({ page }) => {
     expect((await signIn(page, PERSONA_EMAILS.editor_demo)).href).toBe(`${CMS_URL}/t/demo`);
 
     // A token hash of the right shape that Auth never issued.
     await openLink(page, new URL(`${CMS_URL}/auth/confirm?token_hash=${'0'.repeat(56)}&type=email`));
-    await expect(page.getByRole('main').getByRole('status')).toHaveText(t.confirm.signedIn);
+    await expect(page.getByRole('main').getByRole('status')).toHaveText(`${t.confirm.signedIn} ${t.confirm.signedInDetail}`);
     await page.getByRole('button', { name: t.confirm.submit }).click();
     await expect(page).toHaveURL(`${CMS_URL}/login?error=link`);
 
