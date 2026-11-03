@@ -27,6 +27,8 @@ describe('prepareUpload: unsupported or oversized images are refused before uplo
     if (!result.ok) return;
     expect(result.assetId).toMatch(UUID);
     expect(result.path).toBe(`${TENANT}/${result.assetId}/braud-arsins.png`);
+    // The storage file name is returned, so no caller re-derives it from the path (Task 24 quality r1).
+    expect(result.filename).toBe('braud-arsins.png');
     const again = prepareUpload(fileOf(1024, 'a.png', 'image/png'), TENANT);
     expect(again.ok && again.assetId).not.toBe(result.assetId);
   });

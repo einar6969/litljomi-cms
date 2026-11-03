@@ -1,7 +1,7 @@
 import { Editor, generateJSON } from '@tiptap/core';
 import { expect, it } from 'vitest';
 import { richTextDocSchema } from '../doc-schema.ts';
-import { richTextExtensions } from '../tiptap.ts';
+import { isAllowedUri, richTextExtensions } from '../tiptap.ts';
 
 const A = '11111111-1111-4111-8111-111111111111';
 const B = '22222222-2222-4222-8222-222222222222';
@@ -155,4 +155,30 @@ it('setLink and toggleLink refuse a link with neither href nor entry', () => {
   expect(editor.commands.setLink({ href: 'https://example.com/' })).toBe(true);
   expect(JSON.stringify(editor.getJSON())).toContain('https://example.com/');
   editor.destroy();
+});
+
+// M2-01 acceptance (Task 14 r2 security): the link rule fails closed on any non-string href
+// without throwing; an entry link (no href) is allowed and renders no href.
+it.each([5, 0, null, true, ['https://example.com/'], { href: 'https://example.com/' }, Number.NaN])('isAllowedUri(%j) is false and does not throw', (href) => {
+  expect(isAllowedUri(href)).toBe(false);
+});
+
+it('isAllowedUri allows an entry link (undefined) and safe strings only', () => {
+  expect(isAllowedUri(undefined)).toBe(true);
+  expect(isAllowedUri('https://example.com/')).toBe(true);
+  expect(isAllowedUri('mailto:a@b.is')).toBe(true);
+  expect(isAllowedUri('javascript:alert(1)')).toBe(false);
+  expect(isAllowedUri('')).toBe(false);
+});
+
+it('a pasted <ol start="abc"> between paragraphs keeps the rest of the document', () => {
+  const html = '<h2>Fyrirsögn</h2><p>Á undan</p><ol start="abc"><li><p>a</p></li><li><p>b</p></li></ol><p>Á eftir</p>';
+  const json = generateJSON(html, richTextExtensions());
+  const parsed = richTextDocSchema.safeParse(json);
+  expect(parsed.success).toBe(true);
+  const content = json.content as { type: string; attrs?: { start?: number } }[];
+  expect(content.map((n) => n.type)).toEqual(['heading', 'paragraph', 'orderedList', 'paragraph']);
+  expect(content[2]!.attrs?.start).toBe(1);
+  const text = JSON.stringify(json);
+  for (const kept of ['Fyrirsögn', 'Á undan', '"a"', '"b"', 'Á eftir']) expect(text).toContain(kept);
 });

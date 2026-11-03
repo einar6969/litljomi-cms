@@ -1,6 +1,6 @@
 // The only places the CMS's Playwright tests reach (Einar, 2026-11-02: they run outside the Bash
 // sandbox, so they reach only loopback addresses and this repository): the local CMS
-// (`next start -p 3100`), the local Supabase API (54321) and its Mailpit (54324).
+// (`next start` on `CMS_PORT` below), the local Supabase API (54321) and its Mailpit (54324).
 /** The port `next start` listens on (on 127.0.0.1), and the local Auth site URL's port (decision 37.4). */
 export const CMS_PORT = 3100;
 export const CMS_URL = `http://localhost:${CMS_PORT}`;

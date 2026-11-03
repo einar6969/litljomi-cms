@@ -9,6 +9,14 @@ import { isSafeHref } from './doc-schema.ts';
 // so pasted tables, colours, strike-through and the like are dropped by the parser (§5.4).
 
 /** A link mark's target: an external `href` or an `entry` reference (§5.4). */
+/**
+ * Tiptap Link's `isAllowedUri`: asked for every href it parses, sets or renders. An entry link has
+ * no href, and Tiptap's renderHTML still asks about it, so `undefined` is allowed (no href attribute
+ * is rendered). Anything else must be a safe string: a non-string href from schema-invalid data is
+ * refused without throwing, so the editor still mounts and renders href="" (Task 14 r2 security).
+ */
+export const isAllowedUri = (url: unknown): boolean => url === undefined || (typeof url === 'string' && isSafeHref(url));
+
 const hasTarget = (attrs: unknown): boolean => {
   const { href, entry } = (attrs ?? {}) as { href?: unknown; entry?: unknown };
   return (typeof href === 'string' && href !== '') || (typeof entry === 'object' && entry !== null);
@@ -93,11 +101,7 @@ export function richTextExtensions(): Extensions {
       autolink: false,
       linkOnPaste: false,
       defaultProtocol: 'https',
-      // Tiptap's Link asks this for every href it parses, sets or renders. An entry link has no
-      // href, and Tiptap's renderHTML still asks about it, so `undefined` is allowed (no href
-      // attribute is rendered). Anything else must be a safe string: a non-string href from
-      // schema-invalid data renders as href="" instead of making the editor throw.
-      isAllowedUri: (url) => (url as unknown) === undefined || (typeof url === 'string' && isSafeHref(url)),
+      isAllowedUri,
       HTMLAttributes: {},
     }),
     HubOrderedList,

@@ -7,7 +7,7 @@ import { createBrowserEditorClient } from '@/lib/supabase/browser';
 import { Button } from '@/ui/Button';
 import { Notice } from '@/ui/Notice';
 import { StatusBadge } from '@/ui/StatusBadge';
-import { displayState, isFinal, PUBLICATION_STATUS_COLUMNS, type DisplayState, type PublicationStatusRow } from './status';
+import { displayState, IN_PROGRESS, isFinal, PUBLICATION_STATUS_COLUMNS, type DisplayState, type PublicationStatusRow } from './status';
 
 /** The panel polls the entry's status this often while it is not final (plan Task 25). */
 export const POLL_MS = 2000;
@@ -132,7 +132,7 @@ export function PublishPanel({
   );
 
   const shown = row && (awaiting === null || row.request_id === awaiting) ? displayState(row, { fieldLabels }) : null;
-  const state: DisplayState | null = shown ?? (awaiting !== null ? { label: t.publish.inProgress, tone: 'pending' } : null);
+  const state: DisplayState | null = shown ?? (awaiting !== null ? IN_PROGRESS : null);
   const inFlight = busy || (state !== null && !isFinal(state));
 
   return (

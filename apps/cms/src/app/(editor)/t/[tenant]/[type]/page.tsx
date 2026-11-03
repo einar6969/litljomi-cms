@@ -15,6 +15,8 @@ const MAX_ROWS = 200;
 
 // Only "Birt" is a positive state; the others are neutral.
 const STATUS_TONE: Partial<Record<Row['status'], 'ok' | 'pending'>> = { published: 'ok' };
+// Below 768 px the table is restyled as stacked rows (globals.css). Some screen readers drop a
+// table's semantics once it is no longer display:table, so the roles are stated explicitly.
 const HEAD = 'py-2 pr-4 font-display text-xs font-semibold uppercase tracking-wider text-muted';
 
 // The entries of one content type, newest edit first. The tenant is resolved through
@@ -47,28 +49,28 @@ export default async function EntryListPage({ params }: Props) {
       {rows.length === 0 ? (
         <p className="rounded-lg border border-dashed border-control bg-recessed px-4 py-8 text-center text-muted">{t.entries.empty}</p>
       ) : (
-        <table className="entry-table w-full border-collapse text-left">
-          <thead>
-            <tr className="border-b border-ink">
-              <th className={HEAD}>{t.entries.title}</th>
-              <th className={HEAD}>{t.entries.status}</th>
-              <th className={HEAD}>{t.entries.updated}</th>
+        <table role="table" className="entry-table w-full border-collapse text-left">
+          <thead role="rowgroup">
+            <tr role="row" className="border-b border-ink">
+              <th role="columnheader" className={HEAD}>{t.entries.title}</th>
+              <th role="columnheader" className={HEAD}>{t.entries.status}</th>
+              <th role="columnheader" className={HEAD}>{t.entries.updated}</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody role="rowgroup">
             {rows.map((row) => (
-              <tr key={row.id} className="border-b border-hairline">
-                <td className="py-1 pr-4 md:py-2">
+              <tr key={row.id} role="row" className="border-b border-hairline">
+                <td role="cell" className="py-1 pr-4 md:py-2">
                   <Link href={`${base}/${row.id}`} className="inline-flex min-h-[44px] items-center text-lg font-semibold md:text-base">
                     {row.title ?? t.entries.untitled}
                   </Link>
                 </td>
-                <td className="py-2 pr-4">
+                <td role="cell" className="py-2 pr-4">
                   <StatusBadge as="span" tone={STATUS_TONE[row.status] ?? 'pending'} className="text-sm">
                     {t.entries.statuses[row.status] ?? row.status}
                   </StatusBadge>
                 </td>
-                <td className="py-2 text-sm text-muted">
+                <td role="cell" className="py-2 text-sm text-muted">
                   <time dateTime={row.updated_at}>{new Date(row.updated_at).toLocaleString('is-IS', { timeZone: 'Atlantic/Reykjavik' })}</time>
                 </td>
               </tr>

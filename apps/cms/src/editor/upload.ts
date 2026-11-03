@@ -42,20 +42,22 @@ export function safeFilename(name: string, mime: AcceptedMime): string {
   return `${stem === '' ? 'mynd' : stem}.${EXTENSION_BY_MIME[mime]}`;
 }
 
-export type PreparedUpload = { ok: true; assetId: string; path: string } | { ok: false; reason: 'type' | 'size' };
+export type PreparedUpload = { ok: true; assetId: string; filename: string; path: string } | { ok: false; reason: 'type' | 'size' };
 
 /**
- * Checks a chosen file before it is uploaded (unsupported or oversized images are refused before upload) and names it: a fresh asset id
- * (`crypto.randomUUID()`, spec §4.3) and the path `${tenantId}/${assetId}/${safeFilename}` in
- * `media-private` (§5.6). The type is the browser's (from the file name); the server checks the
- * real bytes after upload. `tenantId` is the tenant the page resolved through `api.my_tenants`.
+ * Checks a chosen file before it is uploaded (unsupported or oversized images are refused before
+ * upload) and names it: a fresh asset id (`crypto.randomUUID()`, spec §4.3), its storage file name
+ * (`safeFilename`) and the path `${tenantId}/${assetId}/${filename}` in `media-private` (§5.6). The
+ * type is the browser's (from the file name); the server checks the real bytes after upload.
+ * `tenantId` is the tenant the page resolved through `api.my_tenants`.
  */
 export function prepareUpload(file: File, tenantId: string): PreparedUpload {
   if (!CANONICAL_UUID.test(tenantId)) throw new Error('prepareUpload: tenant id is not a canonical UUID');
   if (!isAcceptedMime(file.type)) return { ok: false, reason: 'type' };
   if (file.size <= 0 || file.size > MAX_UPLOAD_BYTES) return { ok: false, reason: 'size' };
   const assetId = crypto.randomUUID();
-  return { ok: true, assetId, path: `${tenantId}/${assetId}/${safeFilename(file.name, file.type)}` };
+  const filename = safeFilename(file.name, file.type);
+  return { ok: true, assetId, filename, path: `${tenantId}/${assetId}/${filename}` };
 }
 
 /**

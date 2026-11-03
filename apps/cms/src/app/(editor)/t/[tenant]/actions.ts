@@ -1,7 +1,7 @@
 'use server';
 
 import { z } from 'zod';
-import { failureOf, hasSession, loadEntryContext } from '@/editor/server/entry-context';
+import { failureAmong, hasSession, loadEntryContext } from '@/editor/server/entry-context';
 import { createEditorClient } from '@/lib/supabase/server';
 import { isActive, resolveTenant } from '@/lib/tenant';
 import { getType } from '@/modules/registry';
@@ -73,10 +73,7 @@ export async function saveDraftAction(id: string, expectedVersion: number, data:
       p_title: title,
       p_sort_at: sortAt,
     });
-    if (result.error) {
-      const failure = failureOf({ error: result.error, status: result.status });
-      return { ok: false, code: failure === 'version_conflict' || failure === 'auth' ? failure : 'error' };
-    }
+    if (result.error) return { ok: false, code: failureAmong({ error: result.error, status: result.status }, ['version_conflict']) };
     return typeof result.data === 'number' ? { ok: true, version: result.data } : { ok: false, code: 'error' };
   } catch {
     return { ok: false, code: 'error' };
@@ -93,10 +90,7 @@ export async function setSlugAction(id: string, slug: string): Promise<SetSlugRe
     const context = await loadEntryContext(client, args.data.id);
     if (!context) return { ok: false, code: 'error' };
     const result = await client.rpc('set_slug', { p_entry_id: context.entryId, p_slug: args.data.slug });
-    if (result.error) {
-      const failure = failureOf({ error: result.error, status: result.status });
-      return { ok: false, code: failure === 'slug_taken' || failure === 'slug_locked' || failure === 'auth' ? failure : 'error' };
-    }
+    if (result.error) return { ok: false, code: failureAmong({ error: result.error, status: result.status }, ['slug_taken', 'slug_locked']) };
     return { ok: true, slug: args.data.slug };
   } catch {
     return { ok: false, code: 'error' };

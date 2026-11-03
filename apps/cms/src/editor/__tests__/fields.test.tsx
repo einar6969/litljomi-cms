@@ -51,7 +51,8 @@ afterEach(async () => {
 
 const render = async (element: ReactElement) => act(async () => root.render(<EditorTenantProvider value={TENANT}>{element}</EditorTenantProvider>));
 const $ = <T extends Element = HTMLElement>(selector: string) => container.querySelector<T>(selector);
-const flush = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+/** Waits, inside act, until the assertion passes (vi.waitFor's default 1 s timeout). */
+const until = (assertion: () => void) => act(async () => vi.waitFor(assertion));
 
 /** Types into a React-controlled input the way a user does (the native setter, then `input`). */
 async function type(input: HTMLInputElement | HTMLTextAreaElement, text: string) {
@@ -65,7 +66,8 @@ async function type(input: HTMLInputElement | HTMLTextAreaElement, text: string)
 async function chooseFile(input: HTMLInputElement, file: File) {
   Object.defineProperty(input, 'files', { configurable: true, value: [file] });
   await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })));
-  await flush();
+  // The picker is disabled while an upload is in progress; a file refused before upload never disables it.
+  await until(() => expect(input.disabled).toBe(false));
 }
 
 const field = { id: 'field-x', label: 'Reitur', required: false };
@@ -105,9 +107,13 @@ describe('LinkField', () => {
     await type(input, 'javascript:alert(1)');
     expect(onChange).not.toHaveBeenCalled();
     expect(container.querySelector('[role="alert"]')?.textContent).toBe(t.editor.invalidUrl);
+    // The error describes the input without becoming part of its name (Task 31 spec-quality r1).
+    expect(input.getAttribute('aria-describedby')).toBe(container.querySelector('[role="alert"]')?.id);
+    expect(input.closest('label')?.textContent).not.toContain(t.editor.invalidUrl);
     await type(input, 'HTTPS://Example.com');
     expect(onChange).toHaveBeenLastCalledWith({ href: 'https://example.com/' });
     expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(input.hasAttribute('aria-describedby')).toBe(false);
   });
 
   it('shows an entry link as a notice and leaves it alone', async () => {
@@ -238,7 +244,7 @@ describe('ImageField', () => {
     actions.assetPreviewAction.mockResolvedValue({ ok: true, url: 'http://127.0.0.1:54321/storage/v1/object/sign/media-private/p?token=t', defaultAlt: null, focalX: null, focalY: null });
     const onChange = vi.fn();
     await render(<ImageField {...field} value={{ _ref: ASSET, _kind: 'asset', alt: 'Brauð' }} onChange={onChange} />);
-    await flush();
+    await until(() => expect($('[data-testid="field-x-preview"]')).not.toBeNull());
     expect(actions.assetPreviewAction).toHaveBeenCalledWith(ASSET);
     const img = $<HTMLImageElement>('[data-testid="field-x-preview"]')!;
     expect(img.src).toContain('/object/sign/media-private/');
@@ -251,18 +257,61 @@ describe('ImageField', () => {
     actions.assetPreviewAction.mockResolvedValue({ ok: true, url: 'http://127.0.0.1:54321/x', defaultAlt: null, focalX: 0.2, focalY: 0.3 });
     actions.updateAssetAction.mockResolvedValue({ ok: true });
     await render(<ImageField {...field} value={{ _ref: ASSET, _kind: 'asset', alt: 'Brauð' }} onChange={vi.fn()} />);
-    await flush();
+    await until(() => expect($('[data-testid="field-x-preview"]')).not.toBeNull());
     const button = [...container.querySelectorAll('button')].find((b) => b.textContent === t.editor.image.saveDefaultAlt)!;
     await act(async () => button.click());
     expect(actions.updateAssetAction).toHaveBeenCalledWith(ASSET, 0.2, 0.3, 'Brauð');
     expect($('[data-testid="field-x-notice"]')?.textContent).toBe(t.editor.image.defaultAltSaved);
   });
 
+  it(`signs the preview again when it fails to load, at most ${3} times, then says so instead of stopping silently`, async () => {
+    actions.assetPreviewAction.mockResolvedValue({ ok: true, url: 'http://127.0.0.1:54321/x', defaultAlt: null, focalX: null, focalY: null });
+    await render(<ImageField {...field} value={{ _ref: ASSET, _kind: 'asset', alt: '' }} onChange={vi.fn()} />);
+    await until(() => expect($('[data-testid="field-x-preview"]')).not.toBeNull());
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      await act(async () => $('[data-testid="field-x-preview"]')!.dispatchEvent(new Event('error')));
+      await until(() => expect(actions.assetPreviewAction).toHaveBeenCalledTimes(1 + attempt));
+      await until(() => expect($('[data-testid="field-x-preview"]')).not.toBeNull());
+      expect($('[data-testid="field-x-notice"]')).toBeNull();
+    }
+    await act(async () => $('[data-testid="field-x-preview"]')!.dispatchEvent(new Event('error')));
+    expect($('[data-testid="field-x-notice"]')?.textContent).toBe(t.editor.image.previewError);
+    expect($('[data-testid="field-x-notice"]')?.getAttribute('role')).toBe('alert');
+    expect(actions.assetPreviewAction).toHaveBeenCalledTimes(4);
+  });
+
+  it.each([
+    ['auth', t.editor.signedOut],
+    ['error', t.editor.image.updateError],
+    ['invalid', t.editor.image.updateError],
+  ])('shows the message for an update refusal %s', async (code, text) => {
+    actions.assetPreviewAction.mockResolvedValue({ ok: true, url: 'http://127.0.0.1:54321/x', defaultAlt: null, focalX: null, focalY: null });
+    actions.updateAssetAction.mockResolvedValue({ ok: false, code });
+    await render(<ImageField {...field} value={{ _ref: ASSET, _kind: 'asset', alt: 'Brauð' }} onChange={vi.fn()} />);
+    await until(() => expect($('[data-testid="field-x-preview"]')).not.toBeNull());
+    const button = [...container.querySelectorAll('button')].find((b) => b.textContent === t.editor.image.saveDefaultAlt)!;
+    await act(async () => button.click());
+    expect($('[data-testid="field-x-notice"]')?.textContent).toBe(text);
+    expect($('[data-testid="field-x-notice"]')?.getAttribute('role')).toBe('alert');
+  });
+
+  it('announces a saved change politely, as a success', async () => {
+    actions.assetPreviewAction.mockResolvedValue({ ok: true, url: 'http://127.0.0.1:54321/x', defaultAlt: null, focalX: null, focalY: null });
+    actions.updateAssetAction.mockResolvedValue({ ok: true });
+    await render(<ImageField {...field} value={{ _ref: ASSET, _kind: 'asset', alt: 'Brauð' }} onChange={vi.fn()} />);
+    await until(() => expect($('[data-testid="field-x-preview"]')).not.toBeNull());
+    const button = [...container.querySelectorAll('button')].find((b) => b.textContent === t.editor.image.saveDefaultAlt)!;
+    await act(async () => button.click());
+    const notice = $('[data-testid="field-x-notice"]')!;
+    expect(notice.getAttribute('aria-live')).toBe('polite');
+    expect(notice.hasAttribute('role')).toBe(false);
+  });
+
   it('removes the image', async () => {
     actions.assetPreviewAction.mockResolvedValue({ ok: false, code: 'error' });
     const onChange = vi.fn();
     await render(<ImageField {...field} value={{ _ref: ASSET, _kind: 'asset', alt: '' }} onChange={onChange} />);
-    await flush();
+    await until(() => expect($('[data-testid="field-x-notice"]')).not.toBeNull());
     expect($('[data-testid="field-x-notice"]')?.textContent).toBe(t.editor.image.previewError);
     const button = [...container.querySelectorAll('button')].find((b) => b.textContent === t.editor.image.remove)!;
     await act(async () => button.click());
@@ -283,7 +332,7 @@ describe('RichTextField', () => {
 
   it('has a toolbar for the v1 marks and nodes and no image button (M2)', async () => {
     await render(<RichTextField {...field} value={undefined} onChange={vi.fn()} />);
-    await flush();
+    await until(() => expect(container.querySelector('[role="toolbar"]')).not.toBeNull());
     const toolbar = container.querySelector('[role="toolbar"]')!;
     const labels = [...toolbar.querySelectorAll('button')].map((b) => b.textContent);
     const r = t.editor.richText;
@@ -293,7 +342,7 @@ describe('RichTextField', () => {
 
   it('gives the contenteditable its field label as its accessible name (decision 39.3)', async () => {
     await render(<RichTextField {...field} value={undefined} onChange={vi.fn()} />);
-    await flush();
+    await until(() => expect(container.querySelector('[role="textbox"]')).not.toBeNull());
     const textbox = container.querySelector('[role="textbox"]')!;
     expect(textbox.getAttribute('contenteditable')).toBe('true');
     // aria-labelledby names it in browsers; aria-label carries the same text for tools that only
@@ -305,7 +354,7 @@ describe('RichTextField', () => {
   it('cleans pasted Word-like HTML and saves a document that validates (review focus 2)', async () => {
     const onChange = vi.fn();
     await render(<RichTextField {...field} value={undefined} onChange={onChange} />);
-    await flush();
+    await until(() => expect(container.querySelector('.ProseMirror')).not.toBeNull());
     await act(async () => paste(container.querySelector('.ProseMirror')!, WORD_LIKE));
     const saved = onChange.mock.lastCall?.[0];
     expect(richTextDocSchema.safeParse(saved).success).toBe(true);
@@ -315,11 +364,24 @@ describe('RichTextField', () => {
     expect(text).toContain('"y"');
   });
 
+  it('keeps the stored value unchanged while the document does not validate, and says so (Task 24 quality r1)', async () => {
+    const doc = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Halló' }] }] };
+    const onChange = vi.fn();
+    await render(<RichTextField {...field} value={doc} onChange={onChange} />);
+    await until(() => expect(container.querySelector('.ProseMirror')).not.toBeNull());
+    // Tiptap keeps its instance on the editor element. An image node without an asset is outside
+    // the v1 schema (only the media picker inserts images, always with one).
+    const editor = (container.querySelector('.ProseMirror') as HTMLElement & { editor: import('@tiptap/react').Editor }).editor;
+    await act(async () => editor.commands.insertContent({ type: 'image', attrs: { alt: '' } }));
+    expect(richTextDocSchema.safeParse(editor.getJSON()).success).toBe(false);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(t.editor.richText.invalid);
+  });
+
   it('loads a stored document', async () => {
     const doc = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Halló', marks: [{ type: 'bold' }] }] }] };
     await render(<RichTextField {...field} value={doc} onChange={vi.fn()} />);
-    await flush();
-    expect(container.querySelector('.ProseMirror strong')?.textContent).toBe('Halló');
+    await until(() => expect(container.querySelector('.ProseMirror strong')?.textContent).toBe('Halló'));
   });
 
   it('shows a stored document it cannot load as a notice, without an editor', async () => {

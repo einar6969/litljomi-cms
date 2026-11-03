@@ -48,7 +48,8 @@ export const PUBLICATION_STATUS_COLUMNS =
   'request_id, tenant_id, entry_id, action, status, error, requested_at, release_number, release_status, omitted, ' +
   'missing_assets, site_count, sites_notified, sites_live_ok, sites_not_confirmed, notify_attempts';
 
-const inProgress: DisplayState = { label: t.publish.inProgress, tone: 'pending' };
+/** "Í birtingu…": a request on its way. The panel also shows it while it waits for its own new request's row. */
+export const IN_PROGRESS: Readonly<DisplayState> = Object.freeze({ label: t.publish.inProgress, tone: 'pending' });
 
 /** True once the state can no longer change without a new request: polling stops. */
 export const isFinal = (state: DisplayState): boolean => state.tone !== 'pending';
@@ -72,7 +73,7 @@ export function displayState(row: PublicationStatusRow, options: DisplayOptions 
   switch (row.status) {
     case 'pending':
     case 'validating':
-      return inProgress;
+      return IN_PROGRESS;
     case 'committed':
       return deliveryState(row);
     case 'failed_validation':
@@ -82,15 +83,14 @@ export function displayState(row: PublicationStatusRow, options: DisplayOptions 
     case 'rejected':
       return { label: t.publish.rejected, tone: 'error' };
     case 'failed':
-      return { label: t.publish.failed, tone: 'error' };
     default:
-      // Fail closed: a status this display does not know is never shown as success.
+      // Fail closed: a status this display does not know is shown as failed, never as success.
       return { label: t.publish.failed, tone: 'error' };
   }
 }
 
 function deliveryState(row: PublicationStatusRow): DisplayState {
-  if (row.release_status !== 'delivered') return inProgress;
+  if (row.release_status !== 'delivered') return IN_PROGRESS;
   const deliveryFailed: DisplayState = { label: t.publish.deliveryFailed, tone: 'error', detail: t.publish.deliveryFailedDetail };
   // §7.1: an entry left out of a release is never live. An unpublish has nothing to leave out.
   if (row.action === 'publish' && row.omitted) return deliveryFailed;
@@ -106,7 +106,7 @@ function deliveryState(row: PublicationStatusRow): DisplayState {
     return { label: t.publish.notConfirmed, tone: 'error', detail: t.publish.notConfirmedDetail };
   }
   if (row.sites_notified === sites) return { label: t.publish.revalidated, tone: 'pending' };
-  return inProgress;
+  return IN_PROGRESS;
 }
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
