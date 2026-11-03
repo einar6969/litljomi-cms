@@ -189,3 +189,21 @@ Results only: no secret, key or token value is ever written here. Created resour
 - **A6's measurement (CDN lag).** The Storage CDN served the previous `current.json` for 0.6 s, 53.3 s and 52.0 s after an overwrite (`cache-control: public, max-age=30`). The first write after about two minutes of no traffic on the pointer was fresh at once; back-to-back writes about two minutes apart lagged about 52–53 s, well past the 30 s max-age. Sitting 5's failures are explained.
 - **A6, A7 and criterion 2 pass in `demo`** (three of three cycles live).
 - Observation: the CMS functions' runtime logs show `region=iad1`, while the deployment lists `fra1`. Not investigated (no effect on this run).
+
+### Einar's LABAK scenario (criterion 3, M1's LABAK scenario)
+
+Einar, on his laptop, in the CMS (`vefumsjon-staging.litljomi.is`, `einsi@litljomi.is`, tenant `labak`): created "M1 prófun – eyða" (`news`, entry `80c32b34-cb5f-4a5a-8501-3af6f2d0826f`, slug `m1-profun-eyda`) with one image and rich text, published, edited the text, republished, unpublished. Before: 2 entries, 2 requests, last release 2, 1 object in `media-public/labak/`. Controller verified from the database (connector, reads only) and the site:
+
+| Step | Request | Release | Delivered | Notified | Live check |
+|---|---|---|---|---|---|
+| Publish (first press) | `ccea007b…` 15:11:56 | — | — | — | `failed_validation`, `slug_required` (pressed before the slug was set; shown to the editor; nothing committed) |
+| Publish v13 | `362e771c…` 15:12:17.53, committed 15:12:18.29 | 3 | 15:12:20.28 | 15:13:14.11 (pointer lag ≈ 54 s) | **ok** 15:13:15.58 (1.5 s) |
+| Republish v15 (edited text) | `1638f220…` 15:13:51.61 | 4 | 15:13:53.59 | 15:14:05.79 (≈ 12 s) | **ok** 15:14:06.37 (0.6 s) |
+| Unpublish | `885ac7d8…` 15:14:33.05 | 5 | 15:14:35.11 | 15:14:47.26 (≈ 12 s) | **ok** 15:14:49.06 (1.8 s) |
+
+- Every state reached Live within 2 s of its notification (criterion: 60 s). Revisions `9e83c337…` (v13) and `c6500556…` (v15); release 4's `present` checks passed only on the new content hash, so the edit moved Live to it.
+- Image (`b3b51fb1-…/litljomi-icon-1024-green.png`): in `media-private` at 15:10:10 (upload); in `media-public` only from 15:12:19, during release 3's build after the commit at 15:12:18. Release 3's live check includes every public media URL of the entry, so it answered 200 once Live.
+- Unpublish: release 5's live check `ok`, i.e. every `absent` check passed (own path 404, `/frettir` and, if applicable, `/` without the marker). `https://labak-hub.litljomi.is/frettir/m1-profun-eyda` afterwards: **404**, `cms-release` 5.
+- Lags are from database timestamps (delivered → notified). The `[cms-worker]` runtime log query timed out for this window (Vercel connector), so the per-publish `pointer` lines were not read back here; the demo cycles' lines were.
+- Left in `labak`: entry `80c32b34…`, unpublished (the only item touched, decision 49); its image's public copy stays in `media-public` (no removal of published media in M1). LABAK's other content unchanged.
+- **Criterion 3 and the LABAK scenario pass.**
