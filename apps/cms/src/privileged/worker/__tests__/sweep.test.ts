@@ -57,6 +57,7 @@ beforeEach(() => {
     worker_fail_stale_releases: () => ({ data: STALE }),
     worker_tenants_to_release: () => ({ data: [{ tenant_id: 't1' }] }),
     worker_deliveries_to_retry: () => ({ data: [] }),
+    worker_private_orphans: () => ({ data: [] }),
     worker_release_retry: () => ({ data: [{ status: 'failed', next_attempt_at: '2026-11-03T12:01:00Z', retries_exhausted: false }] }),
   };
 });
@@ -107,6 +108,7 @@ describe('runSweep', () => {
       'worker_tenants_to_release',
       'deliverTenant t1',
       'worker_deliveries_to_retry',
+      'worker_private_orphans',
     ]);
   });
 
@@ -130,13 +132,27 @@ describe('runSweep', () => {
       'claim failed',
       'worker_deliveries_to_retry: 08006 connection failure',
     ]);
-    // Steps 2 and 3 still ran after the failures before them.
+    // Steps 2, 3 and 4 still ran after the failures before them.
     expect(withoutRetryReads(order)).toEqual([
       'worker_fail_stale_releases',
       'processPendingRequests',
       'worker_tenants_to_release',
       'deliverTenant t1',
       'worker_deliveries_to_retry',
+      'worker_private_orphans',
+    ]);
+  });
+
+  it('a failing orphan removal is reported like any other step', async () => {
+    handlers.worker_private_orphans = () => ({ error: { code: '57014', message: 'canceling statement due to statement timeout' } });
+
+    const error = await runSweep().then(
+      () => null,
+      (e: unknown) => e,
+    );
+
+    expect((error as AggregateError).errors.map((e: Error) => e.message)).toEqual([
+      'worker_private_orphans: 57014 canceling statement due to statement timeout',
     ]);
   });
 

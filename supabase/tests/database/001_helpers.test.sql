@@ -26,7 +26,7 @@ select is(tests.revision('d002'), '00000000-0000-4000-8000-00000000d002'::uuid, 
 select throws_ok($$select tests.revision('c001')$$, 'P0001', 'unknown revision key: c001', 'revision rejects an entry key');
 
 -- column_privs(): table-level and per-column INSERT/UPDATE/REFERENCES
-select is_empty($$ select * from tests.column_privs('authenticated', 'cms.tenants') $$,
+select is_empty($$ select * from tests.column_privs('authenticated', 'cms.memberships') $$,
   'column_privs: nothing for a select-only grant');
 -- service_role holds table-level INSERT and, since decision 33 (Task 19),
 -- UPDATE on (name, status) only.

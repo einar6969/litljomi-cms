@@ -118,7 +118,10 @@ select set_eq($$ select p.proname::text, pg_catalog.pg_get_function_result(p.oid
             ('worker_deliveries_to_retry', 'TABLE(release_id uuid, tenant_id uuid, tenant_slug text, release_number integer, bundle_path text, previous_bundle_path text, site_id uuid, notify_status text, notify_attempts integer, live_status text, requests jsonb)'),
             -- Task 30 (098_worker_recovery).
             ('worker_fail_stale_releases', 'TABLE(release_id uuid, tenant_id uuid, number integer, created_at timestamp with time zone)'),
-            ('worker_pointer_check', 'TABLE(building boolean, latest_delivered integer)') $$,
+            ('worker_pointer_check', 'TABLE(building boolean, latest_delivered integer)'),
+            -- M3-07 (103_asset_trust).
+            ('worker_asset_metadata', 'TABLE(id uuid, original_path text, mime text, bytes bigint, width integer, height integer, sha256 text)'),
+            ('worker_private_orphans', 'TABLE(name text, created_at timestamp with time zone)') $$,
   'worker and admin functions: return types, and no others');
 select is((select pg_catalog.pg_get_function_arguments('api.worker_claim_requests(integer)'::regprocedure)),
   'p_limit integer DEFAULT 10', 'worker_claim_requests: p_limit defaults to 10');
