@@ -20,6 +20,7 @@ import { PERSONAS, TENANT } from '../../../../../../tests/integration/src/fixtur
 import { closeAll, ownerQuery } from '../../../../../../tests/integration/src/sql.ts';
 import { buildRelease, type BuildResult } from '../build-release';
 import { processRequestById } from '../process-request';
+import { TEST_JPEG, TEST_JPEG_METADATA } from './test-image';
 import { prepareLabak } from './labak-setup';
 
 type Tenant = 'demo' | 'labak';
@@ -193,22 +194,19 @@ describe('fallback on the demo tenant, seen on the demo site', () => {
 });
 
 describe('fallback on labak: a referenced asset that is archived', () => {
-  const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0xff, 0xd9]);
   async function labakAsset(): Promise<string> {
     const id = randomUUID();
     const path = `${TENANT.labak}/${id}/mynd.jpg`;
-    const { error } = await editors.labak.storage.from('media-private').upload(path, JPEG, { contentType: 'image/jpeg' });
+    // A real JPEG with its true metadata: since M3-07 the worker re-derives an asset's metadata
+    // from its original at publish and refuses a mismatch.
+    const { error } = await editors.labak.storage.from('media-private').upload(path, TEST_JPEG, { contentType: 'image/jpeg' });
     if (error) throw error;
     await rpc('labak', 'register_asset', {
       p_asset_id: id,
       p_tenant_id: TENANT.labak,
       p_original_path: path,
       p_filename: 'mynd.jpg',
-      p_mime: 'image/jpeg',
-      p_bytes: JPEG.length,
-      p_width: 800,
-      p_height: 600,
-      p_sha256: 'b'.repeat(64),
+      ...TEST_JPEG_METADATA,
     });
     return id;
   }

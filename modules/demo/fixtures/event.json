@@ -11,5 +11,9 @@
   "capacity": 120,
   "freeEntry": true,
   "category": "workshop",
-  "doorsOpen": "2026-12-01T17:30:00Z"
+  "doorsOpen": "2026-12-01T17:30:00Z",
+  "program": {
+    "intro": "Dagskrá kvöldsins.",
+    "highlights": []
+  }
 }
