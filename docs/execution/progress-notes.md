@@ -136,3 +136,9 @@
 - **Left for sitting 2:** Icelandic templates (the dashboard unlocks them only after custom SMTP, so with G4), the email rate limit (G3.6), the SendGrid SMTP (G4), DNS (G5), Vercel (G6). Then the provisioning gap: `cms provision` does not exist (`tools/cli` has only `gen-types`); a proposal goes to Einar before P-1–P-3. Then Vault site secrets (P-2).
 - **Process notes:** the SQL editor does not run a second tab's query in the same page while another runs (G3.2c needed two browser tabs); unsaved SQL tabs are lost when leaving the editor; the pane's size changes under coordinate clicks, so the controller clicked by element reference and checked the editor text before every run. Staging keys: `.env.staging.local` (Einar's file, read-denied to agents, diff D).
 - **Open for Einar:** the Data API's "Automatically expose new tables" is on (it grants privileges on new tables; the migrations' default revokes should neutralise it; Einar's call); preview secret (recommend M3); `settings.local.json` `git apply *` allow; sign out of supabase.com in the pane.
+
+### Einar's answers before sitting 2 (2026-11-03)
+
+Einar in chat: "1. Turn off “Automatically expose new tables” in sitting 2, while I’m signed in for the templates. Afterwards, check that only `api` is still exposed. 2. Bring the `cms provision` proposal before any site is created. 3. The preview secret waits until M3. 4. Show me a diff for .claude/settings.local.json that removes `Bash(git apply *)`, `Bash(git branch *)` and the stale one-off allow entries. I’ll approve it before sitting 2 starts." and "Ready for sitting 2 once that’s done. Start with G4."
+
+- Diff for `.claude/settings.local.json` (empties `allow`; all 16 entries were one-off or stale, two of them `git commit` messages approved earlier this session): sha256 `08f849b7b55c53b78720ba654ece2e518b87a9a8f11ba3d104a3ebe24af00bde`, shown to Einar.
