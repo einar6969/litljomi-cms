@@ -1,4 +1,4 @@
-import { date, defineModule, defineType, link, richText, text, type SiteEntry } from '@litljomi/cms-schema';
+import { boolean, date, datetime, defineModule, defineType, link, number, richText, select, text, type SiteEntry } from '@litljomi/cms-schema';
 
 const eventType = defineType({
   name: 'event',
@@ -11,6 +11,18 @@ const eventType = defineType({
     location: text({ label: 'Location' }),
     description: richText({ label: 'Description' }),
     registration: link({ label: 'Registration' }),
+    // One optional field of each scalar kind (M2-03); optional, so existing events stay valid.
+    capacity: number({ label: 'Capacity', min: 0, integer: true }),
+    freeEntry: boolean({ label: 'Free entry' }),
+    category: select({
+      label: 'Category',
+      options: [
+        { value: 'concert', label: 'Concert' },
+        { value: 'workshop', label: 'Workshop' },
+        { value: 'talk', label: 'Talk' },
+      ],
+    }),
+    doorsOpen: datetime({ label: 'Doors open' }),
   },
   preview: { title: 'title' },
   orderBy: 'startDate',

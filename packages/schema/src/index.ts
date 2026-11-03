@@ -15,6 +15,10 @@ export { defineType, type ContentType, type TypeDefinition, type AnyFieldKind } 
 export { extendType, type ExtendOptions } from './extend-type.ts';
 export { text, type TextOptions, type TextField } from './fields/text.ts';
 export { date, type DateOptions } from './fields/date.ts';
+export { datetime, type DateTimeOptions } from './fields/datetime.ts';
+export { number, type NumberOptions, type NumberField } from './fields/number.ts';
+export { boolean, type BooleanOptions } from './fields/boolean.ts';
+export { select, type SelectOption, type SelectOptions, type SelectField } from './fields/select.ts';
 export { link, type LinkOptions, type LinkValue, type LinkProjected, type LinkField } from './fields/link.ts';
 export { image, type ImageOptions, type ImageValue } from './fields/image.ts';
 export { richText, type RichTextOptions } from './fields/rich-text.ts';
