@@ -14,9 +14,8 @@ const SAVED = { timeout: 10_000 };
 test('number, boolean, select and datetime inputs are keyboard-operable and autosave typed values', async ({ page }) => {
   await createEvent(page);
   await page.getByLabel('Title').fill('Tónleikar í Hörpu');
-  // The scalar fields have components: the only component-less notice left is the program
-  // group's (its input is M2-15).
-  await expect(page.getByText(t.editor.unsupportedField)).toHaveCount(1);
+  // Every demo event field has a component, the program group's included (M2-15).
+  await expect(page.getByText(t.editor.unsupportedField)).toHaveCount(0);
 
   await test.step('number: typing, the error for a refused value, and arrow-key steps', async () => {
     const capacity = page.getByLabel('Capacity');
