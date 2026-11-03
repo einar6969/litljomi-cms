@@ -32,3 +32,8 @@ export interface EventEntry {
   category: "concert" | "workshop" | "talk" | null;
   doorsOpen: string | null;
 }
+
+export interface NoticeEntry {
+  title: string | null;
+  body: string | null;
+}

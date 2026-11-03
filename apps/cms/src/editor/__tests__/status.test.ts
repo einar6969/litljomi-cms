@@ -214,7 +214,7 @@ describe('displayState: failed_validation, "Ekki hægt að birta: …"', () => {
   });
 
   it('other codes (schema, type) are generic', () => {
-    for (const error of [{ code: 'schema_version' }, { code: 'schema_outdated' }, { code: 'unknown_type' }, null, 'x']) {
+    for (const error of [{ code: 'upcast_failed' }, { code: 'draft_outdated' }, { code: 'draft_schema_ahead' }, { code: 'unknown_type' }, null, 'x']) {
       expect(failed(error).label).toBe(`Ekki hægt að birta: ${t.publish.invalidGeneric}`);
     }
   });

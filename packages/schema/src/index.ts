@@ -12,6 +12,15 @@ export {
 export { canonicalJson, contentHash, entryContentHash } from './content-hash.ts';
 export { generateDeliveryTypes } from './codegen.ts';
 export { defineType, type ContentType, type TypeDefinition, type AnyFieldKind } from './define-type.ts';
+export {
+  DRAFT_OUTDATED,
+  DRAFT_SCHEMA_AHEAD,
+  UpcastError,
+  upcast,
+  type Transform,
+  type UpcastFailure,
+  type Versioned,
+} from './upcast.ts';
 export { extendType, type ExtendOptions } from './extend-type.ts';
 export { text, type TextOptions, type TextField } from './fields/text.ts';
 export { date, type DateOptions } from './fields/date.ts';
