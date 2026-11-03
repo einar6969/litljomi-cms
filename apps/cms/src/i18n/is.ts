@@ -97,6 +97,14 @@ export const is = {
     unsupportedField: 'Þennan reit er ekki hægt að breyta hér ennþá. Gildi hans helst óbreytt.',
     entryLink: 'Tengill á aðra færslu. Honum er ekki breytt hér og hann helst óbreyttur.',
     invalidUrl: 'Ógild vefslóð (https://, http:// eða mailto:). Ekki vistað.',
+    outdated: {
+      title: 'Uppkastið er á eldri útgáfu efnisflokksins',
+      body: 'Efnisflokki þessarar færslu hefur verið breytt síðan uppkastið var vistað. Uppfærðu uppkastið til að geta breytt því og birt það. Efnið er fært á nýja sniðið; það sem er nú birt á vefnum breytist ekki.',
+      update: 'Uppfæra uppkast',
+      updating: 'Uppfærir…',
+      failed: 'Ekki tókst að uppfæra uppkastið. Reyndu aftur.',
+      cannotUpdate: 'Ekki er hægt að uppfæra þetta uppkast sjálfkrafa. Hafðu samband við kerfisstjóra.',
+    },
     image: {
       choose: 'Velja mynd',
       replace: 'Skipta um mynd',
@@ -165,6 +173,8 @@ export const is = {
     invalid: 'Ekki hægt að birta:',
     invalidGeneric: 'efnið stenst ekki kröfur efnisflokksins',
     invalidDetail: 'Lagaðu reitina og birtu aftur.',
+    outdated: 'uppkastið er á eldri útgáfu efnisflokksins',
+    outdatedDetail: 'Uppfærðu uppkastið og birtu síðan aftur.',
     missingImage: 'mynd sem fannst ekki',
     missingImageDetail: 'Myndin fannst ekki í myndasafninu. Hladdu henni upp aftur og birtu síðan.',
     superseded: 'Færslunni var breytt eftir að þú ýttir á Birta. Birtu aftur.',

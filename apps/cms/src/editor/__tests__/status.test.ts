@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DRAFT_OUTDATED } from '@litljomi/cms-schema';
 import { t } from '@/i18n/is';
 import { displayState, IN_PROGRESS, isFinal, type PublicationStatusRow, type RequestStatus } from '../publish/status';
 
@@ -224,8 +225,16 @@ describe('displayState: failed_validation, "Ekki hægt að birta: …"', () => {
     expect(failed({ code: 'asset_missing', assetIds: ['x'] }, { missing_assets: null }).label).toBe(`Ekki hægt að birta: ${t.publish.missingImage}`);
   });
 
+  it(`${DRAFT_OUTDATED} (M2-05) says in plain words that the draft is outdated and how to fix it (M2-14)`, () => {
+    const state = failed({ code: DRAFT_OUTDATED, draftSchemaVersion: 1, currentSchemaVersion: 2 });
+    expect(state).toEqual({ label: `Ekki hægt að birta: ${t.publish.outdated}`, tone: 'error', detail: t.publish.outdatedDetail });
+    expect(isFinal(state)).toBe(true);
+    // The versions are the worker's, not the editor's words: they are not shown.
+    expect(JSON.stringify(state)).not.toMatch(/[12]/);
+  });
+
   it('other codes (schema, type) are generic', () => {
-    for (const error of [{ code: 'upcast_failed' }, { code: 'draft_outdated' }, { code: 'draft_schema_ahead' }, { code: 'unknown_type' }, null, 'x']) {
+    for (const error of [{ code: 'upcast_failed' }, { code: 'draft_schema_ahead' }, { code: 'unknown_type' }, null, 'x']) {
       expect(failed(error).label).toBe(`Ekki hægt að birta: ${t.publish.invalidGeneric}`);
     }
   });
