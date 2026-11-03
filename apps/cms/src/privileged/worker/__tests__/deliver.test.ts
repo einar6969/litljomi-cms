@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ModuleManifest, SiteEntry } from '@litljomi/cms-schema';
 import type { Bundle, BundleEntry } from '@litljomi/cms-sdk';
 import type { SupabaseClient } from '../../../lib/supabase/types';
-import { entryMarker, startFakeSite, type FakeSite } from './fake-site';
+import { entryMarker, html, releaseMeta, startFakeSite, type FakeSite } from './fake-site';
 
 const mocks = vi.hoisted(() => ({
   alert: vi.fn(async (_event: string, _details: Record<string, unknown>) => {}),
@@ -477,5 +477,59 @@ describe('confirmRelease: the public pointer', () => {
     const p = pointerSeams([2]);
     await confirmRelease(db, { ...published, pointerWrittenAt: p.c.t }, { pollMs: 20, timeoutMs: 200, pointer: p.seams });
     expect(infoLines('live check')).toEqual([{ tenant: 'prufa', release: 2, siteId: 's1', status: 'not_confirmed', failures: 1 }]);
+  });
+});
+
+// M3-09: §7.4's re-send, per site and delivery (decisions 48.1 and 49).
+describe('confirmSite: §7.4 re-send on a stale hash (M3-09)', () => {
+  let site: FakeSite;
+  const recorded: Array<Record<string, unknown>> = [];
+  const db = {
+    rpc: async (fn: string, args: Record<string, unknown>) => {
+      if (fn === 'worker_record_delivery') recorded.push(args);
+      return { data: null, error: null };
+    },
+  } as unknown as SupabaseClient;
+  const release: DeliveredRelease = { tenantId: 't', tenantSlug: 'prufa', releaseId: 'rel', number: 2, bundle: bundle(2, []), previousBundle: null, requests: [] };
+  const target = (id: string, path: string): LiveTarget => ({ entryId: id, requestIds: ['r-' + id], failure: null, checks: [{ path, expect: 'present' }], ownPath: path, contentHash: 'new-' + id, mediaUrls: [] });
+  const webhooks = () => site.requests.filter((r) => r.method === 'POST').length;
+  let info: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(async () => {
+    recorded.length = 0;
+    info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    site = await startFakeSite();
+    site.pages.set('/api/revalidate', { status: 200 });
+  });
+  afterEach(async () => {
+    info.mockRestore();
+    await site.close();
+  });
+  const confirm = (targets: LiveTarget[]) =>
+    confirmSite(db, release, { id: 's', base_url: site.origin, revalidate_url: `${site.origin}/api/revalidate`, webhook_secrets: ['leyndo'] }, targets, { pollMs: 20, timeoutMs: 400 });
+
+  it('sends the webhook again once per site, however many entries’ pages still show the old hash, then records live not confirmed', async () => {
+    // A newer release marker in the layout changes nothing (§7.4).
+    site.pages.set('/a', { status: 200, html: html(releaseMeta(99), entryMarker(E1, 'old')) });
+    site.pages.set('/b', { status: 200, html: html(releaseMeta(99), entryMarker(E2, 'old')) });
+    expect(await confirm([target(E1, '/a'), target(E2, '/b')])).toBe('not_confirmed');
+    expect(webhooks()).toBe(2); // the notification and one resend
+    expect(recorded.at(-1)).toMatchObject({
+      p_live_status: 'not_confirmed',
+      p_error: { code: 'live_not_confirmed', failures: expect.arrayContaining([{ entryId: E1, path: '/a', reason: 'stale_hash' }, { entryId: E2, path: '/b', reason: 'stale_hash' }]) },
+    });
+  });
+  it('records live once the pages show the new hash after the resend', async () => {
+    const after = (id: string) => () => ({ status: 200, html: entryMarker(id, webhooks() > 1 ? 'new-' + id : 'old') });
+    site.pages.set('/a', after(E1));
+    site.pages.set('/b', after(E2));
+    expect(await confirm([target(E1, '/a'), target(E2, '/b')])).toBe('ok');
+    expect(webhooks()).toBe(2);
+    expect(recorded.at(-1)).toMatchObject({ p_live_status: 'ok' });
+  });
+  it('does not send the webhook again when every page shows the new hash', async () => {
+    site.pages.set('/a', { status: 200, html: entryMarker(E1, 'new-' + E1) });
+    expect(await confirm([target(E1, '/a')])).toBe('ok');
+    expect(webhooks()).toBe(1);
   });
 });
