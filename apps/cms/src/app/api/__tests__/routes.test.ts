@@ -17,6 +17,7 @@ vi.mock('next/server', () => ({
 }));
 
 const { after } = await import('next/server');
+const { WORKER_MAX_DURATION_MS } = await import('@/lib/delivery');
 const worker = await import('../internal/worker/route');
 const cron = await import('../cron/sweep/route');
 
@@ -168,6 +169,16 @@ describe('GET /api/cron/sweep', () => {
     const res = await cron.GET(cronRequest(`Bearer ${CRON}`));
     expect(res.status).toBe(500);
     expect(error).toHaveBeenCalledWith(expect.stringMatching(/^\[cms-alert\]/), expect.any(Error));
+  });
+});
+
+// Decision 49.1: the worker bounds its pointer poll and live checks by this run time, which must be
+// the routes' own maxDuration (checked, not raised).
+describe('maxDuration and the worker’s run bound', () => {
+  it('both routes’ maxDuration equals WORKER_MAX_DURATION_MS', () => {
+    expect(WORKER_MAX_DURATION_MS).toBe(300_000);
+    expect(worker.maxDuration * 1000).toBe(WORKER_MAX_DURATION_MS);
+    expect(cron.maxDuration * 1000).toBe(WORKER_MAX_DURATION_MS);
   });
 });
 

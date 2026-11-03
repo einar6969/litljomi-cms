@@ -320,3 +320,162 @@ describe('confirmRelease', () => {
     await expect(confirmRelease(db, { ...release, tenantSlug: 'onnur' }, {})).rejects.toThrow(/no module for tenant onnur/);
   });
 });
+
+// Decision 49.1: a fresh delivery waits until the pointer's public URL serves its release before
+// any site is notified, within a bound; then the per-publish, per-resend and per-result log lines.
+describe('confirmRelease: the public pointer', () => {
+  let site: FakeSite;
+  const events: string[] = [];
+  const recorded: Array<Record<string, unknown>> = [];
+  let sites: unknown[];
+  const db = {
+    rpc: async (fn: string, args: Record<string, unknown>) => {
+      if (fn === 'worker_record_delivery') recorded.push(args);
+      return { data: fn === 'worker_sites' ? sites : null, error: null };
+    },
+  } as unknown as SupabaseClient;
+  const POINTER_URL = 'https://example.supabase.co/storage/v1/object/public/delivery/prufa/current.json';
+  const published: DeliveredRelease = {
+    tenantId: 't',
+    tenantSlug: 'prufa',
+    releaseId: 'rel',
+    number: 2,
+    bundle: bundle(2, [entry(E1, 'a', null)]),
+    previousBundle: null,
+    requests: [{ id: 'q1', entryId: E1, action: 'publish' }],
+  };
+  const workerSite = (id: string) => ({ id, base_url: site.origin, revalidate_url: `${site.origin}/api/revalidate/${id}`, webhook_secrets: ['leyndo'] });
+
+  /** A fake clock (starting now) and a fake public fetch answering `releases` in order (the last repeats). */
+  function pointerSeams(releases: number[]) {
+    const c = { t: Date.now() };
+    const urls: string[] = [];
+    const fetch = (async (url: string) => {
+      urls.push(String(url));
+      const n = releases[Math.min(urls.length - 1, releases.length - 1)]!;
+      events.push(`poll ${n}`);
+      c.t += 20;
+      return new Response(JSON.stringify({ format: 1, tenant: 'prufa', release: n, bundle: `releases/${n}.json`, generatedAt: 'x' }));
+    }) as unknown as typeof globalThis.fetch;
+    return { c, urls, seams: { fetch, now: () => c.t, sleep: async (ms: number) => void (c.t += ms) } };
+  }
+
+  let info: ReturnType<typeof vi.spyOn>;
+  beforeEach(async () => {
+    events.length = 0;
+    recorded.length = 0;
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://example.supabase.co');
+    info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    site = await startFakeSite();
+    site.handler = (req) => {
+      if (req.method === 'POST') {
+        events.push(`notify ${req.path}`);
+        return { status: 200 };
+      }
+      return undefined;
+    };
+    for (const path of ['/n/a', '/n']) site.pages.set(path, { status: 200, html: entryMarker(E1, 'h-' + E1) });
+    sites = [workerSite('s1')];
+  });
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    info.mockRestore();
+    await site.close();
+  });
+
+  const infoLines = (label: string) => info.mock.calls.filter((c) => c[0] === `[cms-worker] ${label}`).map((c) => c[1] as Record<string, unknown>);
+
+  it('polls the public pointer until it serves the release, and only then notifies', async () => {
+    const p = pointerSeams([1, 1, 2]);
+    const written = p.c.t;
+
+    await confirmRelease(db, { ...published, pointerWrittenAt: written }, { pollMs: 20, timeoutMs: 1_000, pointer: p.seams });
+
+    expect(p.urls).toEqual([POINTER_URL, POINTER_URL, POINTER_URL]);
+    expect(events).toEqual(['poll 1', 'poll 1', 'poll 2', 'notify /api/revalidate/s1']);
+    expect(recorded.at(-1)).toMatchObject({ p_site_id: 's1', p_live_status: 'ok' });
+    expect(infoLines('pointer')).toEqual([{ tenant: 'prufa', release: 2, fresh: true, lagMs: 2_060, polls: 3 }]);
+  });
+
+  it('polls once per release, not once per site', async () => {
+    sites = [workerSite('s1'), workerSite('s2')];
+    const p = pointerSeams([2]);
+    await confirmRelease(db, { ...published, pointerWrittenAt: p.c.t }, { pollMs: 20, timeoutMs: 1_000, pointer: p.seams });
+    expect(p.urls).toHaveLength(1);
+    expect(events.filter((e) => e.startsWith('notify')).sort()).toEqual(['notify /api/revalidate/s1', 'notify /api/revalidate/s2']);
+  });
+
+  it('(c) never fresh within the bound: the site is still notified and the live check runs', async () => {
+    const p = pointerSeams([1]);
+    const written = p.c.t;
+
+    await confirmRelease(db, { ...published, pointerWrittenAt: written }, { pollMs: 20, timeoutMs: 1_000, pointer: p.seams });
+
+    expect(p.c.t).toBe(written + 120_000);
+    expect(events.at(-1)).toBe('notify /api/revalidate/s1');
+    expect(site.hits('/n/a')).toBeGreaterThan(0);
+    expect(recorded.at(-1)).toMatchObject({ p_site_id: 's1', p_live_status: 'ok' });
+    expect(infoLines('pointer')).toEqual([{ tenant: 'prufa', release: 2, fresh: false, lagMs: 120_000, polls: expect.any(Number) }]);
+  });
+
+  it('the bound is the run deadline less the live check and the margin when that is earlier', async () => {
+    const p = pointerSeams([1]);
+    const written = p.c.t;
+    // 100 s left: 100 - 1 (this live check's timeout) - 10 = 89 s.
+    await confirmRelease(db, { ...published, pointerWrittenAt: written }, { pollMs: 20, timeoutMs: 1_000, runDeadline: written + 100_000, pointer: p.seams });
+    expect(p.c.t).toBe(written + 89_000);
+    expect(events.at(-1)).toBe('notify /api/revalidate/s1');
+  });
+
+  it('a run deadline already too close: no poll, the site is notified at once', async () => {
+    const p = pointerSeams([2]);
+    const written = p.c.t;
+    await confirmRelease(db, { ...published, pointerWrittenAt: written }, { pollMs: 20, timeoutMs: 1_000, runDeadline: written + 5_000, pointer: p.seams });
+    expect(p.urls).toEqual([]);
+    expect(events).toEqual(['notify /api/revalidate/s1']);
+    expect(infoLines('pointer')).toEqual([{ tenant: 'prufa', release: 2, fresh: false, lagMs: 0, polls: 0 }]);
+  });
+
+  it('a retry (no pointerWrittenAt) does not poll', async () => {
+    const p = pointerSeams([2]);
+    await confirmRelease(db, published, { pollMs: 20, timeoutMs: 1_000, pointer: p.seams }, new Map([['s1', 1]]));
+    expect(p.urls).toEqual([]);
+    expect(events).toEqual(['notify /api/revalidate/s1']);
+    expect(infoLines('pointer')).toEqual([]);
+  });
+
+  it('logs each resend and each live-check result per site, without URLs', async () => {
+    // A page from the old pointer until the resend arrives.
+    let resent = false;
+    site.handler = (req) => {
+      if (req.method === 'POST') {
+        if (events.some((e) => e.startsWith('notify'))) resent = true;
+        events.push(`notify ${req.path}`);
+        return { status: 200 };
+      }
+      return req.path === '/n/a' && !resent ? { status: 200, html: entryMarker(E1, 'old') } : undefined;
+    };
+    sites = [workerSite('s1')];
+    const p = pointerSeams([2]);
+    // Written long enough ago that the resend is due at once (decision 48).
+    const written = Date.now() - 40_000;
+    p.c.t = written;
+
+    await confirmRelease(db, { ...published, pointerWrittenAt: written }, { pollMs: 20, timeoutMs: 2_000, pointer: p.seams });
+
+    expect(events.filter((e) => e.startsWith('notify'))).toHaveLength(2);
+    const [resend] = infoLines('resend');
+    expect(infoLines('resend')).toHaveLength(1);
+    expect(resend).toMatchObject({ tenant: 'prufa', release: 2, siteId: 's1', ok: true });
+    expect(resend!.msSincePointerWrite).toBeGreaterThanOrEqual(40_000);
+    expect(infoLines('live check')).toEqual([{ tenant: 'prufa', release: 2, siteId: 's1', status: 'ok', failures: 0 }]);
+    expect(JSON.stringify(info.mock.calls)).not.toMatch(/https?:|leyndo/);
+  });
+
+  it('logs a not confirmed result with its number of failures', async () => {
+    site.pages.set('/n', { status: 500 });
+    const p = pointerSeams([2]);
+    await confirmRelease(db, { ...published, pointerWrittenAt: p.c.t }, { pollMs: 20, timeoutMs: 200, pointer: p.seams });
+    expect(infoLines('live check')).toEqual([{ tenant: 'prufa', release: 2, siteId: 's1', status: 'not_confirmed', failures: 1 }]);
+  });
+});

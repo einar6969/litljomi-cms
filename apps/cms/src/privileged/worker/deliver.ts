@@ -3,7 +3,8 @@
 // and the result recorded; then every request linked to the release is live-checked against that
 // site and the site's live status recorded: 'ok' only when every check passed, 'not_confirmed'
 // otherwise, with the failures in last_error. A failed notification leaves the live status
-// pending, for the sweep to retry.
+// pending, for the sweep to retry. Before a fresh delivery notifies any site, the worker waits,
+// within a bound, until the pointer's public URL serves the release (decision 49.1).
 import type { LiveCheck, ModuleManifest, ReleaseView, SiteEntry } from '@litljomi/cms-schema';
 import type { Bundle, BundleEntry } from '@litljomi/cms-sdk';
 import { getModule } from '@/modules/registry';
@@ -13,8 +14,9 @@ import type { SupabaseClient } from '../../lib/supabase/types';
 import { createAdminClient } from '../admin-client';
 import { alert } from './alerts';
 import { buildRelease, type BuildOptions, type BuildResult, type LinkedRequest } from './build-release';
-import { createPageFetcher, runLiveChecks, type LiveCheckFailure } from './live-check';
+import { DEFAULT_TIMEOUT_MS, createPageFetcher, runLiveChecks, type LiveCheckFailure } from './live-check';
 import { notifySite } from './notify';
+import { waitForPublicPointer, type PointerSeams } from './pointer-fresh';
 import { publicMediaUrl } from './projection-context';
 import { callRpc } from './rpc';
 
@@ -25,8 +27,13 @@ export { MAX_NOTIFY_ATTEMPTS };
 /** At most this many live-check failures are stored in last_error. */
 const MAX_STORED_FAILURES = 50;
 
-/** Poll and timeout of the live checks (§7.4 defaults when absent); injectable for tests. */
-export type DeliveryOptions = { pollMs?: number; timeoutMs?: number };
+/**
+ * Poll and timeout of the live checks (§7.4 defaults when absent); injectable for tests.
+ * `runDeadline` is when the run must be finished (epoch ms), which bounds the pointer poll; the
+ * worker's jobs set it (pipeline.ts), and without it the poll has only its own cap. `pointer`
+ * replaces the poll's fetch, clock and pause in tests.
+ */
+export type DeliveryOptions = { pollMs?: number; timeoutMs?: number; runDeadline?: number; pointer?: PointerSeams };
 
 /** An active site as api.worker_sites returns it. */
 export type WorkerSite = { id: string; base_url: string; revalidate_url: string; webhook_secrets: string[] };
@@ -197,8 +204,22 @@ export async function confirmSite(
   }
   await record(db, release.releaseId, site.id, 'ok', null, null);
 
-  // One resend per site and delivery, whichever entry's page missed first (§7.4, decision 48.1).
-  const resend = once(() => notifySite(site, payload));
+  const log = { tenant: release.tenantSlug, release: release.number, siteId: site.id };
+  // One resend per site and delivery, whichever entry's page missed first (§7.4, decision 48.1),
+  // logged with the time since the pointer was written (decision 49.1).
+  // The line is written in a finally, so that a resend that throws is logged too.
+  const resend = once(async () => {
+    let ok = false;
+    try {
+      ok = (await notifySite(site, payload)).ok;
+    } finally {
+      console.info('[cms-worker] resend', {
+        ...log,
+        ...(release.pointerWrittenAt !== undefined ? { msSincePointerWrite: Date.now() - release.pointerWrittenAt } : {}),
+        ok,
+      });
+    }
+  });
   // One fetcher per site and delivery, created after the notification: the targets share identical
   // page fetches and at most MAX_CONCURRENT_FETCHES run at a time against the site.
   const fetchPage = createPageFetcher();
@@ -226,6 +247,7 @@ export async function confirmSite(
   );
   if (failures.length === 0) {
     await record(db, release.releaseId, site.id, null, 'ok', null);
+    console.info('[cms-worker] live check', { ...log, status: 'ok', failures: 0 });
     return 'ok';
   }
   await record(db, release.releaseId, site.id, null, 'not_confirmed', {
@@ -233,6 +255,7 @@ export async function confirmSite(
     failures: failures.slice(0, MAX_STORED_FAILURES),
     ...(failures.length > MAX_STORED_FAILURES ? { more: failures.length - MAX_STORED_FAILURES } : {}),
   });
+  console.info('[cms-worker] live check', { ...log, status: 'not_confirmed', failures: failures.length });
   return 'not_confirmed';
 }
 
@@ -244,7 +267,10 @@ export function mediaPrefix(): string {
 /**
  * Notifies and live-checks the tenant's active sites for a delivered release, concurrently: the
  * fast path confirms every active site; the sweep's retry passes `retry`, the sites to confirm with
- * each one's notify attempts so far, and a site deactivated since it was listed is skipped. Every
+ * each one's notify attempts so far, and a site deactivated since it was listed is skipped. A fresh
+ * delivery (one with `pointerWrittenAt`; the retry has none) first waits, once for all its sites,
+ * until the pointer's public URL serves the release or the bound runs out (decision 49.1), then
+ * notifies either way: when the CDN still serves the old pointer, the live check reports it. Every
  * site's confirmation settles before this returns; one site's error does not stop the others, and
  * the errors are thrown together as an AggregateError.
  */
@@ -259,9 +285,36 @@ export async function confirmRelease(
   const targets = liveTargets(module, release, mediaPrefix());
   const active = (await callRpc<WorkerSite[] | null>(db, 'worker_sites', { p_tenant_id: release.tenantId })) ?? [];
   const sites = retry ? active.filter((site) => retry.has(site.id)) : active;
+  if (release.pointerWrittenAt !== undefined && sites.length > 0) await awaitPublicPointer(release, release.pointerWrittenAt, options);
   const results = await Promise.allSettled(sites.map((site) => confirmSite(db, release, site, targets, options, retry?.get(site.id) ?? 0)));
   const errors = results.flatMap((r) => (r.status === 'rejected' ? [r.reason] : []));
   if (errors.length > 0) throw new AggregateError(errors, `release ${release.number}: ${errors.length} site confirmation(s) failed`);
+}
+
+/**
+ * Waits for the public pointer (pointer-fresh.ts) and logs the outcome, one line per delivered
+ * release (decision 49.1). Its bound leaves the live check's window (`timeoutMs`) and the finish
+ * margin before the run deadline. Never throws: when the project URL cannot be read, it logs and
+ * returns, and the sites are notified without the wait.
+ */
+async function awaitPublicPointer(release: DeliveredRelease, pointerWrittenAt: number, options: DeliveryOptions): Promise<void> {
+  let projectUrl: string;
+  try {
+    projectUrl = supabaseUrl();
+  } catch (error) {
+    console.error(`[cms-worker] release ${release.number}: the public pointer URL is unknown; notifying without the wait`, error);
+    return;
+  }
+  const result = await waitForPublicPointer({
+    supabaseUrl: projectUrl,
+    tenantSlug: release.tenantSlug,
+    release: release.number,
+    pointerWrittenAt,
+    runDeadline: options.runDeadline,
+    liveTimeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    ...options.pointer,
+  });
+  console.info('[cms-worker] pointer', { tenant: release.tenantSlug, release: release.number, ...result });
 }
 
 /**
