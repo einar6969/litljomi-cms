@@ -1,4 +1,4 @@
--- supabase/tests/database/102_entry_delivery_failed.test.sql
+-- supabase/tests/database/103_entry_delivery_failed.test.sql
 -- M3-05's api.publication_status.omitted (spec §7.1, §7.4; plan M3-05): true when the request's
 -- release, or the tenant's latest delivered release if newer, recorded the entry in
 -- releases.error under `omitted` (left out) or `fallback` (previous projection reused), so the

@@ -11,6 +11,7 @@
 -- tenant's latest delivered release, if newer than the request's, did. A later release that
 -- builds the entry again clears it.
 --
+-- Built on M3-02's definition (20261103002000_retry_backoff.sql), with retries_exhausted unchanged.
 -- Only the expression of `omitted` changes: same columns, names and types, so `create or replace`
 -- keeps the view's grants (SELECT for authenticated only). Still security_invoker: the latest
 -- delivered release is read under the caller's RLS, from the request's own tenant. No function is
@@ -20,7 +21,7 @@ create or replace view api.publication_status with (security_invoker = true) as
 select r.id as request_id, r.tenant_id, r.entry_id, r.action, r.status, r.error, r.requested_at,
        rel.number as release_number, rel.status as release_status,
        coalesce(failed.in_request_release
-                or (rel.status = 'delivered' and latest.number > rel.number and failed.in_latest_release),
+                or (rel.status = 'delivered' and latest_delivered.number > rel.number and failed.in_latest_release),
                 false) as omitted,
        case
          when r.status = 'failed_validation' and r.error ->> 'code' = 'asset_missing'
@@ -29,7 +30,14 @@ select r.id as request_id, r.tenant_id, r.entry_id, r.action, r.status, r.error,
             from pg_catalog.jsonb_array_elements_text(r.error -> 'assetIds') with ordinality as ids (id, ord)
             join cms.assets a on a.tenant_id = r.tenant_id and a.id::text = ids.id)
        end as missing_assets,
-       d.site_count, d.sites_notified, d.sites_live_ok, d.sites_not_confirmed, d.notify_attempts
+       d.site_count, d.sites_notified, d.sites_live_ok, d.sites_not_confirmed,
+       (d.notify_exhausted
+        or (r.status = 'committed' and r.release_id is null
+            and exists (select 1
+                        from (select l.status, l.created_at, l.next_attempt_at from cms.releases l
+                              where l.tenant_id = r.tenant_id order by l.number desc limit 1) as latest
+                        where latest.status = 'failed' and latest.next_attempt_at is null
+                          and latest.created_at >= r.requested_at))) as retries_exhausted
 from (
   select distinct on (pr.tenant_id, pr.entry_id) pr.*
   from cms.publish_requests pr
@@ -47,7 +55,7 @@ left join lateral (
   where lr.tenant_id = r.tenant_id and lr.status = 'delivered'
   order by lr.number desc
   limit 1
-) as latest on true
+) as latest_delivered on true
 cross join lateral (
   -- Whether a release's error records the entry under `omitted` or `fallback` (each an array of
   -- objects carrying entryId). Inline: the view runs as the caller, who has no access to private.
@@ -55,7 +63,7 @@ cross join lateral (
                    pg_catalog.jsonb_build_object('entryId', r.entry_id::text))) as in_request_release,
          bool_or(rr.which = 'latest' and k.list @> pg_catalog.jsonb_build_array(
                    pg_catalog.jsonb_build_object('entryId', r.entry_id::text))) as in_latest_release
-  from (values ('request', rel.error), ('latest', latest.error)) as rr (which, error)
+  from (values ('request', rel.error), ('latest', latest_delivered.error)) as rr (which, error)
   cross join lateral (
     select rr.error -> key as list
     from (values ('omitted'), ('fallback')) as keys (key)
@@ -69,7 +77,7 @@ cross join lateral (
          pg_catalog.count(*) filter (where sd.notify_status = 'ok')::int as sites_notified,
          pg_catalog.count(*) filter (where sd.live_status = 'ok')::int as sites_live_ok,
          pg_catalog.count(*) filter (where sd.live_status = 'not_confirmed')::int as sites_not_confirmed,
-         coalesce(pg_catalog.max(sd.notify_attempts) filter (where sd.notify_status <> 'ok'), 0)::int as notify_attempts
+         coalesce(pg_catalog.bool_or(sd.notify_status = 'failed' and sd.next_attempt_at is null), false) as notify_exhausted
   from cms.sites s
   left join cms.site_deliveries sd
     on sd.tenant_id = s.tenant_id and sd.site_id = s.id and sd.release_id = r.release_id
