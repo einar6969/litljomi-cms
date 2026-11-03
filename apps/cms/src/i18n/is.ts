@@ -96,7 +96,7 @@ export const is = {
       entry: 'Færsla',
     },
     signedOut: 'Innskráningin er útrunnin',
-    signedOutBody: 'Breytingarnar þínar eru enn á skjánum. Skráðu þig inn aftur í nýjum flipa og reyndu síðan aftur.',
+    signedOutBody: 'Breytingarnar þínar eru geymdar í þessum flipa. Skráðu þig inn aftur í nýjum flipa; þær vistast sjálfkrafa þegar þú kemur aftur hingað.',
     signIn: 'Skrá inn',
     retry: 'Reyna aftur',
     error: 'Ekki tókst að vista. Breytingarnar þínar eru enn á skjánum.',

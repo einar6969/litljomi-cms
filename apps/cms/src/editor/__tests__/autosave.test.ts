@@ -2,7 +2,8 @@
 import { act, createElement, type ReactElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AutosaveController, useAutosave } from '../autosave';
+import { AutosaveController, RESUME_POLL_MS, useAutosave } from '../autosave';
+import type { UnsavedCopy, UnsavedStore } from '../unsaved';
 
 type Save = Parameters<typeof useAutosave>[0]['save'];
 type Result = Awaited<ReturnType<Save>>;
@@ -257,6 +258,173 @@ describe('useAutosave', () => {
     });
     expect(save).toHaveBeenCalledExactlyOnceWith(ENTRY, 3, { title: 'x' });
     expect(host.textContent).toBe('saved 4');
+    await act(async () => root.unmount());
+  });
+});
+
+describe('session expiry loses no work (M2-17)', () => {
+  /** A store over a Map, so a test sees exactly what the controller kept. */
+  const memoryStore = () => {
+    const copies = new Map<string, UnsavedCopy>();
+    const store: UnsavedStore = {
+      read: (id) => copies.get(id) ?? null,
+      write: (id, copy) => void copies.set(id, copy),
+      clear: (id) => void copies.delete(id),
+    };
+    return { store, copies };
+  };
+
+  it('keeps the pending data in the tab while it waits, and removes it once saved', async () => {
+    const { store, copies } = memoryStore();
+    const c = controllerFor(saveAnswering({ ok: true, version: 4 }), { store });
+    c.schedule({ title: 'Óvistað' });
+    expect(copies.get(ENTRY)).toEqual({ version: 3, data: { title: 'Óvistað' } });
+    await pause();
+    expect(c.getSnapshot()).toEqual({ version: 4, state: 'saved' });
+    expect(copies.has(ENTRY)).toBe(false);
+  });
+
+  it('after an expired-session answer keeps every later edit in the tab, at the version they were made on', async () => {
+    const { store, copies } = memoryStore();
+    const c = controllerFor(saveAnswering({ ok: false, code: 'auth' }, { ok: false, code: 'auth' }), { store });
+    c.schedule({ title: 'A' });
+    await pause();
+    expect(c.getSnapshot().state).toBe('signed_out');
+    c.schedule({ title: 'A', excerpt: 'B' });
+    await pause();
+    expect(c.getSnapshot().state).toBe('signed_out');
+    expect(copies.get(ENTRY)).toEqual({ version: 3, data: { title: 'A', excerpt: 'B' } });
+    expect(c.pendingData()).toEqual({ title: 'A', excerpt: 'B' });
+  });
+
+  it('an edit made during a save is kept at the version that save returned', async () => {
+    const { store, copies } = memoryStore();
+    let finish!: (r: Result) => void;
+    const save = vi.fn<Save>().mockImplementationOnce(() => new Promise<Result>((resolve) => (finish = resolve)));
+    save.mockResolvedValueOnce({ ok: false, code: 'auth' });
+    const c = controllerFor(save, { store });
+    c.schedule({ n: 1 });
+    await pause();
+    c.schedule({ n: 2 });
+    finish({ ok: true, version: 4 });
+    await pause(0);
+    expect(copies.get(ENTRY)).toEqual({ version: 4, data: { n: 2 } });
+  });
+
+  it('a conflict keeps the copy; "keep mine" moves it to the newer version; "reload theirs" removes it', async () => {
+    const { store, copies } = memoryStore();
+    const loadLatest = vi.fn(async () => ({ ok: true as const, version: 5, data: { title: 'Þeirra' } }));
+    const a = controllerFor(saveAnswering({ ok: false, code: 'version_conflict' }, { ok: false, code: 'auth' }), { store, loadLatest });
+    a.schedule({ title: 'Mitt' });
+    await pause();
+    expect(copies.get(ENTRY)).toEqual({ version: 3, data: { title: 'Mitt' } });
+    a.keepMine();
+    expect(copies.get(ENTRY)).toEqual({ version: 5, data: { title: 'Mitt' } });
+
+    const b = controllerFor(saveAnswering({ ok: false, code: 'version_conflict' }), { store, loadLatest });
+    b.schedule({ title: 'Mitt' });
+    await pause();
+    expect(b.takeTheirs()).toEqual({ title: 'Þeirra' });
+    expect(copies.has(ENTRY)).toBe(false);
+  });
+
+  it('on start, restores the tab\'s copy into the form and saves it at the version it was made on', async () => {
+    const { store, copies } = memoryStore();
+    copies.set(ENTRY, { version: 2, data: { title: 'Frá því áðan' } });
+    const onRestore = vi.fn();
+    const save = saveAnswering({ ok: true, version: 3 });
+    const c = controllerFor(save, { store, onRestore });
+    c.start();
+    expect(onRestore).toHaveBeenCalledExactlyOnceWith({ title: 'Frá því áðan' });
+    await pause(0);
+    expect(save).toHaveBeenCalledExactlyOnceWith(ENTRY, 2, { title: 'Frá því áðan' });
+    expect(c.getSnapshot()).toEqual({ version: 3, state: 'saved' });
+    expect(copies.has(ENTRY)).toBe(false);
+    // A second start (React remounting in development) restores nothing more.
+    c.start();
+    await pause(0);
+    expect(onRestore).toHaveBeenCalledTimes(1);
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it('a restored copy older than the draft goes through the conflict flow, not over the newer draft', async () => {
+    const { store, copies } = memoryStore();
+    copies.set(ENTRY, { version: 2, data: { title: 'Gamalt' } });
+    const loadLatest = vi.fn(async () => ({ ok: true as const, version: 3, data: { title: 'Nýrra' } }));
+    const c = controllerFor(saveAnswering({ ok: false, code: 'version_conflict' }), { store, loadLatest });
+    c.start();
+    await pause(0);
+    expect(c.getSnapshot()).toEqual({ version: 2, state: 'conflict', theirs: { status: 'ready', version: 3, data: { title: 'Nýrra' } } });
+    expect(c.pendingData()).toEqual({ title: 'Gamalt' });
+    expect(copies.get(ENTRY)).toEqual({ version: 2, data: { title: 'Gamalt' } });
+  });
+
+  it('resume() saves the pending data only once the session is valid again', async () => {
+    let valid = false;
+    const save = saveAnswering({ ok: false, code: 'auth' }, { ok: true, version: 4 });
+    const c = controllerFor(save, { sessionIsValid: async () => valid });
+    c.schedule({ title: 'Allt' });
+    await pause();
+    expect(c.getSnapshot().state).toBe('signed_out');
+    await c.resume();
+    await pause(0);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(c.getSnapshot().state).toBe('signed_out');
+    valid = true;
+    await c.resume();
+    await pause(0);
+    expect(save).toHaveBeenNthCalledWith(2, ENTRY, 3, { title: 'Allt' });
+    expect(c.getSnapshot()).toEqual({ version: 4, state: 'saved' });
+  });
+
+  it('resume() does nothing unless signed out', async () => {
+    const sessionIsValid = vi.fn(async () => true);
+    const save = saveAnswering({ ok: false, code: 'error' });
+    const c = controllerFor(save, { sessionIsValid });
+    c.schedule({ a: 1 });
+    await pause();
+    expect(c.getSnapshot().state).toBe('error');
+    await c.resume();
+    expect(sessionIsValid).not.toHaveBeenCalled();
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it('the hook checks again every few seconds and when the tab gets focus, while signed out only', async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    let valid = false;
+    const sessionIsValid = vi.fn(async () => valid);
+    const save = saveAnswering({ ok: false, code: 'auth' }, { ok: true, version: 4 });
+    let seen: ReturnType<typeof useAutosave> | undefined;
+    const Probe = (): ReactElement => {
+      seen = useAutosave({ entryId: ENTRY, initialVersion: 3, save, sessionIsValid });
+      return createElement('p', null, seen.state);
+    };
+    const host = document.createElement('div');
+    const root = createRoot(host);
+    await act(async () => root.render(createElement(Probe)));
+    await act(async () => seen!.schedule({ title: 'Allt' }));
+    await act(async () => {
+      await pause();
+    });
+    expect(host.textContent).toBe('signed_out');
+    await act(async () => {
+      await pause(RESUME_POLL_MS);
+    });
+    expect(sessionIsValid).toHaveBeenCalledTimes(1);
+    expect(save).toHaveBeenCalledTimes(1);
+
+    valid = true;
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      await pause(0);
+    });
+    expect(save).toHaveBeenNthCalledWith(2, ENTRY, 3, { title: 'Allt' });
+    expect(host.textContent).toBe('saved');
+    // Saved: no more checks.
+    await act(async () => {
+      await pause(RESUME_POLL_MS * 3);
+    });
+    expect(sessionIsValid).toHaveBeenCalledTimes(2);
     await act(async () => root.unmount());
   });
 });
