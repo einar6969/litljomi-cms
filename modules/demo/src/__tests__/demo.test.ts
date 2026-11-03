@@ -31,6 +31,16 @@ describe('demo module', () => {
     const related = event.fields.related as AnyFieldKind & { to: readonly string[] };
     expect(related).toMatchObject({ kind: 'reference', required: false, to: ['event'] });
   });
+  it('has an optional group holding a list of event references (plan M2-06)', () => {
+    const program = event.fields.program as AnyFieldKind & { fields: Record<string, AnyFieldKind & { of?: AnyFieldKind; max?: number }> };
+    expect(program).toMatchObject({ kind: 'group', required: false });
+    expect(program.fields.highlights).toMatchObject({ kind: 'list', required: false, max: 10 });
+    expect(program.fields.highlights!.of).toMatchObject({ kind: 'reference', to: ['event'] });
+    const highlight = { _key: 'h1', value: { _ref: '00000000-0000-4000-8000-000000000002', _kind: 'entry' } };
+    expect(event.publishValidator().safeParse({ ...fixture, program: { highlights: [highlight] } }).success).toBe(true);
+    const tooMany = Array.from({ length: 11 }, (_, i) => ({ ...highlight, _key: `h${i}` }));
+    expect(event.publishValidator().safeParse({ ...fixture, program: { highlights: tooMany } }).success).toBe(false);
+  });
   it('has an optional field of each scalar kind, filled in its fixture (M2-03)', () => {
     const byKind = Object.fromEntries(Object.entries<AnyFieldKind>(event.fields).map(([k, f]) => [f.kind, { key: k, f }]));
     for (const kind of ['number', 'boolean', 'select', 'datetime']) {
