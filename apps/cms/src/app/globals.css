@@ -149,7 +149,8 @@
     opacity: 1;
   }
 
-  input:where([aria-invalid='true']) {
+  input:where([aria-invalid='true']),
+  select:where([aria-invalid='true']) {
     border-color: var(--color-danger);
   }
 
