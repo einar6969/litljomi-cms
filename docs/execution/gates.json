@@ -239,6 +239,11 @@
           "at": "2026-11-03",
           "scope": "Decision 48.2: one production deployment on demo-staging through the Vercel connector, of m1/phase-1 96c83bd (the demo route's revalidateTag { expire: 0 }), pushed by Einar. No environment variable changes, nothing on landssamband-bakarameistara.",
           "note": "Einar in chat, 2026-11-03, to the controller's question \"Push, then approve one demo-staging production deployment of the branch tip?\": \"Pushed, deploy it\"."
+        },
+        {
+          "at": "2026-11-03",
+          "scope": "Decision 49.3 and step 4: through the Vercel connector, set the Ignored Build Step `if [ \"$VERCEL_ENV\" = \"production\" ]; then exit 1; else exit 0; fi` on vefumsjon-staging and demo-staging (update_project, nothing else changed on them), and create one production deployment of m1/phase-1 on vefumsjon-staging. Nothing on landssamband-bakarameistara.",
+          "note": "Einar in chat, 2026-11-03 (sitting 6, decision 49): \"Issue 4: set the Ignored Build Step `if [ \"$VERCEL_ENV\" = \"production\" ]; then exit 1; else exit 0; fi` on `vefumsjon-staging` and `demo-staging` through the Vercel connector (`update_project`). Change nothing else on them.\" and \"The only extra writes: the one CMS deployment, the two Ignored Build Step settings, and the LABAK `hub-integration` commit.\" Full quote: plan decision 49."
         }
       ],
       "hostsRemoved": {
@@ -270,6 +275,11 @@
           "scope": "Decision 43.8, the G7 push: push=true for hub-integration only. Never main, never a force-push. Safeguard first: Einar's Ignored Build Step on landssamband-bakarameistara (decision 43.8, runbook G6.0); labak-hub builds hub-integration only.",
           "note": "Einar in chat, 2026-11-03: \"G7 push: I approve G7 with `push=true` for `hub-integration` only. Never `main`, never a force-push. Record it in `gates.json` and `m1-gates.md`.\"",
           "record": "Reported by Einar in chat, 2026-11-03: \"Ignored Build Step: I set it on `landssamband-bakarameistara`, exactly as in decision 43.8.\"; \"Push: I pushed `hub-integration` from my own terminal (`56bb9dd`); `main` is unchanged at `aec9f95`.\"; \"`labak-hub`: I connected it to `einar6969/landssamband-bakarameistara` and set its Production Branch to `hub-integration`.\" Advisor's read-only check (Einar's report): build dpl_A5Xo29xx… CANCELED by the Ignored Build Step, production still aec9f95. Controller, read only: origin/hub-integration 56bb9dd, LABAK main aec9f95; the G7.1 pre-push checks run after the push on 56bb9dd: no vercel.json; scan finds only the local fixture CMS_WEBHOOK_SECRETS=laba… (5, README.md), nothing in commit messages or the two vendored tarballs."
+        },
+        {
+          "at": "2026-11-03",
+          "scope": "Decision 49.2: one local commit on LABAK's hub-integration: the revalidation route uses revalidateTag(tag, { expire: 0 }) (spec §7.3), with a test if the route has one. Einar pushes it himself. Never main.",
+          "note": "Einar in chat, 2026-11-03 (sitting 6, decision 49): \"G7: apply the same `revalidateTag(tag, { expire: 0 })` change to LABAK’s revalidation route on `hub-integration` only, in `/Users/einarzoega/Documents/Litljómi ehf/Projects/2026/LAW Takeover/LABAK/landssamband-bakarameistara`. Commit there; I push. Never `main`.\""
         }
       ]
     }
