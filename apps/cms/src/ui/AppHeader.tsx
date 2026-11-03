@@ -1,7 +1,6 @@
 import Link from 'next/link';
-import { t } from '@/i18n/is';
-import { Button } from './Button';
 import { HeaderTenant } from './HeaderTenant';
+import { SignOutForm } from './SignOutForm';
 import { Wordmark } from './Wordmark';
 
 type Props = {
@@ -18,9 +17,7 @@ export function AppHeader({ tenants, signOut }: Props) {
           <Wordmark />
         </Link>
         <HeaderTenant tenants={tenants} />
-        <form action={signOut}>
-          <Button type="submit">{t.app.signOut}</Button>
-        </form>
+        <SignOutForm signOut={signOut} />
       </div>
     </header>
   );

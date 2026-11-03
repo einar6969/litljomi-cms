@@ -8,6 +8,7 @@ import { Button } from '@/ui/Button';
 import { Notice } from '@/ui/Notice';
 import { useAutosave, type TheirVersion } from '../autosave';
 import { PublishPanel } from '../publish/PublishPanel';
+import { unsavedStore } from '../unsaved';
 import { changedFields } from './conflict';
 import type { FieldDescriptor } from './descriptors';
 import { fieldRegistry } from './field-registry';
@@ -40,7 +41,9 @@ async function sessionIsValid(): Promise<boolean> {
  * The generated form of one entry. Its state is the whole draft data: a field this form cannot
  * edit yet is never touched, so it is sent back exactly as it was loaded. Every edit schedules an
  * autosave; local values stay on the screen whatever the save answers. A stale save shows the
- * conflict view (M2-11): only "reload theirs" replaces the form's values.
+ * conflict view (M2-11): only "reload theirs" replaces the form's values. Unsaved changes are also
+ * kept in the tab (M2-17): after the session expires, a reload of the tab brings them back, and the
+ * save goes through by itself once the editor has signed in again.
  */
 export function EntryForm({ tenant, entryId, fields, titleKey, initialData, initialVersion, initialSlug, slugLocked, published = false }: Props) {
   const [data, setData] = useState<Record<string, unknown>>(initialData);
@@ -48,15 +51,20 @@ export function EntryForm({ tenant, entryId, fields, titleKey, initialData, init
   // Bumped when "reload theirs" replaces the values, so every field remounts with them (a field may
   // hold its own editing state, such as the rich-text editor's document).
   const [generation, setGeneration] = useState(0);
-  const autosave = useAutosave({ entryId, initialVersion, save: saveDraftAction, sessionIsValid, loadLatest: loadDraftAction });
+  // The tab's copy is read after mounting, never while rendering, so the server's HTML and the
+  // first client render agree; a restored copy then replaces the values like "reload theirs".
+  const replaceValues = useCallback((restored: Record<string, unknown>) => {
+    latest.current = restored;
+    setData(restored);
+    setGeneration((g) => g + 1);
+  }, []);
+  const [store] = useState(() => unsavedStore());
+  const autosave = useAutosave({ entryId, initialVersion, save: saveDraftAction, sessionIsValid, loadLatest: loadDraftAction, store, onRestore: replaceValues });
   const { schedule, takeTheirs } = autosave;
   const reloadTheirs = useCallback(() => {
     const theirs = takeTheirs();
-    if (theirs === null) return;
-    latest.current = theirs;
-    setData(theirs);
-    setGeneration((g) => g + 1);
-  }, [takeTheirs]);
+    if (theirs !== null) replaceValues(theirs);
+  }, [takeTheirs, replaceValues]);
   const change = useCallback(
     (key: string, value: unknown) => {
       const next = { ...latest.current };
