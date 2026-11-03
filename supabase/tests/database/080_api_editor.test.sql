@@ -38,7 +38,7 @@
 -- change them, in file order.
 begin;
 \ir _helpers.sql
-select plan(163);
+select plan(164);
 
 create function tests.asset(p_key text) returns uuid
 language plpgsql
@@ -116,7 +116,7 @@ create temporary table editor_views (name text primary key, cols text[]) on comm
 insert into editor_views values
   ('my_tenants', array['id', 'slug', 'name', 'status']),
   ('entry_list', array['id', 'tenant_id', 'type', 'slug', 'title', 'sort_at', 'draft_version', 'published_draft_version',
-                       'status', 'archived_at', 'updated_at']),
+                       'status', 'archived_at', 'updated_at', 'first_published_at']), -- M2-10 appended first_published_at
   ('entry_detail', array['id', 'tenant_id', 'type', 'slug', 'data', 'schema_version', 'draft_version',
                          'published_draft_version', 'first_published_at', 'status']),
   ('asset_list', array['id', 'tenant_id', 'filename', 'mime', 'width', 'height', 'focal_x', 'focal_y', 'default_alt',
@@ -233,6 +233,12 @@ select results_eq($$ select id, tenant_id, type, slug, title, sort_at, draft_ver
             null::timestamptz, d.updated_at
      from cms.entries e join cms.drafts d on d.entry_id = e.id where e.id = tests.entry('c804') $$,
   'entry_list columns for a changed entry: draft version 2, published version 1');
+-- M2-10 (20261103180000_entry_list_first_published.sql): the status filter tells "unpublished"
+-- from "draft" by first_published_at, which stays set once an entry has been published.
+select results_eq($$ select id, first_published_at is not null from api.entry_list order by id $$,
+  $$ values (tests.entry('c801'), false), (tests.entry('c803'), true), (tests.entry('c804'), true),
+            (tests.entry('c805'), false) $$,
+  'entry_list.first_published_at: set for the entries that have been published');
 select results_eq($$ select id, status from api.entry_detail order by id $$,
   $$ select id, status from api.entry_list order by id $$,
   'entry_detail derives the same status as entry_list');
