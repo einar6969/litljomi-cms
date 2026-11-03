@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p apps/cms/tsconfig.json",
     "test": "vitest run",
     "check:slugs": "node tools/checks/no-tenant-slugs.ts",
+    "check:schema": "pnpm --filter @litljomi/cli cli check-schema",
     "test:integration": "pnpm --filter @litljomi/integration-tests test && pnpm --filter cms test:integration",
     "test:e2e-local": "pnpm --filter @litljomi/integration-tests test:e2e-local",
     "harness:test": "node --test \"tools/harness/__tests__/*.test.mjs\"",
