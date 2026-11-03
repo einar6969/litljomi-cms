@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-03T05:50:55.788Z",
+  "updatedAt": "2026-11-03T06:16:55.478Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -1276,23 +1276,23 @@
     },
     "A1": {
       "status": "pass",
-      "evidence": "docs/verification/m1-gates.md",
-      "at": "2026-11-02T08:35:46.768Z"
+      "evidence": "docs/verification/m1-report.md",
+      "at": "2026-11-03T06:16:55.395Z"
     },
     "A2": {
       "status": "pass",
-      "evidence": "docs/verification/m1-gates.md",
-      "at": "2026-11-02T08:35:46.794Z"
+      "evidence": "docs/verification/m1-report.md",
+      "at": "2026-11-03T06:16:55.424Z"
     },
     "A3": {
       "status": "pass",
-      "evidence": "docs/verification/m1-gates.md",
-      "at": "2026-11-02T08:35:46.820Z"
+      "evidence": "docs/verification/m1-report.md",
+      "at": "2026-11-03T06:16:55.451Z"
     },
     "A4": {
       "status": "pass",
-      "evidence": "docs/verification/m1-gates.md",
-      "at": "2026-11-02T08:35:46.849Z"
+      "evidence": "docs/verification/m1-report.md",
+      "at": "2026-11-03T06:16:55.478Z"
     },
     "A5": {
       "status": "pass",
