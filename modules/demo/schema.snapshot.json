@@ -1,0 +1,134 @@
+{
+  "tenant": "demo",
+  "types": {
+    "event": {
+      "version": 1,
+      "transforms": [],
+      "fields": {
+        "title": {
+          "kind": "text",
+          "required": true,
+          "multiline": false
+        },
+        "startDate": {
+          "kind": "date",
+          "required": true
+        },
+        "endDate": {
+          "kind": "date",
+          "required": false
+        },
+        "location": {
+          "kind": "text",
+          "required": false,
+          "multiline": false
+        },
+        "description": {
+          "kind": "richText",
+          "required": false
+        },
+        "registration": {
+          "kind": "link",
+          "required": false,
+          "entryTypes": null
+        },
+        "capacity": {
+          "kind": "number",
+          "required": false,
+          "min": 0,
+          "integer": true
+        },
+        "freeEntry": {
+          "kind": "boolean",
+          "required": false
+        },
+        "category": {
+          "kind": "select",
+          "required": false,
+          "values": [
+            "concert",
+            "workshop",
+            "talk"
+          ]
+        },
+        "doorsOpen": {
+          "kind": "datetime",
+          "required": false
+        },
+        "related": {
+          "kind": "reference",
+          "required": false,
+          "to": [
+            "event"
+          ]
+        },
+        "program": {
+          "kind": "group",
+          "required": false,
+          "fields": {
+            "intro": {
+              "kind": "text",
+              "required": false,
+              "multiline": true
+            },
+            "highlights": {
+              "kind": "list",
+              "required": false,
+              "max": 10,
+              "of": {
+                "kind": "reference",
+                "required": false,
+                "to": [
+                  "event"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "retired": {}
+    },
+    "notice": {
+      "version": 2,
+      "transforms": [
+        1
+      ],
+      "fields": {
+        "title": {
+          "kind": "text",
+          "required": true,
+          "multiline": false
+        },
+        "body": {
+          "kind": "text",
+          "required": false,
+          "multiline": true
+        },
+        "date": {
+          "kind": "date",
+          "required": false
+        }
+      },
+      "retired": {
+        "heading": "text"
+      }
+    },
+    "site-info": {
+      "version": 1,
+      "transforms": [],
+      "fields": {
+        "title": {
+          "kind": "text",
+          "required": true,
+          "multiline": false
+        },
+        "tagline": {
+          "kind": "text",
+          "required": false,
+          "multiline": false
+        }
+      },
+      "retired": {}
+    }
+  }
+}

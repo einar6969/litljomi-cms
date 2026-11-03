@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { generateDeliveryTypes, type ModuleManifest } from '@litljomi/cms-schema';
+import { CHECK_SCHEMA_USAGE, runCheckSchema, type CheckSchemaDeps } from './check-schema.ts';
 import { BOUNDARY_CHECK_USAGE, runBoundaryCheck, type BoundaryCheckDeps } from './boundary-check.ts';
 import { MIGRATE_DRAFTS_USAGE, runMigrateDrafts, type MigrateDraftsDeps } from './migrate-drafts.ts';
 import { PROVISION_USAGE, runProvision, type ProvisionDeps } from './provision.ts';
@@ -12,6 +13,7 @@ const USAGE = [
   PROVISION_USAGE.replace(/^usage: /, '       '),
   BOUNDARY_CHECK_USAGE.replace(/^usage: /, '       '),
   MIGRATE_DRAFTS_USAGE.replace(/^usage: /, '       '),
+  CHECK_SCHEMA_USAGE.replace(/^usage: /, '       '),
 ].join('\n');
 
 export interface CliIo {
@@ -23,6 +25,8 @@ export interface CliIo {
   boundaryCheck?: BoundaryCheckDeps;
   /** The network and env-file access of `migrate-drafts`; main.ts passes Node's, tests inject fakes. */
   migrateDrafts?: Omit<MigrateDraftsDeps, 'loadModule'>;
+  /** The modules/ folder access of `check-schema`; main.ts passes Node's, tests inject fakes. */
+  checkSchema?: Omit<CheckSchemaDeps, 'loadModule'>;
 }
 
 /** The delivered-shape declarations of a module's types, with the generated-file header. */
@@ -67,6 +71,13 @@ export async function runCli(args: string[], io: CliIo): Promise<number> {
       return 1;
     }
     return runMigrateDrafts(rest, { log: io.log, error }, { ...io.migrateDrafts, loadModule });
+  }
+  if (command === 'check-schema') {
+    if (io.checkSchema === undefined) {
+      error('check-schema: no file access was given (run it through main.ts)');
+      return 1;
+    }
+    return runCheckSchema(rest, { log: io.log, error }, { ...io.checkSchema, loadModule });
   }
   if (command !== 'gen-types') {
     error(USAGE);
