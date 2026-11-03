@@ -65,7 +65,7 @@ export default defineWorkspace([
   {
     test: {
       name: 'demo-site',
-      include: ['apps/demo-site/e2e/fixtures.test.ts'],
+      include: ['apps/demo-site/e2e/fixtures.test.ts', 'apps/demo-site/src/**/__tests__/**/*.test.ts'],
     },
   },
 ]);
