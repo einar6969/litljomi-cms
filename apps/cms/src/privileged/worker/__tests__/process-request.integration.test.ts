@@ -219,7 +219,7 @@ describe('processRequestById (publish)', () => {
     expect((await requestRow(requestId)).error).toEqual({ code: 'unknown_type', type: 'recipe' });
   });
 
-  it('refuses a draft written at another schema version: schema_outdated (spec §5.3)', async () => {
+  it('refuses a draft written at a newer schema version than the type: draft_schema_ahead (spec §5.3, M2-05)', async () => {
     const image = await labakAsset();
     const entry = await newsEntry(validNews(image), { schemaVersion: 2 });
     const requestId = await rpc<string>('request_publish', { p_entry_id: entry.id, p_expected_draft_version: entry.version });
@@ -227,7 +227,7 @@ describe('processRequestById (publish)', () => {
     const outcome = await processRequestById(requestId);
 
     expect(outcome.status).toBe('failed_validation');
-    expect(outcome.errors).toEqual({ code: 'schema_outdated', draftSchemaVersion: 2, currentSchemaVersion: 1 });
+    expect(outcome.errors).toEqual({ code: 'draft_schema_ahead', draftSchemaVersion: 2, currentSchemaVersion: 1 });
     expect(await revisionCount(entry.id)).toBe(0);
   });
 

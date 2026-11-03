@@ -21,6 +21,7 @@
 // the requests stay unlinked, so the next build delivers a newer release.
 import {
   ProjectionError,
+  UpcastError,
   entryContentHash,
   projectEntry,
   type ContentType,
@@ -396,14 +397,15 @@ type Projected = {
 };
 
 /**
- * Projects every entry of the snapshot. Entries that cannot be built fail before projection
- * (unknown type, another schema version, an asset whose path is not valid) or in it (any error).
- * A failed entry reuses its record from the previous release when §7.1's two conditions hold:
- * (1) that record was built from the revision published now, and (2) everything the revision
- * references is still allowed: each asset is resolvable (not archived, valid paths) and each
- * referenced entry is in this release. Otherwise it is left out. The context resolves only the
- * entries in the release, so the projection repeats until a pass fails nothing more: the final
- * records never reference a left-out entry.
+ * Projects every entry of the snapshot, each upcast to its type's current schema version first.
+ * Entries that cannot be built fail before projection (unknown type, a revision that cannot be
+ * upcast, an asset whose path is not valid) or in it (any error). A failed entry reuses its record
+ * from the previous release when §7.1's two conditions hold: (1) that record was built from the
+ * revision published now, and (2) everything the revision references is still allowed: each asset
+ * is resolvable (not archived, valid paths) and each referenced entry is in this release.
+ * Otherwise it is left out. The context resolves only the entries in the release, so the
+ * projection repeats until a pass fails nothing more: the final records never reference a
+ * left-out entry.
  */
 function projectAll(
   snapshot: Snapshot,
@@ -433,19 +435,26 @@ function projectAll(
   const allowedAssets = new Set(contextAssets.map((a) => a.id));
 
   const types = new Map<string, ContentType>(module.types.map((t) => [t.name, t]));
+  // §5.3, §7.1: each revision's data at its type's current schema version, upcast in memory. The
+  // stored revision is never rewritten; `upcast` copies before any transform runs.
+  const current = new Map<string, unknown>();
   for (const e of snapshot.entries) {
     const type = types.get(e.type);
-    if (!type) errors.set(e.entry_id, { code: 'unknown_type', type: e.type });
-    else if (e.schema_version !== type.version) {
-      // M1 has no upcast transforms (§5.3): another schema version cannot be projected.
-      errors.set(e.entry_id, { code: 'schema_version', revisionSchemaVersion: e.schema_version, currentSchemaVersion: type.version });
-    } else {
-      const bad = e.refs.find((r) => {
-        const a = r.kind === 'asset' ? assetsById.get(r.id) : undefined;
-        return a !== undefined && !a.archived && !validAsset(a);
-      });
-      if (bad) errors.set(e.entry_id, { code: 'asset_path_invalid', assetId: bad.id });
+    if (!type) {
+      errors.set(e.entry_id, { code: 'unknown_type', type: e.type });
+      continue;
     }
+    const upcast = upcastRevision(e, type);
+    if ('error' in upcast) {
+      errors.set(e.entry_id, upcast.error);
+      continue;
+    }
+    current.set(e.entry_id, upcast.data);
+    const bad = e.refs.find((r) => {
+      const a = r.kind === 'asset' ? assetsById.get(r.id) : undefined;
+      return a !== undefined && !a.archived && !validAsset(a);
+    });
+    if (bad) errors.set(e.entry_id, { code: 'asset_path_invalid', assetId: bad.id });
   }
 
   // §7.1 condition 1: the previous record of the same entry and type, built from the same revision.
@@ -499,7 +508,7 @@ function projectAll(
     for (const e of included) {
       if (errors.has(e.entry_id)) continue;
       try {
-        built.set(e.entry_id, bundleEntry(e, types.get(e.type)!, ctx));
+        built.set(e.entry_id, bundleEntry(e, current.get(e.entry_id), types.get(e.type)!, ctx));
       } catch (error) {
         errors.set(e.entry_id, projectionError(error));
         failed = true;
@@ -530,9 +539,37 @@ function projectAll(
   return { entries, omitted, fallback, assetsToCopy };
 }
 
-/** The §7.2 record of one entry; projection only through `projectEntry` (its depth cap applies). */
-function bundleEntry(e: SnapshotEntry, type: ContentType, ctx: ReturnType<typeof buildProjectionContext>): BundleEntry {
-  const data = projectEntry(type, e.data, ctx);
+/**
+ * A revision's data at its type's current version (§5.3), or the omission error when it cannot be
+ * upcast: written at a version newer than the deployed type, a gap in the transforms, or a failing
+ * transform (`upcast` wraps whatever a transform throws). Any other error (copying the document)
+ * also only omits the entry: one failing entry does not block the tenant (§7.1).
+ */
+function upcastRevision(e: SnapshotEntry, type: ContentType): { data: unknown } | { error: Record<string, unknown> } {
+  try {
+    return { data: type.upcast(e.data, e.schema_version) };
+  } catch (error) {
+    if (!(error instanceof UpcastError)) {
+      return { error: { code: 'upcast_failed', reason: 'unexpected', revisionSchemaVersion: e.schema_version, currentSchemaVersion: type.version } };
+    }
+    return {
+      error: {
+        code: 'upcast_failed',
+        reason: error.code,
+        revisionSchemaVersion: e.schema_version,
+        currentSchemaVersion: type.version,
+        ...(error.atVersion === undefined ? {} : { atVersion: error.atVersion }),
+      },
+    };
+  }
+}
+
+/**
+ * The §7.2 record of one entry from its upcast data; projection only through `projectEntry` (its
+ * strict validation and depth cap apply). `schemaVersion` is the version the data now has.
+ */
+function bundleEntry(e: SnapshotEntry, data: unknown, type: ContentType, ctx: ReturnType<typeof buildProjectionContext>): BundleEntry {
+  const projected = projectEntry(type, data, ctx);
   const record = {
     id: e.entry_id,
     revisionId: e.revision_id,
@@ -541,8 +578,8 @@ function bundleEntry(e: SnapshotEntry, type: ContentType, ctx: ReturnType<typeof
     sortAt: isoOrNull(e.sort_at),
     firstPublishedAt: iso(e.first_published_at),
     lastPublishedAt: iso(e.last_published_at),
-    schemaVersion: e.schema_version,
-    data,
+    schemaVersion: type.version,
+    data: projected,
   };
   const { id, revisionId, ...rest } = record;
   // §7.2's field order: contentHash after revisionId.

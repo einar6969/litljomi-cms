@@ -47,6 +47,14 @@ const article = defineType({
   },
   preview: { title: 'title' },
   orderBy: 'title',
+  // Version 1 called the title `heading` (M2-05). A heading of 'boom' makes the transform throw.
+  transforms: {
+    1: (d) => {
+      const { heading, ...rest } = d as Record<string, unknown>;
+      if (heading === 'boom') throw new Error('transform failed');
+      return { ...rest, title: heading };
+    },
+  },
 });
 // A field whose projection fails when its target entry does not resolve, so an omission cascades.
 const targetSchema = z.strictObject({ _ref: z.string(), _kind: z.literal('entry') });
@@ -422,16 +430,38 @@ describe('buildRelease: entries left out (fail closed, §7.1)', () => {
     expect((result.bundle!.entries['article']![0]!.data as { related: unknown }).related).toEqual({ entry: null });
   });
 
-  it('omits an entry whose revision is at another schema version (no transforms in M1), or of an unknown type', async () => {
-    snapshot.entries[1] = entry(E2, { title: 'Tvö' }, { schema_version: 1 });
+  it('upcasts a revision at an older schema version in memory and delivers it at the current version (M2-05)', async () => {
+    const stored = { heading: 'Tvö', legacy: 'ignored' };
+    snapshot.entries[1] = entry(E2, stored, { schema_version: 1, title: 'Tvö' });
+    const before = structuredClone(stored);
+
+    const result = await build();
+
+    expect(result.status).toBe('delivered');
+    expect(result.omitted).toEqual([]);
+    const e2 = result.bundle!.entries['article']!.find((e) => e.id === E2)!;
+    expect(e2.schemaVersion).toBe(2);
+    expect(e2.data).toEqual({ title: 'Tvö', pic: null, related: null });
+    expect(e2.contentHash).toBe(entryContentHash({ ...e2 }));
+    // The revision is read, never rewritten: the snapshot's data is unchanged (the build writes no revision).
+    expect(snapshot.entries[1]!.data).toEqual(before);
+    // E1 still links to E2, which resolves.
+    expect((result.bundle!.entries['article']![0]!.data as { related: { entry: { id: string } } }).related.entry.id).toBe(E2);
+  });
+
+  it('omits an entry whose revision cannot be upcast (newer than the type, or a failing transform), or of an unknown type', async () => {
+    snapshot.entries[1] = entry(E2, { title: 'Tvö' }, { schema_version: 3 });
     snapshot.entries.push(entry(E3, { title: 'Þrjú' }, { type: 'gone' }));
+    const E4 = '44444444-4444-4444-8444-444444444444';
+    snapshot.entries.push(entry(E4, { heading: 'boom' }, { schema_version: 1 }));
 
     const result = await build();
 
     expect(result.status).toBe('delivered');
     expect(result.omitted).toEqual([
-      { entryId: E2, requestIds: ['r2'], error: { code: 'schema_version', revisionSchemaVersion: 1, currentSchemaVersion: 2 } },
+      { entryId: E2, requestIds: ['r2'], error: { code: 'upcast_failed', reason: 'version_ahead', revisionSchemaVersion: 3, currentSchemaVersion: 2 } },
       { entryId: E3, requestIds: ['r3'], error: { code: 'unknown_type', type: 'gone' } },
+      { entryId: E4, requestIds: [], error: { code: 'upcast_failed', reason: 'transform_failed', revisionSchemaVersion: 1, currentSchemaVersion: 2, atVersion: 1 } },
     ]);
     // E1 still links to E2, which is now left out.
     expect((result.bundle!.entries['article']![0]!.data as { related: unknown }).related).toEqual({ entry: null });
@@ -503,14 +533,14 @@ describe('buildRelease: fallback to the previous projection (§7.1, plan M3-05)'
     expect(alertMock).toHaveBeenCalledWith('release.entry_fallback', { tenantId: TENANT, releaseId: RELEASE, number: 3, fallback });
   });
 
-  it('covers a failure before projection too (another schema version after a transform deploy)', async () => {
-    snapshot.entries[1] = entry(E2, { title: 'Tvö' }, { schema_version: 1, refs: [] });
+  it('covers a failure before projection too (a revision that cannot be upcast after a transform deploy)', async () => {
+    snapshot.entries[1] = entry(E2, { heading: 'boom' }, { schema_version: 1, refs: [] });
     withPrevious({ article: [previousE2(snapshot.entries[1].revision_id)] });
 
     const result = await build();
 
     expect(ids(result.bundle)).toEqual([E1, E2]);
-    expect(result.fallback).toEqual([expect.objectContaining({ entryId: E2, error: expect.objectContaining({ code: 'schema_version' }) })]);
+    expect(result.fallback).toEqual([expect.objectContaining({ entryId: E2, error: expect.objectContaining({ code: 'upcast_failed' }) })]);
   });
 
   it('refuses when the published revision differs from the previous record\'s: the entry is left out', async () => {
