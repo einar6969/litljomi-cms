@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../alerts', () => ({ alert: (event: string, details: Record<string, unknown>) => mocks.alert(event, details) }));
 vi.mock('@/modules/registry', () => ({ getModule: (slug: string) => (slug === 'prufa' ? mocks.module.current : undefined) }));
 
-const { MAX_NOTIFY_ATTEMPTS, confirmRelease, confirmSite, liveTargets, releaseView } = await import('../deliver');
+const { clockOf, confirmRelease, confirmSite, liveTargets, releaseView } = await import('../deliver');
 type DeliveredRelease = import('../deliver').DeliveredRelease;
 type LiveTarget = import('../deliver').LiveTarget;
 type WorkerSite = import('../deliver').WorkerSite;
@@ -187,17 +187,22 @@ describe('confirmSite', () => {
 describe('confirmSite: failures', () => {
   let site: FakeSite;
   const recorded: Array<Record<string, unknown>> = [];
+  /** What api.worker_record_delivery answers: the delivery's schedule after the call (M3-02). */
+  let schedule: unknown = [{ notify_attempts: 1, next_attempt_at: '2026-11-03T12:01:00.000Z', retries_exhausted: false }];
   const db = {
     rpc: async (fn: string, args: Record<string, unknown>) => {
       if (fn === 'worker_record_delivery') recorded.push(args);
-      return { data: null, error: null };
+      return { data: fn === 'worker_record_delivery' ? schedule : null, error: null };
     },
   } as unknown as SupabaseClient;
+  /** A fake clock: 2026-11-03 12:00 UTC. */
+  const clock = { now: () => Date.UTC(2026, 10, 3, 12, 0, 0) };
   const release: DeliveredRelease = { tenantId: 't', tenantSlug: 'prufa', releaseId: 'rel', number: 2, bundle: bundle(2, []), previousBundle: null, requests: [] };
   const workerSite = (secrets = ['leyndo']): WorkerSite => ({ id: 's', base_url: site.origin, revalidate_url: `${site.origin}/api/revalidate`, webhook_secrets: secrets });
 
   beforeEach(async () => {
     recorded.length = 0;
+    schedule = [{ notify_attempts: 1, next_attempt_at: '2026-11-03T12:01:00.000Z', retries_exhausted: false }];
     mocks.alert.mockClear();
     site = await startFakeSite();
   });
@@ -205,24 +210,66 @@ describe('confirmSite: failures', () => {
     await site.close();
   });
 
-  it(`a failed notification reaching attempt ${MAX_NOTIFY_ATTEMPTS} alerts that the retries are exhausted`, async () => {
-    expect(MAX_NOTIFY_ATTEMPTS).toBe(10);
+  it('records a failed notification at the options\' clock (M3-02: the database schedules the retry)', async () => {
     site.pages.set('/api/revalidate', { status: 500 });
 
-    expect(await confirmSite(db, release, workerSite(), [], {}, MAX_NOTIFY_ATTEMPTS - 1)).toBe('notify_failed');
+    expect(await confirmSite(db, release, workerSite(), [], clock)).toBe('notify_failed');
 
     expect(recorded).toEqual([
-      { p_release_id: 'rel', p_site_id: 's', p_notify_status: 'failed', p_live_status: null, p_error: { code: 'notify_failed', status: 500 } },
-    ]);
-    expect(mocks.alert.mock.calls).toEqual([
-      ['delivery.retries_exhausted', { tenantId: 't', releaseId: 'rel', number: 2, siteId: 's', attempts: 10, code: 'notify_failed', status: 500 }],
+      {
+        p_release_id: 'rel',
+        p_site_id: 's',
+        p_notify_status: 'failed',
+        p_live_status: null,
+        p_error: { code: 'notify_failed', status: 500 },
+        p_now: '2026-11-03T12:00:00.000Z',
+      },
     ]);
   });
 
-  it('a failed notification before the last attempt does not alert', async () => {
+  it('a failed notification with a next attempt scheduled does not alert', async () => {
     site.pages.set('/api/revalidate', { status: 500 });
-    expect(await confirmSite(db, release, workerSite(), [], {}, MAX_NOTIFY_ATTEMPTS - 2)).toBe('notify_failed');
+    expect(await confirmSite(db, release, workerSite(), [], clock)).toBe('notify_failed');
     expect(mocks.alert).not.toHaveBeenCalled();
+  });
+
+  it('alerts once that the retries are exhausted when the record says so (24 hours after the first failure)', async () => {
+    site.pages.set('/api/revalidate', { status: 500 });
+    schedule = [{ notify_attempts: 12, next_attempt_at: null, retries_exhausted: true }];
+
+    expect(await confirmSite(db, release, workerSite(), [], clock)).toBe('notify_failed');
+
+    expect(mocks.alert.mock.calls).toEqual([
+      ['delivery.retries_exhausted', { tenantId: 't', releaseId: 'rel', number: 2, siteId: 's', attempts: 12, code: 'notify_failed', status: 500 }],
+    ]);
+  });
+
+  it('a record that fails does not alert (the row is unchanged, so the sweep retries it)', async () => {
+    site.pages.set('/api/revalidate', { status: 500 });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const failing = { rpc: async () => ({ data: null, error: { code: '08006', message: 'connection failure' } }) } as unknown as SupabaseClient;
+
+    expect(await confirmSite(failing, release, workerSite(), [], clock)).toBe('notify_failed');
+
+    expect(mocks.alert).not.toHaveBeenCalled();
+    vi.mocked(console.error).mockRestore();
+  });
+
+  it('records every status at the clock: an ok notification and its live status', async () => {
+    site.pages.set('/api/revalidate', { status: 200 });
+    expect(await confirmSite(db, release, workerSite(), [], clock)).toBe('ok');
+    expect(recorded.map((r) => [r.p_notify_status, r.p_live_status, r.p_now])).toEqual([
+      ['ok', null, '2026-11-03T12:00:00.000Z'],
+      [null, 'ok', '2026-11-03T12:00:00.000Z'],
+    ]);
+  });
+
+  it('clockOf: the options\' clock as an ISO timestamp, Date.now without one', () => {
+    expect(clockOf(clock)).toBe('2026-11-03T12:00:00.000Z');
+    const before = Date.now();
+    const at = Date.parse(clockOf({}));
+    expect(at).toBeGreaterThanOrEqual(before);
+    expect(at).toBeLessThanOrEqual(Date.now());
   });
 
   it('a site without a webhook secret is recorded as no_webhook_secret and is never called', async () => {
@@ -264,7 +311,13 @@ describe('confirmRelease', () => {
   const db = {
     rpc: async (fn: string, args: Record<string, unknown>) => {
       calls.push({ fn, args });
-      return { data: fn === 'worker_sites' ? sites : null, error: null };
+      if (fn === 'worker_sites') return { data: sites, error: null };
+      // A failed notification of s2 exhausts its retries (M3-02); everything else is scheduled.
+      if (fn === 'worker_record_delivery' && args.p_notify_status === 'failed') {
+        const exhausted = args.p_site_id === 's2';
+        return { data: [{ notify_attempts: exhausted ? 12 : 1, next_attempt_at: exhausted ? null : '2026-11-03T12:01:00Z', retries_exhausted: exhausted }], error: null };
+      }
+      return { data: null, error: null };
     },
   } as unknown as SupabaseClient;
   const release: DeliveredRelease = { tenantId: 't', tenantSlug: 'prufa', releaseId: 'rel', number: 2, bundle: bundle(2, []), previousBundle: null, requests: [] };
@@ -290,15 +343,15 @@ describe('confirmRelease', () => {
     expect(new Set(recordedSites())).toEqual(new Set(['s1', 's2']));
   });
 
-  it('a retry confirms only the sites it names, each with its attempts so far; a site no longer active is skipped', async () => {
+  it('a retry confirms only the sites it names; a site no longer active is skipped', async () => {
     sites = [workerSite('s1'), workerSite('s2')];
     site.pages.set('/api/revalidate/s2', { status: 500 });
 
-    await confirmRelease(db, release, {}, new Map([['s2', 9], ['s3', 1]]));
+    await confirmRelease(db, release, {}, new Set(['s2', 's3']));
 
     expect(site.requests.map((r) => r.path)).toEqual(['/api/revalidate/s2']);
     expect(recordedSites()).toEqual(['s2']);
-    expect(mocks.alert).toHaveBeenCalledWith('delivery.retries_exhausted', expect.objectContaining({ siteId: 's2', attempts: 10 }));
+    expect(mocks.alert).toHaveBeenCalledWith('delivery.retries_exhausted', expect.objectContaining({ siteId: 's2', attempts: 12 }));
   });
 
   it('one site’s error does not stop the others; the errors are thrown together after all settled', async () => {
@@ -438,7 +491,7 @@ describe('confirmRelease: the public pointer', () => {
 
   it('a retry (no pointerWrittenAt) does not poll', async () => {
     const p = pointerSeams([2]);
-    await confirmRelease(db, published, { pollMs: 20, timeoutMs: 1_000, pointer: p.seams }, new Map([['s1', 1]]));
+    await confirmRelease(db, published, { pollMs: 20, timeoutMs: 1_000, pointer: p.seams }, new Set(['s1']));
     expect(p.urls).toEqual([]);
     expect(events).toEqual(['notify /api/revalidate/s1']);
     expect(infoLines('pointer')).toEqual([]);

@@ -3,12 +3,13 @@
 // and the result recorded; then every request linked to the release is live-checked against that
 // site and the site's live status recorded: 'ok' only when every check passed, 'not_confirmed'
 // otherwise, with the failures in last_error. A failed notification leaves the live status
-// pending, for the sweep to retry. Before a fresh delivery notifies any site, the worker waits,
-// within a bound, until the pointer's public URL serves the release (decision 49.1).
+// pending, for the sweep to retry on the database's schedule (M3-02: exponential backoff for up to
+// 24 hours from the delivery's first failure; the platform admin is alerted when it runs out).
+// Before a fresh delivery notifies any site, the worker waits, within a bound, until the pointer's
+// public URL serves the release (decision 49.1).
 import type { LiveCheck, ModuleManifest, ReleaseView, SiteEntry } from '@litljomi/cms-schema';
 import type { Bundle, BundleEntry } from '@litljomi/cms-sdk';
 import { getModule } from '@/modules/registry';
-import { MAX_NOTIFY_ATTEMPTS } from '../../lib/delivery';
 import { supabaseUrl } from '../../lib/supabase/env';
 import type { SupabaseClient } from '../../lib/supabase/types';
 import { createAdminClient } from '../admin-client';
@@ -20,10 +21,6 @@ import { waitForPublicPointer, type PointerSeams } from './pointer-fresh';
 import { publicMediaUrl } from './projection-context';
 import { callRpc } from './rpc';
 
-// The attempt limit lives in lib/delivery.ts, which the editor's status display also reads
-// (decision 37.8); re-exported for the sweep and the tests.
-export { MAX_NOTIFY_ATTEMPTS };
-
 /** At most this many live-check failures are stored in last_error. */
 const MAX_STORED_FAILURES = 50;
 
@@ -31,9 +28,14 @@ const MAX_STORED_FAILURES = 50;
  * Poll and timeout of the live checks (§7.4 defaults when absent); injectable for tests.
  * `runDeadline` is when the run must be finished (epoch ms), which bounds the pointer poll; the
  * worker's jobs set it (pipeline.ts), and without it the poll has only its own cap. `pointer`
- * replaces the poll's fetch, clock and pause in tests.
+ * replaces the poll's fetch, clock and pause in tests. `now` is the clock (epoch ms) the retry
+ * schedule is kept and read by (M3-02): passed to the database as `p_now`, so tests simulate the
+ * 24 hours instead of waiting; `Date.now` when absent.
  */
-export type DeliveryOptions = { pollMs?: number; timeoutMs?: number; runDeadline?: number; pointer?: PointerSeams };
+export type DeliveryOptions = { pollMs?: number; timeoutMs?: number; runDeadline?: number; pointer?: PointerSeams; now?: () => number };
+
+/** The clock of `options` as the database's `p_now` (an ISO timestamp). */
+export const clockOf = (options: Pick<DeliveryOptions, 'now'>): string => new Date((options.now ?? Date.now)()).toISOString();
 
 /** An active site as api.worker_sites returns it. */
 export type WorkerSite = { id: string; base_url: string; revalidate_url: string; webhook_secrets: string[] };
@@ -154,18 +156,35 @@ const once = (fn: () => Promise<unknown>) => {
   };
 };
 
-/** Records on site_deliveries; a failure is logged, not thrown (the sweep retries what is left). */
-async function record(db: SupabaseClient, releaseId: string, siteId: string, notify: string | null, live: string | null, error: unknown) {
+/** A row of api.worker_record_delivery: the delivery's schedule after the call (M3-02). */
+export type RecordedDelivery = { notify_attempts: number; next_attempt_at: string | null; retries_exhausted: boolean };
+
+/**
+ * Records on site_deliveries at the options' clock and returns the delivery's schedule; a failure
+ * is logged, not thrown, and gives null (the row is unchanged, so the sweep retries what is left).
+ */
+async function record(
+  db: SupabaseClient,
+  releaseId: string,
+  siteId: string,
+  notify: string | null,
+  live: string | null,
+  error: unknown,
+  options: DeliveryOptions,
+): Promise<RecordedDelivery | null> {
   try {
-    await callRpc(db, 'worker_record_delivery', {
+    const rows = await callRpc<RecordedDelivery[] | null>(db, 'worker_record_delivery', {
       p_release_id: releaseId,
       p_site_id: siteId,
       p_notify_status: notify,
       p_live_status: live,
       p_error: error ?? null,
+      p_now: clockOf(options),
     });
+    return rows?.[0] ?? null;
   } catch (e) {
     console.error(`[cms-worker] delivery of release ${releaseId} to site ${siteId} could not be recorded`, e);
+    return null;
   }
 }
 
@@ -173,9 +192,10 @@ export type SiteOutcome = 'ok' | 'not_confirmed' | 'notify_failed';
 
 /**
  * Notifies one site and records it; when the notification succeeded, live-checks every target and
- * records the live status (notify status null then). `attemptsBefore` is the delivery's attempt
- * count before this notification: when this one fails and reaches MAX_NOTIFY_ATTEMPTS, the
- * platform admin is alerted (§7.4: retries exhausted).
+ * records the live status (notify status null then). A failed notification is scheduled by the
+ * database (M3-02); when the record says the retries are exhausted (24 hours since the delivery's
+ * first failure), the platform admin is alerted (§7.4), once: an exhausted delivery is never
+ * selected for a retry again.
  */
 export async function confirmSite(
   db: SupabaseClient,
@@ -183,26 +203,25 @@ export async function confirmSite(
   site: WorkerSite,
   targets: LiveTarget[],
   options: DeliveryOptions,
-  attemptsBefore = 0,
 ): Promise<SiteOutcome> {
   const payload = { tenant: release.tenantSlug, release: release.number };
   const notified = await notifySite(site, payload);
   if (!notified.ok) {
     const error = { code: site.webhook_secrets.some((s) => s !== '') ? 'notify_failed' : 'no_webhook_secret', status: notified.status };
-    await record(db, release.releaseId, site.id, 'failed', null, error);
-    if (attemptsBefore + 1 >= MAX_NOTIFY_ATTEMPTS) {
+    const recorded = await record(db, release.releaseId, site.id, 'failed', null, error, options);
+    if (recorded?.retries_exhausted) {
       await alert('delivery.retries_exhausted', {
         tenantId: release.tenantId,
         releaseId: release.releaseId,
         number: release.number,
         siteId: site.id,
-        attempts: attemptsBefore + 1,
+        attempts: recorded.notify_attempts,
         ...error,
       });
     }
     return 'notify_failed';
   }
-  await record(db, release.releaseId, site.id, 'ok', null, null);
+  await record(db, release.releaseId, site.id, 'ok', null, null, options);
 
   const log = { tenant: release.tenantSlug, release: release.number, siteId: site.id };
   // One resend per site and delivery, whichever entry's page missed first (§7.4, decision 48.1),
@@ -246,15 +265,23 @@ export async function confirmSite(
     }),
   );
   if (failures.length === 0) {
-    await record(db, release.releaseId, site.id, null, 'ok', null);
+    await record(db, release.releaseId, site.id, null, 'ok', null, options);
     console.info('[cms-worker] live check', { ...log, status: 'ok', failures: 0 });
     return 'ok';
   }
-  await record(db, release.releaseId, site.id, null, 'not_confirmed', {
-    code: 'live_not_confirmed',
-    failures: failures.slice(0, MAX_STORED_FAILURES),
-    ...(failures.length > MAX_STORED_FAILURES ? { more: failures.length - MAX_STORED_FAILURES } : {}),
-  });
+  await record(
+    db,
+    release.releaseId,
+    site.id,
+    null,
+    'not_confirmed',
+    {
+      code: 'live_not_confirmed',
+      failures: failures.slice(0, MAX_STORED_FAILURES),
+      ...(failures.length > MAX_STORED_FAILURES ? { more: failures.length - MAX_STORED_FAILURES } : {}),
+    },
+    options,
+  );
   console.info('[cms-worker] live check', { ...log, status: 'not_confirmed', failures: failures.length });
   return 'not_confirmed';
 }
@@ -266,8 +293,8 @@ export function mediaPrefix(): string {
 
 /**
  * Notifies and live-checks the tenant's active sites for a delivered release, concurrently: the
- * fast path confirms every active site; the sweep's retry passes `retry`, the sites to confirm with
- * each one's notify attempts so far, and a site deactivated since it was listed is skipped. A fresh
+ * fast path confirms every active site; the sweep's retry passes `retry`, the ids of the sites to
+ * confirm, and a site deactivated since it was listed is skipped. A fresh
  * delivery (one with `pointerWrittenAt`; the retry has none) first waits, once for all its sites,
  * until the pointer's public URL serves the release or the bound runs out (decision 49.1), then
  * notifies either way: when the CDN still serves the old pointer, the live check reports it. Every
@@ -278,7 +305,7 @@ export async function confirmRelease(
   db: SupabaseClient,
   release: DeliveredRelease,
   options: DeliveryOptions,
-  retry?: ReadonlyMap<string, number>,
+  retry?: ReadonlySet<string>,
 ): Promise<void> {
   const module = getModule(release.tenantSlug);
   if (!module) throw new Error(`no module for tenant ${release.tenantSlug}`);
@@ -286,7 +313,7 @@ export async function confirmRelease(
   const active = (await callRpc<WorkerSite[] | null>(db, 'worker_sites', { p_tenant_id: release.tenantId })) ?? [];
   const sites = retry ? active.filter((site) => retry.has(site.id)) : active;
   if (release.pointerWrittenAt !== undefined && sites.length > 0) await awaitPublicPointer(release, release.pointerWrittenAt, options);
-  const results = await Promise.allSettled(sites.map((site) => confirmSite(db, release, site, targets, options, retry?.get(site.id) ?? 0)));
+  const results = await Promise.allSettled(sites.map((site) => confirmSite(db, release, site, targets, options)));
   const errors = results.flatMap((r) => (r.status === 'rejected' ? [r.reason] : []));
   if (errors.length > 0) throw new AggregateError(errors, `release ${release.number}: ${errors.length} site confirmation(s) failed`);
 }

@@ -4,11 +4,10 @@
 // for the request's delivered release. No text promises removal from caches ("Withdrawal and
 // failure visibility").
 import { t } from '@/i18n/is';
-import { MAX_NOTIFY_ATTEMPTS } from '@/lib/delivery';
 
 export type RequestStatus = 'pending' | 'validating' | 'committed' | 'failed_validation' | 'superseded' | 'rejected' | 'failed';
 
-/** One row of `api.publication_status` (20261102001500_publication_status.sql): an entry's latest request. */
+/** One row of `api.publication_status` (20261103002000_retry_backoff.sql): an entry's latest request. */
 export type PublicationStatusRow = {
   request_id: string;
   tenant_id: string;
@@ -28,8 +27,11 @@ export type PublicationStatusRow = {
   sites_notified: number;
   sites_live_ok: number;
   sites_not_confirmed: number;
-  /** The most notification attempts an active site not yet notified has used. */
-  notify_attempts: number;
+  /**
+   * The request will not be retried any more (M3-02): an active site's notification failed for 24
+   * hours, or the request's build did.
+   */
+  retries_exhausted: boolean;
 };
 
 /**
@@ -46,7 +48,7 @@ export type DisplayOptions = {
 /** The columns the panel reads, in the view's order. */
 export const PUBLICATION_STATUS_COLUMNS =
   'request_id, tenant_id, entry_id, action, status, error, requested_at, release_number, release_status, omitted, ' +
-  'missing_assets, site_count, sites_notified, sites_live_ok, sites_not_confirmed, notify_attempts';
+  'missing_assets, site_count, sites_notified, sites_live_ok, sites_not_confirmed, retries_exhausted';
 
 /** "Í birtingu…": a request on its way. The panel also shows it while it waits for its own new request's row. */
 export const IN_PROGRESS: Readonly<DisplayState> = Object.freeze({ label: t.publish.inProgress, tone: 'pending' });
@@ -62,7 +64,8 @@ export const isFinal = (state: DisplayState): boolean => state.tone !== 'pending
  *   "committed" here too);
  * - every active site notified, a live check still running → "Bíður eftir vefnum";
  * - every active site's live_status ok → "Birt á vef ✓" (publish) or "Tekið af vef" (unpublish, neutral);
- * - left out of the release, or a site's notification attempts exhausted → "Birting á vef mistókst";
+ * - left out of the release, or its retries exhausted (24 hours of failed builds or notifications,
+ *   M3-02) → "Birting á vef mistókst";
  * - every site settled, one not confirmed → "Ekki staðfest á vef";
  * - delivered in a tenant with no active site → "Enginn vefur tengdur", a final warning (decision 39.3);
  * - the request's own failures: failed_validation, superseded, rejected, failed.
@@ -90,8 +93,9 @@ export function displayState(row: PublicationStatusRow, options: DisplayOptions 
 }
 
 function deliveryState(row: PublicationStatusRow): DisplayState {
-  if (row.release_status !== 'delivered') return IN_PROGRESS;
   const deliveryFailed: DisplayState = { label: t.publish.deliveryFailed, tone: 'error', detail: t.publish.deliveryFailedDetail };
+  // §7.4, M3-02: a build that kept failing for 24 hours is not retried; the admin was alerted.
+  if (row.release_status !== 'delivered') return row.retries_exhausted ? deliveryFailed : IN_PROGRESS;
   // §7.1: an entry left out of a release is never live. An unpublish has nothing to leave out.
   if (row.action === 'publish' && row.omitted) return deliveryFailed;
   const sites = row.site_count;
@@ -100,8 +104,8 @@ function deliveryState(row: PublicationStatusRow): DisplayState {
   if (row.sites_live_ok === sites) {
     return row.action === 'publish' ? { label: t.publish.live, tone: 'ok' } : { label: t.publish.removed, tone: 'neutral', detail: t.publish.removedDetail };
   }
-  // §7.4, decision 36.1: the sweep stops retrying at the limit and alerts.
-  if (row.notify_attempts >= MAX_NOTIFY_ATTEMPTS) return deliveryFailed;
+  // §7.4, M3-02: the sweep stops retrying 24 hours after the first failure and alerts.
+  if (row.retries_exhausted) return deliveryFailed;
   if (row.sites_live_ok + row.sites_not_confirmed === sites) {
     return { label: t.publish.notConfirmed, tone: 'error', detail: t.publish.notConfirmedDetail };
   }
