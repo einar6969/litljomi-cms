@@ -161,3 +161,8 @@ Einar in chat: "1. Turn off “Automatically expose new tables” in sitting 2, 
 - **LABAK go-live list, additions for C4:** litljomi.is DMARC is `p=none`; each project's production `*.vercel.app` domain is public under Standard Protection (`labak-hub.vercel.app` 200; accepted for staging by Einar), so remove them or confirm they may stay public.
 - Next: sitting 3 step 1, the `labak-hub` checks before its first deployment.
 - **Steps 1–3 done:** `labak-hub` checks pass; deployed `dpl_FQfA5d7Fp6jvGG5PEW8hbTQgDSnB` (`56bb9dd`), 200 + noindex, article live, "Birt á vef ✓", deployment URL behind the Vercel login; `landssamband-bakarameistara` unchanged (`aec9f95`). Next: step 4, the demo publish (an Event; the demo module has no articles).
+
+### C4 written, Task 29 incomplete (2026-11-03, eighth controller session)
+
+- Einar asked to wrap up during the phone check. `checkpoints/C4.md` written: A8, A11, A15 pass (`state.json`); A6, A7, the A1–A4 re-run, the phone check and Task 29 items 2–11 not done. Both sites live at "Birt á vef ✓"; `landssamband-bakarameistara` unchanged. `state.mjs checkpoint C4` refused (Tasks 28 and 29 not done), so C4 stays `pending` in `state.json`; not worked around.
+- **Waiting for Einar:** the four C4 questions (A1–A4 adapter, Task 29 scope, Task 28 state, next sitting); sign out of supabase.com in the pane; `vercel logout`; whether to push `main`/`m1/phase-1` and remove the three worktrees; secret key rotation.
