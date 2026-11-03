@@ -142,3 +142,9 @@
 Einar in chat: "1. Turn off “Automatically expose new tables” in sitting 2, while I’m signed in for the templates. Afterwards, check that only `api` is still exposed. 2. Bring the `cms provision` proposal before any site is created. 3. The preview secret waits until M3. 4. Show me a diff for .claude/settings.local.json that removes `Bash(git apply *)`, `Bash(git branch *)` and the stale one-off allow entries. I’ll approve it before sitting 2 starts." and "Ready for sitting 2 once that’s done. Start with G4."
 
 - Diff for `.claude/settings.local.json` (empties `allow`; all 16 entries were one-off or stale, two of them `git commit` messages approved earlier this session): sha256 `08f849b7b55c53b78720ba654ece2e518b87a9a8f11ba3d104a3ebe24af00bde`, shown to Einar.
+
+### Sitting 2 paused: waiting for Vercel Pro (2026-11-03, seventh controller session)
+
+- **Done:** G4 (SendGrid SMTP, four Icelandic templates byte-identical, 100 emails/hour, hook run 2 pass); decision 44 (auto-expose left, `provision` built, reviewed and merged `4d25371`, G6 limits); G5 approved (three CNAMEs, Einar adds them); G6 through the Vercel connector (Einar: "use the mcp connectors"): three projects with Node 22, fra1, Standard Protection, domains, non-secret variables; Einar entered the four CMS secrets; Build Command `next build` on both CMS-repo projects (Turborepo strict env). `main`/`m1/phase-1` pushed to GitHub at `4d25371`.
+- **Blocked:** the team is still on Hobby (`cron_jobs_limits_reached` on the CMS deployment); Einar upgrades later. The sites cannot build before a first release (`current.json` 400), so provisioning and a first publish come before the sites deploy.
+- **Open for Einar:** the order above or an SDK change for a missing pointer; the staging secret key was pasted in chat (kept by Einar; rotation on the C4 list); remove the unused `api.vercel.com` host at the end of G6; sign-out of supabase.com in the pane.
