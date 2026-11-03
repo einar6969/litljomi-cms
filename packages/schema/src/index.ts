@@ -33,6 +33,8 @@ export { link, type LinkOptions, type LinkValue, type LinkProjected, type LinkFi
 export { image, type ImageOptions, type ImageValue } from './fields/image.ts';
 export { richText, type RichTextOptions } from './fields/rich-text.ts';
 export { reference, type ReferenceOptions, type ReferenceValue, type ReferenceField } from './fields/reference.ts';
+export { group, type GroupOptions, type GroupField } from './fields/group.ts';
+export { list, newItemKey, type ListOptions, type ListField, type ListItem, type ProjectedListItem } from './fields/list.ts';
 export { slugify } from './slugify.ts';
 export { newsType } from './library/news.ts';
 export {

@@ -32,6 +32,7 @@ export interface EventEntry {
   category: "concert" | "workshop" | "talk" | null;
   doorsOpen: string | null;
   related: EntrySummary | null;
+  program: { intro: string | null; highlights: Array<{ _key: string; value: EntrySummary | null }> | null; } | null;
 }
 
 export interface NoticeEntry {
