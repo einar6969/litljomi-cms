@@ -135,7 +135,12 @@
         "adds": [
           "rwpgpfsmhhtimauvpoyt.supabase.co"
         ],
-        "note": "Einar in chat, 2026-11-03: \"Approved, signed in\" (to the hosts diff and his sign-in in the pane). Removal diff 93c8e245…1136 proposed at the end of sitting 1."
+        "note": "Einar in chat, 2026-11-03: \"Approved, signed in\" (to the hosts diff and his sign-in in the pane). Removal diff 93c8e245…1136 proposed at the end of sitting 1.",
+        "removed": {
+          "at": "2026-11-03",
+          "diffSha256": "93c8e24528b6d9dd8d33ba2efc170c023ecb12ff201d0521ebe8e88b20191136",
+          "note": "Einar in chat, 2026-11-03: \"Approve removal\". Re-requested as an exact diff when a later Supabase step needs the host."
+        }
       },
       "progress": "Sitting 1 (2026-11-03): G3.1–G3.5 and G3.7's URLs done; decision 36.7 passes on staging (57014 at 10.57 s); section 7.2 run 1 passes. Remaining: templates and the email rate limit (after G4's SMTP), Vault site secrets (P-2, after G6). Einar approved two deviations: G3.3 before G3.2c (\"Yes, do G3.3 first\") and the dashboard's own grant statements when creating the hook (\"Yes, create the hook\")."
     },
