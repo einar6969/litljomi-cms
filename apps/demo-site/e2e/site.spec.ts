@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parseEntryMarkers, parseReleaseMarker, signWebhook, type Bundle } from '@litljomi/cms-sdk';
 import { FIXTURES_ROOT } from './fixture-server.ts';
-import { startSite, WEBHOOK_SECRETS, type RunningSite } from './harness.ts';
+import { SITE_BUILDS, startSite, WEBHOOK_SECRETS, type RunningSite } from './harness.ts';
 
 const bundle = JSON.parse(readFileSync(join(FIXTURES_ROOT, 'delivery', 'demo', 'releases', '1.json'), 'utf8')) as Bundle;
 const events = bundle.entries['event'] ?? [];
@@ -15,12 +15,6 @@ function eventX(): (typeof events)[number] {
 }
 
 let site: RunningSite;
-beforeAll(async () => {
-  site = await startSite();
-});
-afterAll(async () => {
-  await site?.stop();
-});
 
 const get = (path: string) => fetch(site.url + path);
 function revalidate(o: { body?: string; secret?: string; signature?: string; ts?: number } = {}) {
@@ -34,7 +28,18 @@ function revalidate(o: { body?: string; secret?: string; signature?: string; ts?
   });
 }
 
-describe('demo site against the fixture bundle', () => {
+// The same site built on each supported Next.js major (plan M3-13; spec §7.3, A12): apps/demo-site on
+// Next.js 16 and apps/demo-site-next15, a copy of its source, on Next.js 15.
+describe.each(SITE_BUILDS)('demo site (%s) against the fixture bundle', (build) => {
+  beforeAll(async () => {
+    site = await startSite({ build });
+  });
+  afterAll(async () => {
+    await site?.stop();
+  });
+  it('was built with the Next.js major it names', () => {
+    expect(`next${site.nextVersion.split('.')[0]}`).toBe(build);
+  });
   it('/events/x renders a marker with the bundle hash and the content', async () => {
     const x = eventX();
     const res = await get('/events/x');

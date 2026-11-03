@@ -1,0 +1,22 @@
+{
+  "name": "demo-site-next15",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "sync": "node sync.mjs",
+    "build": "node sync.mjs && next build",
+    "start": "next start -p 3101"
+  },
+  "dependencies": {
+    "@litljomi/cms-sdk": "workspace:*",
+    "@litljomi/rich-text": "workspace:*",
+    "next": "15.5.28",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0"
+  }
+}

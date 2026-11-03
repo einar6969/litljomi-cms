@@ -1,0 +1,3 @@
+# Copied from apps/demo-site by sync.mjs before each build.
+/src/
+/next.config.ts

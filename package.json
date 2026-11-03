@@ -8,7 +8,7 @@
   },
   "scripts": {
     "lint": "eslint -c eslint.config.mjs .",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p apps/cms/tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p apps/cms/tsconfig.json && tsc --noEmit -p packages/sdk/tsconfig.json",
     "test": "vitest run",
     "check:slugs": "node tools/checks/no-tenant-slugs.ts",
     "check:schema": "pnpm --filter @litljomi/cli cli check-schema",

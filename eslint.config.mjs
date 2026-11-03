@@ -215,6 +215,9 @@ export default tseslint.config(
       '.worktrees/**',
       'docs/**',
       'tools/checks/__tests__/fixtures/**',
+      // Copies of apps/demo-site, made by apps/demo-site-next15/sync.mjs before its build (M3-13).
+      'apps/demo-site-next15/src/**',
+      'apps/demo-site-next15/next.config.ts',
     ],
   },
   // No comment in a source file can disable or reconfigure a rule.

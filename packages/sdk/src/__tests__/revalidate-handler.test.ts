@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createRevalidateHandler, signWebhook } from '../index.ts';
+import { CMS_REVALIDATE_PROFILE, createRevalidateHandler, signWebhook } from '../index.ts';
 
 const NOW = 1_800_000_000;
 const body = '{"release":3}';
@@ -183,5 +183,35 @@ describe('createRevalidateHandler: M3-09 hardening', () => {
     expect((await handler(replay)).status).toBe(200);
     // Each one only expires the cms tag again: the same call, with nothing taken from the body.
     expect(revalidate.mock.calls).toEqual([['cms'], ['cms']]);
+  });
+});
+
+// M3-13: the site passes Next.js's own revalidateTag, whichever major it runs (spec §7.3). The
+// real 15 and 16 implementations are exercised in next-compat.test.ts.
+describe('createRevalidateHandler: revalidateTag', () => {
+  it("calls revalidateTag('cms', { expire: 0 }) once on a valid request", async () => {
+    const revalidateTag = vi.fn();
+    const handler = createRevalidateHandler({ secrets: () => ['s1'], revalidateTag, now: () => NOW * 1000 });
+    expect((await handler(req())).status).toBe(200);
+    expect(revalidateTag.mock.calls).toEqual([['cms', { expire: 0 }]]);
+  });
+  it('passes a fresh profile object each time, so a caller that changes it changes nothing later', async () => {
+    const seen: object[] = [];
+    const revalidateTag = (_tag: string, profile: { expire: 0 }) => {
+      seen.push(profile);
+      (profile as { expire: number }).expire = 99;
+    };
+    const handler = createRevalidateHandler({ secrets: () => ['s1'], revalidateTag, now: () => NOW * 1000 });
+    await handler(req());
+    await handler(req());
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).not.toBe(seen[1]);
+    expect(CMS_REVALIDATE_PROFILE).toEqual({ expire: 0 });
+  });
+  it('does not call revalidateTag on a bad signature', async () => {
+    const revalidateTag = vi.fn();
+    const handler = createRevalidateHandler({ secrets: () => ['s1'], revalidateTag, now: () => NOW * 1000 });
+    expect((await handler(req({ secret: 'nope' }))).status).toBe(401);
+    expect(revalidateTag).not.toHaveBeenCalled();
   });
 });

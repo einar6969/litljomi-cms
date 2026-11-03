@@ -33,10 +33,29 @@ async function readCapped(req: Request, max: number): Promise<Uint8Array | null>
 }
 
 /**
- * Route handler for the site's revalidation endpoint. The site passes its own `revalidateTag`, so
- * the SDK does not depend on a Next.js version. 401 on a bad signature or stale timestamp (checked
- * before the body is read), 413 on a body over MAX_WEBHOOK_BODY_BYTES, a plain 500 if `secrets()`
- * throws or returns an empty entry (each secret is trimmed first; parseWebhookSecrets reads
+ * The cache-life profile the handler passes to Next.js's `revalidateTag`: the `cms` tag expires at
+ * once, so the next request regenerates from a fresh pointer (spec §7.3, decision 48.2). With
+ * `'max'` (stale-while-revalidate) that regeneration would still render from the cached pointer and
+ * one webhook would not be enough.
+ */
+export const CMS_REVALIDATE_PROFILE = Object.freeze({ expire: 0 } as const);
+
+/**
+ * `revalidateTag` from `next/cache`, on any Next.js major the SDK supports (spec §7.3: currently 15
+ * and 16, whose signatures differ). Next.js 15 declares `revalidateTag(tag)`, expires the tag at
+ * once and ignores a second argument; Next.js 16 declares `revalidateTag(tag, profile)` and, given
+ * no profile, warns that the one-argument form is deprecated. Both are assignable to this type, and
+ * the handler always calls it as `revalidateTag('cms', { expire: 0 })`, which means the same on both
+ * (plan M3-13; tested against each major's own `next/cache` in `__tests__/next-compat.test.ts`).
+ */
+export type NextRevalidateTag = (tag: string, profile: { expire: 0 }) => unknown;
+
+/**
+ * Route handler for the site's revalidation endpoint. The site passes its own `revalidateTag` from
+ * `next/cache` (either major, see NextRevalidateTag), so the SDK does not import Next.js; or instead
+ * `revalidate`, a function of its own that expires the tag at once. 401 on a bad signature or stale
+ * timestamp (checked before the body is read), 413 on a body over MAX_WEBHOOK_BODY_BYTES, a plain
+ * 500 if `secrets()` throws or returns an empty entry (each secret is trimmed first; parseWebhookSecrets reads
  * `CMS_WEBHOOK_SECRETS`); otherwise revalidates the `cms` tag and answers 200.
  *
  * Replays: a request replayed with its signature and timestamp within the 5-minute window is
@@ -44,12 +63,19 @@ async function readCapped(req: Request, max: number): Promise<Uint8Array | null>
  * tag once more: nothing is read from the body, revalidation is idempotent and changes no content,
  * and the next request renders from the same published pointer. So there is no nonce store.
  */
-export function createRevalidateHandler(o: {
-  secrets: () => string[];
-  revalidate: (tag: string) => void | Promise<void>;
-  now?: () => number;
-}): (req: Request) => Promise<Response> {
+export function createRevalidateHandler(
+  o: {
+    secrets: () => string[];
+    now?: () => number;
+  } & (
+    | { /** The site's `revalidateTag` from `next/cache`. */ revalidateTag: NextRevalidateTag; revalidate?: never }
+    | { /** Expires the tag itself (it must expire at once, not stale-while-revalidate). */ revalidate: (tag: string) => void | Promise<void>; revalidateTag?: never }
+  ),
+): (req: Request) => Promise<Response> {
   const now = o.now ?? Date.now;
+  // A fresh profile object per call: Next.js normalizes the one it is given.
+  const revalidate: (tag: string) => unknown =
+    o.revalidateTag !== undefined ? (tag) => o.revalidateTag(tag, { ...CMS_REVALIDATE_PROFILE }) : o.revalidate;
   const unauthorized = () => Response.json({ revalidated: false }, { status: 401 });
   const tooLarge = () => Response.json({ revalidated: false }, { status: 413 });
   return async (req) => {
@@ -70,7 +96,7 @@ export function createRevalidateHandler(o: {
     if (body === null) return tooLarge();
     const ok = verifyWebhook({ body, signature, timestamp: Number(stamp), secrets, nowSeconds });
     if (!ok) return unauthorized();
-    await o.revalidate('cms');
+    await revalidate('cms');
     return Response.json({ revalidated: true, at: new Date(now()).toISOString() });
   };
 }
