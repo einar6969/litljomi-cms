@@ -33,3 +33,8 @@ export interface EventEntry {
   doorsOpen: string | null;
   related: EntrySummary | null;
 }
+
+export interface NoticeEntry {
+  title: string | null;
+  body: string | null;
+}
