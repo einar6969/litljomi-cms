@@ -4,6 +4,7 @@ import { isSingleton } from '@litljomi/cms-schema';
 import { z } from 'zod';
 import { authOrError, failureAmong, hasSession, loadEntryContext } from '@/editor/server/entry-context';
 import { openSingleton, type OpenSingletonResult } from '@/editor/server/singleton';
+import { updateDraftSchema, type UpdateDraftSchemaResult } from '@/editor/server/update-draft-schema';
 import { createEditorClient } from '@/lib/supabase/server';
 import { isActive, resolveTenant } from '@/lib/tenant';
 import { getModule, getType } from '@/modules/registry';
@@ -25,6 +26,8 @@ export type SaveDraftResult =
 export type LoadDraftResult =
   | { ok: true; version: number; data: Record<string, unknown> }
   | { ok: false; code: 'auth' | 'invalid' | 'error' };
+
+export type { UpdateDraftSchemaResult };
 
 export type SetSlugResult =
   | { ok: true; slug: string }
@@ -145,6 +148,23 @@ export async function setSlugAction(id: string, slug: string): Promise<SetSlugRe
     const result = await client.rpc('set_slug', { p_entry_id: context.entryId, p_slug: args.data.slug });
     if (result.error) return { ok: false, code: failureAmong({ error: result.error, status: result.status }, ['slug_taken', 'slug_locked']) };
     return { ok: true, slug: args.data.slug };
+  } catch {
+    return { ok: false, code: 'error' };
+  }
+}
+
+/**
+ * Updates an outdated draft (§5.3; plan M2-14): the server reads the stored draft, upcasts it to
+ * the type's current version and saves it as a normal versioned update (`updateDraftSchema`). The
+ * browser sends only the entry and the version it saw, never data.
+ */
+export async function updateDraftSchemaAction(id: string, expectedVersion: number): Promise<UpdateDraftSchemaResult> {
+  const args = z.object({ id: entryId, expectedVersion: draftVersion }).safeParse({ id, expectedVersion });
+  if (!args.success) return { ok: false, code: 'invalid' };
+  try {
+    const client = await createEditorClient();
+    if (!(await hasSession(client))) return { ok: false, code: 'auth' };
+    return await updateDraftSchema(client, args.data.id, args.data.expectedVersion);
   } catch {
     return { ok: false, code: 'error' };
   }

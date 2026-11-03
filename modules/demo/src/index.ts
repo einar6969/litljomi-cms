@@ -49,9 +49,12 @@ const noticeType = defineType({
   fields: {
     title: text({ label: 'Title', required: true }),
     body: text({ label: 'Body', multiline: true }),
+    // Added in M2-13, an additive change (no transform, §5.3): `orderBy` fills the `sort_at`
+    // timestamp column, so it names a date field, not the title.
+    date: date({ label: 'Date' }),
   },
   preview: { title: 'title' },
-  orderBy: 'title',
+  orderBy: 'date',
   transforms: {
     1: (data) => {
       const { heading, ...rest } = data as Record<string, unknown>;

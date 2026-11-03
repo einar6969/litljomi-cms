@@ -119,7 +119,8 @@ select col_is_pk('cms', 'revision_refs', array['tenant_id', 'revision_id', 'path
 select table_privs_are('cms', 'draft_refs', 'authenticated', array['SELECT', 'INSERT', 'DELETE'],
   'authenticated: select, insert, delete on draft_refs');
 select table_privs_are('cms', 'revision_refs', 'authenticated', array['SELECT'], 'authenticated: select only on revision_refs');
-select table_privs_are('cms', 'draft_refs', 'service_role', array['SELECT'], 'service_role: select only on draft_refs');
+-- M2-13: insert and delete, because drafts_sync_refs runs as the CLI's draft migration (service_role).
+select table_privs_are('cms', 'draft_refs', 'service_role', array['SELECT', 'INSERT', 'DELETE'], 'service_role: select, insert, delete on draft_refs (M2-13)');
 select table_privs_are('cms', 'revision_refs', 'service_role', array['SELECT', 'INSERT'], 'service_role: select, insert on revision_refs');
 select table_privs_are('cms', 'draft_refs', 'anon', array[]::text[], 'anon: nothing on draft_refs');
 select table_privs_are('cms', 'revision_refs', 'anon', array[]::text[], 'anon: nothing on revision_refs');
@@ -129,8 +130,10 @@ select set_eq($$ select * from tests.column_privs('authenticated', 'cms.draft_re
   $$ select a.attname::text, 'INSERT' from pg_catalog.pg_attribute a
      where a.attrelid = 'cms.draft_refs'::regclass and a.attnum > 0 and not a.attisdropped $$,
   'authenticated: insert (table level) and no update on draft_refs');
-select is_empty($$ select * from tests.column_privs('service_role', 'cms.draft_refs') $$,
-  'service_role: no insert, update or references on draft_refs');
+select set_eq($$ select * from tests.column_privs('service_role', 'cms.draft_refs') $$,
+  $$ select a.attname::text, 'INSERT' from pg_catalog.pg_attribute a
+     where a.attrelid = 'cms.draft_refs'::regclass and a.attnum > 0 and not a.attisdropped $$,
+  'service_role: insert (table level) and no update on draft_refs');
 select policies_are('cms', 'draft_refs', array['draft_refs_select_member', 'draft_refs_insert_member', 'draft_refs_delete_member'],
   'draft_refs policies: select, insert, delete for members');
 select policies_are('cms', 'revision_refs', array['revision_refs_select_member'], 'revision_refs policy: select for members');
@@ -378,9 +381,10 @@ select throws_ok($$ insert into cms.revisions (tenant_id, entry_id, draft_versio
           '{"x": {"_ref": "00000000-0000-4000-8000-00000000c101 ", "_kind": "entry"}}', tests.persona('editor_labak')) $$,
   '22P02', null, 'a revision with a malformed _ref is refused');
 select throws_ok($$ delete from cms.revision_refs $$, '42501', null, 'service_role cannot delete revision_refs');
-select throws_ok($$ insert into cms.draft_refs (tenant_id, entry_id, path, target_entry_id)
-  values (tests.tenant('labak'), tests.entry('c104'), '$."x"', tests.entry('c101')) $$, '42501', null,
-  'service_role cannot insert draft_refs');
+-- M2-13 gave service_role INSERT on draft_refs (drafts_sync_refs during the draft
+-- migration); the privilege is pinned above, and it still cannot update them.
+select throws_ok($$ update cms.draft_refs set path = '$."y"' $$, '42501', null,
+  'service_role cannot update draft_refs');
 select tests.act_as(tests.persona('editor_labak'));
 select is((select count(*)::int from cms.revision_refs), 3, 'labak editor reads labak revision_refs');
 select tests.act_as(tests.persona('editor_demo'));
