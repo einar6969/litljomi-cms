@@ -300,6 +300,26 @@ describe('confirmSite: failures', () => {
     expect(error.failures).toHaveLength(50);
     expect(error.more).toBe(3);
   });
+
+  // Task 21 quality r1, Minor 6: the stored failures do not depend on the order targets settle in.
+  it('stores the failures in entry order, so the same misses give the same last_error', async () => {
+    site.pages.set('/api/revalidate', { status: 200 });
+    const id = (i: number) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
+    const targets: LiveTarget[] = Array.from({ length: 53 }, (_, i) => ({
+      entryId: id(52 - i),
+      requestIds: [],
+      failure: 'delivery_failed',
+      checks: [],
+      ownPath: '',
+      contentHash: null,
+      mediaUrls: [],
+    }));
+
+    await confirmSite(db, release, workerSite(), targets, {});
+
+    const error = recorded.at(-1)!.p_error as { failures: Array<{ entryId: string }> };
+    expect(error.failures.map((f) => f.entryId)).toEqual(Array.from({ length: 50 }, (_, i) => id(i)));
+  });
 });
 
 // Task 21 quality r1, Minors 3 and 5: one confirmation path for the fast path and the sweep, and

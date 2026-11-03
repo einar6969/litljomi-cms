@@ -6,16 +6,21 @@ import { deliverTenant } from './deliver';
 import { processRequestById } from './process-request';
 import { runSweep } from './sweep';
 
-/** Poll and timeout of the live checks (§7.4 defaults: 3 s and 60 s); injectable for tests. */
-export type PipelineOptions = DeliveryOptions;
+/**
+ * Poll and timeout of the live checks (§7.4 defaults: 3 s and 60 s); injectable for tests.
+ * `arrivedAt` is when the route received the request (epoch ms): the platform's maxDuration runs
+ * from there, not from the start of the job inside `after()` (Task 29 security r1, Minor 3).
+ */
+export type PipelineOptions = DeliveryOptions & { arrivedAt?: number };
 
 /**
- * The options with the run deadline set, when not given, to now plus the routes' maxDuration
- * (decision 49.1): the pointer poll before the notification ends early enough for the live check.
+ * The options with the run deadline set, when not given, to the request's arrival (now, when that
+ * is not given) plus the routes' maxDuration (decision 49.1): the pointer poll before the
+ * notification ends early enough for the live check.
  */
-const withRunDeadline = (options: PipelineOptions): PipelineOptions => ({
+const withRunDeadline = ({ arrivedAt, ...options }: PipelineOptions): DeliveryOptions => ({
   ...options,
-  runDeadline: options.runDeadline ?? Date.now() + WORKER_MAX_DURATION_MS,
+  runDeadline: options.runDeadline ?? (arrivedAt ?? Date.now()) + WORKER_MAX_DURATION_MS,
 });
 
 /**

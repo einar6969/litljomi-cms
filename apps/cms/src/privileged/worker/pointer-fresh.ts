@@ -21,6 +21,11 @@ export const POINTER_FRESH_MAX_MS = 120_000;
 export const FINISH_MARGIN_MS = 10_000;
 /** One fetch of the pointer may take at most this long (and never past the bound). */
 const POINTER_FETCH_TIMEOUT_MS = 5_000;
+/**
+ * A pointer body larger than this is "not fresh yet" and is not parsed (Task 29 security r1,
+ * Minor 2). A pointer is a few small fields (about 100 bytes); 16 KiB leaves ample room.
+ */
+export const MAX_POINTER_BYTES = 16 * 1024;
 
 /** The public URL of the tenant's pointer: `{supabaseUrl}/storage/v1/object/public/delivery/{slug}/current.json`. */
 export function publicPointerUrl(supabaseUrl: string, tenantSlug: string): string {
@@ -75,8 +80,8 @@ export type PointerWaitResult = {
 /**
  * Polls the pointer's public URL (no cache, no redirects, each fetch bounded) about every
  * POINTER_POLL_MS until its JSON's `release` is at least `release`, or until pointerWaitEnd; when
- * that end has already passed, it does not poll. A fetch error, a status other than 200 or a body
- * that is not a pointer is "not fresh yet". Never throws.
+ * that end has already passed, it does not poll. A fetch error, a status other than 200, a body
+ * over MAX_POINTER_BYTES or one that is not a pointer is "not fresh yet". Never throws.
  */
 export async function waitForPublicPointer(o: PointerWaitInput): Promise<PointerWaitResult> {
   const now = o.now ?? Date.now;
@@ -111,13 +116,42 @@ async function servesRelease(fetchFn: typeof fetch, url: string, release: number
       await response.body?.cancel().catch(() => {});
       return false;
     }
-    const body: unknown = await response.json();
+    const text = await readCapped(response, MAX_POINTER_BYTES);
+    if (text === null) return false;
+    const body: unknown = JSON.parse(text);
     if (body === null || typeof body !== 'object') return false;
     const served = (body as { release?: unknown }).release;
     return typeof served === 'number' && Number.isSafeInteger(served) && served >= release;
   } catch {
     return false;
   }
+}
+
+/**
+ * The body as UTF-8 text, or null when it is larger than `maxBytes` (by its declared length or as
+ * read; reading stops at the cap and the rest is cancelled).
+ */
+async function readCapped(response: Response, maxBytes: number): Promise<string | null> {
+  const declared = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await response.body?.cancel().catch(() => {});
+    return null;
+  }
+  if (response.body === null) return '';
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      await reader.cancel().catch(() => {});
+      return null;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, ms)));

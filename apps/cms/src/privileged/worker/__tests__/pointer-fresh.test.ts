@@ -3,6 +3,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   FINISH_MARGIN_MS,
+  MAX_POINTER_BYTES,
   POINTER_FRESH_MAX_MS,
   POINTER_POLL_MS,
   pointerWaitEnd,
@@ -28,7 +29,7 @@ function clock(start: number, fetchMs = 50) {
   return c;
 }
 
-type Answer = { status?: number; body?: string } | 'throw';
+type Answer = { status?: number; body?: string; headers?: Record<string, string> } | 'throw';
 const pointer = (release: number) => ({ body: JSON.stringify({ format: 1, tenant: 'prufa', release, bundle: `releases/${release}.json`, generatedAt: 'x' }) });
 
 /** A fake public fetch answering from `answers` in order (the last one repeats), recording each call. */
@@ -39,7 +40,7 @@ function fakeFetch(c: ReturnType<typeof clock>, answers: Answer[]) {
     c.t += c.fetchMs;
     const a = answers[Math.min(calls.length - 1, answers.length - 1)]!;
     if (a === 'throw') throw new TypeError('fetch failed');
-    return new Response(a.body ?? '', { status: a.status ?? 200 });
+    return new Response(a.body ?? '', { status: a.status ?? 200, headers: a.headers });
   };
   return { fn: fn as typeof fetch, calls };
 }
@@ -168,6 +169,27 @@ describe('waitForPublicPointer', () => {
     const result = await waitForPublicPointer(input(c, f));
 
     expect(result).toMatchObject({ fresh: true, polls: 8 });
+  });
+
+  // Task 29 security r1, Minor 2: the body is capped before it is parsed.
+  it('a pointer body over MAX_POINTER_BYTES is not fresh and is not parsed, whether declared or streamed', async () => {
+    const padded = JSON.stringify({ format: 1, tenant: 'prufa', release: 5, bundle: 'releases/5.json', pad: 'x'.repeat(MAX_POINTER_BYTES) });
+    const exact = JSON.stringify({ release: 5, pad: '' });
+    const atCap = JSON.stringify({ release: 5, pad: 'x'.repeat(MAX_POINTER_BYTES - exact.length) });
+    expect(new TextEncoder().encode(atCap).byteLength).toBe(MAX_POINTER_BYTES);
+    const parse = vi.spyOn(JSON, 'parse');
+    try {
+      const c = clock(WRITTEN);
+      const f = fakeFetch(c, [{ body: padded }, { body: pointer(5).body, headers: { 'content-length': String(MAX_POINTER_BYTES + 1) } }, { body: atCap }]);
+
+      const result = await waitForPublicPointer(input(c, f));
+
+      expect(result).toMatchObject({ fresh: true, polls: 3 });
+      // Only the body at the cap was parsed.
+      expect(parse.mock.calls.map((call) => call[0])).toEqual([atCap]);
+    } finally {
+      parse.mockRestore();
+    }
   });
 
   it('a fetch that throws synchronously is not fresh, never an exception', async () => {

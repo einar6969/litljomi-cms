@@ -9,7 +9,15 @@ type Reply = { data?: unknown; error?: { code: string; message: string } };
 const order: string[] = [];
 const args: Array<{ fn: string; args: Record<string, unknown> }> = [];
 let handlers: Record<string, (a: Record<string, unknown>) => Reply> = {};
+/** The bundles the fake delivery bucket serves to a retry, by path. */
+const bundles = new Map<string, unknown>();
 const fakeClient = {
+  storage: {
+    from: (_bucket: string) => ({
+      download: async (path: string) =>
+        bundles.has(path) ? { data: new Blob([JSON.stringify(bundles.get(path))]), error: null } : { data: null, error: new Error(`no ${path}`) },
+    }),
+  },
   rpc: vi.fn(async (fn: string, a: Record<string, unknown>) => {
     order.push(fn);
     args.push({ fn, args: a });
@@ -27,13 +35,18 @@ const processPendingMock = vi.fn(async () => {
   return [];
 });
 vi.mock('../process-request', () => ({ processPendingRequests: () => processPendingMock() }));
-const deliverTenantMock = vi.fn(async (tenantId: string) => {
+const deliverTenantMock = vi.fn(async (tenantId: string): Promise<{ status: string; releaseId?: string; omitted: string[] }> => {
   order.push(`deliverTenant ${tenantId}`);
   return { status: 'delivered', releaseId: `rel-${tenantId}`, omitted: [] };
+});
+const confirmReleaseMock = vi.fn(async (_db: unknown, release: { tenantId: string; number: number }, _o: unknown, retry?: ReadonlySet<string>) => {
+  order.push(`confirmRelease ${release.tenantId} #${release.number} [${[...(retry ?? [])].join(',')}]`);
 });
 vi.mock('../deliver', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../deliver')>()),
   deliverTenant: (tenantId: string) => deliverTenantMock(tenantId),
+  confirmRelease: (db: unknown, release: { tenantId: string; number: number }, o: unknown, retry?: ReadonlySet<string>) =>
+    confirmReleaseMock(db, release, o, retry),
 }));
 
 const { failStaleReleases, runSweep, STALE_RELEASE_SECONDS } = await import('../sweep');
@@ -52,6 +65,8 @@ beforeEach(() => {
   alertMock.mockClear();
   processPendingMock.mockClear();
   deliverTenantMock.mockClear();
+  confirmReleaseMock.mockClear();
+  bundles.clear();
   vi.spyOn(console, 'error').mockImplementation(() => {});
   handlers = {
     worker_fail_stale_releases: () => ({ data: STALE }),
@@ -107,8 +122,8 @@ describe('runSweep', () => {
       'worker_fail_stale_releases',
       'processPendingRequests',
       'worker_tenants_to_release',
-      'deliverTenant t1',
       'worker_deliveries_to_retry',
+      'deliverTenant t1',
       'worker_private_orphans',
       'worker_claim_release_cleanup',
     ]);
@@ -139,8 +154,8 @@ describe('runSweep', () => {
       'worker_fail_stale_releases',
       'processPendingRequests',
       'worker_tenants_to_release',
-      'deliverTenant t1',
       'worker_deliveries_to_retry',
+      'deliverTenant t1',
       'worker_private_orphans',
       'worker_claim_release_cleanup',
     ]);
@@ -189,6 +204,95 @@ describe('runSweep', () => {
     await runSweep({ now: () => Date.UTC(2026, 10, 4, 12, 0, 0) });
 
     expect(args.find((c) => c.fn === 'worker_deliveries_to_retry')?.args).toEqual({ p_now: '2026-11-04T12:00:00.000Z' });
+  });
+
+  // Task 29 security r1, Minor 1: one tenant's build (and its pointer poll) no longer delays
+  // another tenant's notify retries.
+  describe('builds and retries per tenant', () => {
+    const row = (tenant: string, release: number, site: string) => ({
+      release_id: `rel-${tenant}-${release}`,
+      tenant_id: tenant,
+      tenant_slug: tenant,
+      release_number: release,
+      bundle_path: `${tenant}/releases/${release}.json`,
+      previous_bundle_path: null,
+      site_id: site,
+      notify_status: 'failed',
+      notify_attempts: 1,
+      live_status: 'pending',
+      requests: [],
+    });
+    const bundle = (tenant: string, release: number) => ({ format: 1, tenant, release, generatedAt: 'x', entries: {} });
+    beforeEach(() => {
+      for (const [t, n] of [['prufa', 3], ['demo', 8]] as const) bundles.set(`${t}/releases/${n}.json`, bundle(t, n));
+    });
+
+    it('a tenant with nothing to build retries at once, without waiting for another tenant’s build', async () => {
+      handlers.worker_tenants_to_release = () => ({ data: [{ tenant_id: 'prufa' }] });
+      handlers.worker_deliveries_to_retry = () => ({ data: [row('demo', 8, 'sd1'), row('demo', 8, 'sd2')] });
+      let finishBuild!: () => void;
+      deliverTenantMock.mockImplementationOnce(async (tenantId: string) => {
+        order.push(`deliverTenant ${tenantId}`);
+        await new Promise<void>((resolve) => (finishBuild = resolve));
+        order.push(`delivered ${tenantId}`);
+        return { status: 'delivered', releaseId: 'rel-prufa-4', omitted: [] };
+      });
+
+      const sweep = runSweep();
+      await vi.waitFor(() => expect(confirmReleaseMock).toHaveBeenCalled());
+      expect(order).toContain('confirmRelease demo #8 [sd1,sd2]');
+      expect(order).not.toContain('delivered prufa');
+      finishBuild();
+      await sweep;
+
+      expect(order.indexOf('confirmRelease demo #8 [sd1,sd2]')).toBeLessThan(order.indexOf('delivered prufa'));
+    });
+
+    it('a tenant whose build delivered a release drops the retries of the release it superseded', async () => {
+      handlers.worker_tenants_to_release = () => ({ data: [{ tenant_id: 'prufa' }] });
+      handlers.worker_deliveries_to_retry = () => ({ data: [row('prufa', 3, 'sp1')] });
+
+      await runSweep();
+
+      expect(order).toContain('deliverTenant prufa');
+      expect(confirmReleaseMock).not.toHaveBeenCalled();
+    });
+
+    it('a tenant whose build did not deliver (busy, failed, nothing to build) retries after it', async () => {
+      handlers.worker_tenants_to_release = () => ({ data: [{ tenant_id: 'prufa' }] });
+      handlers.worker_deliveries_to_retry = () => ({ data: [row('prufa', 3, 'sp1')] });
+      deliverTenantMock.mockImplementationOnce(async (tenantId: string) => {
+        order.push(`deliverTenant ${tenantId}`);
+        return { status: 'busy', omitted: [] };
+      });
+
+      await runSweep();
+
+      expect(order.indexOf('deliverTenant prufa')).toBeLessThan(order.indexOf('confirmRelease prufa #3 [sp1]'));
+    });
+
+    it('a tenant whose build threw leaves its retries to the next sweep, and the error is reported', async () => {
+      handlers.worker_tenants_to_release = () => ({ data: [{ tenant_id: 'prufa' }] });
+      handlers.worker_deliveries_to_retry = () => ({ data: [row('prufa', 3, 'sp1'), row('demo', 8, 'sd1')] });
+      deliverTenantMock.mockRejectedValueOnce(new Error('prufa broke'));
+
+      const error = await runSweep().then(
+        () => null,
+        (e: unknown) => e,
+      );
+
+      expect((error as AggregateError).errors.map((e: Error) => e.message)).toEqual(['prufa broke']);
+      expect(confirmReleaseMock.mock.calls.map((c) => c[1].tenantId)).toEqual(['demo']);
+    });
+
+    it('when the tenants cannot be listed, the retries still run', async () => {
+      handlers.worker_tenants_to_release = () => ({ error: { code: '08006', message: 'connection failure' } });
+      handlers.worker_deliveries_to_retry = () => ({ data: [row('prufa', 3, 'sp1')] });
+
+      await expect(runSweep()).rejects.toThrow(AggregateError);
+      expect(deliverTenantMock).not.toHaveBeenCalled();
+      expect(confirmReleaseMock).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('one tenant’s failing release does not stop the others', async () => {

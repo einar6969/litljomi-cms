@@ -12,6 +12,8 @@ const body = z.strictObject({ requestId: canonicalUuid });
 
 /** The fast path: an editor action posts the new request ID here after `request_publish`. */
 export async function POST(req: Request): Promise<Response> {
+  // The run's deadline counts from here, the platform's start of maxDuration (decision 49.1).
+  const arrivedAt = Date.now();
   if (!verifyInternalSecret(req)) return new Response(null, { status: 401 });
   // A refused body is logged without its content, so a misconfigured caller is visible in operations.
   const badRequest = () => {
@@ -29,7 +31,7 @@ export async function POST(req: Request): Promise<Response> {
   const { requestId } = parsed.data;
   after(async () => {
     try {
-      await processAndDeliver(requestId);
+      await processAndDeliver(requestId, { arrivedAt });
     } catch (error) {
       // The sweep retries what this run left behind (spec §6.3); this records the failure (decision 10).
       console.error('[cms-alert] worker run failed', { requestId }, error);

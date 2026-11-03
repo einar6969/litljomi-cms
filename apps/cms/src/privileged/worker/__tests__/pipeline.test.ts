@@ -32,6 +32,11 @@ describe('processAndDeliver', () => {
     await processAndDeliver('q', { runDeadline: NOW + 5 });
     expect(mocks.deliverTenant).toHaveBeenCalledWith('t1', { runDeadline: NOW + 5 });
   });
+  // Task 29 security r1, Minor 3: maxDuration runs from the request's arrival at the route.
+  it('counts the run deadline from the request’s arrival when the route gives it', async () => {
+    await processAndDeliver('q', { arrivedAt: NOW - 4_000, pollMs: 20 });
+    expect(mocks.deliverTenant).toHaveBeenCalledWith('t1', { pollMs: 20, runDeadline: NOW - 4_000 + WORKER_MAX_DURATION_MS });
+  });
 });
 
 describe('sweep', () => {

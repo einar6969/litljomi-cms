@@ -355,6 +355,20 @@ describe('buildRelease (labak)', () => {
 describe('worker recovery (labak)', () => {
   const real = () => supabaseReleaseStorage(secret);
 
+  // Task 30 quality r1: the database's 420 s and STALE_RELEASE_SECONDS are the same number.
+  it('the database fails a building release only once it is older than STALE_RELEASE_SECONDS', async () => {
+    const r = await withTx('service', async (w) => (await w.query('select r.id from api.worker_begin_release($1) as r', [TENANT.labak])).rows[0] as { id: string });
+    const age = (seconds: number) => ownerQuery(`update cms.releases set created_at = now() - make_interval(secs => $2) where id = $1`, [r.id, seconds]);
+
+    await age(STALE_RELEASE_SECONDS - 5);
+    expect((await failStaleReleases(createAdminClient())).map((f) => f.release_id)).not.toContain(r.id);
+    expect(await releaseRow(r.id)).toMatchObject({ status: 'building' });
+
+    await age(STALE_RELEASE_SECONDS + 5);
+    expect((await failStaleReleases(createAdminClient())).map((f) => f.release_id)).toContain(r.id);
+    expect(await releaseRow(r.id)).toMatchObject({ status: 'failed', error: { code: 'stale_building', maxAgeSeconds: STALE_RELEASE_SECONDS } });
+  });
+
   it('the sweep step fails a stale building release, a late finish of it is refused, and the next build is n+1', async () => {
     const before = await delivered();
     const stale = await withTx('service', async (w) => (await w.query('select r.id, r.number from api.worker_begin_release($1) as r', [TENANT.labak])).rows[0] as { id: string; number: number });
