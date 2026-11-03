@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-02T23:39:06.496Z",
+  "updatedAt": "2026-11-03T05:50:55.788Z",
   "branch": "m1/phase-1",
   "tasks": [
     {
@@ -1310,9 +1310,9 @@
       "at": null
     },
     "A8": {
-      "status": "pending",
-      "evidence": null,
-      "at": null
+      "status": "pass",
+      "evidence": "docs/verification/m1-report.md",
+      "at": "2026-11-03T05:50:55.731Z"
     },
     "A9": {
       "status": "pass",
@@ -1325,9 +1325,9 @@
       "at": null
     },
     "A11": {
-      "status": "pending",
-      "evidence": null,
-      "at": null
+      "status": "pass",
+      "evidence": "docs/verification/m1-report.md",
+      "at": "2026-11-03T05:50:55.762Z"
     },
     "A12": {
       "status": "pending",
@@ -1345,9 +1345,9 @@
       "at": "2026-11-02T08:35:46.901Z"
     },
     "A15": {
-      "status": "pending",
-      "evidence": null,
-      "at": null
+      "status": "pass",
+      "evidence": "docs/verification/m1-report.md",
+      "at": "2026-11-03T05:50:55.788Z"
     }
   },
   "checkpoints": {
