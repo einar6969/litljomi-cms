@@ -8,9 +8,11 @@ import { Button } from '@/ui/Button';
 import { Notice } from '@/ui/Notice';
 import { useAutosave, type TheirVersion } from '../autosave';
 import { PublishPanel } from '../publish/PublishPanel';
+import type { RevisionSummary } from '../revisions';
 import { changedFields } from './conflict';
 import type { FieldDescriptor } from './descriptors';
 import { fieldRegistry } from './field-registry';
+import { RevisionHistory } from './RevisionHistory';
 import { SlugField } from './SlugField';
 import { EditorTenantProvider, type EditorTenant } from './tenant-context';
 
@@ -27,6 +29,10 @@ type Props = {
   slugLocked: boolean;
   /** The entry has a published revision (Task 25: the publish panel offers to take it down). */
   published?: boolean;
+  /** The entry's published revisions, newest first (M2-16). */
+  revisions?: readonly RevisionSummary[];
+  /** The page was opened right after a restore: it says so once. */
+  restored?: boolean;
 };
 
 /** False only when Supabase Auth says the browser has no valid session (not on a network failure). */
@@ -42,14 +48,15 @@ async function sessionIsValid(): Promise<boolean> {
  * autosave; local values stay on the screen whatever the save answers. A stale save shows the
  * conflict view (M2-11): only "reload theirs" replaces the form's values.
  */
-export function EntryForm({ tenant, entryId, fields, titleKey, initialData, initialVersion, initialSlug, slugLocked, published = false }: Props) {
+export function EntryForm({ tenant, entryId, fields, titleKey, initialData, initialVersion, initialSlug, slugLocked, published = false, revisions = [], restored = false }: Props) {
   const [data, setData] = useState<Record<string, unknown>>(initialData);
   const latest = useRef(data);
   // Bumped when "reload theirs" replaces the values, so every field remounts with them (a field may
   // hold its own editing state, such as the rich-text editor's document).
   const [generation, setGeneration] = useState(0);
   const autosave = useAutosave({ entryId, initialVersion, save: saveDraftAction, sessionIsValid, loadLatest: loadDraftAction });
-  const { schedule, takeTheirs } = autosave;
+  const { schedule, takeTheirs, pendingData } = autosave;
+  const hasUnsaved = useCallback(() => pendingData() !== null, [pendingData]);
   const reloadTheirs = useCallback(() => {
     const theirs = takeTheirs();
     if (theirs === null) return;
@@ -76,6 +83,11 @@ export function EntryForm({ tenant, entryId, fields, titleKey, initialData, init
     <EditorTenantProvider value={tenant}>
       <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
         <form onSubmit={(e) => e.preventDefault()} className="flex min-w-0 flex-col gap-5">
+          {restored ? (
+            <Notice tone="success" role="status">
+              {t.editor.history.restored}
+            </Notice>
+          ) : null}
           {fields.map((field) => {
             const Component = fieldRegistry[field.kind];
             const id = `field-${field.key}`;
@@ -108,14 +120,23 @@ export function EntryForm({ tenant, entryId, fields, titleKey, initialData, init
             <SaveStatus state={autosave.state} retry={autosave.retry} />
           )}
         </form>
-        {/* The request carries the version the editor last saw (review focus 3). */}
-        <PublishPanel
-          entryId={entryId}
-          version={autosave.version}
-          disabled={autosave.state === 'conflict' || autosave.state === 'signed_out'}
-          initiallyPublished={published}
-          fieldLabels={fieldLabels}
-        />
+        <div className="flex min-w-0 flex-col gap-8">
+          {/* The request carries the version the editor last saw (review focus 3). */}
+          <PublishPanel
+            entryId={entryId}
+            version={autosave.version}
+            disabled={autosave.state === 'conflict' || autosave.state === 'signed_out'}
+            initiallyPublished={published}
+            fieldLabels={fieldLabels}
+          />
+          <RevisionHistory
+            entryId={entryId}
+            revisions={revisions}
+            version={autosave.version}
+            disabled={autosave.state === 'conflict' || autosave.state === 'signed_out'}
+            hasUnsaved={hasUnsaved}
+          />
+        </div>
       </div>
     </EditorTenantProvider>
   );

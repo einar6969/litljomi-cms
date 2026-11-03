@@ -55,12 +55,12 @@ grant execute on function tests.api_functions(), tests.api_views(), tests.sqlsta
   to anon, authenticated, service_role;
 
 -- The lists are not vacuous: 10 editor (M2-09 added create_singleton_entry), 22 worker and 6 admin
--- functions; 6 views.
+-- functions; 7 views (M2-16 added revision_list).
 -- A task that adds an api function or view updates these counts (and 010's 28).
 select is((select count(*)::int from tests.api_functions()), 38, 'api holds 38 functions');
 select is((select count(*)::int from tests.api_functions() where name ~ '^(worker|admin)_'), 28,
   '28 of them are worker_* or admin_*');
-select is((select count(*)::int from tests.api_views()), 6, 'api holds 6 views');
+select is((select count(*)::int from tests.api_views()), 7, 'api holds 7 views');
 
 select tests.seed();
 insert into cms.entries (id, tenant_id, type, created_by) values

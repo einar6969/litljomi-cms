@@ -7,7 +7,7 @@ import { t } from '@/i18n/is';
 const referenceOptionsAction = vi.hoisted(() => vi.fn());
 vi.mock('@/app/(editor)/t/[tenant]/reference-actions', () => ({ referenceOptionsAction }));
 vi.mock('@/lib/supabase/browser', () => ({ createBrowserEditorClient: () => ({}) }));
-vi.mock('@/app/(editor)/t/[tenant]/actions', () => ({ saveDraftAction: vi.fn(), loadDraftAction: vi.fn(), setSlugAction: vi.fn() }));
+vi.mock('@/app/(editor)/t/[tenant]/actions', () => ({ saveDraftAction: vi.fn(), loadDraftAction: vi.fn(), setSlugAction: vi.fn(), restoreRevisionAction: vi.fn() }));
 vi.mock('@/app/(editor)/t/[tenant]/asset-actions', () => ({ registerAssetAction: vi.fn(), assetPreviewAction: vi.fn(), updateAssetAction: vi.fn() }));
 vi.mock('@/app/(editor)/t/[tenant]/publish-actions', () => ({ requestPublishAction: vi.fn(), requestUnpublishAction: vi.fn() }));
 
