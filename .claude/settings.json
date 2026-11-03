@@ -20,6 +20,8 @@
     "ask": [
       "Bash(git push *)",
       "Bash(git remote *)",
+      "Bash(git -C * push *)",
+      "Bash(git -C * remote *)",
       "Bash(gh *)",
       "Bash(vercel *)",
       "Bash(netlify *)",
@@ -43,7 +45,7 @@
     "enabled": true,
     "failIfUnavailable": true,
     "network": {
-      "allowedDomains": ["registry.npmjs.org"],
+      "allowedDomains": ["registry.npmjs.org", "github.com", "api.github.com"],
       "allowUnixSockets": [
         "/Users/einarzoega/.orbstack/run/docker.sock",
         "/var/run/docker.sock"

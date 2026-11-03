@@ -96,8 +96,21 @@
       }
     },
     "G2": {
-      "status": "pending",
-      "params": {}
+      "status": "approved",
+      "by": "Einar",
+      "at": "2026-11-03",
+      "scope": "Decision 43.2: private GitHub repository einar6969/litljomi-cms; push main and m1/phase-1 only (never another branch, never a force-push), after the GitHub Actions are pinned to commit SHAs; Actions on (lint, typecheck, unit, pgTAP on a local stack in CI) with no repository secrets. Sandbox hosts github.com and api.github.com for this gate only (diff 28d95c6c…9657), removed when G2 is done; ask rules for git -C … push/remote (diff C 4679b5f9…717b). Einar runs gh and git push himself; the controller hands him the commands.",
+      "note": "Einar in chat, 2026-11-03: \"I approve G2 as requested (Einar, 2026-11-03): the hosts diff 28d95c6c…9657 adding github.com and api.github.com (removed when G2 is done), and diff C 4679b5f9…717b. Private einar6969/litljomi-cms, pushing main and m1/phase-1 only, after the actions are pinned. Hand me the gh and git push commands when step 1 is done.\"",
+      "params": {
+        "repository": "einar6969/litljomi-cms",
+        "visibility": "private",
+        "branches": [
+          "main",
+          "m1/phase-1"
+        ],
+        "hostsDiffSha256": "28d95c6cea48aa55ec90d37e65c39b43d4390455d2bdec8a20414c3fc1389657",
+        "askRulesDiffSha256": "4679b5f91d53dcea5f00445063d8e0d2a585d519f9d793a57c81c1647e79717b"
+      }
     },
     "G3": {
       "status": "pending",
