@@ -27,6 +27,8 @@ const r = t.editor.resolve;
 let container: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
+  // Unsaved copies stay in the tab (M2-17); each test starts with an empty one.
+  sessionStorage.clear();
   vi.useFakeTimers();
   container = document.createElement('div');
   document.body.append(container);
