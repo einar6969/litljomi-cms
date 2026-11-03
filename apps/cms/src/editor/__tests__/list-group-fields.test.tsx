@@ -23,6 +23,7 @@ const { GroupField } = await import('../form/fields/GroupField');
 const { EntryForm } = await import('../form/EntryForm');
 const { describeFields } = await import('../form/descriptors');
 const { fieldRegistry } = await import('../form/field-registry');
+const { EditorTenantProvider } = await import('../form/tenant-context');
 const { getType } = await import('@/modules/registry');
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -66,7 +67,11 @@ const items = (...values: string[]) => values.map((value, i) => ({ _key: `k${i}`
 
 /** A list field that keeps its value, as the form does, and records every change. */
 function Harness({ initial, onChange, ...props }: { initial: unknown; onChange: (v: unknown) => void } & Partial<Parameters<typeof ListField>[0]>) {
-  return <ListField id="field-tags" label="Merki" required={false} of={textItem} value={initial} onChange={onChange} {...props} />;
+  return (
+    <EditorTenantProvider value={TENANT}>
+      <ListField id="field-tags" label="Merki" required={false} of={textItem} value={initial} onChange={onChange} {...props} />
+    </EditorTenantProvider>
+  );
 }
 
 /** Renders a controlled ListField whose value follows its own changes. */
@@ -148,6 +153,12 @@ describe('ListField', () => {
     expect(value()).toEqual([{ _key: 'k0', value: 'rautt' }, { _key: added._key, value: 'blátt' }]);
     // The schema's own draft rule accepts it.
     expect(list(text({ label: 'Merki' }), { label: 'Merki' }).draftSchema().safeParse(value()).success).toBe(true);
+  });
+
+  it("focuses a new item's handle when its control cannot take focus yet (a reference picker loading its options)", async () => {
+    await renderList([], { of: { key: 'h', kind: 'reference', label: 'Event', required: true, to: ['event'] }, label: 'Highlights' });
+    await click(buttonNamed(t.editor.list.add)!);
+    expect(document.activeElement).toBe(handleOf(itemEls()[0]!));
   });
 
   it('stores a cleared item as null, so the item keeps its place', async () => {

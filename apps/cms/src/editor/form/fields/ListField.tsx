@@ -84,8 +84,11 @@ export function ListField({ id, label, required, value, onChange, of, min, max }
       return;
     }
     const item = root.querySelector<HTMLElement>(`:scope > ol > [data-item-key="${focus.key}"]`);
-    const target = focus.target === 'handle' ? item?.querySelector<HTMLElement>(':scope > div > [data-handle]') : item?.querySelector<HTMLElement>(':scope > [data-item-body]')?.querySelector<HTMLElement>(FOCUSABLE);
-    target?.focus();
+    const handle = item?.querySelector<HTMLElement>(':scope > div > [data-handle]');
+    // A new item's control may not take focus yet (a reference picker is disabled while its
+    // options load): its handle takes it instead.
+    const control = focus.target === 'control' ? item?.querySelector<HTMLElement>(':scope > [data-item-body]')?.querySelector<HTMLElement>(FOCUSABLE) : null;
+    (control ?? handle)?.focus();
   }, [focus]);
 
   const commit = (next: ListItem[]) => {
@@ -186,7 +189,6 @@ export function ListField({ id, label, required, value, onChange, of, min, max }
                 >
                   <span aria-hidden="true">⠿</span>
                 </button>
-                <span className="text-sm font-medium text-muted">{name}</span>
                 <span className="ml-auto flex flex-wrap gap-2">
                   {index > 0 ? (
                     <Button variant="secondary" aria-label={fill(l.moveUp)} onClick={() => move(index, index - 1)}>
