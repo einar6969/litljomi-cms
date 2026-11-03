@@ -29,7 +29,7 @@ const fake = {
 };
 vi.mock('@/lib/supabase/server', () => ({ createEditorClient: vi.fn(async () => fake) }));
 
-const { createEntryAction, loadDraftAction, saveDraftAction, setSlugAction } = await import('../actions');
+const { createEntryAction, loadDraftAction, openSingletonAction, saveDraftAction, setSlugAction } = await import('../actions');
 
 const ENTRY = '00000000-0000-4000-8000-0000000000e1';
 const TENANT_ID = '00000000-0000-4000-8000-0000000000f1';
@@ -38,6 +38,11 @@ const registry = await import('@/modules/registry');
 const module_ = registry.modules[0]!;
 const SLUG = module_.tenant;
 const TYPE = module_.types[0]!;
+// A module that declares a singleton type (M2-09), found through the registry.
+const { isSingleton } = await import('@litljomi/cms-schema');
+const singletonModule = registry.modules.find((m) => m.types.some((t) => isSingleton(m, t.name)))!;
+const SINGLETON = singletonModule.types.find((t) => isSingleton(singletonModule, t.name))!;
+const ORDINARY = singletonModule.types.find((t) => !isSingleton(singletonModule, t.name))!;
 
 beforeEach(() => {
   state.user = { id: 'u1' };
@@ -74,6 +79,60 @@ describe('createEntryAction', () => {
   it('rejects arguments that are not strings', async () => {
     await expect(createEntryAction({} as unknown as string, TYPE.name)).rejects.toThrow();
     await expect(createEntryAction(SLUG, 7 as unknown as string)).rejects.toThrow();
+  });
+});
+
+describe('createEntryAction and singletons (M2-09)', () => {
+  it('refuses a singleton type without calling the database: it is opened, never created as a new entry', async () => {
+    state.tables.my_tenants = { data: { id: TENANT_ID, slug: singletonModule.tenant, name: 'T', status: 'active' } };
+    await expect(createEntryAction(singletonModule.tenant, SINGLETON.name)).rejects.toThrow();
+    expect(state.calls).toEqual([]);
+  });
+});
+
+describe('openSingletonAction (M2-09)', () => {
+  beforeEach(() => {
+    state.tables.my_tenants = { data: { id: TENANT_ID, slug: singletonModule.tenant, name: 'T', status: 'active' } };
+    state.rpc.create_singleton_entry = { data: ENTRY };
+  });
+
+  it('opens the singleton type in the tenant named only through my_tenants, at the type\'s version', async () => {
+    await expect(openSingletonAction(singletonModule.tenant, SINGLETON.name)).resolves.toEqual({ ok: true, entryId: ENTRY });
+    expect(state.queries[0]).toEqual({ table: 'my_tenants', filters: [['slug', singletonModule.tenant]] });
+    expect(state.calls).toEqual([
+      { name: 'create_singleton_entry', args: { p_tenant_id: TENANT_ID, p_type: SINGLETON.name, p_schema_version: SINGLETON.version } },
+    ]);
+  });
+
+  it('refuses a type that is not a singleton, not in the module, or an invalid argument, without calling the database', async () => {
+    await expect(openSingletonAction(singletonModule.tenant, ORDINARY.name)).resolves.toEqual({ ok: false, code: 'error' });
+    await expect(openSingletonAction(singletonModule.tenant, 'nonexistent')).resolves.toEqual({ ok: false, code: 'error' });
+    await expect(openSingletonAction(singletonModule.tenant, 'x'.repeat(500))).resolves.toEqual({ ok: false, code: 'error' });
+    await expect(openSingletonAction({} as unknown as string, SINGLETON.name)).resolves.toEqual({ ok: false, code: 'error' });
+    expect(state.calls).toEqual([]);
+  });
+
+  it('refuses a tenant the editor is not a member of, and a suspended one', async () => {
+    state.tables.my_tenants = { data: null };
+    await expect(openSingletonAction(singletonModule.tenant, SINGLETON.name)).resolves.toEqual({ ok: false, code: 'error' });
+    state.tables.my_tenants = { data: { id: TENANT_ID, slug: singletonModule.tenant, name: 'T', status: 'suspended' } };
+    await expect(openSingletonAction(singletonModule.tenant, SINGLETON.name)).resolves.toEqual({ ok: false, code: 'error' });
+    expect(state.calls).toEqual([]);
+  });
+
+  it('maps no session and an expired JWT to auth, and every database error to the generic error', async () => {
+    state.user = null;
+    await expect(openSingletonAction(singletonModule.tenant, SINGLETON.name)).resolves.toEqual({ ok: false, code: 'auth' });
+    expect(state.calls).toEqual([]);
+    state.user = { id: 'u1' };
+    state.rpc.create_singleton_entry = { error: { code: 'PGRST303', message: 'JWT expired' }, status: 401 };
+    await expect(openSingletonAction(singletonModule.tenant, SINGLETON.name)).resolves.toEqual({ ok: false, code: 'auth' });
+    for (const error of [{ code: 'P0001', message: 'singleton_mismatch' }, { code: 'P0001', message: 'not_found' }, { code: '23505', message: 'dup' }]) {
+      state.rpc.create_singleton_entry = { error };
+      await expect(openSingletonAction(singletonModule.tenant, SINGLETON.name)).resolves.toEqual({ ok: false, code: 'error' });
+    }
+    state.rpc.create_singleton_entry = { data: null };
+    await expect(openSingletonAction(singletonModule.tenant, SINGLETON.name)).resolves.toEqual({ ok: false, code: 'error' });
   });
 });
 

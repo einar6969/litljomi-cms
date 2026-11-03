@@ -1,4 +1,4 @@
--- supabase/tests/database/105_preview_endpoint.test.sql
+-- supabase/tests/database/107_preview_endpoint.test.sql
 -- M3-11: the preview endpoint's reads (spec §7.5; 20261103193500_preview_endpoint.sql).
 -- api.worker_preview_tenant gives an active tenant's id by slug; api.worker_preview_draft gives
 -- one entry of one tenant with its draft and the assets the draft references. Both are

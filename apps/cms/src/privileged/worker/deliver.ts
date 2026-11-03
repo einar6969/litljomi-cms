@@ -5,6 +5,9 @@
 // otherwise, with the failures in last_error. A failed notification leaves the live status
 // pending, for the sweep to retry on the database's schedule (M3-02: exponential backoff for up to
 // 24 hours from the delivery's first failure; the platform admin is alerted when it runs out).
+// A not_confirmed delivery is retried on the same schedule (M3-03): the sweep notifies the site
+// again and runs the full live check, until it passes, a newer release supersedes it, or the 24
+// hours run out (then the alert, and the editor sees "delivery failed").
 // Before a fresh delivery notifies any site, the worker waits, within a bound, until the pointer's
 // public URL serves the release (decision 49.1).
 import type { LiveCheck, ModuleManifest, ReleaseView, SiteEntry } from '@litljomi/cms-schema';
@@ -192,10 +195,10 @@ export type SiteOutcome = 'ok' | 'not_confirmed' | 'notify_failed';
 
 /**
  * Notifies one site and records it; when the notification succeeded, live-checks every target and
- * records the live status (notify status null then). A failed notification is scheduled by the
- * database (M3-02); when the record says the retries are exhausted (24 hours since the delivery's
- * first failure), the platform admin is alerted (§7.4), once: an exhausted delivery is never
- * selected for a retry again.
+ * records the live status (notify status null then). A failed notification and a missed live check
+ * (not_confirmed, M3-03) are scheduled by the database (M3-02); when the record says the retries
+ * are exhausted (24 hours since the delivery's first failure), the platform admin is alerted
+ * (§7.4), once: an exhausted delivery is never selected for a retry again.
  */
 export async function confirmSite(
   db: SupabaseClient,
@@ -269,7 +272,7 @@ export async function confirmSite(
     console.info('[cms-worker] live check', { ...log, status: 'ok', failures: 0 });
     return 'ok';
   }
-  await record(
+  const recorded = await record(
     db,
     release.releaseId,
     site.id,
@@ -283,6 +286,19 @@ export async function confirmSite(
     options,
   );
   console.info('[cms-worker] live check', { ...log, status: 'not_confirmed', failures: failures.length });
+  // M3-03: the miss is retried on the delivery's schedule; when the 24 hours have run out, the
+  // platform admin is alerted, once (an exhausted delivery is never selected again).
+  if (recorded?.retries_exhausted) {
+    await alert('delivery.retries_exhausted', {
+      tenantId: release.tenantId,
+      releaseId: release.releaseId,
+      number: release.number,
+      siteId: site.id,
+      attempts: recorded.notify_attempts,
+      code: 'live_not_confirmed',
+      failures: failures.length,
+    });
+  }
   return 'not_confirmed';
 }
 

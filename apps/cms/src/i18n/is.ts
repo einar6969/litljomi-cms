@@ -35,6 +35,11 @@ export const is = {
     inactive: 'Vefur óvirkur',
     inactiveBody: 'Ekki er hægt að breyta efni þessa vefs eins og er.',
     contentTypes: 'Efnisflokkar',
+    navigation: 'Efni vefsins',
+  },
+  singleton: {
+    opening: 'Opna…',
+    openFailed: 'Ekki tókst að opna færsluna. Reyndu aftur.',
   },
   entries: {
     new: 'Ný færsla',
@@ -46,6 +51,7 @@ export const is = {
     status: 'Staða',
     updated: 'Breytt',
     back: 'Til baka í lista',
+    backHome: 'Til baka í efnisflokka',
     statuses: {
       draft: 'Uppkast',
       published: 'Birt',
@@ -97,6 +103,29 @@ export const is = {
     unsupportedField: 'Þennan reit er ekki hægt að breyta hér ennþá. Gildi hans helst óbreytt.',
     entryLink: 'Tengill á aðra færslu. Honum er ekki breytt hér og hann helst óbreyttur.',
     invalidUrl: 'Ógild vefslóð (https://, http:// eða mailto:). Ekki vistað.',
+    // M2-07: a stored value of the wrong type (written outside this form) is shown, never silently replaced.
+    invalidStored: 'Vistaða gildið passar ekki við þennan reit. Veldu eða sláðu inn nýtt gildi.',
+    // M2-07: the scalar kinds' inputs. `{min}`, `{max}`, `{value}` and `{zone}` are filled in by the field.
+    number: {
+      integer: 'Heil tala',
+      decimal: 'Tala, aukastafir á eftir kommu',
+      range: 'frá {min} til {max}',
+      atLeast: 'minnst {min}',
+      atMost: 'mest {max}',
+      invalid: 'Ógild tala. Ekki vistað.',
+    },
+    boolean: {
+      yes: 'Já',
+      no: 'Nei',
+      unset: 'Ekki tilgreint',
+    },
+    select: {
+      placeholder: 'Veldu…',
+      unknown: 'Gildið „{value}“ er ekki lengur í boði. Veldu annað.',
+    },
+    datetime: {
+      help: 'Tími í tímabelti tölvunnar þinnar ({zone}).',
+    },
     outdated: {
       title: 'Uppkastið er á eldri útgáfu efnisflokksins',
       body: 'Efnisflokki þessarar færslu hefur verið breytt síðan uppkastið var vistað. Uppfærðu uppkastið til að geta breytt því og birt það. Efnið er fært á nýja sniðið; það sem er nú birt á vefnum breytist ekki.',
@@ -190,6 +219,9 @@ export const is = {
     deliveryFailedDetail: 'Kerfisstjóra hefur verið gert viðvart.',
     notConfirmed: 'Ekki staðfest á vef',
     notConfirmedDetail: 'Færslan var send á vefinn en ekki tókst að staðfesta að hún birtist þar.',
+    // M3-03 (drafts for Einar): "live not confirmed, retrying", while the sweep retries the live check.
+    notConfirmedRetrying: 'Ekki enn staðfest á vef, reynt aftur…',
+    notConfirmedRetryingDetail: 'Færslan var send á vefinn en hefur ekki enn sést þar. Kerfið reynir aftur sjálfkrafa.',
     noSite: 'Enginn vefur tengdur',
     requestFailed: 'Ekki tókst að senda beiðnina. Reyndu aftur.',
     statusUnavailable: 'Ekki tókst að sækja stöðu birtingar.',
