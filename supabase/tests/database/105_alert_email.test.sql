@@ -1,5 +1,5 @@
 -- supabase/tests/database/105_alert_email.test.sql
--- M3-04: one alert email per incident (spec §8.4; 20261103200000_alert_email.sql).
+-- M3-04: one alert email per incident (spec §8.4; 20261103201000_alert_email.sql).
 -- api.worker_claim_alert_email returns true for the first claim of an incident key, records the
 -- system event system.alert_email, and returns false (recording nothing) for every later claim of
 -- the same key. Executable by service_role only; the grant counts are also in 010_catalog and

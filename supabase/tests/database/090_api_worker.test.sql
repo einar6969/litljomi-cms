@@ -125,6 +125,10 @@ select set_eq($$ select p.proname::text, pg_catalog.pg_get_function_result(p.oid
             -- M3-07 (103_asset_trust).
             ('worker_asset_metadata', 'TABLE(id uuid, original_path text, mime text, bytes bigint, width integer, height integer, sha256 text)'),
             ('worker_private_orphans', 'TABLE(name text, created_at timestamp with time zone)'),
+            -- M3-06 (105_retention).
+            ('worker_record_release_media', 'TABLE(asset_id uuid, copy boolean, deleting boolean)'),
+            ('worker_claim_release_cleanup', 'TABLE(release_id uuid, tenant_id uuid, tenant_slug text, release_number integer, asset_id uuid, filename text)'),
+            ('worker_finish_release_cleanup', 'integer'),
             -- M2-13 (104_draft_migration).
             ('admin_outdated_drafts', 'TABLE(entry_id uuid, version integer, schema_version integer, data jsonb)'),
             ('admin_migrate_draft', 'integer'),

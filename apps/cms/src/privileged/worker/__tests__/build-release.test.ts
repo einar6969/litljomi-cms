@@ -94,8 +94,16 @@ vi.mock('@/modules/registry', () => ({
   getType: (slug: string, type: string) => (slug === 'prufa' ? testModule.types.find((t) => t.name === type) : undefined),
 }));
 
-const { buildRelease, BUNDLE_CACHE_CONTROL, MAX_STORED_OMISSION_DETAILS, POINTER_CACHE_CONTROL, POINTER_DEADLINE_MS, supabaseReleaseStorage } =
-  await import('../build-release');
+const {
+  buildRelease,
+  BUNDLE_CACHE_CONTROL,
+  MAX_STORED_OMISSION_DETAILS,
+  POINTER_CACHE_CONTROL,
+  POINTER_DEADLINE_MS,
+  RECORD_MEDIA_ATTEMPTS,
+  RECORD_MEDIA_WAIT_MS,
+  supabaseReleaseStorage,
+} = await import('../build-release');
 type ReleaseStorage = import('../build-release').ReleaseStorage;
 
 const TENANT = '00000000-0000-4000-8000-00000000a009';
@@ -233,6 +241,14 @@ beforeEach(() => {
     }),
     worker_pointer_check: () => ({ data: [{ building: true, latest_delivered: null }] }),
     worker_finish_release: () => ({ data: null }),
+    // M3-06: the media is recorded before copying; copy what has no public path, nothing is being deleted.
+    worker_record_release_media: (args) => ({
+      data: [...(args.p_asset_ids as string[])].sort().map((id) => ({
+        asset_id: id,
+        copy: snapshot.assets.find((x) => x.id === id)?.public_path == null,
+        deleting: false,
+      })),
+    }),
     // M3-02: after a failure, the tenant's next build is scheduled (retries left).
     worker_release_retry: () => ({ data: [{ status: 'failed', next_attempt_at: '2026-11-03T12:01:00Z', retries_exhausted: false }] }),
   };
@@ -295,6 +311,7 @@ describe('buildRelease: delivery', () => {
       'worker_begin_release',
       'worker_previous_release',
       'worker_release_snapshot',
+      'worker_record_release_media',
       'worker_pointer_check',
       'worker_finish_release',
     ]);
@@ -644,6 +661,94 @@ describe('buildRelease: fallback to the previous projection (§7.1, plan M3-05)'
 
     expect(result.status).toBe('failed');
     expect(finishCalls()[0]!.p_error).toMatchObject({ code: 'build_failed', step: 'bundle_upload', fallback: [expect.objectContaining({ entryId: E2 })] });
+  });
+});
+
+describe('buildRelease: public objects are recorded before they are written (plan M3-06)', () => {
+  const recordCalls = () => calls.filter((c) => c.fn === 'worker_record_release_media').map((c) => c.args);
+  const waits: number[] = [];
+  const sleep = async (ms: number) => {
+    waits.push(ms);
+  };
+  const buildWithSleep = () => buildRelease(TENANT, { storage: mem.storage, mediaUrl, now, clock, sleep });
+  beforeEach(() => {
+    waits.length = 0;
+  });
+
+  it('records every referenced asset, public or not, before any copy or upload', async () => {
+    snapshot.entries.push(entry(E3, { title: 'Þrjú', pic: { _ref: A2, _kind: 'asset', alt: 'b' } }, { refs: [picRef(A2)] }));
+    snapshot.assets = [asset(A1), asset(A2, { public_path: `prufa/${A2}/a.jpg` })];
+    let opsAtRecord: string[] | undefined;
+    const record = handlers.worker_record_release_media!;
+    handlers.worker_record_release_media = (args) => {
+      opsAtRecord = [...mem.ops];
+      return record(args);
+    };
+
+    const result = await buildWithSleep();
+
+    expect(result.status).toBe('delivered');
+    expect(result.omitted).toEqual([]);
+    expect(recordCalls()).toEqual([{ p_release_id: RELEASE, p_asset_ids: [A1, A2] }]);
+    expect(opsAtRecord).toEqual([]);
+    // Only the asset without a public object is copied.
+    expect(mem.ops.filter((o) => o.startsWith('copy'))).toEqual([`copy media-private/${TENANT}/${A1}/a.jpg -> media-public/prufa/${A1}/a.jpg`]);
+  });
+
+  it('records an empty list for a release without media, and an archived asset is not recorded', async () => {
+    snapshot.assets = [asset(A1, { archived: true })];
+
+    await buildWithSleep();
+
+    expect(recordCalls()).toEqual([{ p_release_id: RELEASE, p_asset_ids: [] }]);
+  });
+
+  it('copies an asset the record says has no public object, even when the snapshot had a public path (a sweep deleted it)', async () => {
+    snapshot.assets = [asset(A1, { public_path: `prufa/${A1}/a.jpg` })];
+    handlers.worker_record_release_media = () => ({ data: [{ asset_id: A1, copy: true, deleting: false }] });
+
+    const result = await buildWithSleep();
+
+    expect(result.status).toBe('delivered');
+    expect(mem.ops.filter((o) => o.startsWith('copy'))).toEqual([`copy media-private/${TENANT}/${A1}/a.jpg -> media-public/prufa/${A1}/a.jpg`]);
+    expect(finishCalls()[0]!.p_public_assets).toEqual([{ id: A1, public_path: `prufa/${A1}/a.jpg` }]);
+  });
+
+  it('waits while a sweep is deleting the media, records again, then copies', async () => {
+    let n = 0;
+    handlers.worker_record_release_media = () => ({ data: [{ asset_id: A1, copy: true, deleting: ++n < 3 }] });
+
+    const result = await buildWithSleep();
+
+    expect(result.status).toBe('delivered');
+    expect(recordCalls()).toHaveLength(3);
+    expect(waits).toEqual([RECORD_MEDIA_WAIT_MS, RECORD_MEDIA_WAIT_MS]);
+    expect(mem.ops[0]).toBe(`copy media-private/${TENANT}/${A1}/a.jpg -> media-public/prufa/${A1}/a.jpg`);
+  });
+
+  it('fails the release, writing nothing, when the media is still being deleted after the last attempt', async () => {
+    handlers.worker_record_release_media = () => ({ data: [{ asset_id: A1, copy: true, deleting: true }] });
+
+    const result = await buildWithSleep();
+
+    expect(result.status).toBe('failed');
+    expect(recordCalls()).toHaveLength(RECORD_MEDIA_ATTEMPTS);
+    expect(waits).toHaveLength(RECORD_MEDIA_ATTEMPTS - 1);
+    expect(mem.ops).toEqual([]);
+    expect(finishCalls()).toEqual([expect.objectContaining({ p_status: 'failed', p_error: expect.objectContaining({ step: 'record_media' }) })]);
+  });
+
+  it('fails the release, writing nothing, when the record is refused or answers for other assets', async () => {
+    handlers.worker_record_release_media = () => ({ error: { code: 'P0001', message: 'forbidden' } });
+    expect((await buildWithSleep()).status).toBe('failed');
+    expect(mem.ops).toEqual([]);
+
+    calls.length = 0;
+    clockReads = 0;
+    handlers.worker_record_release_media = () => ({ data: [{ asset_id: A2, copy: true, deleting: false }] });
+    expect((await buildWithSleep()).status).toBe('failed');
+    expect(mem.ops).toEqual([]);
+    expect(finishCalls()[0]!.p_error).toMatchObject({ step: 'record_media' });
   });
 });
 
