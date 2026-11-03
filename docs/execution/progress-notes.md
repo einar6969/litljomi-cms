@@ -207,3 +207,11 @@ Einar in chat: "1. Turn off “Automatically expose new tables” in sitting 2, 
 - **Demo:** three of three cycles live; pointer lag 0.6/53.3/52.0 s. **LABAK scenario:** all states live within 2 s of notification.
 - **Task 29 done** (security r1 PASS with three Minors deferred; spec-and-quality r1 FAIL on documentation, fixed; r2 PASS). **C4 recorded.** **M1 accepted.**
 - **For Einar:** push `m1/phase-1`; `main` stays where it is; work through the go-live list (C4 addenda).
+
+### Sitting 7: M2 environment, `main` guard, M2/M3 plans (2026-11-03, twelfth controller session, decision 50)
+
+- State checked against the brief: `main` = `m1/phase-1` = `origin` = `81e6b18`, clean; M1 accepted (C4).
+- **Decision 50** recorded in the plan (verbatim) and in `environment.md` (Project "CMS" settings, both evaluation passes, the gate, the Project instructions verbatim). "Future execution environment" marked decided.
+- **`main` guard:** `.github/workflows/main-guard.yml` with `tools/checks/main-guard.ts`, tested by `tools/checks/__tests__/main-guard.test.ts` (14 tests, fixtures in `fixtures/main-guard/`). Nothing hosted was called.
+- **Plans:** `docs/plans/m2.md` and `docs/plans/m3.md`, draft for Einar's approval. No task started.
+- **For Einar:** push `main` and `m1/phase-1`; approve or amend the two plans.

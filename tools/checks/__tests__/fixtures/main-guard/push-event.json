@@ -1,0 +1,15 @@
+{
+  "ref": "refs/heads/main",
+  "before": "1111111111111111111111111111111111111111",
+  "after": "3333333333333333333333333333333333333333",
+  "created": false,
+  "deleted": false,
+  "forced": false,
+  "repository": { "full_name": "einar6969/litljomi-cms" },
+  "pusher": { "name": "claude-bot" },
+  "sender": { "login": "claude-bot" },
+  "commits": [
+    { "id": "2222222222222222222222222222222222222222" },
+    { "id": "3333333333333333333333333333333333333333" }
+  ]
+}

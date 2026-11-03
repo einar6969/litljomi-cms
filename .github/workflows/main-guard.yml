@@ -1,0 +1,29 @@
+name: main-guard
+
+# Decision 50.3. `main` has no branch protection (no GitHub Pro). On every push to `main` this job
+# fails unless each new commit belongs to a pull request merged into `main`, or the push came from
+# einar6969. A failure is the alert; the job reverts nothing. Logic and tests:
+# tools/checks/main-guard.ts and tools/checks/__tests__/main-guard.test.ts.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - run: node tools/checks/main-guard.ts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAIN_GUARD_TRUSTED_PUSHER: einar6969

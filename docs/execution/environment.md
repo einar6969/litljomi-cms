@@ -173,3 +173,67 @@ Einar approved the exact diff in chat on 2026-11-02 (patch to `cms-security-revi
 ## `.claude/settings.local.json` emptied (2026-11-03)
 
 Diff sha256 `08f849b7b55c53b78720ba654ece2e518b87a9a8f11ba3d104a3ebe24af00bde` (all 16 one-off or stale allow entries removed, including `Bash(git apply *)` and `Bash(git branch *)`). Einar in chat, 2026-11-03: "Approve both". Applied with the Write tool; byte-identical to the shown file (`cmp`). The file is not tracked by git.
+
+## Decision 50: M2 and M3 in Claude Code Project cloud threads (2026-11-03)
+
+Einar in chat, 2026-11-03 (twelfth controller session), recorded as decision 50 in the plan (`docs/plans/2026-11-01-m0-m1.md`), which quotes his decisions verbatim. This section supersedes "Claude Code Projects: deferred" in "Decision" above for M2 and M3 only.
+
+### Where work runs
+
+- **M2 and M3:** Claude Code Project cloud threads, one task per thread, each ending in a pull request into `main`. Tasks come from `docs/plans/m2.md` and `docs/plans/m3.md` (draft until Einar approves them).
+- **M4, M5, M6 and every hosted acceptance run:** local and gated, as in M0–M1 (this controller workflow, G0–G7 in `gates.json`). The milestones' hosted acceptance (A6, A8, A9, A10, A12 and the staging E2E at 375, 768 and 1440 px) is the "local acceptance" section at the end of each plan, never a cloud task.
+
+### Project "CMS" settings
+
+| Setting | Value |
+|---|---|
+| Repository | `einar6969/litljomi-cms` only |
+| Device access | Off |
+| Secrets and variables | None |
+| Network | "Limited": the package managers, plus `ghcr.io`, `pkg-containers.githubusercontent.com`, `github.com`, `objects.githubusercontent.com` and `release-assets.githubusercontent.com` |
+| Setup script | Starts Docker and installs Supabase CLI 2.121.0 |
+
+### Evaluation passes (Einar's, 2026-11-03)
+
+| Pass | Result |
+|---|---|
+| 1 | The Supabase images were not pullable; the local stack could not start |
+| 2 | `pnpm db:test` 1,405, `pnpm test:integration` 110 and unit (`pnpm test`) 1,381, all pass; images pulled from `ghcr.io`; `example.com` refused (network limit holds); nothing written to GitHub |
+
+### Gate for cloud work
+
+No GitHub Pro, so `main` has no branch protection. The gate is: the Project instructions below, **Einar merges every pull request**, and the advisor checks each one. Backed by the `main` guard (`.github/workflows/main-guard.yml`, decision 50.3): on every push to `main` it fails unless each new commit belongs to a pull request merged into `main` or the push came from `einar6969`; a force-push or deletion by anyone else also fails. A failure is the alert; it reverts nothing. Permissions `contents: read` and `pull-requests: read`, only the default `GITHUB_TOKEN`, actions pinned to the same SHAs as `ci.yml`.
+
+Known limits of the guard: it runs the workflow and script from the pushed commit, so a push that also changes `.github/` or `tools/checks/main-guard.ts` could disable it (the instructions forbid such changes, and Einar reviews every pull request); it identifies the pusher by the event's `sender.login`, so a cloud thread pushing with Einar's own GitHub identity would pass as Einar.
+
+### Project instructions (Project "CMS" → General → instructions), verbatim as Einar gave them
+
+> You are an implementer for Litljómi CMS Hub (`einar6969/litljomi-cms`). Each thread does one task from docs/plans/m2.md or docs/plans/m3.md, named in the thread’s first message.
+> Read: the task in its plan; docs/architecture.md, the sections the task cites; the repository README. `CLAUDE.md`, `RESUME.md` and everything in `docs/execution/` belong to the local controller workflow: read them for context only, don’t follow them, and never run `state.mjs`.
+> Branch and pull request:
+>
+> * Branch from current `main` as `m2/<task-id>-<slug>` or `m3/<task-id>-<slug>`.
+> * Open one pull request into `main`, titled `<task-id>: <summary>`. In the description: what changed; the spec sections; the tests added; the results of the full checks; risks; anything left open.
+> * Label it `security` if it touches RLS, grants, `api`/`worker_*` functions, auth, storage, preview tokens, webhooks or the SDK’s verification.
+> * You may fix CI failures and answer review comments on your own branch.
+>
+> Never:
+>
+> * push to `main`; force-push; merge, close or approve a pull request; delete a branch;
+> * change `.github/`, `.claude/`, `docs/execution/` or `docs/plans/` unless the task says so;
+> * work in another repository.
+>
+> Way of working:
+>
+> * Test first.
+> * Before opening the pull request, all of these must pass: `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm db:test`, `pnpm test:integration`.
+> * Migrations only when the task calls for them, listed in the pull request.
+> * Keep strictly to the task’s scope. Note anything else you notice in the pull request instead of doing it.
+> * Copy: new Icelandic user-facing text is a draft for Einar. List every new string in the pull request.
+>
+> Boundaries:
+>
+> * No secrets, keys or tokens. No hosted Supabase or Vercel project, no `*.litljomi.is` or `labak` host. Everything runs on the local stack.
+> * If the task can’t be done within these rules, or the spec and the plan disagree, stop and say so in the thread. Don’t choose for yourself.
+>
+> Finish: the pull request is open with CI green. Report in at most 10 lines: the pull request link, what’s done, the test counts, and anything open. Then stop.

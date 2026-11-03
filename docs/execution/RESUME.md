@@ -8,4 +8,6 @@ A new controller session does the following, in order, and relies on nothing fro
 4. Read the latest file in `docs/execution/checkpoints/` and any open blockers.
 5. Continue with the first task in execution order that is not `done`, or report the blocker. A task whose gates are not recorded in `docs/execution/gates.json` waits for Einar.
 
+From M2 (decision 50): M2 and M3 tasks run in Claude Code Project cloud threads from `docs/plans/m2.md` and `docs/plans/m3.md`, not through `state.mjs`; Einar merges their pull requests. The local controller keeps M4–M6 and every hosted acceptance run ("Local acceptance" in each plan). Details: `docs/execution/environment.md`, "Decision 50".
+
 Connectors and browser tools may be available in the session. That is expected and grants nothing (`CLAUDE.md`, "Approval gates").
