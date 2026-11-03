@@ -125,7 +125,14 @@
         "branch": "hub-integration",
         "push": false,
         "base": "aec9f95"
-      }
+      },
+      "extensions": [
+        {
+          "at": "2026-11-03",
+          "scope": "Decision 43.3: local commits on LABAK's hub-integration for the vendored SDK (npm pack of @litljomi/cms-sdk and @litljomi/rich-text 0.1.0 into vendor/, package.json pointed at them, vendor/README.md with source commit, version and checksum; the staging-only noindex header). push stays false until G7 push (decision 43.8) is approved separately. Never main.",
+          "note": "Einar in chat, 2026-11-03: \"3. The SDK for LABAK: `npm pack` `@litljomi/cms-sdk` and `@litljomi/rich-text` (0.1.0) into `vendor/` on `hub-integration`, and point `package.json` at them.\" \"Add vendor/README.md with the source commit, version and checksum of each file.\" \"Acceptance: a fresh clone of the branch, with nothing from my Mac, passes `npm ci` and `npm run build`.\" Full message: plan decision 43."
+        }
+      ]
     }
   }
 }
