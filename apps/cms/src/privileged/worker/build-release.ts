@@ -3,8 +3,11 @@
 //
 // The bundle holds every entry the database says is published and not archived in one snapshot
 // (withdrawal always wins), projected from its published revision. An entry that cannot be
-// projected is left out (fail closed; the fallback rule is M3), recorded in releases.error and
-// alerted, and resolves to null for every other entry. The switch is atomic: the bundle is written
+// projected falls back to its projection in the previous release only when that projection was
+// built from the same revision and everything it references is still allowed (its assets are not
+// archived, its referenced entries are in this release); otherwise it is left out and resolves to
+// null for every other entry (§7.1, fail closed; plan M3-05). Either way the entry is recorded in
+// releases.error (`fallback` or `omitted`) and alerted. The switch is atomic: the bundle is written
 // and read back, then the pointer is written and read back; any failure up to and including that
 // read-back marks the release failed, and the pointer never names a bundle that was not verified.
 //
@@ -70,12 +73,19 @@ export interface ReleaseStorage {
 
 /** An entry left out of a release, as recorded in `releases.error.omitted` (decision 35). */
 export type OmittedEntry = { entryId: string; requestIds: string[]; error: unknown };
+/**
+ * An entry whose projection failed and whose projection from release `fromRelease` was reused
+ * (§7.1, conditions 1 and 2), as recorded in `releases.error.fallback` (plan M3-05).
+ */
+export type FallbackEntry = OmittedEntry & { fromRelease: number };
 
 export type BuildResult = {
   status: 'delivered' | 'failed' | 'busy';
   releaseId?: string;
   number?: number;
   omitted: OmittedEntry[];
+  /** Entries served from the previous release's projection (§7.1); absent when there are none. */
+  fallback?: FallbackEntry[];
   bundle?: Bundle;
   /** The tenant's previously delivered bundle (null for the first release), for the live checks. */
   previousBundle?: Bundle | null;
@@ -170,6 +180,7 @@ export async function buildRelease(tenantId: string, options: BuildOptions = {})
 
   let pointerWritten: boolean | null = false;
   let omitted: OmittedEntry[] = [];
+  let fallback: FallbackEntry[] = [];
   let previousBundle: Bundle | null = null;
   let step = 'previous_release';
   const at = async <T>(name: string, fn: () => Promise<T>): Promise<T> => {
@@ -201,9 +212,10 @@ export async function buildRelease(tenantId: string, options: BuildOptions = {})
     const module = getModule(slug);
     if (!module) throw new BuildFailure('module', new Error(`no module for tenant ${slug}`));
 
-    // Step 3. Project; leave out what fails (two passes or more, until no omission remains).
-    const projected = await at('project', async () => projectAll(snapshot, module, tenantId, mediaUrl));
+    // Step 3. Project; reuse or leave out what fails (two passes or more, until nothing changes).
+    const projected = await at('project', async () => projectAll(snapshot, module, tenantId, mediaUrl, previousBundle));
     omitted = projected.omitted;
+    fallback = projected.fallback;
     const generatedAt = now().toISOString();
     const bundle: Bundle = { format: 1, tenant: slug, release: number, generatedAt, entries: projected.entries };
 
@@ -271,15 +283,17 @@ export async function buildRelease(tenantId: string, options: BuildOptions = {})
       if (p.release !== number || p.bundle !== pointer.bundle) throw new Error(`the pointer reads back release ${String(p.release)}`);
     });
 
-    // Step 9. Delivered: every request of the snapshot is linked; omissions are the release's error.
+    // Step 9. Delivered: every request of the snapshot is linked; failed entries are the release's error.
     // forbidden: the release is no longer building (the sweep failed it as stale); it stays failed.
     const stored = storedOmissions(omitted);
+    const storedFallback = storedOmissions(fallback);
+    const entryErrors = { ...(stored.length > 0 ? { omitted: stored } : {}), ...(storedFallback.length > 0 ? { fallback: storedFallback } : {}) };
     await at('finish', () =>
       callRpc(db, 'worker_finish_release', {
         p_release_id: releaseId,
         p_status: 'delivered',
         p_bundle_path: bundlePath,
-        p_error: stored.length > 0 ? { omitted: stored } : null,
+        p_error: Object.keys(entryErrors).length > 0 ? entryErrors : null,
         p_request_ids: snapshot.requests.map((r) => r.id),
         p_public_assets: publicAssets,
       }).catch((error: unknown) => {
@@ -287,19 +301,32 @@ export async function buildRelease(tenantId: string, options: BuildOptions = {})
       }),
     );
 
-    // Step 10. Left-out entries are visible and alerted ("Withdrawal and failure visibility").
+    // Step 10. Failed entries are visible and alerted ("Withdrawal and failure visibility"; §7.1).
     if (omitted.length > 0) await alert('release.entry_omitted', { tenantId, releaseId, number, omitted: stored });
+    if (fallback.length > 0) await alert('release.entry_fallback', { tenantId, releaseId, number, fallback: storedFallback });
     const requests = snapshot.requests.map((r) => ({ id: r.id, entryId: r.entry_id, action: r.action }));
-    return { status: 'delivered', releaseId, number, omitted, bundle, previousBundle, requests, pointerWrittenAt };
+    return {
+      status: 'delivered',
+      releaseId,
+      number,
+      omitted,
+      ...(fallback.length > 0 ? { fallback } : {}),
+      bundle,
+      previousBundle,
+      requests,
+      pointerWrittenAt,
+    };
   } catch (error) {
     const failure = error instanceof BuildFailure ? error : new BuildFailure(step, error);
     const stored = storedOmissions(omitted);
+    const storedFallback = storedOmissions(fallback);
     const recorded = {
       code: failure.code,
       step: failure.step,
       message: failure.message,
       pointerWritten,
       ...(stored.length > 0 ? { omitted: stored } : {}),
+      ...(storedFallback.length > 0 ? { fallback: storedFallback } : {}),
     };
     // A refused finish means the release is no longer building: finishing it again would be
     // refused too, and its recorded error (stale_building) stays. A pointer already written is left
@@ -378,8 +405,8 @@ async function writePointer(
   }
 }
 
-/** The omitted entries as stored and alerted: every entry, with the details of the first ones only. */
-function storedOmissions(omitted: OmittedEntry[]): OmittedEntry[] {
+/** Failed entries as stored and alerted: every entry, with the details of the first ones only. */
+function storedOmissions<T extends OmittedEntry>(omitted: T[]): T[] {
   return omitted.map((o, i) => (i < MAX_STORED_OMISSION_DETAILS ? o : { ...o, error: { code: codeOf(o.error) } }));
 }
 
@@ -388,17 +415,28 @@ const codeOf = (error: unknown): unknown => (error !== null && typeof error === 
 type Projected = {
   entries: Record<string, BundleEntry[]>;
   omitted: OmittedEntry[];
+  fallback: FallbackEntry[];
   assetsToCopy: SnapshotAsset[];
 };
 
 /**
  * Projects every entry of the snapshot, each upcast to its type's current schema version first.
- * Entries that cannot be built are left out before projection (unknown type, a revision that
- * cannot be upcast, an asset whose path is not valid) or by it
- * (any error). The context resolves only the entries still included, so the projection repeats
- * until a pass leaves nothing more out: the final projections never reference a left-out entry.
+ * Entries that cannot be built fail before projection (unknown type, a revision that cannot be
+ * upcast, an asset whose path is not valid) or in it (any error). A failed entry reuses its record
+ * from the previous release when §7.1's two conditions hold: (1) that record was built from the
+ * revision published now, and (2) everything the revision references is still allowed: each asset
+ * is resolvable (not archived, valid paths) and each referenced entry is in this release.
+ * Otherwise it is left out. The context resolves only the entries in the release, so the
+ * projection repeats until a pass fails nothing more: the final records never reference a
+ * left-out entry.
  */
-function projectAll(snapshot: Snapshot, module: ModuleManifest, tenantId: string, mediaUrl: (p: string) => string): Projected {
+function projectAll(
+  snapshot: Snapshot,
+  module: ModuleManifest,
+  tenantId: string,
+  mediaUrl: (p: string) => string,
+  previousBundle: Bundle | null,
+): Projected {
   const slug = snapshot.tenant.slug;
   const errors = new Map<string, unknown>();
 
@@ -417,6 +455,7 @@ function projectAll(snapshot: Snapshot, module: ModuleManifest, tenantId: string
   const contextAssets: ContextAsset[] = snapshot.assets
     .filter((a) => !a.archived && validAsset(a))
     .map((a) => ({ ...a, public_path: a.public_path ?? publicMediaPath(slug, a.id, a.filename) }));
+  const allowedAssets = new Set(contextAssets.map((a) => a.id));
 
   const types = new Map<string, ContentType>(module.types.map((t) => [t.name, t]));
   // §5.3, §7.1: each revision's data at its type's current schema version, upcast in memory. The
@@ -441,9 +480,44 @@ function projectAll(snapshot: Snapshot, module: ModuleManifest, tenantId: string
     if (bad) errors.set(e.entry_id, { code: 'asset_path_invalid', assetId: bad.id });
   }
 
+  // §7.1 condition 1: the previous record of the same entry and type, built from the same revision.
+  const previousRecords = new Map<string, BundleEntry>();
+  for (const [type, list] of Object.entries(previousBundle?.entries ?? {})) {
+    for (const p of list) previousRecords.set(`${type}/${p.id}`, p);
+  }
+  const sameRevision = (e: SnapshotEntry): BundleEntry | undefined => {
+    const p = previousRecords.get(`${e.type}/${e.entry_id}`);
+    return p !== undefined && p.revisionId === e.revision_id ? p : undefined;
+  };
+  const snapshotIds = new Set(snapshot.entries.map((e) => e.entry_id));
+  // §7.1 condition 2, decided as the largest set of failed entries whose references are all
+  // allowed when exactly the entries that did not fail and that set are in the release.
+  const chooseFallbacks = (): Map<string, BundleEntry> => {
+    const reused = new Map<string, BundleEntry>();
+    for (const e of snapshot.entries) {
+      const p = errors.has(e.entry_id) ? sameRevision(e) : undefined;
+      if (p) reused.set(e.entry_id, p);
+    }
+    for (let dropped = true; dropped; ) {
+      dropped = false;
+      const inRelease = (id: string) => !errors.has(id) || reused.has(id);
+      for (const e of snapshot.entries) {
+        if (!reused.has(e.entry_id)) continue;
+        const allowed = e.refs.every((r) => (r.kind === 'asset' ? allowedAssets.has(r.id) : snapshotIds.has(r.id) && inRelease(r.id)));
+        if (!allowed) {
+          reused.delete(e.entry_id);
+          dropped = true;
+        }
+      }
+    }
+    return reused;
+  };
+
   let built = new Map<string, BundleEntry>();
+  let reused = new Map<string, BundleEntry>();
   for (;;) {
-    const included = snapshot.entries.filter((e) => !errors.has(e.entry_id));
+    reused = chooseFallbacks();
+    const included = snapshot.entries.filter((e) => !errors.has(e.entry_id) || reused.has(e.entry_id));
     const ctx = buildProjectionContext({
       module,
       entries: included.map(
@@ -453,35 +527,39 @@ function projectAll(snapshot: Snapshot, module: ModuleManifest, tenantId: string
       mediaUrl,
     });
     built = new Map();
-    let leftOut = false;
+    let failed = false;
     for (const e of included) {
+      if (errors.has(e.entry_id)) continue;
       try {
         built.set(e.entry_id, bundleEntry(e, current.get(e.entry_id), types.get(e.type)!, ctx));
       } catch (error) {
         errors.set(e.entry_id, projectionError(error));
-        leftOut = true;
+        failed = true;
       }
     }
-    if (!leftOut) break;
+    if (!failed) break;
   }
 
   const entries: Record<string, BundleEntry[]> = {};
   const referenced = new Set<string>();
   for (const e of snapshot.entries) {
-    const b = built.get(e.entry_id);
+    const b = built.get(e.entry_id) ?? reused.get(e.entry_id);
     if (!b) continue;
     (entries[e.type] ??= []).push(b);
     for (const r of e.refs) if (r.kind === 'asset') referenced.add(r.id);
   }
-  const omitted = snapshot.entries
-    .filter((e) => errors.has(e.entry_id))
-    .map((e) => ({
-      entryId: e.entry_id,
-      requestIds: snapshot.requests.filter((r) => r.entry_id === e.entry_id).map((r) => r.id),
-      error: errors.get(e.entry_id),
-    }));
+  const failedEntry = (e: SnapshotEntry): OmittedEntry => ({
+    entryId: e.entry_id,
+    requestIds: snapshot.requests.filter((r) => r.entry_id === e.entry_id).map((r) => r.id),
+    error: errors.get(e.entry_id),
+  });
+  const failedEntries = snapshot.entries.filter((e) => errors.has(e.entry_id));
+  const omitted = failedEntries.filter((e) => !reused.has(e.entry_id)).map(failedEntry);
+  const fallback = failedEntries
+    .filter((e) => reused.has(e.entry_id))
+    .map((e): FallbackEntry => ({ ...failedEntry(e), fromRelease: previousBundle!.release }));
   const assetsToCopy = snapshot.assets.filter((a) => referenced.has(a.id) && !a.archived && a.public_path === null && validAsset(a));
-  return { entries, omitted, assetsToCopy };
+  return { entries, omitted, fallback, assetsToCopy };
 }
 
 /**

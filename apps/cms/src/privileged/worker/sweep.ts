@@ -13,6 +13,8 @@
 //      live check are retried when their next attempt is due (api.worker_deliveries_to_retry). A
 //      release superseded by a newer delivered one is never retried, and a release delivered by
 //      step 2 of this same sweep is not retried in it.
+//   4. Originals in media-private with no assets row, older than a day, are removed
+//      (api.worker_private_orphans; M3-07).
 //
 // Steps 2 and 3 follow M3-02's schedule, kept by the database: after the n-th failed attempt the
 // next is due 2^(n-1) minutes later (1, 2, 4 … minutes), until 24 hours after the first failure;
@@ -27,6 +29,7 @@ import { createAdminClient } from '../admin-client';
 import { alert } from './alerts';
 import { alertIfBuildRetriesExhausted, supabaseReleaseStorage } from './build-release';
 import { clockOf, confirmRelease, deliverTenant, type DeliveredRelease, type DeliveryOptions } from './deliver';
+import { removePrivateOrphans } from './media-orphans';
 import { processPendingRequests } from './process-request';
 import { callRpc } from './rpc';
 
@@ -109,6 +112,9 @@ export async function runSweep(options: DeliveryOptions = {}): Promise<void> {
   } catch (error) {
     failed('listing deliveries to retry')(error);
   }
+
+  // 4. Orphaned private originals.
+  await removePrivateOrphans(db).catch(failed('removing orphaned originals'));
 
   if (errors.length > 0) throw new AggregateError(errors, `sweep: ${errors.length} step(s) failed`);
 }

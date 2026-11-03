@@ -19,6 +19,7 @@ import { STALE_RELEASE_SECONDS } from '../sweep';
 import { processPendingRequests } from '../process-request';
 import { entryMarker, html, releaseMeta, startFakeSite, type FakeSite } from './fake-site';
 import { prepareLabak } from './labak-setup';
+import { TEST_JPEG, TEST_JPEG_METADATA } from './test-image';
 
 const PORT = 3198;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
@@ -36,7 +37,7 @@ let webhookStatus: number | null = null;
 /** When false, the fake site acknowledges webhooks but never reloads (a stale site). */
 let revalidates = true;
 
-const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0xff, 0xd9]);
+const JPEG = TEST_JPEG;
 
 async function loadBundle(): Promise<Bundle | null> {
   const p = await fetch(publicUrl('delivery', 'labak/current.json'), { cache: 'no-store' });
@@ -145,11 +146,7 @@ async function labakAsset(): Promise<string> {
     p_tenant_id: TENANT.labak,
     p_original_path: path,
     p_filename: 'mynd.jpg',
-    p_mime: 'image/jpeg',
-    p_bytes: JPEG.length,
-    p_width: 800,
-    p_height: 600,
-    p_sha256: 'c'.repeat(64),
+    ...TEST_JPEG_METADATA,
   });
   return id;
 }

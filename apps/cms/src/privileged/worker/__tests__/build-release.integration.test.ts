@@ -27,11 +27,12 @@ import {
 import { processRequestById } from '../process-request';
 import { STALE_RELEASE_SECONDS, failStaleReleases } from '../sweep';
 import { failAsStale, prepareLabak } from './labak-setup';
+import { TEST_JPEG, TEST_JPEG_METADATA } from './test-image';
 
 let editor: SupabaseClient;
 let secret: SupabaseClient;
 
-const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0xff, 0xd9]);
+const JPEG = TEST_JPEG;
 
 beforeAll(async () => {
   vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', env.apiUrl);
@@ -68,11 +69,7 @@ async function labakAsset(o: { upload?: boolean } = {}): Promise<string> {
     p_tenant_id: TENANT.labak,
     p_original_path: path,
     p_filename: 'mynd.jpg',
-    p_mime: 'image/jpeg',
-    p_bytes: JPEG.length,
-    p_width: 800,
-    p_height: 600,
-    p_sha256: 'b'.repeat(64),
+    ...TEST_JPEG_METADATA,
   });
   return id;
 }
