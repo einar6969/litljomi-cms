@@ -12,7 +12,9 @@ import { fieldErrorId, fieldHelpId } from '@/ui/Field';
 
 const saveDraftAction = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/supabase/browser', () => ({ createBrowserEditorClient: () => ({}) }));
-vi.mock('@/app/(editor)/t/[tenant]/actions', () => ({ saveDraftAction, setSlugAction: vi.fn() }));
+vi.mock('@/app/(editor)/t/[tenant]/actions', () => ({ saveDraftAction, loadDraftAction: vi.fn(), setSlugAction: vi.fn() }));
+// The event form's reference field (M2-08) lists its options on mount; none are needed here.
+vi.mock('@/app/(editor)/t/[tenant]/reference-actions', () => ({ referenceOptionsAction: vi.fn(async () => ({ ok: true, options: [], truncated: false })) }));
 vi.mock('@/app/(editor)/t/[tenant]/publish-actions', () => ({ requestPublishAction: vi.fn(), requestUnpublishAction: vi.fn() }));
 vi.mock('@/app/(editor)/t/[tenant]/asset-actions', () => ({ registerAssetAction: vi.fn(), assetPreviewAction: vi.fn(), updateAssetAction: vi.fn() }));
 
