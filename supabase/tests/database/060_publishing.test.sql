@@ -54,8 +54,8 @@ select columns_are('cms', 'publish_requests', array['id', 'tenant_id', 'entry_id
     'requested_by', 'requested_at', 'status', 'claimed_at', 'attempts', 'error', 'revision_id', 'release_id'],
   'publish_requests columns');
 select columns_are('cms', 'releases', array['id', 'tenant_id', 'number', 'status', 'bundle_path', 'created_at',
-    'delivered_at', 'error', 'next_attempt_at'],
-  'releases columns');
+    'delivered_at', 'error', 'next_attempt_at', 'public_assets', 'cleanup_claimed_at', 'cleanup_assets', 'cleaned_at'],
+  'releases columns (M3-02: next_attempt_at; M3-06: the retention columns)');
 select columns_are('cms', 'sites', array['id', 'tenant_id', 'base_url', 'revalidate_url', 'preview_url',
     'webhook_secret_ref', 'preview_secret_ref', 'active'],
   'sites columns');
@@ -188,8 +188,10 @@ select set_eq($$ select * from tests.column_privs('service_role', 'cms.publish_r
             ('revision_id', 'UPDATE'), ('release_id', 'UPDATE') $$,
   'service_role: update the worker-owned columns of publish_requests only');
 select set_eq($$ select * from tests.column_privs('service_role', 'cms.releases') where priv <> 'INSERT' $$,
-  $$ values ('status', 'UPDATE'), ('bundle_path', 'UPDATE'), ('delivered_at', 'UPDATE'), ('error', 'UPDATE') $$,
-  'service_role: update (status, bundle_path, delivered_at, error) on releases only');
+  $$ values ('status', 'UPDATE'), ('bundle_path', 'UPDATE'), ('delivered_at', 'UPDATE'), ('error', 'UPDATE'),
+            ('public_assets', 'UPDATE'), ('cleanup_claimed_at', 'UPDATE'), ('cleanup_assets', 'UPDATE'),
+            ('cleaned_at', 'UPDATE') $$,
+  'service_role: update (status, bundle_path, delivered_at, error) and M3-06''s retention columns on releases only');
 select set_eq($$ select * from tests.column_privs('service_role', 'cms.sites') where priv <> 'INSERT' $$,
   $$ values ('preview_secret_ref', 'UPDATE') $$,
   'service_role: update preview_secret_ref on sites only (M3-10, admin_set_preview_secret)');
