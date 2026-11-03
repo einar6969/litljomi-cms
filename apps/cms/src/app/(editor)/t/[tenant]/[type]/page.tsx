@@ -3,13 +3,19 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { NewEntryButton } from '@/editor/NewEntryButton';
 import { OpenSingleton } from '@/editor/OpenSingleton';
+import { applyEntryListFilter, isFiltered, MAX_QUERY_LENGTH, parseEntryListFilter, STATUS_FILTERS, type StatusFilter } from '@/editor/entry-list-filter';
 import { t } from '@/i18n/is';
+import { Button } from '@/ui/Button';
+import { Field } from '@/ui/Field';
 import { StatusBadge } from '@/ui/StatusBadge';
 import { createEditorClient } from '@/lib/supabase/server';
 import { currentTenant, isActive } from '@/lib/tenant';
 import { getModule, getType } from '@/modules/registry';
 
-type Props = { params: Promise<{ tenant: string; type: string }> };
+type Props = {
+  params: Promise<{ tenant: string; type: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
 
 type Row = { id: string; slug: string | null; title: string | null; status: keyof typeof t.entries.statuses; updated_at: string };
 
@@ -21,12 +27,16 @@ const STATUS_TONE: Partial<Record<Row['status'], 'ok' | 'pending'>> = { publishe
 // table's semantics once it is no longer display:table, so the roles are stated explicitly.
 const HEAD = 'py-2 pr-4 font-display text-xs font-semibold uppercase tracking-wider text-muted';
 
+const FILTER_LABELS: Record<StatusFilter, string> = { ...t.entries.statuses, unpublished: t.entries.filter.unpublished };
+
 // The entries of one content type, newest edit first. The tenant is resolved through
 // api.my_tenants and the type must be in its module; the rows come from api.entry_list under the
-// editor's session, so RLS decides what is listed. A singleton type has no list: its page opens
-// the type's one entry, creating it on first open (§10.1).
-export default async function EntryListPage({ params }: Props) {
+// editor's session, so RLS decides what is listed. The title search and status filter (M2-10) are
+// in the URL, sent by a plain GET form, so they work before the page's JavaScript has loaded. A
+// singleton type has no list: its page opens the type's one entry, creating it on first open (§10.1).
+export default async function EntryListPage({ params, searchParams }: Props) {
   const { tenant: slug, type: typeName } = await params;
+  const filter = parseEntryListFilter(await searchParams);
   const tenant = await currentTenant(slug);
   if (!tenant) notFound();
   if (!isActive(tenant)) return null;
@@ -40,12 +50,12 @@ export default async function EntryListPage({ params }: Props) {
       </main>
     );
   }
-  const { data, error } = await (await createEditorClient())
+  const query = (await createEditorClient())
     .from('entry_list')
     .select('id, slug, title, status, updated_at')
     .eq('tenant_id', tenant.id)
-    .eq('type', type.name)
-    .is('archived_at', null)
+    .eq('type', type.name);
+  const { data, error } = await applyEntryListFilter(query, filter)
     .order('updated_at', { ascending: false })
     .limit(MAX_ROWS);
   if (error) throw new Error(`entry_list: ${error.code}`);
@@ -57,8 +67,33 @@ export default async function EntryListPage({ params }: Props) {
         <h1>{type.label}</h1>
         <NewEntryButton tenantSlug={tenant.slug} type={type.name} />
       </div>
+      <form role="search" aria-label={t.entries.filter.label} method="get" action={base} className="flex flex-wrap items-end gap-3">
+        <div className="min-w-[12rem] flex-1">
+          <Field label={t.entries.filter.search} htmlFor="entry-search">
+            <input id="entry-search" name="q" type="search" maxLength={MAX_QUERY_LENGTH} defaultValue={filter.q} />
+          </Field>
+        </div>
+        <Field label={t.entries.filter.status} htmlFor="entry-status">
+          <select id="entry-status" name="status" defaultValue={filter.status ?? ''}>
+            <option value="">{t.entries.filter.all}</option>
+            {STATUS_FILTERS.map((status) => (
+              <option key={status} value={status}>
+                {FILTER_LABELS[status]}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Button type="submit">{t.entries.filter.submit}</Button>
+        {isFiltered(filter) ? (
+          <Link href={base} className="inline-flex min-h-[44px] items-center">
+            {t.entries.filter.clear}
+          </Link>
+        ) : null}
+      </form>
       {rows.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-control bg-recessed px-4 py-8 text-center text-muted">{t.entries.empty}</p>
+        <p className="rounded-lg border border-dashed border-control bg-recessed px-4 py-8 text-center text-muted">
+          {isFiltered(filter) ? t.entries.filter.none : t.entries.empty}
+        </p>
       ) : (
         <table role="table" className="entry-table w-full border-collapse text-left">
           <thead role="rowgroup">
