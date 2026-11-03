@@ -36,7 +36,9 @@ afterEach(() => {
 
 /**
  * A fake `supabase` on PATH: it writes its environment to $FAKE_ENV_OUT and prints a loopback
- * stack's status in the format asked for (`-o env` or `-o json`).
+ * stack's status in the format asked for (`-o env` or `-o json`). $FAKE_API_URL replaces the env
+ * format's API_URL; $FAKE_STATUS_ERROR makes it fail with that message on stderr, as the real CLI
+ * does without a running stack.
  */
 function fakeSupabase(binDir: string): void {
   mkdirSync(binDir, { recursive: true });
@@ -46,9 +48,10 @@ function fakeSupabase(binDir: string): void {
     [
       '#!/bin/sh',
       'env > "$FAKE_ENV_OUT"',
+      'if [ -n "${FAKE_STATUS_ERROR:-}" ]; then echo "$FAKE_STATUS_ERROR" >&2; exit 1; fi',
       'case "$*" in',
       '  *json*) printf \'%s\\n\' \'{"API_URL":"http://127.0.0.1:54321","DB_URL":"postgresql://postgres:postgres@127.0.0.1:54322/postgres","MAILPIT_URL":"http://127.0.0.1:54324","PUBLISHABLE_KEY":"pk","SECRET_KEY":"sk"}\' ;;',
-      '  *) printf \'%s\\n\' \'API_URL="http://127.0.0.1:54321"\' \'PUBLISHABLE_KEY="pk"\' \'SECRET_KEY="sk"\' ;;',
+      '  *) printf \'%s\\n\' "API_URL=\\"${FAKE_API_URL:-http://127.0.0.1:54321}\\"" \'PUBLISHABLE_KEY="pk"\' \'SECRET_KEY="sk"\' ;;',
       'esac',
       '',
     ].join('\n'),
@@ -91,13 +94,14 @@ describe('tests/integration/scripts/cms-next.sh', () => {
     return { script, cmsDir, bin };
   }
 
-  function run(script: string, bin: string) {
+  function run(script: string, bin: string, fake: Record<string, string> = {}) {
     return spawnSync('sh', [script, 'build'], {
       encoding: 'utf8',
       env: cleanEnv({
         PATH: `${bin}:${process.env.PATH ?? ''}`,
         FAKE_ENV_OUT: join(tmp, 'supabase.env'),
         FAKE_NEXT_OUT: join(tmp, 'next.env'),
+        ...fake,
       }),
     });
   }
@@ -114,6 +118,40 @@ describe('tests/integration/scripts/cms-next.sh', () => {
     const result = run(script, bin);
     expect(result.status, result.stderr).toBe(0);
     expect(readEnvDump(join(tmp, 'next.env'))).toMatchObject({ NEXT_TELEMETRY_DISABLED: '1' });
+  });
+
+  it.each(['http://127.0.0.1:54321', 'http://localhost:54321'])('accepts the loopback stack at %s', (url) => {
+    const { script, bin } = scratchRepo();
+    const result = run(script, bin, { FAKE_API_URL: url });
+    expect(result.status, result.stderr).toBe(0);
+    expect(readEnvDump(join(tmp, 'next.env'))).toMatchObject({ NEXT_PUBLIC_SUPABASE_URL: url });
+  });
+
+  // C2 cleanup security r1: the port must be digits only, so userinfo cannot smuggle in another host.
+  it.each([
+    'http://localhost:x@evil.example',
+    'http://127.0.0.1:54321@evil.example',
+    'http://localhost:54321/@evil.example',
+    'http://localhost:',
+    'http://localhost:54321x',
+    'https://evil.example',
+  ])('refuses the stack URL %s before running next', (url) => {
+    const { script, bin } = scratchRepo();
+    const result = run(script, bin, { FAKE_API_URL: url });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('refusing a non-local stack');
+    expect(() => readFileSync(join(tmp, 'next.env'))).toThrow();
+  });
+
+  // C2 cleanup security r1: stdout (the keys) is captured; the CLI's own error on stderr is shown.
+  it('shows the error of a failing `supabase status`, with a hint, and runs nothing else', () => {
+    const { script, bin } = scratchRepo();
+    const result = run(script, bin, { FAKE_STATUS_ERROR: 'failed to inspect container health: No such container' });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('failed to inspect container health: No such container');
+    expect(result.stderr).toContain('pnpm db:start');
+    expect(result.stdout).toBe('');
+    expect(() => readFileSync(join(tmp, 'next.env'))).toThrow();
   });
 
   it.each(['.env', '.env.local', '.env.production', '.env.test.local'])(
@@ -211,6 +249,24 @@ describe('apps/cms/e2e/demo-site-server.ts', () => {
     const env = siteEnv({});
     expect(env).toMatchObject({ NEXT_TELEMETRY_DISABLED: '1', NODE_ENV: 'production', CMS_TENANT: 'demo' });
     expect(env.CMS_DELIVERY_BASE_URL).toBe('http://127.0.0.1:54321/storage/v1/object/public/delivery');
+  });
+
+  // Task 25 security r1: the site gets an allowlisted environment, not the whole parent one.
+  it('passes the site only the allowlisted parent variables, never a key or secret of the run', async () => {
+    const { siteEnv } = await load();
+    const env = siteEnv({
+      PATH: '/usr/bin',
+      HOME: '/home/x',
+      TMPDIR: '/tmp/x',
+      LANG: 'is_IS.UTF-8',
+      SOME_API_KEY: 'key',
+      CMS_INTERNAL_SECRET: 'internal',
+      CRON_SECRET: 'cron',
+      GITHUB_TOKEN: 'gh',
+      NODE_OPTIONS: '--require ./x.js',
+    });
+    expect(env).toMatchObject({ PATH: '/usr/bin', HOME: '/home/x', TMPDIR: '/tmp/x', LANG: 'is_IS.UTF-8' });
+    for (const name of ['SOME_API_KEY', 'CMS_INTERNAL_SECRET', 'CRON_SECRET', 'GITHUB_TOKEN', 'NODE_OPTIONS']) expect(env, name).not.toHaveProperty(name);
   });
 
   it('builds and starts the site on 127.0.0.1:3101 with that environment, reaching only loopback', async () => {

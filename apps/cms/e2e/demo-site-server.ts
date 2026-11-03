@@ -69,10 +69,18 @@ function run(siteDir: string, args: string[], env: NodeJS.ProcessEnv): Promise<n
   });
 }
 
+/**
+ * The only variables of the parent environment the demo site gets (Task 25 security r1): what Node
+ * and Next.js need to run, and nothing of the run's own keys or secrets (the CMS webServer's
+ * CMS_INTERNAL_SECRET and CRON_SECRET, or anything else in the caller's shell).
+ */
+export const SITE_ENV_ALLOWLIST = ['PATH', 'HOME', 'USER', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL', 'TZ'] as const;
+
 /** The demo site's environment for `next build` and `next start`: loopback stack, telemetry off. */
 export function siteEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const allowed = Object.fromEntries(SITE_ENV_ALLOWLIST.filter((name) => base[name] !== undefined).map((name) => [name, base[name]]));
   return {
-    ...base,
+    ...allowed,
     ...NO_CLI_NETWORK_ENV,
     NODE_ENV: 'production',
     CMS_DELIVERY_BASE_URL: requireLoopback(DEMO_DELIVERY_BASE_URL).href.replace(/\/$/, ''),
