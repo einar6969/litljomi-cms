@@ -8,6 +8,8 @@ export const DEMO_SITE_PORT = 3101;
 export const DEMO_SITE_URL = `http://localhost:${DEMO_SITE_PORT}`;
 /** The seeded webhook secret (local test value; seedIntegration stores it in the local Vault). */
 export const DEMO_SITE_WEBHOOK_SECRET = 's3cr3t';
+/** The seeded preview secret (M3-12; DEMO_SITE.previewSecret, a local test value in the local Vault). */
+export const DEMO_SITE_PREVIEW_SECRET = 'demo-preview-s3cr3t';
 export const DEMO_DELIVERY_BASE_URL = `${SUPABASE_URL}/storage/v1/object/public/delivery`;
 /** next.config.ts needs an https media host; the demo events published here have no images. */
 export const DEMO_SITE_MEDIA_HOST = 'media.example.test';

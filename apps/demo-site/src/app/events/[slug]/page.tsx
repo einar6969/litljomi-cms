@@ -1,9 +1,10 @@
 import { notFound } from 'next/navigation';
-import { cms } from '../../../lib/cms';
+import { cms, publishedCms } from '../../../lib/cms';
 import { EventDetail, type EventItem } from '../event';
 
+// Built from the published release: no request (and so no draft mode) exists at build time.
 export async function generateStaticParams() {
-  const events = await cms().getEntries<EventItem['data']>('event');
+  const events = await publishedCms().getEntries<EventItem['data']>('event');
   return events.flatMap((e) => (e.slug === null ? [] : [{ slug: e.slug }]));
 }
 

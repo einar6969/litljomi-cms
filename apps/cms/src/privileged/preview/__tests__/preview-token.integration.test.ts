@@ -83,7 +83,7 @@ afterAll(async () => {
 describe('preview tokens: who can obtain one (§7.5, §8.5 Escalation)', () => {
   it('an editor of the tenant gets a token for its entry, signed with its site\'s Vault secret', async () => {
     const now = Math.floor(Date.now() / 1000);
-    const r = await mintPreviewToken(deps(await editorClient('editor_demo'), now), { entryId: entries.demo });
+    const r = await mintPreviewToken(deps(await editorClient('editor_demo'), now), { entryId: entries.demo, siteId: siteIds.demo });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     const [row] = await ownerQuery<{ draft_version: number }>('select version as draft_version from cms.drafts where entry_id = $1', [entries.demo]);
@@ -129,10 +129,10 @@ describe('preview tokens: who can obtain one (§7.5, §8.5 Escalation)', () => {
 
   it('an ended session cannot obtain a token', async () => {
     const { client, accessToken } = await freshSession('editor_demo');
-    expect((await mintPreviewToken(deps(client), { entryId: entries.demo })).ok).toBe(true);
+    expect((await mintPreviewToken(deps(client), { entryId: entries.demo, siteId: siteIds.demo })).ok).toBe(true);
     const out = await secretClient().auth.admin.signOut(accessToken, 'local');
     expect(out.error).toBeNull();
-    expect(await mintPreviewToken(deps(client), { entryId: entries.demo })).toEqual({ ok: false, failure: 'auth' });
+    expect(await mintPreviewToken(deps(client), { entryId: entries.demo, siteId: siteIds.demo })).toEqual({ ok: false, failure: 'auth' });
   });
 
   it('a tenant with no preview site gives preview_unavailable', async () => {
@@ -148,9 +148,10 @@ describe('preview tokens: who can obtain one (§7.5, §8.5 Escalation)', () => {
   });
 
   it('over HTTP: 200 never cached for the editor, 404 across tenants, and no secret in any response', async () => {
-    const post = (entryId: string) =>
-      new Request('http://cms.local/api/preview-token', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ entryId }) });
-    const ok = await handlePreviewTokenRequest(post(entries.demo), async () => deps(await editorClient('editor_demo')));
+    // The demo tenant also has the seeded demo site's preview (M3-12), so the site is named.
+    const post = (entryId: string, siteId?: string) =>
+      new Request('http://cms.local/api/preview-token', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ entryId, siteId }) });
+    const ok = await handlePreviewTokenRequest(post(entries.demo, siteIds.demo), async () => deps(await editorClient('editor_demo')));
     expect(ok.status).toBe(200);
     expect(ok.headers.get('cache-control')).toBe('private, no-store');
     const okText = await ok.text();

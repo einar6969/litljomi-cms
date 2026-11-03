@@ -65,7 +65,7 @@ beforeEach(() => {
   state = {
     user: { id: 'u1' },
     userError: null,
-    entry: { data: { id: ENTRY, tenant_id: TENANT, draft_version: 4 }, error: null },
+    entry: { data: { id: ENTRY, tenant_id: TENANT, type: 'event', slug: 'tonleikar', sort_at: null, draft_version: 4 }, error: null },
     tenant: { data: { id: TENANT, slug: 'demo', status: 'active' }, error: null },
     sites: { data: [{ id: SITE, preview_url: 'https://demo.example/api/cms/preview', preview_secret: SECRET }], error: null },
     calls: [],
@@ -89,6 +89,22 @@ describe('mintPreviewToken', () => {
     const url = new URL(r.url);
     expect(url.origin + url.pathname).toBe('https://demo.example/api/cms/preview');
     expect(url.searchParams.get('token')).toBe(r.token);
+  });
+
+  it("adds the entry's path from the module's site.path (M3-12)", async () => {
+    const r = await mintPreviewToken(fakes(), { entryId: ENTRY });
+    expect(r.ok && new URL(r.url).searchParams.get('path')).toBe('/events/tonleikar');
+  });
+
+  it.each([
+    ['a type without site pages', { type: 'site-info', slug: null }],
+    ['an event without a slug yet', { type: 'event', slug: null }],
+    ['a type the module does not know', { type: 'nope', slug: 'x' }],
+    ['an inherited property name as the type', { type: 'constructor', slug: 'x' }],
+  ])("sends the editor to the site's home page for %s", async (_name, change) => {
+    state.entry.data = { ...state.entry.data, ...change };
+    const r = await mintPreviewToken(fakes(), { entryId: ENTRY });
+    expect(r.ok && new URL(r.url).searchParams.get('path')).toBe('/');
   });
 
   it('reads the entry and its tenant with the editor client before reading any secret', async () => {

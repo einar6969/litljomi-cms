@@ -1,7 +1,8 @@
 import 'server-only';
 import { z } from 'zod';
 import { canonicalUuid } from '@litljomi/rich-text';
-import { PREVIEW_TOKEN_TTL_SECONDS, signPreviewToken } from '@litljomi/cms-sdk';
+import { PREVIEW_PATH_PARAM, PREVIEW_TOKEN_TTL_SECONDS, safePreviewPath, signPreviewToken } from '@litljomi/cms-sdk';
+import { getModule } from '@/modules/registry';
 // Not '@/lib/tenant': that module loads the editor's cookie-bound client (next/headers).
 import { isActive } from '@/lib/tenant-status';
 import type { SupabaseClient } from '@/lib/supabase/types';
@@ -15,7 +16,7 @@ import type { SupabaseClient } from '@/lib/supabase/types';
  * check for preview (§7.5): the preview endpoint trusts what a valid token names.
  *
  * The secret never leaves this module; the response carries only the token, its expiry and the
- * site's preview URL with the token.
+ * site's preview URL with the token and the entry's path on the site (M3-12).
  */
 
 export type MintDeps = {
@@ -44,6 +45,23 @@ export type MintResult =
   | { ok: false; failure: MintFailure };
 
 type PreviewSite = { id: string; preview_url: string; preview_secret: string };
+type EntryRow = { id: string; tenant_id: string; type: string; slug: string | null; sort_at: string | null; draft_version: number };
+
+/**
+ * Where the site's preview route sends the editor (spec §7.5): the entry's own path from the
+ * module's `site.path` (§3.2), or the site's home page when the type has no page of its own or
+ * the entry has no path yet (an event without a slug). The site checks the path again.
+ */
+function entryPath(tenant: string, e: EntryRow): string {
+  const site = getModule(tenant)?.site;
+  const integration = site && Object.hasOwn(site, e.type) ? site[e.type] : undefined;
+  if (!integration) return '/';
+  try {
+    return safePreviewPath(integration.path({ id: e.id, type: e.type, slug: e.slug, sortAt: e.sort_at })) ?? '/';
+  } catch {
+    return '/';
+  }
+}
 
 const fail = (failure: MintFailure): MintResult => ({ ok: false, failure });
 
@@ -61,13 +79,14 @@ export async function mintPreviewToken(deps: MintDeps, input: MintInput): Promis
 
   // Read with the editor's JWT: RLS hides another tenant's entry and a non-member's tenant.
   const api = deps.editor.schema('api');
-  const entry = await api.from('entry_list').select('id, tenant_id, draft_version').eq('id', input.entryId).maybeSingle();
+  const entry = await api.from('entry_list').select('id, tenant_id, type, slug, sort_at, draft_version').eq('id', input.entryId).maybeSingle();
   if (entry.error) {
     if (entry.status === 401) return fail('auth');
     throw new Error(`entry_list: ${entry.error.code}`);
   }
   if (!entry.data) return fail('not_found');
-  const { tenant_id: tenantId, draft_version: draftVersion } = entry.data as { tenant_id: string; draft_version: number };
+  const row = entry.data as EntryRow;
+  const { tenant_id: tenantId, draft_version: draftVersion } = row;
   const tenant = await api.from('my_tenants').select('id, slug, status').eq('id', tenantId).maybeSingle();
   if (tenant.error) {
     if (tenant.status === 401) return fail('auth');
@@ -102,6 +121,7 @@ export async function mintPreviewToken(deps: MintDeps, input: MintInput): Promis
   const exp = Math.floor(deps.nowSeconds()) + PREVIEW_TOKEN_TTL_SECONDS;
   const token = signPreviewToken({ tenant: slug, entry_id: input.entryId, draft_version: draftVersion, exp }, site.preview_secret);
   url.searchParams.set('token', token);
+  url.searchParams.set(PREVIEW_PATH_PARAM, entryPath(slug, row));
   return { ok: true, token, expiresAt: exp, url: url.toString() };
 }
 
