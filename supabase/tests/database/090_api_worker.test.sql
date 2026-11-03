@@ -136,7 +136,9 @@ select set_eq($$ select p.proname::text, pg_catalog.pg_get_function_result(p.oid
             ('worker_record_pointer_lag', 'boolean'),
             -- M2-13 (104_draft_migration).
             ('admin_outdated_drafts', 'TABLE(entry_id uuid, version integer, schema_version integer, data jsonb)'),
-            ('admin_migrate_draft', 'integer') $$,
+            ('admin_migrate_draft', 'integer'),
+            -- M3-04 (105_alert_email).
+            ('worker_claim_alert_email', 'boolean') $$,
   'worker and admin functions: return types, and no others');
 select is((select pg_catalog.pg_get_function_arguments('api.worker_claim_requests(integer)'::regprocedure)),
   'p_limit integer DEFAULT 10', 'worker_claim_requests: p_limit defaults to 10');

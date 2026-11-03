@@ -126,6 +126,21 @@ export const is = {
     datetime: {
       help: 'Tími í tímabelti tölvunnar þinnar ({zone}).',
     },
+    // M2-15: the list input. Drafts for Einar. `{label}`, `{n}`, `{total}`, `{min}` and `{max}` are filled in by the field.
+    list: {
+      item: '{label} {n}',
+      add: 'Bæta við',
+      remove: 'Fjarlægja {item}',
+      moveUp: 'Færa {item} upp',
+      moveDown: 'Færa {item} niður',
+      handle: 'Færa {item}: dragðu, eða notaðu örvalyklana upp og niður',
+      moved: '{item} er nú í sæti {n} af {total}.',
+      removed: '{item} var fjarlægt.',
+      empty: 'Engin atriði enn.',
+      range: 'Minnst {min} og mest {max} atriði.',
+      atLeast: 'Minnst {min} atriði.',
+      atMost: 'Mest {max} atriði.',
+    },
     outdated: {
       title: 'Uppkastið er á eldri útgáfu efnisflokksins',
       body: 'Efnisflokki þessarar færslu hefur verið breytt síðan uppkastið var vistað. Uppfærðu uppkastið til að geta breytt því og birt það. Efnið er fært á nýja sniðið; það sem er nú birt á vefnum breytist ekki.',
