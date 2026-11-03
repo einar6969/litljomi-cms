@@ -8,7 +8,8 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 vi.mock('next/link', () => ({ default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => <a href={href} {...rest}>{children}</a> }));
-vi.mock('@/editor/NewEntryButton', () => ({ NewEntryButton: () => null }));
+vi.mock('@/editor/NewEntryButton', () => ({ NewEntryButton: () => <button data-new-entry="" /> }));
+vi.mock('@/editor/OpenSingleton', () => ({ OpenSingleton: ({ type }: { type: string }) => <div data-open-singleton={type} /> }));
 const rows = vi.hoisted(() => ({ data: [] as unknown[] }));
 vi.mock('@/lib/supabase/server', () => ({
   createEditorClient: vi.fn(async () => {
@@ -18,13 +19,18 @@ vi.mock('@/lib/supabase/server', () => ({
 }));
 const TENANT = { id: '00000000-0000-4000-8000-0000000000f1', slug: 'acme', name: 'Acme', status: 'active' as const };
 vi.mock('@/lib/tenant', async (importOriginal) => ({ ...(await importOriginal<typeof import('@/lib/tenant')>()), currentTenant: vi.fn(async () => TENANT) }));
-vi.mock('@/modules/registry', () => ({ getType: () => ({ name: 'news', label: 'Fréttir' }) }));
+const structure = vi.hoisted(() => ({ singleton: false }));
+vi.mock('@/modules/registry', () => ({
+  getType: () => ({ name: 'news', label: 'Fréttir' }),
+  getModule: () => ({ structure: [{ type: 'news', label: 'Fréttir', singleton: structure.singleton }] }),
+}));
 
 const { default: EntryListPage } = await import('../page');
 
 const render = async () => renderToStaticMarkup(await EntryListPage({ params: Promise.resolve({ tenant: 'acme', type: 'news' }) }));
 
 beforeEach(() => {
+  structure.singleton = false;
   rows.data = [{ id: '00000000-0000-4000-8000-0000000000e1', slug: null, title: 'Frétt', status: 'draft', updated_at: '2026-11-03T12:00:00Z' }];
 });
 
@@ -40,5 +46,22 @@ describe('the entry list', () => {
     expect(html.match(/<tr[^>]*role="row"/g)).toHaveLength(2);
     expect(html.match(/<th[^>]*role="columnheader"/g)).toHaveLength(3);
     expect(html.match(/<td[^>]*role="cell"/g)).toHaveLength(3);
+  });
+});
+
+describe('a singleton type (M2-09; spec §10.1)', () => {
+  it('has no list and no "new entry" button: the page opens its one entry', async () => {
+    structure.singleton = true;
+    const html = await render();
+    expect(html).toContain('data-open-singleton="news"');
+    expect(html).not.toContain('<table');
+    expect(html).not.toContain('data-new-entry');
+    expect(html).toContain('<h1>Fréttir</h1>');
+  });
+  it('an ordinary type keeps its list and button', async () => {
+    const html = await render();
+    expect(html).toContain('<table');
+    expect(html).toContain('data-new-entry');
+    expect(html).not.toContain('data-open-singleton');
   });
 });
