@@ -1,4 +1,4 @@
--- supabase/tests/database/104_not_confirmed_retry.test.sql
+-- supabase/tests/database/105_not_confirmed_retry.test.sql
 -- M3-03: retries after not_confirmed (spec §7.4; plan M3-03). The new transitions of
 -- api.worker_record_delivery (a missed live check is scheduled on M3-02's schedule, a retry's
 -- notification keeps it, a passing check clears it, 24 hours exhaust it), the selection of a due

@@ -588,7 +588,7 @@ describe('confirmSite: §7.4 re-send on a stale hash (M3-09)', () => {
 });
 
 // M3-03: a not_confirmed delivery is retried on M3-02's schedule (the database keeps it; the
-// selection and supersession are in 104_not_confirmed_retry and pipeline.integration.test.ts).
+// selection and supersession are in 105_not_confirmed_retry and pipeline.integration.test.ts).
 describe('confirmSite: retries after not_confirmed (M3-03)', () => {
   let site: FakeSite;
   const recorded: Array<Record<string, unknown>> = [];

@@ -9,7 +9,7 @@ import { t } from '@/i18n/is';
 
 export type RequestStatus = 'pending' | 'validating' | 'committed' | 'failed_validation' | 'superseded' | 'rejected' | 'failed';
 
-/** One row of `api.publication_status` (20261103190000_not_confirmed_retry.sql): an entry's latest request. */
+/** One row of `api.publication_status` (20261103193000_not_confirmed_retry.sql): an entry's latest request. */
 export type PublicationStatusRow = {
   request_id: string;
   tenant_id: string;

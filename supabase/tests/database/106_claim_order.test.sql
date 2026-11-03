@@ -1,5 +1,5 @@
--- supabase/tests/database/105_claim_order.test.sql
--- api.worker_claim_requests returns the claimed requests oldest first (20261103190100_claim_order.sql).
+-- supabase/tests/database/106_claim_order.test.sql
+-- api.worker_claim_requests returns the claimed requests oldest first (20261103193100_claim_order.sql).
 -- The rows are inserted newest first, so their physical order is the reverse of request order.
 begin;
 \ir _helpers.sql
