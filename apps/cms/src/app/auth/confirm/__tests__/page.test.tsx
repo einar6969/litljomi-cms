@@ -2,7 +2,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const auth = vi.hoisted(() => ({ verifyOtp: vi.fn(), getUser: vi.fn(), admin: { signOut: vi.fn() } }));
-vi.mock('@/lib/supabase/server', () => ({ createEditorClient: vi.fn(async () => ({ auth })) }));
+const detached = vi.hoisted(() => ({ verifyOtp: vi.fn(), getUser: vi.fn(), admin: { signOut: vi.fn() } }));
+vi.mock('@/lib/supabase/server', () => ({ createEditorClient: vi.fn(async () => ({ auth })), createDetachedClient: vi.fn(() => ({ auth: detached })) }));
+const pending = vi.hoisted(() => ({ readPending: vi.fn() }));
+vi.mock('../pending', () => pending);
 
 const { createEditorClient } = await import('@/lib/supabase/server');
 const { default: ConfirmPage, metadata } = await import('../page');
@@ -17,9 +20,14 @@ const hidden = (html: string, name: string) => new RegExp(`<input type="hidden" 
 const SIGNED_OUT = { data: { user: null }, error: { status: 401, code: 'no_authorization', message: 'Auth session missing!' } };
 const SIGNED_IN = { data: { user: { id: 'u1', email: 'someone@example.is' } }, error: null };
 
+const PENDING = { accessToken: 'eyJpending.access.token', refreshToken: 'pending-refresh', next: '/t/labak' };
+const LINK_ACCOUNT = { data: { user: { id: 'u2', email: 'link-owner@example.is' } }, error: null };
+
 beforeEach(() => {
   vi.clearAllMocks();
   auth.getUser.mockResolvedValue(SIGNED_OUT);
+  detached.getUser.mockResolvedValue(LINK_ACCOUNT);
+  pending.readPending.mockResolvedValue(null);
 });
 
 describe('GET /auth/confirm', () => {
@@ -67,7 +75,7 @@ describe('GET /auth/confirm', () => {
     auth.getUser.mockResolvedValue(SIGNED_IN);
     const html = await render({ token_hash: HASH, type: 'email' });
     expect(t.confirm.signedIn).toBe('Þú ert þegar skráð/ur inn');
-    expect(html).toContain(`>${t.confirm.signedIn}<`);
+    expect(html).toContain(`>${t.confirm.signedIn}</span> ${t.confirm.signedInDetail}<`);
     expect(html.match(/<button/g)).toHaveLength(1);
     expect(html).toContain(`>${t.confirm.submit}</button>`);
     expect(html).not.toContain('someone@example.is');
@@ -87,5 +95,66 @@ describe('GET /auth/confirm', () => {
 
   it('sends no referrer, so the token hash in the URL is not passed on', () => {
     expect(metadata.referrer).toBe('no-referrer');
+  });
+});
+
+// M3-14: a signed-in visitor whose link is for another account comes back here, without a query,
+// with that link's session held aside; the page names the link's account and asks.
+describe('GET /auth/confirm with a pending link session (M3-14)', () => {
+  const buttons = (html: string) => [...html.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((m) => m[1]);
+
+  it('names the account the link signs in to, as Auth reports it, and asks before replacing', async () => {
+    pending.readPending.mockResolvedValue(PENDING);
+    auth.getUser.mockResolvedValue(SIGNED_IN);
+    const html = await render({});
+    expect(detached.getUser).toHaveBeenCalledExactlyOnceWith(PENDING.accessToken);
+    expect(html).toContain(`<h1>${t.confirm.replaceTitle}</h1>`);
+    expect(html).toContain(`${t.confirm.replaceAccount} <strong>link-owner@example.is</strong>.`);
+    expect(html).toContain(t.confirm.replaceDetail);
+    expect(buttons(html)).toEqual([t.confirm.replace, t.confirm.keep]);
+    // The visitor's own account is not named, and nothing is verified, revoked or carried in the page.
+    expect(html).not.toContain('someone@example.is');
+    expect(html).not.toContain(PENDING.accessToken);
+    expect(html).not.toContain(PENDING.refreshToken);
+    expect(html).not.toContain('type="hidden"');
+    for (const client of [auth, detached]) {
+      expect(client.verifyOtp).not.toHaveBeenCalled();
+      expect(client.admin.signOut).not.toHaveBeenCalled();
+    }
+  });
+
+  it('escapes the account it names', async () => {
+    pending.readPending.mockResolvedValue(PENDING);
+    detached.getUser.mockResolvedValue({ data: { user: { id: 'u2', email: '<b>x</b>@example.is' } }, error: null });
+    const html = await render({});
+    expect(html).toContain('<strong>&lt;b&gt;x&lt;/b&gt;@example.is</strong>');
+  });
+
+  it.each([
+    ['Auth refuses the pending session', () => detached.getUser.mockResolvedValue(SIGNED_OUT)],
+    ['Auth throws', () => detached.getUser.mockRejectedValue(new Error('network failed'))],
+    ['the account has no email', () => detached.getUser.mockResolvedValue({ data: { user: { id: 'u2', email: '' } }, error: null })],
+    ['the cookie cannot be read', () => pending.readPending.mockRejectedValue(new Error('cookies() outside a request'))],
+  ])('asks nothing when %s: the plain confirm page instead', async (_case, arrange) => {
+    pending.readPending.mockResolvedValue(PENDING);
+    arrange();
+    const html = await render({});
+    expect(html).toContain(`<h1>${t.confirm.title}</h1>`);
+    expect(buttons(html)).toEqual([t.confirm.submit]);
+    expect(html).not.toContain(t.confirm.replaceTitle);
+  });
+
+  it('shows a newly opened link\'s page, not the question, when the address has a token hash', async () => {
+    pending.readPending.mockResolvedValue(PENDING);
+    const html = await render({ token_hash: HASH, type: 'email' });
+    expect(pending.readPending).not.toHaveBeenCalled();
+    expect(buttons(html)).toEqual([t.confirm.submit]);
+    expect(hidden(html, 'token_hash')).toBe(HASH);
+  });
+
+  it('asks nothing without a pending session', async () => {
+    const html = await render({});
+    expect(detached.getUser).not.toHaveBeenCalled();
+    expect(buttons(html)).toEqual([t.confirm.submit]);
   });
 });
