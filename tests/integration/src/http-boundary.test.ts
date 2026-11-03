@@ -181,7 +181,12 @@ describe('A3: worker and admin functions are for the secret key only', () => {
     ['worker_finish_release', { p_release_id: randomUUID(), p_status: 'failed', p_bundle_path: null, p_error: {}, p_request_ids: [], p_public_assets: [] }],
     ['worker_previous_release', { p_tenant_id: TENANT.labak }],
     ['worker_sites', { p_tenant_id: TENANT.labak }],
-    ['worker_record_delivery', { p_release_id: randomUUID(), p_site_id: randomUUID(), p_notify_status: 'sent', p_live_status: 'pending', p_error: null }],
+    ['worker_record_delivery', { p_release_id: randomUUID(), p_site_id: randomUUID(), p_notify_status: 'sent', p_live_status: 'pending', p_error: null, p_now: new Date().toISOString() }],
+    // M3-02.
+    ['worker_next_attempt_at', { p_first_failed_at: new Date().toISOString(), p_attempts: 1, p_now: new Date().toISOString() }],
+    ['worker_release_retry', { p_release_id: randomUUID() }],
+    ['worker_tenants_to_release', { p_now: new Date().toISOString() }],
+    ['worker_deliveries_to_retry', { p_now: new Date().toISOString() }],
     ['admin_create_tenant', { p_slug: 'x-a3', p_name: 'x' }],
     ['admin_create_site', { p_tenant_id: TENANT.labak, p_base_url: 'http://x', p_revalidate_url: 'http://x', p_preview_url: null, p_webhook_secret: 's' }],
     ['admin_add_membership', { p_tenant_id: TENANT.labak, p_user_id: PERSONAS.outsider.id }],

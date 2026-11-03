@@ -124,7 +124,7 @@ insert into editor_views values
   -- Task 25 replaced this view (20261102001500_publication_status.sql; 099_publication_status).
   ('publication_status', array['request_id', 'tenant_id', 'entry_id', 'action', 'status', 'error', 'requested_at',
                                'release_number', 'release_status', 'omitted', 'missing_assets', 'site_count',
-                               'sites_notified', 'sites_live_ok', 'sites_not_confirmed', 'notify_attempts']),
+                               'sites_notified', 'sites_live_ok', 'sites_not_confirmed', 'retries_exhausted']),
   ('tenant_sites', array['id', 'tenant_id', 'base_url', 'preview_url', 'active']);
 
 select is_empty($$ select v.name from editor_views v
@@ -199,10 +199,12 @@ insert into cms.sites (id, tenant_id, base_url, revalidate_url, preview_url, web
   (tests.pub('e841'), tests.tenant('labak'), 'http://localhost:3100', 'http://localhost:3100/r', 'http://localhost:3100/p', tests.pub('e8f1')),
   (tests.pub('e842'), tests.tenant('labak'), 'http://localhost:3102', 'http://localhost:3102/r', null, tests.pub('e8f2')),
   (tests.pub('e843'), tests.tenant('demo'), 'http://localhost:3101', 'http://localhost:3101/r', null, tests.pub('e8f3'));
-insert into cms.site_deliveries (release_id, site_id, tenant_id, notify_status, live_status, live_confirmed_at) values
-  (tests.pub('e821'), tests.pub('e841'), tests.tenant('labak'), 'ok', 'ok', now()),
-  (tests.pub('e822'), tests.pub('e841'), tests.tenant('labak'), 'ok', 'ok', now()),
-  (tests.pub('e822'), tests.pub('e842'), tests.tenant('labak'), 'failed', 'pending', null);
+insert into cms.site_deliveries (release_id, site_id, tenant_id, notify_status, live_status, live_confirmed_at,
+                                 first_failed_at, next_attempt_at) values
+  (tests.pub('e821'), tests.pub('e841'), tests.tenant('labak'), 'ok', 'ok', now(), null, null),
+  (tests.pub('e822'), tests.pub('e841'), tests.tenant('labak'), 'ok', 'ok', now(), null, null),
+  -- A failed notification still being retried (M3-02: its next attempt is scheduled).
+  (tests.pub('e822'), tests.pub('e842'), tests.tenant('labak'), 'failed', 'pending', null, now(), now() + interval '1 minute');
 insert into cms.publish_requests (id, tenant_id, entry_id, action, draft_version, requested_by, requested_at, status,
                                   revision_id, release_id) values
   (tests.pub('e801'), tests.tenant('labak'), tests.entry('c803'), 'publish', 1, tests.persona('editor_labak'),
@@ -251,12 +253,12 @@ select results_eq($$ select id, tenant_id, filename, mime, width, height, focal_
 -- (Task 25's shape; its states are tested in 099_publication_status).
 select results_eq($$ select request_id, tenant_id, entry_id, action, status, error, requested_at, release_number,
             release_status, omitted, missing_assets, site_count, sites_notified, sites_live_ok, sites_not_confirmed,
-            notify_attempts
+            retries_exhausted
      from api.publication_status order by entry_id $$,
   $$ values (tests.pub('e802'), tests.tenant('labak'), tests.entry('c803'), 'publish'::text, 'committed'::text, null::jsonb,
-             now() - interval '1 hour', 2, 'delivered'::text, false, null::text[], 2, 1, 1, 0, 0),
+             now() - interval '1 hour', 2, 'delivered'::text, false, null::text[], 2, 1, 1, 0, false),
             (tests.pub('e803'), tests.tenant('labak'), tests.entry('c804'), 'publish', 'pending', null,
-             now() - interval '1 hour', null, null, false, null, 2, 0, 0, 0, 0) $$,
+             now() - interval '1 hour', null, null, false, null, 2, 0, 0, 0, false) $$,
   'publication_status: the latest labak request per entry, its release and the counts over its sites');
 select results_eq($$ select id, tenant_id, base_url, preview_url, active from api.tenant_sites order by id $$,
   $$ values (tests.pub('e841'), tests.tenant('labak'), 'http://localhost:3100'::text, 'http://localhost:3100/p'::text, true),

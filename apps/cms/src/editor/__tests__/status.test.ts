@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_NOTIFY_ATTEMPTS } from '@/lib/delivery';
 import { t } from '@/i18n/is';
 import { displayState, IN_PROGRESS, isFinal, type PublicationStatusRow, type RequestStatus } from '../publish/status';
 
@@ -19,21 +18,21 @@ const base: PublicationStatusRow = {
   sites_notified: 2,
   sites_live_ok: 2,
   sites_not_confirmed: 0,
-  notify_attempts: 0,
+  retries_exhausted: false,
 };
 const row = (patch: Partial<PublicationStatusRow>): PublicationStatusRow => ({ ...base, ...patch });
 const unpublish = (patch: Partial<PublicationStatusRow> = {}) => row({ action: 'unpublish', ...patch });
 
 // Every value the view can give a delivered release's counts over two active sites: 0..2 notified,
-// live ok and not confirmed (not more than the sites), and attempts below, at and above the limit.
+// live ok and not confirmed (not more than the sites), with the retries exhausted or not (M3-02).
 function* deliveredCombinations(): Generator<PublicationStatusRow> {
   for (const action of ['publish', 'unpublish'] as const)
     for (const omitted of [false, true])
       for (let notified = 0; notified <= 2; notified++)
         for (let live = 0; live <= notified; live++)
           for (let notConfirmed = 0; live + notConfirmed <= notified; notConfirmed++)
-            for (const attempts of [0, 1, MAX_NOTIFY_ATTEMPTS - 1, MAX_NOTIFY_ATTEMPTS, MAX_NOTIFY_ATTEMPTS + 1])
-              yield row({ action, omitted, sites_notified: notified, sites_live_ok: live, sites_not_confirmed: notConfirmed, notify_attempts: attempts });
+            for (const exhausted of [false, true])
+              yield row({ action, omitted, sites_notified: notified, sites_live_ok: live, sites_not_confirmed: notConfirmed, retries_exhausted: exhausted });
 }
 
 describe('displayState: requested, committed and delivered (§7.4)', () => {
@@ -55,12 +54,12 @@ describe('displayState: requested, committed and delivered (§7.4)', () => {
     }
   });
 
-  it('delivered with a site not yet notified (retrying, attempts left) is "Í birtingu…"', () => {
-    expect(displayState(row({ sites_notified: 1, sites_live_ok: 1, notify_attempts: MAX_NOTIFY_ATTEMPTS - 1 }))).toEqual({
+  it('delivered with a site not yet notified (retrying, retries left) is "Í birtingu…"', () => {
+    expect(displayState(row({ sites_notified: 1, sites_live_ok: 1, retries_exhausted: false }))).toEqual({
       label: 'Í birtingu…',
       tone: 'pending',
     });
-    expect(displayState(row({ sites_notified: 0, sites_live_ok: 0, notify_attempts: 0 })).label).toBe('Í birtingu…');
+    expect(displayState(row({ sites_notified: 0, sites_live_ok: 0 })).label).toBe('Í birtingu…');
   });
 
   it('revalidated: every active site notified, a live check still running, is "Bíður eftir vefnum"', () => {
@@ -123,16 +122,27 @@ describe('displayState: failures', () => {
     }
   });
 
-  it(`retries exhausted (${MAX_NOTIFY_ATTEMPTS} attempts, decision 36.1) is "Birting á vef mistókst"`, () => {
+  it('retries exhausted (24 hours of failed notifications, M3-02) is "Birting á vef mistókst", final', () => {
     for (const action of ['publish', 'unpublish'] as const) {
-      expect(displayState(row({ action, sites_notified: 1, sites_live_ok: 1, notify_attempts: MAX_NOTIFY_ATTEMPTS }))).toMatchObject({
-        label: 'Birting á vef mistókst',
-        tone: 'error',
-      });
-      expect(displayState(row({ action, sites_notified: 0, sites_live_ok: 0, notify_attempts: MAX_NOTIFY_ATTEMPTS + 1 })).label).toBe(
-        'Birting á vef mistókst',
-      );
+      const state = displayState(row({ action, sites_notified: 1, sites_live_ok: 1, retries_exhausted: true }));
+      expect(state).toMatchObject({ label: 'Birting á vef mistókst', tone: 'error' });
+      expect(isFinal(state)).toBe(true);
+      expect(displayState(row({ action, sites_notified: 0, sites_live_ok: 0, retries_exhausted: true })).label).toBe('Birting á vef mistókst');
     }
+  });
+
+  it('build retries exhausted (24 hours of failed builds, M3-02) is "Birting á vef mistókst" before any release is delivered', () => {
+    for (const release_status of [null, 'failed'] as const) {
+      for (const action of ['publish', 'unpublish'] as const) {
+        const state = displayState(row({ action, release_status, release_number: null, sites_notified: 0, sites_live_ok: 0, retries_exhausted: true }));
+        expect(state).toMatchObject({ label: 'Birting á vef mistókst', tone: 'error' });
+        expect(isFinal(state)).toBe(true);
+      }
+    }
+  });
+
+  it('every active site live ok wins over a stale exhausted flag (success is proven)', () => {
+    expect(displayState(row({ retries_exhausted: true })).label).toBe('Birt á vef ✓');
   });
 
   it('live not confirmed: every site settled, one not_confirmed, is "Ekki staðfest á vef", final', () => {

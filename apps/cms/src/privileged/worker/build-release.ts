@@ -320,7 +320,30 @@ export async function buildRelease(tenantId: string, options: BuildOptions = {})
     }
     const event = failure.code === 'finish_refused' ? 'release.finish_refused' : 'release.failed';
     await alert(event, { tenantId, releaseId, number, code: failure.code, step: failure.step, message: failure.message, pointerWritten });
+    await alertIfBuildRetriesExhausted(db, { tenantId, releaseId, number });
     return { status: 'failed', releaseId, number, omitted, previousBundle };
+  }
+}
+
+/** A row of api.worker_release_retry (M3-02). */
+type ReleaseRetry = { status: string; next_attempt_at: string | null; retries_exhausted: boolean };
+
+/**
+ * After a release failed (here, or as stale in the sweep): when the database has scheduled no next
+ * build for the tenant, 24 hours have passed since the first failed build of the run and the
+ * platform admin is alerted (`release.retries_exhausted`, §7.4, §8.4). The sweep builds the tenant
+ * again only for a request made after that build began (M3-02). Never throws: a failing read is
+ * logged, as the failure itself was already alerted.
+ */
+export async function alertIfBuildRetriesExhausted(
+  db: SupabaseClient,
+  release: { tenantId: string; releaseId: string; number: number },
+): Promise<void> {
+  try {
+    const [retry] = (await callRpc<ReleaseRetry[] | null>(db, 'worker_release_retry', { p_release_id: release.releaseId })) ?? [];
+    if (retry?.retries_exhausted) await alert('release.retries_exhausted', { ...release });
+  } catch (error) {
+    console.error(`[cms-worker] the build retry of release ${release.releaseId} could not be read`, error);
   }
 }
 
