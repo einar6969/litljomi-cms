@@ -18,7 +18,7 @@ export type PublicationStatusRow = {
   requested_at: string;
   release_number: number | null;
   release_status: 'building' | 'delivered' | 'failed' | null;
-  /** The request's release left this entry out (`releases.error.omitted`). */
+  /** Delivery failed for this entry: the request's release, or a newer delivered one, recorded it in `releases.error.omitted` or `.fallback` (§7.1). */
   omitted: boolean;
   /** asset_missing only: the missing images' filenames. */
   missing_assets: string[] | null;

@@ -19,6 +19,13 @@ export const is = {
     intro: 'Smelltu á hnappinn til að skrá þig inn í Litljómi vefumsjón.',
     submit: 'Halda áfram',
     signedIn: 'Þú ert þegar skráð/ur inn',
+    // M3-14 (drafts for Einar): the question asked before a link replaces the visitor's session.
+    signedInDetail: 'Áður en skipt er um aðgang sérðu hvaða aðgangi hlekkurinn tilheyrir.',
+    replaceTitle: 'Skipta um aðgang?',
+    replaceAccount: 'Þessi hlekkur skráir inn sem',
+    replaceDetail: 'Ef þú skiptir verður þú skráð/ur út af aðganginum sem er innskráður núna.',
+    replace: 'Skipta um aðgang',
+    keep: 'Hætta við',
   },
   tenants: {
     title: 'Vefirnir þínir',
