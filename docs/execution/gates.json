@@ -110,11 +110,25 @@
         ],
         "hostsDiffSha256": "28d95c6cea48aa55ec90d37e65c39b43d4390455d2bdec8a20414c3fc1389657",
         "askRulesDiffSha256": "4679b5f91d53dcea5f00445063d8e0d2a585d519f9d793a57c81c1647e79717b"
+      },
+      "completed": {
+        "at": "2026-11-03",
+        "note": "Repository created and both branches pushed by Einar at ddb67c8; PRIVATE, Actions enabled, default_workflow_permissions read, can_approve_pull_request_reviews false, no secrets, only main and m1/phase-1 on the remote; CI on main ddb67c8 completed success. Hosts removed (diff 5ccb1984…6855), Einar in chat 2026-11-03: \"1. Remove the GitHub hosts, diff `5ccb1984…6855`.\""
       }
     },
     "G3": {
-      "status": "pending",
-      "params": {}
+      "status": "approved",
+      "by": "Einar",
+      "at": "2026-11-03",
+      "scope": "Decision 43.4 in the runbook's order (section 5): Einar creates the Free organisation \"Litljómi\" and project \"staging\" in Frankfurt and gives the project reference; the <project-ref>.supabase.co hosts diff is shown to him before it is applied. Dashboard work in the browser pane, in a session Einar signs in to himself, limited to the staging project's settings, SQL editor, Auth and templates pages; never the API keys page, Vault contents, the database password, billing or organisation settings; no deleting anything; only the runbook's SQL. At the end, the controller tells Einar to sign out of supabase.com in the pane. Staging keys live in /Users/einarzoega/litljomi-cms/.env.staging.local, created and filled by Einar; .env.local is not swapped; the runbook's scripts point ENV_FILE at the staging file and keep the project-reference check.",
+      "note": "Einar in chat, 2026-11-03: \"2. G3 as requested, in the runbook’s order. I’ll create the “Litljómi” organisation and the “staging” project in Frankfurt and give you the project reference. Then show me the `<project-ref>.supabase.co` hosts diff. 3. Dashboard work: use the browser pane. I sign in myself. Limits: only the staging project’s settings, SQL editor, Auth and templates pages; never the API keys page, Vault contents, the database password, billing or organisation settings; no deleting anything; only the runbook’s SQL. When G3 is done, tell me to sign out of supabase.com in the pane. 4. Staging keys go in a separate file, /Users/einarzoega/litljomi-cms/.env.staging.local, which I create and fill myself. Don’t swap `.env.local`. Point the runbook’s scripts (their `ENV_FILE`) at the staging file, and keep the project-reference check. Record this change in the runbook.\"",
+      "params": {
+        "organisation": "Litljómi",
+        "project": "staging",
+        "region": "eu-central-1",
+        "plan": "Free",
+        "envFile": "/Users/einarzoega/litljomi-cms/.env.staging.local"
+      }
     },
     "G4": {
       "status": "pending",

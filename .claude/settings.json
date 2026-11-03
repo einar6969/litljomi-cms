@@ -45,7 +45,7 @@
     "enabled": true,
     "failIfUnavailable": true,
     "network": {
-      "allowedDomains": ["registry.npmjs.org", "github.com", "api.github.com"],
+      "allowedDomains": ["registry.npmjs.org"],
       "allowUnixSockets": [
         "/Users/einarzoega/.orbstack/run/docker.sock",
         "/var/run/docker.sock"
