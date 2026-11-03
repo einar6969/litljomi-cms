@@ -29,7 +29,7 @@ const fake = {
 };
 vi.mock('@/lib/supabase/server', () => ({ createEditorClient: vi.fn(async () => fake) }));
 
-const { createEntryAction, openSingletonAction, saveDraftAction, setSlugAction } = await import('../actions');
+const { createEntryAction, loadDraftAction, openSingletonAction, saveDraftAction, setSlugAction } = await import('../actions');
 
 const ENTRY = '00000000-0000-4000-8000-0000000000e1';
 const TENANT_ID = '00000000-0000-4000-8000-0000000000f1';
@@ -216,6 +216,43 @@ describe('saveDraftAction', () => {
     const value = { _ref: '00000000-0000-4000-8000-0000000000a1', _kind: 'asset', alt: 'Brauð' };
     await saveDraftAction(ENTRY, 3, { [image]: value });
     expect((state.calls[0]!.args as { p_data: Record<string, unknown> }).p_data[image]).toEqual(value);
+  });
+});
+
+describe('loadDraftAction (M2-11: the newer version after a conflict)', () => {
+  it('reads the draft and its version from entry_detail, in the tenant loadEntryContext found', async () => {
+    state.tables.entry_detail = { data: { data: { title: 'Þeirra' }, draft_version: 7 } };
+    await expect(loadDraftAction(ENTRY)).resolves.toEqual({ ok: true, version: 7, data: { title: 'Þeirra' } });
+    expect(state.queries.map((q) => q.table)).toEqual(['entry_list', 'my_tenants', 'entry_detail']);
+    expect(state.queries[2]!.filters).toEqual([['id', ENTRY], ['tenant_id', TENANT_ID]]);
+    expect(state.calls).toEqual([]);
+  });
+
+  it('reads a draft whose data is not an object as empty', async () => {
+    state.tables.entry_detail = { data: { data: [1], draft_version: 2 } };
+    await expect(loadDraftAction(ENTRY)).resolves.toEqual({ ok: true, version: 2, data: {} });
+  });
+
+  it('rejects a malformed id before any database call', async () => {
+    for (const id of ['not-a-uuid', 5, {}]) await expect(loadDraftAction(id as string)).resolves.toEqual({ ok: false, code: 'invalid' });
+    expect(state.queries).toEqual([]);
+  });
+
+  it('answers auth without a session, and the generic error for a hidden entry, a database error or a bad row', async () => {
+    state.user = null;
+    await expect(loadDraftAction(ENTRY)).resolves.toEqual({ ok: false, code: 'auth' });
+    expect(state.queries).toEqual([]);
+    state.user = { id: 'u1' };
+    state.tables.entry_detail = { data: null };
+    await expect(loadDraftAction(ENTRY)).resolves.toEqual({ ok: false, code: 'error' });
+    state.tables.entry_detail = { data: { data: {}, draft_version: 'x' } };
+    await expect(loadDraftAction(ENTRY)).resolves.toEqual({ ok: false, code: 'error' });
+    state.tables.entry_detail = { error: { code: 'PGRST303', message: 'JWT expired' }, status: 401 };
+    await expect(loadDraftAction(ENTRY)).resolves.toEqual({ ok: false, code: 'auth' });
+    state.tables.entry_detail = { error: { code: 'XX000', message: 'secret detail' } };
+    await expect(loadDraftAction(ENTRY)).resolves.toEqual({ ok: false, code: 'error' });
+    state.tables.entry_list = { data: null };
+    await expect(loadDraftAction(ENTRY)).resolves.toEqual({ ok: false, code: 'error' });
   });
 });
 
