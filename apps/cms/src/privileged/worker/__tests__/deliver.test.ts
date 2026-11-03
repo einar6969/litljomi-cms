@@ -380,10 +380,17 @@ describe('confirmRelease: the public pointer', () => {
   let site: FakeSite;
   const events: string[] = [];
   const recorded: Array<Record<string, unknown>> = [];
+  /** The worker_record_pointer_lag calls (M3-08), with how many notifications came before each. */
+  const lags: Array<{ args: Record<string, unknown>; notifiedBefore: number }> = [];
+  let lagError: { code: string; message: string } | null = null;
   let sites: unknown[];
   const db = {
     rpc: async (fn: string, args: Record<string, unknown>) => {
       if (fn === 'worker_record_delivery') recorded.push(args);
+      if (fn === 'worker_record_pointer_lag') {
+        lags.push({ args, notifiedBefore: events.filter((e) => e.startsWith('notify')).length });
+        return lagError ? { data: null, error: lagError } : { data: true, error: null };
+      }
       return { data: fn === 'worker_sites' ? sites : null, error: null };
     },
   } as unknown as SupabaseClient;
@@ -417,6 +424,8 @@ describe('confirmRelease: the public pointer', () => {
   beforeEach(async () => {
     events.length = 0;
     recorded.length = 0;
+    lags.length = 0;
+    lagError = null;
     vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://example.supabase.co');
     info = vi.spyOn(console, 'info').mockImplementation(() => {});
     site = await startFakeSite();
@@ -530,6 +539,73 @@ describe('confirmRelease: the public pointer', () => {
     const p = pointerSeams([2]);
     await confirmRelease(db, { ...published, pointerWrittenAt: p.c.t }, { pollMs: 20, timeoutMs: 200, pointer: p.seams });
     expect(infoLines('live check')).toEqual([{ tenant: 'prufa', release: 2, siteId: 's1', status: 'not_confirmed', failures: 1 }]);
+  });
+
+  // M3-08: the lag is stored on the release, before any site is notified.
+  describe('the pointer lag is stored per release (M3-08)', () => {
+    it('at 0 s: the public pointer served the release on the first read', async () => {
+      const p = pointerSeams([2]);
+      const written = p.c.t;
+      // This fetch takes no time on the fake clock.
+      const fetch = (async () => new Response(JSON.stringify({ format: 1, tenant: 'prufa', release: 2, bundle: 'releases/2.json', generatedAt: 'x' }))) as unknown as typeof globalThis.fetch;
+
+      await confirmRelease(db, { ...published, pointerWrittenAt: written }, { pollMs: 20, timeoutMs: 1_000, pointer: { ...p.seams, fetch } });
+
+      expect(lags).toEqual([{ args: { p_release_id: 'rel', p_lag_ms: 0, p_fresh: true }, notifiedBefore: 0 }]);
+      expect(events).toEqual(['notify /api/revalidate/s1']);
+    });
+
+    it('after a delay: the write to the first fresh public read', async () => {
+      const p = pointerSeams([1, 1, 1, 2]);
+      await confirmRelease(db, { ...published, pointerWrittenAt: p.c.t }, { pollMs: 1_000, timeoutMs: 1_000, pointer: p.seams });
+      // Three stale reads and pauses of 1 s (20 ms per fetch on the fake clock), then the fresh read.
+      expect(lags).toEqual([{ args: { p_release_id: 'rel', p_lag_ms: 3_080, p_fresh: true }, notifiedBefore: 0 }]);
+    });
+
+    it('as bound reached: never fresh within the bound', async () => {
+      const p = pointerSeams([1]);
+      await confirmRelease(db, { ...published, pointerWrittenAt: p.c.t }, { pollMs: 20, timeoutMs: 1_000, pointer: p.seams });
+      expect(lags).toEqual([{ args: { p_release_id: 'rel', p_lag_ms: 120_000, p_fresh: false }, notifiedBefore: 0 }]);
+      expect(events.at(-1)).toBe('notify /api/revalidate/s1');
+    });
+
+    it('as bound reached at 0 s when the run deadline left no time to poll', async () => {
+      const p = pointerSeams([2]);
+      const written = p.c.t;
+      await confirmRelease(db, { ...published, pointerWrittenAt: written }, { pollMs: 20, timeoutMs: 1_000, runDeadline: written + 5_000, pointer: p.seams });
+      expect(lags.map((l) => l.args)).toEqual([{ p_release_id: 'rel', p_lag_ms: 0, p_fresh: false }]);
+    });
+
+    it('a fractional clock is stored in whole milliseconds', async () => {
+      const p = pointerSeams([1, 2]);
+      const written = p.c.t;
+      p.c.t += 0.4;
+      await confirmRelease(db, { ...published, pointerWrittenAt: written }, { pollMs: 1_000, timeoutMs: 1_000, pointer: p.seams });
+      expect(lags.map((l) => l.args.p_lag_ms)).toEqual([1_040]);
+    });
+
+    it('nothing is stored on a retry (no poll) or for a tenant without an active site', async () => {
+      const p = pointerSeams([2]);
+      await confirmRelease(db, published, { pollMs: 20, timeoutMs: 1_000, pointer: p.seams }, new Set(['s1']));
+      sites = [];
+      await confirmRelease(db, { ...published, pointerWrittenAt: p.c.t }, { pollMs: 20, timeoutMs: 1_000, pointer: p.seams });
+      expect(lags).toEqual([]);
+    });
+
+    it('a failure to store the lag is logged, and the sites are still notified and checked', async () => {
+      lagError = { code: 'P0001', message: 'forbidden' };
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const p = pointerSeams([2]);
+        await confirmRelease(db, { ...published, pointerWrittenAt: p.c.t }, { pollMs: 20, timeoutMs: 1_000, pointer: p.seams });
+        expect(lags).toHaveLength(1);
+        expect(events.at(-1)).toBe('notify /api/revalidate/s1');
+        expect(recorded.at(-1)).toMatchObject({ p_site_id: 's1', p_live_status: 'ok' });
+        expect(error).toHaveBeenCalledWith('[cms-worker] release 2: the pointer lag was not recorded', expect.anything());
+      } finally {
+        error.mockRestore();
+      }
+    });
   });
 });
 
