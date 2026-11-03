@@ -44,8 +44,31 @@ test('a second tab editing the same entry gives the first the conflict notice an
 
   await page.getByLabel(TITLE).fill('Fyrsti flipi, meira');
   // (Next.js's own route announcer is also an alert, so the notice is picked by its text.)
-  await expect(page.getByRole('alert').filter({ hasText: t.editor.conflict })).toBeVisible(SAVED);
+  const notice = page.getByRole('alert').filter({ hasText: t.editor.conflict });
+  await expect(notice).toBeVisible(SAVED);
   await expect(page.getByLabel(TITLE)).toHaveValue('Fyrsti flipi, meira');
+
+  // M2-11: the differing field is shown with both values, and "keep mine" saves on top of theirs.
+  const row = notice.getByTestId('conflict-field');
+  await expect(row).toHaveCount(1, SAVED);
+  await expect(row).toContainText(TITLE);
+  await expect(row.locator('[data-side="theirs"]')).toContainText('Annar flipi');
+  await expect(row.locator('[data-side="mine"]')).toContainText('Fyrsti flipi, meira');
+  await notice.getByRole('button', { name: t.editor.resolve.keepMine }).click();
+  await expect(page.getByRole('status')).toHaveText(t.editor.saved, SAVED);
+  await page.reload();
+  await expect(page.getByLabel(TITLE)).toHaveValue('Fyrsti flipi, meira');
+
+  // The second tab is now stale: it reloads theirs and keeps editing on top of it.
+  await second.getByLabel(TITLE).fill('Annar flipi, meira');
+  const secondNotice = second.getByRole('alert').filter({ hasText: t.editor.conflict });
+  await expect(secondNotice.getByTestId('conflict-field')).toHaveCount(1, SAVED);
+  await secondNotice.getByRole('button', { name: t.editor.resolve.reloadTheirs }).click();
+  await expect(second.getByLabel(TITLE)).toHaveValue('Fyrsti flipi, meira');
+  await second.getByLabel(TITLE).fill('Fyrsti flipi, lagað');
+  await expect(second.getByRole('status')).toHaveText(t.editor.saved, SAVED);
+  await page.reload();
+  await expect(page.getByLabel(TITLE)).toHaveValue('Fyrsti flipi, lagað');
 });
 
 test('a duplicate slug shows "Slóðin er þegar í notkun"', async ({ page }) => {
