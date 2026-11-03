@@ -17,6 +17,8 @@ const { confirmSignIn } = await import('../actions');
 const HASH = '16b012167d533434e7798fb52bd2c600ea40eac016b347f9d5dd10f3';
 const PKCE_HASH = `pkce_${HASH}`;
 const FAILED = 'REDIRECT /login?error=link';
+/** The redirect to `/` exactly: a substring match would also pass on FAILED. */
+const HOME = /^REDIRECT \/$/;
 const OLD_TOKEN = 'eyJold.access.token';
 const NEW_TOKEN = 'eyJnew.access.token';
 const signedIn = () => auth.getSession.mockResolvedValue({ data: { session: { access_token: OLD_TOKEN } }, error: null });
@@ -53,7 +55,7 @@ describe('confirmSignIn', () => {
     ['invite', HASH],
     ['invite', PKCE_HASH],
   ])('verifies a %s link (%s) with the editor client and goes to /', async (type, token_hash) => {
-    await expect(confirmSignIn(form({ token_hash, type }))).rejects.toThrow('REDIRECT /');
+    await expect(confirmSignIn(form({ token_hash, type }))).rejects.toThrow(HOME);
     expect(createEditorClient).toHaveBeenCalledOnce();
     expect(auth.verifyOtp).toHaveBeenCalledExactlyOnceWith({ token_hash, type });
   });
@@ -129,7 +131,7 @@ describe('confirmSignIn', () => {
   // Decision 42.2 (Q1): pressing the button with a session already in the browser replaces it. The
   // token is verified first, so a bad link leaves the visitor's session as it was; only after Auth
   // has issued the new session (written over the old cookies) is the old session revoked.
-  describe('with a session already in the browser', () => {
+  describe('the session already in the browser, if any', () => {
     it('verifies the link first, then revokes only the old session', async () => {
       signedIn();
       await expect(confirmSignIn(form({ token_hash: HASH, type: 'email', next: '/t/acme' }))).rejects.toThrow('REDIRECT /t/acme');
@@ -154,7 +156,7 @@ describe('confirmSignIn', () => {
 
     it('revokes nothing when Auth issued the same session (nothing to replace)', async () => {
       auth.getSession.mockResolvedValue({ data: { session: { access_token: NEW_TOKEN } }, error: null });
-      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email' }))).rejects.toThrow('REDIRECT /');
+      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email' }))).rejects.toThrow(HOME);
       expect(auth.admin.signOut).not.toHaveBeenCalled();
     });
 
@@ -169,23 +171,23 @@ describe('confirmSignIn', () => {
       expect(consoleText()).not.toContain(HASH);
     });
 
-    it('signs in without revoking when the old session cannot be read', async () => {
-      auth.getSession.mockRejectedValue(new Error('cookie unreadable'));
-      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email' }))).rejects.toThrow('REDIRECT /');
+    it.each([
+      ['reading it throws', () => auth.getSession.mockRejectedValue(new Error('cookie unreadable'))],
+      ['Auth answers an error', () => auth.getSession.mockResolvedValue({ data: { session: null }, error: { status: 400, code: 'refresh_token_not_found', message: 'x' } })],
+    ])('signs in without revoking when the old session cannot be read (%s)', async (_case, arrange) => {
+      arrange();
+      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email' }))).rejects.toThrow(HOME);
       expect(auth.admin.signOut).not.toHaveBeenCalled();
-      auth.getSession.mockResolvedValue({ data: { session: null }, error: { status: 400, code: 'refresh_token_not_found', message: 'x' } });
-      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email' }))).rejects.toThrow('REDIRECT /');
+    });
+
+    it('revokes nothing when there was no session', async () => {
+      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email' }))).rejects.toThrow(HOME);
       expect(auth.admin.signOut).not.toHaveBeenCalled();
     });
   });
 
-  it('revokes nothing when there was no session', async () => {
-    await expect(confirmSignIn(form({ token_hash: HASH, type: 'email' }))).rejects.toThrow('REDIRECT /');
-    expect(auth.admin.signOut).not.toHaveBeenCalled();
-  });
-
   it('logs nothing about a successful sign-in', async () => {
-    await expect(confirmSignIn(form({ token_hash: PKCE_HASH, type: 'email' }))).rejects.toThrow('REDIRECT /');
+    await expect(confirmSignIn(form({ token_hash: PKCE_HASH, type: 'email' }))).rejects.toThrow(HOME);
     expect(consoleText()).toBe('[[],[],[]]');
   });
 });

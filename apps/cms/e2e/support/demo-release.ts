@@ -16,9 +16,13 @@ import { requireLoopback } from './local';
 import { expect } from './test';
 
 // The demo module's own field labels (an English fixture tenant, decision 37.6).
-const TITLE = 'Title';
+export const TITLE = 'Title';
 const START = 'Start date';
 const SAVED = { timeout: 10_000 };
+/** How long the first release may take to reach the public pointer (worker build and pointer write). */
+const POINTER_TIMEOUT_MS = 120_000;
+/** How long the demo site may take to start: demo-site-server.ts runs `next build`, then `next start`. */
+const SITE_START_TIMEOUT_MS = 600_000;
 
 export type DemoPointer = { release: number; bundle: string };
 
@@ -53,11 +57,11 @@ export async function ensureDemoSite(page: Page): Promise<void> {
   if (!(await demoPointer())) {
     await newDemoEvent(page, 'Fyrsti viðburður');
     await page.getByRole('button', { name: t.publish.publish }).click();
-    await expect.poll(demoPointer, { timeout: 120_000, intervals: [1000] }).not.toBeNull();
+    await expect.poll(demoPointer, { timeout: POINTER_TIMEOUT_MS, intervals: [1000] }).not.toBeNull();
   }
   await expect
-    .poll(async () => (await fetch(requireLoopback(`${DEMO_SITE_URL}/events`)).catch(() => null))?.status ?? 0, {
-      timeout: 600_000,
+    .poll(async () => (await fetch(requireLoopback(`${DEMO_SITE_URL}/events`), { redirect: 'error' }).catch(() => null))?.status ?? 0, {
+      timeout: SITE_START_TIMEOUT_MS,
       intervals: [2000],
       message: 'the demo site did not start (see the demo-site webServer output)',
     })

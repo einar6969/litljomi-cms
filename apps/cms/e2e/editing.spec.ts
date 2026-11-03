@@ -119,6 +119,11 @@ async function plainDateValue(plain: Page, keys: string): Promise<string> {
   return input.inputValue();
 }
 
+/** Prints a keyboard-date finding in the run's output (the list reporter shows a test's stdout). */
+function recordDateFinding(finding: string): void {
+  console.log(`keyboard date entry, ${finding}`);
+}
+
 /** The segment order for which a plain date input turns the keys for 14 Nov 2026 into 2026-11-14. */
 async function browserSegmentOrder(plain: Page): Promise<Segment[]> {
   for (const order of SEGMENT_ORDERS) {
@@ -134,29 +139,28 @@ for (const locale of ['is-IS', 'en-US']) {
     test('our date field takes typed keys exactly as a plain date input does', async ({ page, context }) => {
       const plain = await context.newPage();
       const expected = await plainDateValue(plain, WALKTHROUGH_KEYS);
+      await plain.close();
       await createNews(page);
       const date = page.getByLabel(DATE);
       await date.focus();
       await page.keyboard.type(WALKTHROUGH_KEYS);
-      const finding = `${locale}: "${WALKTHROUGH_KEYS}" gives "${expected}" in a plain input, "${await date.inputValue()}" in ours`;
-      test.info().annotations.push({ type: 'date keys', description: finding });
-      console.log(`keyboard date entry, ${finding}`);
+      recordDateFinding(`${locale}: "${WALKTHROUGH_KEYS}" gives "${expected}" in a plain input, "${await date.inputValue()}" in ours`);
       await expect(date).toHaveValue(expected);
     });
 
     test('a date typed in the browser\'s segment order is saved', async ({ page, context }) => {
-      const order = await browserSegmentOrder(await context.newPage());
+      const plain = await context.newPage();
+      const order = await browserSegmentOrder(plain);
+      await plain.close();
       const keys = order.map((part) => DATE_DIGITS[part]).join('');
-      const finding = `${locale}: the date input's segment order is ${order.join('-')} → ${keys}`;
-      test.info().annotations.push({ type: 'date keys', description: finding });
-      console.log(`keyboard date entry, ${finding}`);
+      recordDateFinding(`${locale}: the date input's segment order is ${order.join('-')} → ${keys}`);
 
       await createNews(page);
       const date = page.getByLabel(DATE);
       await date.focus();
       await page.keyboard.type(keys);
       await expect(date).toHaveValue('2026-11-14');
-      await expect(page.getByRole('status')).toHaveText(t.editor.saved, SAVED);
+      await expect(page.getByRole('main').getByRole('status')).toHaveText(t.editor.saved, SAVED);
       await page.reload();
       await expect(page.getByLabel(DATE)).toHaveValue('2026-11-14');
     });

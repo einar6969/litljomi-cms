@@ -101,10 +101,9 @@ describe('displayState: live (decision 35)', () => {
     }
   });
 
+  // The exact state ("Enginn vefur tengdur", a warning) is pinned below.
   it('never "Birt á vef ✓" for a tenant without an active site (no proof exists)', () => {
-    const state = displayState(row({ site_count: 0, sites_notified: 0, sites_live_ok: 0 }));
-    expect(state.label).not.toBe('Birt á vef ✓');
-    expect(state.tone).not.toBe('ok');
+    expect(displayState(row({ site_count: 0, sites_notified: 0, sites_live_ok: 0 })).label).not.toBe('Birt á vef ✓');
   });
 
   it('every combination maps to one of the §7.4 labels', () => {

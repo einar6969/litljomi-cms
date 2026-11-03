@@ -7,8 +7,12 @@ import { startSite, WEBHOOK_SECRETS, type RunningSite } from './harness.ts';
 
 const bundle = JSON.parse(readFileSync(join(FIXTURES_ROOT, 'delivery', 'demo', 'releases', '1.json'), 'utf8')) as Bundle;
 const events = bundle.entries['event'] ?? [];
-const x = events.find((e) => e.slug === 'x'); // the fixture itself is checked in fixtures.test.ts
-if (x === undefined) throw new Error('the fixture bundle has no event with slug x');
+/** The fixture's event `x`. A fixture without it fails the tests that use it, not the file's loading. */
+function eventX(): (typeof events)[number] {
+  const x = events.find((e) => e.slug === 'x'); // the fixture itself is checked in fixtures.test.ts
+  if (x === undefined) throw new Error('the fixture bundle has no event with slug x');
+  return x;
+}
 
 let site: RunningSite;
 beforeAll(async () => {
@@ -32,6 +36,7 @@ function revalidate(o: { body?: string; secret?: string; signature?: string; ts?
 
 describe('demo site against the fixture bundle', () => {
   it('/events/x renders a marker with the bundle hash and the content', async () => {
+    const x = eventX();
     const res = await get('/events/x');
     expect(res.status).toBe(200);
     const html = await res.text();
@@ -40,6 +45,7 @@ describe('demo site against the fixture bundle', () => {
     expect(parseReleaseMarker(html)).toBe(bundle.release);
   });
   it('/events lists every event with its marker', async () => {
+    expect(events.length, 'the listing needs more than one event to prove anything').toBeGreaterThan(1);
     const res = await get('/events');
     expect(res.status).toBe(200);
     const html = await res.text();
@@ -64,6 +70,7 @@ describe('demo site against the fixture bundle', () => {
     expect((await revalidate({ secret: WEBHOOK_SECRETS[1] ?? '' })).status).toBe(200);
   });
   it('still serves the event pages after revalidation', async () => {
+    const x = eventX();
     const res = await get('/events/x');
     expect(res.status).toBe(200);
     expect(parseEntryMarkers(await res.text())).toEqual([{ id: x.id, hash: x.contentHash }]);

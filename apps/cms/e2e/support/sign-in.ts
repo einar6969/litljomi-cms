@@ -38,24 +38,28 @@ export async function openLink(page: Page, link: URL): Promise<void> {
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(t.confirm.title);
 }
 
-// How long the URL must stay unchanged, with the landing page's heading shown, to count as settled.
-const SETTLE_MS = 500;
+// A landing counts as settled when its `main` shows a level-1 heading within HEADING_MS and the URL
+// then stays the same for STILL_MS. The window covers the one redirect a landing page makes on its
+// own: the tenant picker at `/` sending an editor with one tenant on to `/t/<slug>`.
+const HEADING_MS = 500;
+const STILL_MS = 500;
+// How long the landing may take to settle in all (repeated tries of the check above).
+const SETTLE_TIMEOUT_MS = 15_000;
 
 /**
- * Waits until `page` has left /auth/confirm and settled: its `main` shows a level-1 heading and the
- * URL stays the same for SETTLE_MS. "Halda áfram" is a server action, so its redirect is followed by
- * the client router, and a page it lands on may redirect again (the tenant picker at `/` sends an
- * editor with one tenant on to `/t/<slug>`); the intermediate URL is not the landing.
+ * Waits until `page` has left /auth/confirm and settled (see HEADING_MS and STILL_MS). "Halda áfram"
+ * is a server action, so its redirect is followed by the client router, and a page it lands on may
+ * redirect again (the tenant picker); the intermediate URL is not the landing.
  */
 async function settledLanding(page: Page): Promise<URL> {
   await page.waitForURL((url) => url.origin === CMS_URL && url.pathname !== '/auth/confirm');
   await expect(async () => {
     const before = page.url();
-    await expect(page.getByRole('main').getByRole('heading', { level: 1 })).toBeVisible({ timeout: SETTLE_MS });
-    await page.waitForTimeout(SETTLE_MS);
+    await expect(page.getByRole('main').getByRole('heading', { level: 1 })).toBeVisible({ timeout: HEADING_MS });
+    await page.waitForTimeout(STILL_MS);
     expect(page.url()).toBe(before);
     expect(new URL(before).pathname).not.toBe('/auth/confirm');
-  }).toPass();
+  }).toPass({ timeout: SETTLE_TIMEOUT_MS });
   return new URL(page.url());
 }
 
