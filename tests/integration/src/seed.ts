@@ -53,14 +53,23 @@ export async function seedIntegration(): Promise<void> {
 
   await ownerQuery('insert into cms.platform_admins (user_id) values ($1) on conflict do nothing', [PERSONAS.platform_admin.id]);
 
-  const sites = await ownerQuery('select 1 from cms.sites where tenant_id = $1 and base_url = $2', [TENANT.demo, DEMO_SITE.baseUrl]);
-  if (sites.length === 0) {
+  const sites = await ownerQuery<{ id: string; preview_url: string | null; preview_secret_ref: string | null }>(
+    'select id, preview_url, preview_secret_ref from cms.sites where tenant_id = $1 and base_url = $2',
+    [TENANT.demo, DEMO_SITE.baseUrl],
+  );
+  const site = sites[0];
+  if (!site) {
     await rpc('admin_create_site', {
       p_tenant_id: TENANT.demo,
       p_base_url: DEMO_SITE.baseUrl,
       p_revalidate_url: DEMO_SITE.revalidateUrl,
-      p_preview_url: null,
+      p_preview_url: DEMO_SITE.previewUrl,
       p_webhook_secret: DEMO_SITE.webhookSecret,
+      p_preview_secret: DEMO_SITE.previewSecret,
     });
+  } else if (site.preview_url !== DEMO_SITE.previewUrl || site.preview_secret_ref === null) {
+    // A stack seeded before M3-12: the demo site gets its preview route and secret.
+    await ownerQuery('update cms.sites set preview_url = $2 where id = $1', [site.id, DEMO_SITE.previewUrl]);
+    await rpc('admin_set_preview_secret', { p_site_id: site.id, p_preview_secret: DEMO_SITE.previewSecret });
   }
 }

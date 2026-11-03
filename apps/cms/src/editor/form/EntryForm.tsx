@@ -7,6 +7,7 @@ import { createBrowserEditorClient } from '@/lib/supabase/browser';
 import { Button } from '@/ui/Button';
 import { Notice } from '@/ui/Notice';
 import { useAutosave, type TheirVersion } from '../autosave';
+import { PreviewButton } from '../publish/PreviewButton';
 import { PublishPanel } from '../publish/PublishPanel';
 import { unsavedStore } from '../unsaved';
 import { changedFields } from './conflict';
@@ -100,14 +101,22 @@ export function EntryForm({ tenant, entryId, fields, titleKey, initialData, init
             <SaveStatus state={autosave.state} retry={autosave.retry} />
           )}
         </form>
-        {/* The request carries the version the editor last saw (review focus 3). */}
-        <PublishPanel
-          entryId={entryId}
-          version={autosave.version}
-          disabled={autosave.state === 'conflict' || autosave.state === 'signed_out'}
-          initiallyPublished={published}
-          fieldLabels={fieldLabels}
-        />
+        <div className="flex flex-col gap-4">
+          {/* The request carries the version the editor last saw (review focus 3). */}
+          <PublishPanel
+            entryId={entryId}
+            version={autosave.version}
+            disabled={autosave.state === 'conflict' || autosave.state === 'signed_out'}
+            initiallyPublished={published}
+            fieldLabels={fieldLabels}
+          />
+          {/* Preview shows the saved draft (spec §7.5, M3-12). */}
+          <PreviewButton
+            entryId={entryId}
+            disabled={autosave.state === 'conflict' || autosave.state === 'signed_out'}
+            unsaved={() => autosave.state === 'saving' || autosave.pendingData() !== null}
+          />
+        </div>
       </div>
     </EditorTenantProvider>
   );

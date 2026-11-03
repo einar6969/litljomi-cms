@@ -241,6 +241,14 @@ export const is = {
     requestFailed: 'Ekki tókst að senda beiðnina. Reyndu aftur.',
     statusUnavailable: 'Ekki tókst að sækja stöðu birtingar.',
   },
+  // M3-12 (drafts for Einar): the editor's preview button and its failures.
+  preview: {
+    open: 'Forskoða',
+    opening: 'Opnar forskoðun…',
+    unsaved: 'Breytingar eru enn að vistast. Reyndu aftur eftir augnablik.',
+    unavailable: 'Forskoðun er ekki í boði fyrir þennan vef.',
+    failed: 'Ekki tókst að opna forskoðun. Reyndu aftur.',
+  },
   asset: {
     title: 'Mynd',
     back: 'Á forsíðu vefsins',
