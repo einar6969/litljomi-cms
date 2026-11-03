@@ -13,7 +13,7 @@
 import { isAbsolute } from 'node:path';
 
 export const DEFAULT_ENV_FILE = '/Users/einarzoega/litljomi-cms/.env.staging.local';
-const FINISH_PREFIX = 'pnpm --filter @litljomi/cli cli provision';
+const FINISH_PREFIX = 'pnpm --silent --filter @litljomi/cli cli provision';
 
 export interface ProvisionDeps {
   fetch: (url: string, init: RequestInit) => Promise<Response>;
@@ -29,10 +29,10 @@ export interface ProvisionIo {
 }
 
 export const PROVISION_USAGE = [
-  'usage: provision tenant <slug> --name <name> --expect-ref <ref> [--env-file <absolute path>]',
-  '       provision site --tenant-id <uuid> --base-url https://<host> --revalidate-path /<path> --expect-ref <ref> [--env-file <absolute path>]',
+  'usage: provision tenant <slug> --name <name> --expect-ref <ref> [--env-file=<absolute path>]',
+  '       provision site --tenant-id <uuid> --base-url https://<host> --revalidate-path /<path> --expect-ref <ref> [--env-file=<absolute path>]',
   '         (the webhook secret is read from standard input only)',
-  '       provision editor (--email <address> | --user-id <uuid>) --tenant-id <uuid> [--tenant-id <uuid> ...] --expect-ref <ref> [--env-file <absolute path>]',
+  '       provision editor (--email <address> | --user-id <uuid>) --tenant-id <uuid> [--tenant-id <uuid> ...] --expect-ref <ref> [--env-file=<absolute path>]',
 ].join('\n');
 
 const REF_RE = /^[a-z0-9]{20}$/;
@@ -77,19 +77,23 @@ function parse(command: string, args: string[]): Parsed {
   const positionals: string[] = [];
   const flags = new Map<string, string[]>();
   for (let i = 0; i < args.length; i++) {
-    const arg = args[i] as string;
-    if (arg.startsWith('--')) {
+    const raw = args[i] as string;
+    if (raw.startsWith('--')) {
+      // `--flag=value` and `--flag value` are both accepted; `--env-file=<path>` is the documented form
+      // because vite-node swallows a separate `--env-file <path>` when run through `pnpm … cli`.
+      const eq = raw.indexOf('=');
+      const arg = eq === -1 ? raw : raw.slice(0, eq);
       // Only the flag's name is ever printed, never a value.
       if (!known.has(arg)) throw new UsageError(`unknown option ${arg}`);
-      const value = args[i + 1];
-      if (value === undefined || value.startsWith('--')) throw new UsageError(`${arg} needs a value`);
+      const value = eq === -1 ? args[i + 1] : raw.slice(eq + 1);
+      if (value === undefined || (eq === -1 && value.startsWith('--'))) throw new UsageError(`${arg} needs a value`);
       const values = flags.get(arg) ?? [];
       if (values.length > 0 && !(spec.repeatable ?? []).includes(arg)) throw new UsageError(`${arg} given twice`);
       values.push(value);
       flags.set(arg, values);
-      i++;
+      if (eq === -1) i++;
     } else {
-      positionals.push(arg);
+      positionals.push(raw);
     }
   }
   if (positionals.length !== spec.positionals) throw new UsageError('unexpected or missing arguments');
@@ -271,6 +275,8 @@ async function readSecret(deps: ProvisionDeps): Promise<string> {
   return secret;
 }
 
+// worker_sites lists active sites only and read-then-create is not atomic: acceptable with one operator,
+// and M1 never deactivates a site.
 async function site(p: Parsed, ctx: Context, secret: string): Promise<number> {
   const tenantId = one(p, '--tenant-id') as string;
   const baseUrl = one(p, '--base-url') as string;
@@ -337,7 +343,7 @@ async function editor(p: Parsed, ctx: Context): Promise<number> {
     }
   }
   if (missing.length > 0) {
-    const envFile = ctx.target.envFile === DEFAULT_ENV_FILE ? '' : ` --env-file ${ctx.target.envFile}`;
+    const envFile = ctx.target.envFile === DEFAULT_ENV_FILE ? '' : ` --env-file=${ctx.target.envFile}`;
     const finish = `${FINISH_PREFIX} editor --user-id ${userId} ${missing.map((t) => `--tenant-id ${t}`).join(' ')} --expect-ref ${ctx.target.ref}${envFile}`;
     throw new Failure(`FAILED: user ${userId} is still missing memberships in: ${missing.join(' ')}\nfinish with: ${finish}`);
   }

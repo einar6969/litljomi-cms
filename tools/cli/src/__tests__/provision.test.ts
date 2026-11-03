@@ -48,7 +48,7 @@ const runs: Run[] = [];
 
 async function run(
   args: string[],
-  opts: { env?: string | null; stdin?: string | null; handler?: Handler } = {},
+  opts: { env?: string | null; stdin?: string | null; stdinError?: Error; handler?: Handler } = {},
 ): Promise<Run> {
   const result: Run = { code: -1, out: [], err: [], lines: [], calls: [], fileReads: 0, stdinReads: 0 };
   const deps: ProvisionDeps = {
@@ -66,6 +66,7 @@ async function run(
     },
     readStdin: async () => {
       result.stdinReads += 1;
+      if (opts.stdinError) throw opts.stdinError;
       return opts.stdin === undefined ? '' : opts.stdin;
     },
   };
@@ -409,7 +410,7 @@ describe('provision editor', () => {
     expect(text).toContain(`membership ${TENANT_A}: FAILED: HTTP 400 P0001 not_found`);
     expect(text).toContain(`FAILED: user ${USER_ID} is still missing memberships in: ${TENANT_A}`);
     expect(text).toContain(
-      `finish with: pnpm --filter @litljomi/cli cli provision editor --user-id ${USER_ID} --tenant-id ${TENANT_A} --expect-ref ${REF} --env-file ${ENV_FILE}`,
+      `finish with: pnpm --silent --filter @litljomi/cli cli provision editor --user-id ${USER_ID} --tenant-id ${TENANT_A} --expect-ref ${REF} --env-file=${ENV_FILE}`,
     );
     expect(text).not.toContain(`--tenant-id ${TENANT_B}`);
   });
@@ -422,12 +423,42 @@ describe('provision editor', () => {
     expect(r.err.join('\n')).toContain(`still missing memberships in: ${TENANT_A} ${TENANT_B}`);
   });
 
+  it('accepts --env-file=<path> and --flag=value forms', async () => {
+    const args = ['provision', 'editor', `--email=editor@example.is`, `--tenant-id=${TENANT_A}`, `--expect-ref=${REF}`, `--env-file=${ENV_FILE}`];
+    const r = await run(args, { handler: editorHandler(TENANT_A) });
+    expect(r.code).toBe(1);
+    expect(r.err.join('\n')).toContain(`--env-file=${ENV_FILE}`);
+    expect(r.err.join('\n')).not.toContain(`--env-file ${ENV_FILE}`);
+  });
+
+  it.each([
+    ['an empty --env-file=', ['--env-file=']],
+    ['a relative --env-file=', ['--env-file=.env']],
+    ['an unknown --flag=value', ['--bogus=1']],
+  ])('refuses %s', async (_name, extra) => {
+    const r = await run(['provision', 'tenant', 'acme', '--name', 'Acme', '--expect-ref', REF, ...extra]);
+    expect(r.code).toBe(2);
+    expect(r.calls).toHaveLength(0);
+  });
+
+  it('prints only the kind of an unexpected error, never its text', async () => {
+    const stdinError = Object.assign(new Error(`boom ${KEY}`), { name: 'OddError' });
+    const r = await run(
+      ['provision', 'site', '--tenant-id', TENANT_A, '--base-url', 'https://site.example.is', '--revalidate-path', '/api/cms/revalidate', ...common],
+      { stdinError },
+    );
+    expect(r.code).toBe(1);
+    expect(r.err.join('\n')).toContain('FAILED: unexpected error (OddError)');
+    expect(r.err.join('\n')).not.toContain('boom');
+    expect(r.calls).toHaveLength(0);
+  });
+
   it('reads the default env file, and leaves --env-file out of the finish command', async () => {
     const args = editorArgs.filter((a, i) => a !== '--env-file' && editorArgs[i - 1] !== '--env-file');
     const r = await run(args, { handler: editorHandler(TENANT_B) });
     expect(r.code).toBe(1);
     expect(r.err.join('\n')).toContain(
-      `finish with: pnpm --filter @litljomi/cli cli provision editor --user-id ${USER_ID} --tenant-id ${TENANT_B} --expect-ref ${REF}`,
+      `finish with: pnpm --silent --filter @litljomi/cli cli provision editor --user-id ${USER_ID} --tenant-id ${TENANT_B} --expect-ref ${REF}`,
     );
     expect(r.err.join('\n')).not.toContain('--env-file');
   });
