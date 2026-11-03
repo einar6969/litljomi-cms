@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -13,7 +14,8 @@ export const MEDIA_HOST = 'media.example.test';
 
 export interface RunningSite {
   url: string;
-  fixtures: FixtureServer;
+  /** The fixture bundle server; null when the site reads another delivery base URL. */
+  fixtures: FixtureServer | null;
   stop(): Promise<void>;
 }
 
@@ -38,14 +40,21 @@ function runNext(args: string[], env: NodeJS.ProcessEnv): { child: ChildProcess;
   return { child, output: () => log, done };
 }
 
-/** Builds the site and starts it (`next build`, `next start`) against the fixture bundle server. */
-export async function startSite(): Promise<RunningSite> {
-  const fixtures = await startFixtureServer();
+/**
+ * Builds the site and starts it (`next build`, `next start`) against the fixture bundle server, or
+ * against `deliveryBaseUrl` when given (the local stack's `delivery` bucket, for the CMS worker's
+ * integration tests; plan M3-05).
+ */
+export async function startSite(o: { deliveryBaseUrl?: string } = {}): Promise<RunningSite> {
+  const fixtures = o.deliveryBaseUrl === undefined ? await startFixtureServer() : null;
+  // Next.js keeps fetched data in .next/cache across builds: a pointer fetched by an earlier build
+  // would be served instead of the current one (the local stack's pointer changes between runs).
+  if (o.deliveryBaseUrl !== undefined) rmSync(join(appDir, '.next'), { recursive: true, force: true });
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     NODE_ENV: 'production',
     NEXT_TELEMETRY_DISABLED: '1',
-    CMS_DELIVERY_BASE_URL: `${fixtures.origin}/delivery`,
+    CMS_DELIVERY_BASE_URL: o.deliveryBaseUrl ?? `${fixtures!.origin}/delivery`,
     CMS_TENANT: 'demo',
     CMS_WEBHOOK_SECRETS: WEBHOOK_SECRETS.join(','),
     CMS_MEDIA_HOST: MEDIA_HOST,
@@ -77,12 +86,12 @@ export async function startSite(): Promise<RunningSite> {
       async stop() {
         started.kill('SIGTERM');
         await exited; // the port and the .next handles are released before the run ends
-        await fixtures.close();
+        await fixtures?.close();
       },
     };
   } catch (e) {
     child?.kill('SIGTERM');
-    await fixtures.close();
+    await fixtures?.close();
     throw e;
   }
 }
