@@ -501,6 +501,43 @@ describe('preview token route exception', () => {
   });
 });
 
+// M3-11 (spec §7.5): the preview endpoint's route handler may import its entry,
+// privileged/preview/endpoint-route, and nothing else from privileged/; the other rules still apply.
+describe('preview endpoint route exception', () => {
+  const ROUTE = 'apps/cms/src/app/api/preview/[tenant]/route.ts';
+  it('lets the route import its entry', async () => {
+    const code = [
+      `import { previewGet } from '@/privileged/preview/endpoint-route'`,
+      `import { previewGet } from '@/privileged/preview/endpoint-route.ts'`,
+      `import { previewGet } from '../../../../privileged/preview/endpoint-route'`,
+    ].join('; ');
+    expect(await ruleIds(ROUTE, code)).toEqual([]);
+  });
+  it.each([
+    [`import { createAdminClient } from '@/privileged/admin-client'`, IMPORT],
+    [`import { readPreview } from '@/privileged/preview/endpoint'`, IMPORT],
+    [`import { previewTokenPost } from '@/privileged/preview/token-route'`, IMPORT],
+    [`import { x } from '@/privileged/preview/endpoint-route/../../admin-client'`, IMPORT],
+    [`import { x } from '@/privileged\\\\preview\\\\endpoint-route'`, IMPORT],
+    [`import('@/privileged/admin-client')`, RESTRICTED_SYNTAX],
+  ])('still forbids %s', async (code, ruleId) => {
+    expect(await ruleIds(ROUTE, code)).toEqual([ruleId]);
+  });
+  it('keeps the secret-key and Supabase rules', async () => {
+    expect(await ruleIds(ROUTE, `const k = process.env.SUPABASE_SECRET_KEY`)).toEqual([RESTRICTED_SYNTAX]);
+    expect(await ruleIds(ROUTE, `import { createClient } from '@supabase/supabase-js'`)).toEqual([IMPORT]);
+  });
+  it.each([
+    'apps/cms/src/app/api/preview/t/route.ts',
+    'apps/cms/src/app/api/preview/[tenant]/handler.ts',
+    'apps/cms/src/app/api/preview/[tenant]/route.tsx',
+    'apps/cms/src/app/api/preview-token/route.ts',
+    'apps/cms/src/app/(editor)/route.ts',
+  ])('does not cover %s', async (path) => {
+    expect(await ruleIds(path, `import { previewGet } from '@/privileged/preview/endpoint-route'`)).toEqual([IMPORT]);
+  });
+});
+
 // Decision 35 (Task 19): triggerWorker lives outside privileged/, in lib/, so the editor's publish
 // action can call it. It needs no Supabase credentials, and lib/ (outside lib/supabase) gets no
 // exception: privileged/, the secret key and Supabase libraries stay forbidden there.

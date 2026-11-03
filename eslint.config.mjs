@@ -32,6 +32,12 @@ const PREVIEW_TOKEN_ONLY_MESSAGE = 'The preview token route may import only priv
 const privilegedExceptPreviewTokenPaths = [
   { regex: `(^#?|${SEP})privileged($|\\\\|/(?!preview/token-route(\\.ts)?$))`, message: PREVIEW_TOKEN_ONLY_MESSAGE },
 ];
+// M3-11 (spec §7.5): the preview endpoint's route handler may import only its entry,
+// `privileged/preview/endpoint-route`, under the same rules.
+const PREVIEW_ENDPOINT_ONLY_MESSAGE = 'The preview endpoint route may import only privileged/preview/endpoint-route from privileged/.';
+const privilegedExceptPreviewEndpointPaths = [
+  { regex: `(^#?|${SEP})privileged($|\\\\|/(?!preview/endpoint-route(\\.ts)?$))`, message: PREVIEW_ENDPOINT_ONLY_MESSAGE },
+];
 // Alias forms covered: `@/`, `~/`, `#` (subpath imports), relative and bare specifiers.
 // The registry is exempt only when `registry` (optionally with an extension) is the last segment,
 // so `registry.x/../labak`, `registry/..` or any `..` after `modules/` is still forbidden.
@@ -173,6 +179,7 @@ const secret = { paths: [], selectors: secretSyntax };
 const privileged = boundary(privilegedPaths);
 const privilegedExceptPipeline = boundary(privilegedExceptPipelinePaths);
 const privilegedExceptPreviewToken = boundary(privilegedExceptPreviewTokenPaths);
+const privilegedExceptPreviewEndpoint = boundary(privilegedExceptPreviewEndpointPaths);
 const modules = boundary(modulePaths);
 const apps = boundary(appPaths);
 const editor = boundary(editorPaths);
@@ -251,6 +258,12 @@ export default tseslint.config(
   {
     files: ['apps/cms/src/app/api/preview-token/route.ts'],
     rules: rulesOf(secret, privilegedExceptPreviewToken, modules, supabase, integrationTests),
+  },
+  // M3-11: the preview endpoint's route handler may import its entry from privileged/ (§7.5). The
+  // brackets of the dynamic segment are escaped: unescaped, they are a character class.
+  {
+    files: ['apps/cms/src/app/api/preview/\\[tenant\\]/route.ts'],
+    rules: rulesOf(secret, privilegedExceptPreviewEndpoint, modules, supabase, integrationTests),
   },
   {
     files: ['packages/**'],
