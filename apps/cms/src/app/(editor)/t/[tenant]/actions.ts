@@ -3,6 +3,7 @@
 import { isSingleton } from '@litljomi/cms-schema';
 import { z } from 'zod';
 import { authOrError, failureAmong, hasSession, loadEntryContext } from '@/editor/server/entry-context';
+import { restoreRevision, type RestoreRevisionResult } from '@/editor/server/restore-revision';
 import { openSingleton, type OpenSingletonResult } from '@/editor/server/singleton';
 import { updateDraftSchema, type UpdateDraftSchemaResult } from '@/editor/server/update-draft-schema';
 import { createEditorClient } from '@/lib/supabase/server';
@@ -27,7 +28,7 @@ export type LoadDraftResult =
   | { ok: true; version: number; data: Record<string, unknown> }
   | { ok: false; code: 'auth' | 'invalid' | 'error' };
 
-export type { UpdateDraftSchemaResult };
+export type { RestoreRevisionResult, UpdateDraftSchemaResult };
 
 export type SetSlugResult =
   | { ok: true; slug: string }
@@ -165,6 +166,24 @@ export async function updateDraftSchemaAction(id: string, expectedVersion: numbe
     const client = await createEditorClient();
     if (!(await hasSession(client))) return { ok: false, code: 'auth' };
     return await updateDraftSchema(client, args.data.id, args.data.expectedVersion);
+  } catch {
+    return { ok: false, code: 'error' };
+  }
+}
+
+/**
+ * Restores a published revision into the draft (§5.5; plan M2-16): the server reads the revision
+ * with the editor's session, upcasts it to the type's current version and saves it as a normal
+ * versioned update (`restoreRevision`); publishing it is a separate, normal publish. The browser
+ * sends only the entry, the revision and the version it saw, never data.
+ */
+export async function restoreRevisionAction(id: string, revisionId: string, expectedVersion: number): Promise<RestoreRevisionResult> {
+  const args = z.object({ id: entryId, revisionId: z.uuid(), expectedVersion: draftVersion }).safeParse({ id, revisionId, expectedVersion });
+  if (!args.success) return { ok: false, code: 'invalid' };
+  try {
+    const client = await createEditorClient();
+    if (!(await hasSession(client))) return { ok: false, code: 'auth' };
+    return await restoreRevision(client, args.data.id, args.data.revisionId, args.data.expectedVersion);
   } catch {
     return { ok: false, code: 'error' };
   }

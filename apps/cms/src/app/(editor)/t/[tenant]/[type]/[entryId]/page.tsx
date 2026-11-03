@@ -5,12 +5,17 @@ import { z } from 'zod';
 import { describeFields } from '@/editor/form/descriptors';
 import { EntryForm } from '@/editor/form/EntryForm';
 import { OutdatedDraft } from '@/editor/form/OutdatedDraft';
+import { RESTORED_PARAM } from '@/editor/revisions';
+import { loadRevisionHistory } from '@/editor/server/restore-revision';
 import { t } from '@/i18n/is';
 import { createEditorClient } from '@/lib/supabase/server';
 import { currentTenant, isActive } from '@/lib/tenant';
 import { getModule, getType } from '@/modules/registry';
 
-type Props = { params: Promise<{ tenant: string; type: string; entryId: string }> };
+type Props = {
+  params: Promise<{ tenant: string; type: string; entryId: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
 
 type Detail = {
   data: unknown;
@@ -25,7 +30,7 @@ const isObject = (value: unknown): value is Record<string, unknown> => typeof va
 
 // One entry's form. The entry is read from api.entry_detail under the editor's session, filtered
 // to the tenant and type of the URL: a row of another tenant or type is simply not found.
-export default async function EntryPage({ params }: Props) {
+export default async function EntryPage({ params, searchParams }: Props) {
   const { tenant: slug, type: typeName, entryId } = await params;
   if (!z.uuid().safeParse(entryId).success) notFound();
   const tenant = await currentTenant(slug);
@@ -33,7 +38,8 @@ export default async function EntryPage({ params }: Props) {
   if (!isActive(tenant)) return null;
   const type = getType(tenant.slug, typeName);
   if (!type) notFound();
-  const { data, error } = await (await createEditorClient())
+  const client = await createEditorClient();
+  const { data, error } = await client
     .from('entry_detail')
     .select('data, slug, schema_version, draft_version, first_published_at, status')
     .eq('id', entryId)
@@ -43,6 +49,11 @@ export default async function EntryPage({ params }: Props) {
   if (error) throw new Error(`entry_detail: ${error.code}`);
   if (!data) notFound();
   const entry = data as Detail;
+  // M2-16: the published revisions, for the history and restore. Not read for an outdated draft,
+  // which shows no form until it is updated.
+  const outdated = entry.schema_version < type.version;
+  const revisions = outdated ? [] : await loadRevisionHistory(client, tenant.id, entryId);
+  const restored = (await searchParams)?.[RESTORED_PARAM] === '1';
   const published = entry.status === 'published' || entry.status === 'changed';
   const fields = describeFields(type);
   const fieldLabels = Object.fromEntries(fields.map((f) => [f.key, f.label]));
@@ -57,7 +68,7 @@ export default async function EntryPage({ params }: Props) {
         </Link>
       </p>
       <h1>{type.label}</h1>
-      {entry.schema_version < type.version ? (
+      {outdated ? (
         // §5.3, M2-14: a draft written at an older version is updated before it can be edited.
         <OutdatedDraft entryId={entryId} version={entry.draft_version} published={published} fieldLabels={fieldLabels} />
       ) : (
@@ -71,6 +82,8 @@ export default async function EntryPage({ params }: Props) {
           initialSlug={entry.slug}
           slugLocked={entry.first_published_at !== null}
           published={published}
+          revisions={revisions}
+          restored={restored}
         />
       )}
     </main>

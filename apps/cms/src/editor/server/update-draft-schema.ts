@@ -1,7 +1,7 @@
 import 'server-only';
 import { UpcastError } from '@litljomi/cms-schema';
 import type { SupabaseClient } from '@/lib/supabase/types';
-import { failureAmong, loadEntryContext } from './entry-context';
+import { failureAmong, loadEntryContext, type EntryContext } from './entry-context';
 
 export type UpdateDraftSchemaResult =
   | { ok: true; version: number }
@@ -36,9 +36,27 @@ export async function updateDraftSchema(client: SupabaseClient, entryId: string,
   if (draft.schema_version === type.version) return { ok: true, version: draft.draft_version };
   if (draft.draft_version !== expectedVersion) return { ok: false, code: 'version_conflict' };
 
+  return upcastAndSave(client, context, draft.data, draft.schema_version, expectedVersion);
+}
+
+/**
+ * Data written at `fromVersion`, brought to the type's current version and saved as the entry's
+ * draft (spec §5.3, §5.5): upcast through the type's transforms (M2-05), stripped of unknown keys
+ * by the type's draft validator, its query columns derived by the type, and saved through
+ * `api.save_draft` expecting `expectedVersion`. Used by the outdated-draft update (M2-14) and by
+ * restore from a revision (M2-16).
+ */
+export async function upcastAndSave(
+  client: SupabaseClient,
+  context: EntryContext,
+  data: unknown,
+  fromVersion: number,
+  expectedVersion: number,
+): Promise<UpdateDraftSchemaResult> {
+  const { type } = context;
   let upcast: unknown;
   try {
-    upcast = type.upcast(draft.data, draft.schema_version);
+    upcast = type.upcast(data, fromVersion);
   } catch (error) {
     if (error instanceof UpcastError) return { ok: false, code: 'upcast_failed' };
     throw error;

@@ -13,7 +13,7 @@ import type { FieldDescriptor } from '../form/descriptors';
 
 const saveDraftAction = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/supabase/browser', () => ({ createBrowserEditorClient: () => ({}) }));
-vi.mock('@/app/(editor)/t/[tenant]/actions', () => ({ saveDraftAction, loadDraftAction: vi.fn(), setSlugAction: vi.fn() }));
+vi.mock('@/app/(editor)/t/[tenant]/actions', () => ({ saveDraftAction, loadDraftAction: vi.fn(), setSlugAction: vi.fn(), restoreRevisionAction: vi.fn() }));
 vi.mock('@/app/(editor)/t/[tenant]/reference-actions', () => ({ referenceOptionsAction: vi.fn(async () => ({ ok: true, options: [], truncated: false })) }));
 vi.mock('@/app/(editor)/t/[tenant]/publish-actions', () => ({ requestPublishAction: vi.fn(), requestUnpublishAction: vi.fn() }));
 vi.mock('@/app/(editor)/t/[tenant]/asset-actions', () => ({ registerAssetAction: vi.fn(), assetPreviewAction: vi.fn(), updateAssetAction: vi.fn() }));

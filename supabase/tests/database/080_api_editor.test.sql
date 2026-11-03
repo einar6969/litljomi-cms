@@ -111,7 +111,7 @@ select is_empty($$ select sig from editor_functions
         or not has_function_privilege('authenticated', to_regprocedure(sig), 'execute') $$,
   'authenticated executes every editor function; anon and service_role none');
 
--- The six views: security_invoker, select for authenticated only.
+-- The seven views: security_invoker, select for authenticated only.
 create temporary table editor_views (name text primary key, cols text[]) on commit drop;
 insert into editor_views values
   ('my_tenants', array['id', 'slug', 'name', 'status']),
@@ -126,12 +126,15 @@ insert into editor_views values
                                'release_number', 'release_status', 'omitted', 'missing_assets', 'site_count',
                                'sites_notified', 'sites_live_ok', 'sites_not_confirmed', 'retries_exhausted',
                                'live_retrying']), -- M3-03 appended live_retrying
-  ('tenant_sites', array['id', 'tenant_id', 'base_url', 'preview_url', 'active']);
+  ('tenant_sites', array['id', 'tenant_id', 'base_url', 'preview_url', 'active']),
+  -- M2-16 added revision_list (20261103210500_revision_list.sql; 107_revision_list).
+  ('revision_list', array['id', 'tenant_id', 'entry_id', 'draft_version', 'schema_version', 'data', 'title',
+                          'requested_by', 'committed_at', 'is_published']);
 
 select is_empty($$ select v.name from editor_views v
      where not exists (select 1 from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace
                        where n.nspname = 'api' and c.relname = v.name and c.relkind = 'v') $$,
-  'all six editor views exist in api');
+  'all seven editor views exist in api');
 select is_empty($$ select v.name from editor_views v
      where v.cols is distinct from (select array_agg(a.attname::text order by a.attnum) from pg_catalog.pg_attribute a
                                    where a.attrelid = to_regclass('api.' || v.name) and a.attnum > 0 and not a.attisdropped) $$,

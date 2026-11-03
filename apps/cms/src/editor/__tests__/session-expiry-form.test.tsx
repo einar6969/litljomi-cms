@@ -8,7 +8,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { t } from '@/i18n/is';
 
-const actions = vi.hoisted(() => ({ saveDraftAction: vi.fn(), loadDraftAction: vi.fn(), setSlugAction: vi.fn() }));
+const actions = vi.hoisted(() => ({ saveDraftAction: vi.fn(), loadDraftAction: vi.fn(), setSlugAction: vi.fn(), restoreRevisionAction: vi.fn() }));
 const browser = vi.hoisted(() => ({ signedIn: false }));
 vi.mock('@/app/(editor)/t/[tenant]/actions', () => actions);
 vi.mock('@/app/(editor)/t/[tenant]/asset-actions', () => ({ registerAssetAction: vi.fn(), assetPreviewAction: vi.fn(), updateAssetAction: vi.fn() }));

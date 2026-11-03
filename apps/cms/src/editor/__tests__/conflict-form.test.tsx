@@ -6,7 +6,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { t } from '@/i18n/is';
 
-const actions = vi.hoisted(() => ({ saveDraftAction: vi.fn(), loadDraftAction: vi.fn(), setSlugAction: vi.fn() }));
+const actions = vi.hoisted(() => ({ saveDraftAction: vi.fn(), loadDraftAction: vi.fn(), setSlugAction: vi.fn(), restoreRevisionAction: vi.fn() }));
 vi.mock('@/app/(editor)/t/[tenant]/actions', () => actions);
 vi.mock('@/app/(editor)/t/[tenant]/asset-actions', () => ({ registerAssetAction: vi.fn(), assetPreviewAction: vi.fn(), updateAssetAction: vi.fn() }));
 vi.mock('@/app/(editor)/t/[tenant]/publish-actions', () => ({ requestPublishAction: vi.fn(), requestUnpublishAction: vi.fn() }));
@@ -54,12 +54,24 @@ async function type(input: HTMLInputElement | HTMLTextAreaElement, text: string)
   });
 }
 
+const REVISION = { id: '00000000-0000-4000-8000-0000000000d1', committedAt: '2026-11-01T09:05:00Z', mine: true, current: true };
+
 async function renderInConflict(theirs: Record<string, unknown> = { title: 'Þeirra titill', excerpt: 'Inngangur' }) {
   actions.saveDraftAction.mockResolvedValueOnce({ ok: false, code: 'version_conflict' });
   actions.loadDraftAction.mockResolvedValue({ ok: true, version: 5, data: theirs });
   await act(async () =>
     root.render(
-      <EntryForm tenant={TENANT} entryId={ENTRY} fields={FIELDS} titleKey="title" initialData={{ title: 'Upphaf', excerpt: 'Inngangur' }} initialVersion={3} initialSlug={null} slugLocked={false} />,
+      <EntryForm
+        tenant={TENANT}
+        entryId={ENTRY}
+        fields={FIELDS}
+        titleKey="title"
+        initialData={{ title: 'Upphaf', excerpt: 'Inngangur' }}
+        initialVersion={3}
+        initialSlug={null}
+        slugLocked={false}
+        revisions={[REVISION]}
+      />,
     ),
   );
   await type($<HTMLInputElement>('#field-title')!, 'Minn titill');
@@ -144,5 +156,39 @@ describe('the conflict view (M2-11)', () => {
     await act(async () => button(r.keepMine)!.click());
     await pause(0);
     expect(publish()?.disabled).toBe(false);
+  });
+});
+
+// M2-16: restore follows the form's version and state like publishing does.
+describe('restore in the form (M2-16)', () => {
+  it('restore is disabled during the conflict, then restores at the version the form continues from', async () => {
+    await renderInConflict();
+    const h = t.editor.history;
+    expect(button(h.restore)?.disabled).toBe(true);
+    actions.saveDraftAction.mockResolvedValueOnce({ ok: true, version: 6 });
+    await act(async () => button(r.keepMine)!.click());
+    await pause(0);
+    expect(button(h.restore)?.disabled).toBe(false);
+    actions.restoreRevisionAction.mockReturnValueOnce(new Promise(() => {}));
+    await act(async () => button(h.restore)!.click());
+    await act(async () => button(h.confirmRestore)!.click());
+    expect(actions.restoreRevisionAction).toHaveBeenCalledExactlyOnceWith(ENTRY, REVISION.id, 6);
+  });
+
+  it('restore waits while an edit is not saved yet', async () => {
+    await act(async () =>
+      root.render(<EntryForm tenant={TENANT} entryId={ENTRY} fields={FIELDS} titleKey="title" initialData={{ title: 'Upphaf' }} initialVersion={3} initialSlug={null} slugLocked={false} revisions={[REVISION]} />),
+    );
+    await type($<HTMLInputElement>('#field-title')!, 'Óvistað');
+    await act(async () => button(t.editor.history.restore)!.click());
+    expect(container.textContent).toContain(t.editor.history.unsaved);
+    expect(actions.restoreRevisionAction).not.toHaveBeenCalled();
+  });
+
+  it('says once that an older publication was restored, when the page was opened after a restore', async () => {
+    await act(async () =>
+      root.render(<EntryForm tenant={TENANT} entryId={ENTRY} fields={FIELDS} titleKey="title" initialData={{ title: 'Upphaf' }} initialVersion={4} initialSlug={null} slugLocked={false} restored />),
+    );
+    expect(container.querySelector('[role="status"]')?.textContent).toBe(t.editor.history.restored);
   });
 });
