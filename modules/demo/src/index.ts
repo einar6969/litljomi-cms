@@ -1,4 +1,4 @@
-import { boolean, date, datetime, defineModule, defineType, link, number, richText, select, text, type SiteEntry } from '@litljomi/cms-schema';
+import { boolean, date, datetime, defineModule, defineType, link, number, reference, richText, select, text, type SiteEntry } from '@litljomi/cms-schema';
 
 const eventType = defineType({
   name: 'event',
@@ -23,6 +23,7 @@ const eventType = defineType({
       ],
     }),
     doorsOpen: datetime({ label: 'Doors open' }),
+    related: reference({ label: 'Related event', to: ['event'] }),
   },
   preview: { title: 'title' },
   orderBy: 'startDate',

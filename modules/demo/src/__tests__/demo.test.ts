@@ -25,6 +25,10 @@ describe('demo module', () => {
     expect(event.orderBy).toBe('startDate');
     expect(event.version).toBe(1);
   });
+  it('has an optional reference to another event (plan M2-04)', () => {
+    const related = event.fields.related as AnyFieldKind & { to: readonly string[] };
+    expect(related).toMatchObject({ kind: 'reference', required: false, to: ['event'] });
+  });
   it('has an optional field of each scalar kind, filled in its fixture (M2-03)', () => {
     const byKind = Object.fromEntries(Object.entries<AnyFieldKind>(event.fields).map(([k, f]) => [f.kind, { key: k, f }]));
     for (const kind of ['number', 'boolean', 'select', 'datetime']) {
