@@ -172,8 +172,14 @@ describe('GET /api/cron/sweep', () => {
 });
 
 describe('vercel.json', () => {
-  it('schedules the sweep every minute', () => {
+  // The whole file is pinned: the sweep every minute (A8), functions in Frankfurt and noindex on
+  // every path (decision 43.7). The demo site's file is pinned in tools/checks.
+  it('schedules the sweep every minute, runs functions in fra1 and sends noindex on every path', () => {
     const config = JSON.parse(readFileSync(new URL('../../../../vercel.json', import.meta.url), 'utf8'));
-    expect(config).toEqual({ crons: [{ path: '/api/cron/sweep', schedule: '* * * * *' }] });
+    expect(config).toEqual({
+      regions: ['fra1'],
+      headers: [{ source: '/(.*)', headers: [{ key: 'X-Robots-Tag', value: 'noindex' }] }],
+      crons: [{ path: '/api/cron/sweep', schedule: '* * * * *' }],
+    });
   });
 });

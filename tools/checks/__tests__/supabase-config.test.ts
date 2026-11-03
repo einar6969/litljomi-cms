@@ -31,6 +31,7 @@ describe('supabase/config.toml security settings', () => {
     ['auth.email.enable_confirmations', true, 'confirmations required (decision 19)'],
     ['auth.email.double_confirm_changes', true, 'both addresses confirm an email change (decision 19)'],
     ['auth.email.secure_password_change', true, 'decision 21'],
+    ['auth.email.otp_expiry', 3600, 'a magic link is valid one hour, as the mail says (hosted: Email OTP Expiration, decision 43)'],
     ['auth.mfa.totp.enroll_enabled', true, 'TOTP enrolment'],
     ['auth.mfa.totp.verify_enabled', true, 'TOTP verification'],
     ['auth.hook.custom_access_token.enabled', true, 'passwordless hook on (decision 18)'],
