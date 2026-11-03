@@ -3,7 +3,7 @@
 import { link } from '@litljomi/cms-schema/src/fields/link.ts';
 import { useState } from 'react';
 import { t } from '@/i18n/is';
-import { Field } from '@/ui/Field';
+import { Field, fieldErrorId } from '@/ui/Field';
 import { Notice } from '@/ui/Notice';
 import type { FieldProps } from '../field-registry';
 
@@ -47,7 +47,7 @@ export function LinkField({ id, label, required, value, onChange }: FieldProps) 
   };
   return (
     <Field label={label} htmlFor={id} error={valid ? null : t.editor.invalidUrl}>
-      <input type="text" inputMode="url" id={id} name={id} required={required} value={text} aria-invalid={!valid} onChange={(e) => change(e.target.value)} />
+      <input type="text" inputMode="url" id={id} name={id} required={required} value={text} aria-invalid={!valid} aria-describedby={valid ? undefined : fieldErrorId(id)} onChange={(e) => change(e.target.value)} />
     </Field>
   );
 }

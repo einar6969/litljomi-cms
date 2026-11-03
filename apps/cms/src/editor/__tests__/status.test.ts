@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_NOTIFY_ATTEMPTS } from '@/lib/delivery';
 import { t } from '@/i18n/is';
-import { displayState, isFinal, type PublicationStatusRow, type RequestStatus } from '../publish/status';
+import { displayState, IN_PROGRESS, isFinal, type PublicationStatusRow, type RequestStatus } from '../publish/status';
 
 const base: PublicationStatusRow = {
   request_id: '00000000-0000-4000-8000-0000000000e1',
@@ -164,6 +164,8 @@ describe('displayState: failures', () => {
     const state = displayState(row({ status: 'something_else' as RequestStatus }));
     expect(state.tone).toBe('error');
     expect(isFinal(state)).toBe(true);
+    // The same final state as a request that failed (Task 25 quality r1: one branch for both).
+    expect(state).toEqual(displayState(row({ status: 'failed' })));
   });
 });
 
@@ -281,6 +283,14 @@ describe('tones', () => {
       expect(tone === 'neutral', label).toBe(label === t.publish.removed);
       expect(tone === 'warning', label).toBe(label === t.publish.noSite);
     }
+  });
+});
+
+describe('IN_PROGRESS', () => {
+  it('is the one "Í birtingu…" state: pending and not final, the same object displayState returns', () => {
+    expect(IN_PROGRESS).toEqual({ label: t.publish.inProgress, tone: 'pending' });
+    expect(isFinal(IN_PROGRESS)).toBe(false);
+    expect(displayState(row({ status: 'pending', release_status: null }))).toBe(IN_PROGRESS);
   });
 });
 

@@ -1,5 +1,5 @@
 // Task 22: magic-link sign-in, tenant routing and the neutral sign-in message, against the local
-// CMS (`next start -p 3100`), the local stack and its Mailpit. Task 32 (decision 41.1): the link
+// CMS (`next start` on `CMS_PORT`, support/local.ts), the local stack and its Mailpit. Task 32 (decision 41.1): the link
 // works in a browser other than the one that asked for it, and opening it alone (as an email
 // security scanner does) signs nobody in and does not use it up. Decision 42.2 (Q1): a visitor who
 // is already signed in is told so, keeps that session until pressing "Halda áfram", and the press

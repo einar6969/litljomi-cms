@@ -17,6 +17,9 @@ type Props = ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant
 /** The classes of a button, for a control that is not a `<button>` (a link or a file picker). */
 export const buttonClasses = (variant: ButtonVariant = 'secondary'): string => `${BASE} ${VARIANTS[variant]}`;
 
+/** The classes of a link that looks like a button: the button's, without the links' underline. */
+export const linkButtonClasses = (variant: ButtonVariant = 'secondary'): string => `${buttonClasses(variant)} no-underline`;
+
 /** The editor's button. `type` defaults to "button"; a submit button says so. */
 export function Button({ variant = 'secondary', type = 'button', className = '', ...props }: Props) {
   return <button type={type} className={`${buttonClasses(variant)} ${className}`} {...props} />;

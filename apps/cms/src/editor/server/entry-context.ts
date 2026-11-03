@@ -29,8 +29,18 @@ export function failureOf({ error, status }: ApiResult & { error: ApiError }): A
   return 'error';
 }
 
+/**
+ * A failed `api` call as one action reports it: `auth`, or one of the action's own codes, or the
+ * generic error for everything else. Every action narrows `failureOf` through this one mapper.
+ */
+export function failureAmong<C extends Exclude<ApiFailure, 'auth' | 'error'>>(result: ApiResult & { error: ApiError }, own: readonly C[]): C | 'auth' | 'error' {
+  const failure = failureOf(result);
+  if (failure === 'auth') return 'auth';
+  return (own as readonly ApiFailure[]).includes(failure) ? (failure as C) : 'error';
+}
+
 /** A failed `api` call for an action whose only own code is `auth`: everything else is the generic error. */
-export const authOrError = (result: ApiResult & { error: ApiError }): 'auth' | 'error' => (failureOf(result) === 'auth' ? 'auth' : 'error');
+export const authOrError = (result: ApiResult & { error: ApiError }): 'auth' | 'error' => failureAmong(result, []);
 
 /** True when Supabase Auth, asked with the editor's session, says there is a signed-in user. */
 export async function hasSession(client: SupabaseClient): Promise<boolean> {

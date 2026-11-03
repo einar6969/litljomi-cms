@@ -2,7 +2,7 @@
 
 import { after } from 'next/server';
 import { z } from 'zod';
-import { failureOf, hasSession, loadEntryContext, type ApiError } from '@/editor/server/entry-context';
+import { failureAmong, hasSession, loadEntryContext, type ApiError } from '@/editor/server/entry-context';
 import { createEditorClient } from '@/lib/supabase/server';
 import { triggerWorker } from '@/lib/worker-trigger';
 
@@ -25,8 +25,7 @@ type RpcAnswer = { data: unknown; error: ApiError | null; status?: number };
 /** A failed request call: the codes the panel has its own text for, else the generic error. */
 function errorOf(error: ApiError, status: number | undefined): PublishError {
   if (error.code === 'P0001' && error.message === 'tenant_inactive') return 'tenant_inactive';
-  const failure = failureOf({ error, status });
-  return failure === 'version_conflict' || failure === 'auth' ? failure : 'error';
+  return failureAmong({ error, status }, ['version_conflict']);
 }
 
 /**

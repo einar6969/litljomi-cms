@@ -30,7 +30,19 @@ const messages: Record<Notice, string> = {
   updateError: t.editor.image.updateError,
 };
 
-const toneOf = (notice: Notice): NoticeTone => (notice === 'uploading' ? 'info' : notice.endsWith('Saved') ? 'success' : 'error');
+/** Progress and success are announced politely; everything else is a failure, announced as an alert. */
+const isLive = (notice: Notice): boolean => notice === 'uploading' || notice.endsWith('Saved');
+const toneOf = (notice: Notice): NoticeTone => (notice === 'uploading' ? 'info' : isLive(notice) ? 'success' : 'error');
+
+/**
+ * The notice for an action's refusal: the codes this field has its own text for keep it (`auth`
+ * is "signed out"), every other code is the given fallback.
+ */
+const noticeFor = <C extends string>(code: C, fallback: Notice, own: readonly (C & Notice)[] = []): Notice =>
+  code === 'auth' || (own as readonly string[]).includes(code) ? (code as C & Notice) : fallback;
+
+/** A preview that fails to load (an expired signed URL) is signed again at most this many times. */
+const MAX_PREVIEW_RESIGNS = 3;
 
 const ACCEPT = 'image/jpeg,image/png,image/webp';
 
@@ -47,15 +59,16 @@ const fraction = (offset: number, size: number) => Math.round(Math.min(1, Math.m
  * An image field (§5.2, §5.6). A chosen file is checked before upload (`prepareUpload`), uploaded
  * from the browser to `media-private` with the editor's session, then registered by the server,
  * which reads the object back. The preview is a signed URL valid for 600 seconds, signed again if
- * it has expired. The alt text belongs to this use; the asset's own default alt text and focal
- * point are edited here too (`update_asset`).
+ * it fails to load (expired), at most `MAX_PREVIEW_RESIGNS` times, then a notice. The alt text
+ * belongs to this use; the asset's own default alt text and focal point are edited here too
+ * (`update_asset`).
  */
 export function ImageField({ id, label, required, value, onChange }: FieldProps) {
   const tenant = useEditorTenant();
   const image = imageOf(value);
   const ref = image?._ref ?? null;
   const [preview, setPreview] = useState<Preview | null>(null);
-  const [signing, setSigning] = useState(0);
+  const [resigns, setResigns] = useState(0);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -69,13 +82,18 @@ export function ImageField({ id, label, required, value, onChange }: FieldProps)
         if (result.ok) {
           setPreview({ url: result.url, defaultAlt: result.defaultAlt, focalX: result.focalX, focalY: result.focalY });
           setNotice((n) => (n === 'previewError' ? null : n));
-        } else setNotice(result.code === 'auth' ? 'auth' : 'previewError');
+        } else setNotice(noticeFor(result.code, 'previewError'));
       })
       .catch(() => live && setNotice('previewError'));
     return () => {
       live = false;
     };
-  }, [ref, signing]);
+  }, [ref, resigns]);
+
+  const previewFailed = () => {
+    if (resigns < MAX_PREVIEW_RESIGNS) setResigns(resigns + 1);
+    else setNotice('previewError');
+  };
 
   const upload = async (file: File) => {
     const prepared = prepareUpload(file, tenant.id);
@@ -90,10 +108,9 @@ export function ImageField({ id, label, required, value, onChange }: FieldProps)
         setNotice('uploadError');
         return;
       }
-      const filename = prepared.path.slice(prepared.path.lastIndexOf('/') + 1);
-      const result = await registerAssetAction(tenant.slug, prepared.assetId, prepared.path, filename);
+      const result = await registerAssetAction(tenant.slug, prepared.assetId, prepared.path, prepared.filename);
       if (!result.ok) {
-        setNotice(result.code === 'type' || result.code === 'size' || result.code === 'auth' ? result.code : 'uploadError');
+        setNotice(noticeFor(result.code, 'uploadError', ['type', 'size']));
         return;
       }
       setNotice(null);
@@ -105,15 +122,17 @@ export function ImageField({ id, label, required, value, onChange }: FieldProps)
     }
   };
 
-  const updateAsset = async (focalX: number | null, focalY: number | null, defaultAlt: string | null, saved: Notice) => {
+  /** Saves the asset's focal point and default alt text (`update_asset`); unchanged values are kept. */
+  const updateAsset = async (change: Partial<Pick<Preview, 'focalX' | 'focalY' | 'defaultAlt'>>, saved: Notice) => {
     if (!image || !preview) return;
+    const { focalX, focalY, defaultAlt } = { ...preview, ...change };
     try {
       const result = await updateAssetAction(image._ref, focalX, focalY, defaultAlt);
       if (result.ok) {
         setPreview({ ...preview, focalX, focalY, defaultAlt });
         setNotice(saved);
       } else {
-        setNotice(result.code === 'auth' ? 'auth' : 'updateError');
+        setNotice(noticeFor(result.code, 'updateError'));
       }
     } catch {
       setNotice('updateError');
@@ -124,9 +143,11 @@ export function ImageField({ id, label, required, value, onChange }: FieldProps)
     if (!preview) return;
     const box = e.currentTarget.getBoundingClientRect();
     if (box.width === 0 || box.height === 0) return;
-    void updateAsset(fraction(e.clientX - box.left, box.width), fraction(e.clientY - box.top, box.height), preview.defaultAlt, 'focalSaved');
+    void updateAsset({ focalX: fraction(e.clientX - box.left, box.width), focalY: fraction(e.clientY - box.top, box.height) }, 'focalSaved');
   };
 
+  // The picker is a <label>, which has no disabled state: while busy it mirrors the `disabled:`
+  // look of the secondary Button (ui/Button.tsx); keep the two in step.
   const busyPicker = busy ? 'cursor-not-allowed border-hairline bg-recessed text-muted' : 'cursor-pointer';
   return (
     <fieldset className="flex min-w-0 flex-col gap-3 rounded-lg border border-hairline p-4">
@@ -147,7 +168,7 @@ export function ImageField({ id, label, required, value, onChange }: FieldProps)
                 src={preview.url}
                 alt={image.alt}
                 className="block max-h-[240px] max-w-full"
-                onError={() => setSigning((n) => (n < 3 ? n + 1 : n))}
+                onError={previewFailed}
               />
               {preview.focalX !== null && preview.focalY !== null ? (
                 <span
@@ -164,7 +185,7 @@ export function ImageField({ id, label, required, value, onChange }: FieldProps)
             </Field>
           </div>
           <div className="flex flex-wrap gap-3 max-sm:w-full max-sm:flex-col">
-            <Button disabled={!preview || image.alt === (preview.defaultAlt ?? '')} onClick={() => void updateAsset(preview?.focalX ?? null, preview?.focalY ?? null, image.alt === '' ? null : image.alt, 'defaultAltSaved')}>
+            <Button disabled={!preview || image.alt === (preview.defaultAlt ?? '')} onClick={() => void updateAsset({ defaultAlt: image.alt === '' ? null : image.alt }, 'defaultAltSaved')}>
               {t.editor.image.saveDefaultAlt}
             </Button>
             <Button variant="danger" onClick={() => onChange(undefined)}>
@@ -200,7 +221,7 @@ export function ImageField({ id, label, required, value, onChange }: FieldProps)
         <NoticeBox
           data-testid={`${id}-notice`}
           tone={toneOf(notice)}
-          {...(notice === 'uploading' || notice.endsWith('Saved') ? { 'aria-live': 'polite' as const } : { role: 'alert' })}
+          {...(isLive(notice) ? { 'aria-live': 'polite' as const } : { role: 'alert' })}
         >
           {messages[notice]}
         </NoticeBox>
