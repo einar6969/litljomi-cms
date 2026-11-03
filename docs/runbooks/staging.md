@@ -32,7 +32,7 @@ This runbook sets up the M1 staging environment: the GitHub repository, the host
 - **Einar** acts in his own accounts (sign-ups, payment, DNS, provider keys) and does **every login** (`gh`, `supabase login`, `vercel login`, every dashboard) and **enters every key and password**. No password, token or key goes into chat, ever. The **executor** is the agent the controller dispatches, acting only after the gate is recorded (written "Executor" only at the start of a sentence or table cell).
 - **Who works in a dashboard.** The executor acts in the Supabase or Vercel dashboard (the SQL editor included) **only in a browser session Einar signed in to himself**. Otherwise Einar applies the step from this runbook's list and reads the result back to the controller. Every dashboard step below whose Owner is the executor is read this way.
 - **A CLI whose saved login the sandbox cannot read.** `gh`, `supabase` and `vercel` keep their logins in local credential stores (some in the macOS keychain). A command whose saved login cannot be read from the sandbox is **handed to Einar to run** in his own terminal, as the exact command the executor wrote out, and he pastes back the output (no secrets in it). That is not a refusal to work around.
-- **Who runs a step that needs a secret.** Every step that needs the Supabase secret key, the database password, the SendGrid API key, a GitHub token or any other secret value is **Einar's**, run in his own terminal or dashboard session. Agents cannot read `.env.local` (the project's permission settings and the sandbox deny it) and never receive a secret value. The executor owns the steps that need no secret; the two public values it needs for checks (`NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, public by design) are given to it by Einar, never read from `.env.local`.
+- **Who runs a step that needs a secret.** Every step that needs the Supabase secret key, the database password, the SendGrid API key, a GitHub token or any other secret value is **Einar's**, run in his own terminal or dashboard session. Agents cannot read `.env.local` or `.env.staging.local` (the project's permission settings and the sandbox deny `.env.local`; `.env.staging.local` is likewise kept from agents, see the ruling below) and never receive a secret value. The executor owns the steps that need no secret; the two public values it needs for checks (`NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, public by design) are given to it by Einar, never read from `.env.staging.local`.
 - **The dashboard and the SQL editor reach secret values.** The Supabase dashboard's API keys page can reveal the secret key, Vault (`vault.decrypted_secrets`) holds the per-site webhook secrets in clear, and the SQL editor runs as `postgres`, which can read both. The executor **never reveals a secret value** there: it does not reveal or copy a key on the API keys page or any other settings page (database password, SMTP password, JWT secret), never selects from `vault.decrypted_secrets`, and never selects token, password-hash or secret columns. In the SQL editor it runs **only the queries this runbook gives**, as written apart from the placeholders. A query that seems needed but is not here is reported to the controller first, never improvised.
 - **SQL blocks.** Each SQL block or inline query holds exactly one statement; where a step has several, they are numbered (for example 2a, 2b). Run each statement on its own and record its result before running the next. The SQL editor may show only the last result when several statements run together (confirm its behaviour at execution time), so statements are never combined into one run.
 - **Network.** The Bash sandbox stays limited to `registry.npmjs.org`. At each gate the controller shows Einar an exact `.claude/settings.json` diff adding **only that gate's hosts** to the sandbox's allowed domains, applies it only after his approval, and removes it when the gate is done. The hosts expected (confirm at execution time; a host found missing is a new diff for Einar, never an unsandboxed retry):
@@ -50,7 +50,8 @@ This runbook sets up the M1 staging environment: the GitHub repository, the host
 - "§" numbers refer to the spec (`docs/architecture.md`); "section N" refers to this runbook. **A1–A15** are the spec's validation gates (§11.1, the A-numbered table). "**Task 29 item N**" is item N of Task 29 Step 2 in the plan (one M1 acceptance test each). The two numberings are unrelated: Task 29 item 11 is the passwordless and email-change test, A11 is custom SMTP delivery.
 - "**Confirm at execution time**" marks a value or screen this runbook could not verify when it was written (dashboard menu paths, provider record values, CLI details). The executor checks it against the live screen or the provider's current documentation and records what was found; it never guesses.
 - **Names.** The three staging hostnames are `vefumsjon-staging.litljomi.is` (the CMS), `demo-staging.litljomi.is` (the demo site) and `labak-hub.litljomi.is` (the LABAK branch); the Vercel projects are `vefumsjon-staging`, `demo-staging` and `labak-hub` (G6.1). Placeholders are in angle brackets: `<project-ref>` (the Supabase staging project's reference), `<team>` (Einar's Vercel team), `<hook-test-address>` and `<signup-test-address>` (throwaway addresses Einar controls, used only by the checks in sections 6 and 7), `<test-account-id>` (the id that section 7.2 part 1 prints; not secret).
-- **No secret, key or token value is ever written** to this repository, a commit, a chat message, a log or a report. Commands read secrets from `.env.local` (never committed) without executing it, from a hidden prompt, or generate them and pipe them straight into the CLI that stores them; they never print them and never put them on a command line (sections 7.2, 11 and 12 show how). `.env.local` is **never sourced** (`. ./.env.local`): that would run its lines as shell code in a shell that holds the secret key. See section 12.
+- **Where the staging keys live (Einar's ruling, 2026-11-03, G3).** Einar ruled in chat (recorded in `docs/execution/gates.json`, G3): "Staging keys go in a separate file, /Users/einarzoega/litljomi-cms/.env.staging.local, which I create and fill myself. Don't swap `.env.local`. Point the runbook's scripts (their `ENV_FILE`) at the staging file, and keep the project-reference check. Record this change in the runbook." So the staging URL, publishable key and secret key are read from `.env.staging.local`: a separate file Einar creates and fills himself, git-ignored by `.env*`, never sourced and read-denied to agents like `.env.local`. `.env.local` keeps the local stack's values and is not swapped. The section 7.2 and G3.2c scripts (their `ENV_FILE`) and `tools/cli` (section 11) point at the staging file; the project-reference check (`EXPECT_REF`) is unchanged.
+- **No secret, key or token value is ever written** to this repository, a commit, a chat message, a log or a report. Commands read staging secrets from `.env.staging.local` (never committed) without executing it, from a hidden prompt, or generate them and pipe them straight into the CLI that stores them; they never print them and never put them on a command line (sections 7.2, 11 and 12 show how). `.env.staging.local` (like `.env.local`) is **never sourced** (`. ./.env.staging.local`): that would run its lines as shell code in a shell that holds the secret key. See section 12.
 
 **Off-limits.** `labak.is` and its DNS, FILMÍS, ISNIC, the hostnames `labak.litljomi.is` and `labak.is`, the LABAK repository's `main` branch, any production project, and the existing Vercel project `landssamband-bakarameistara`, **apart from the one build setting Einar changes himself** (G6.0). Nothing else in that project is changed, by anyone, under this runbook.
 
@@ -218,13 +219,13 @@ Locally this is proven by `tests/integration/src/service-role-timeout.test.ts` (
      ```sql
      do $$ begin lock table cms.tenants in access exclusive mode; perform pg_sleep(7); end $$;
      ```
-  4. **c4** (Einar's terminal, started **within 4 seconds of c3**): the script below calls `api.worker_tenants_to_release()` (read only, no arguments, returns no secret) with the secret key. It waits on `cms.tenants` until c3 ends, then on `cms.publish_requests`, so the call as a whole passes 10 s while neither wait reaches 8 s. Einar copies it to `~/timeout-check.sh` and runs `EXPECT_REF='<project-ref>' bash ~/timeout-check.sh`. It reads `.env.local` exactly as section 7.2 does (its `env_value` is an identical copy) and prints only the target, the HTTP code, the error code and the elapsed time.
+  4. **c4** (Einar's terminal, started **within 4 seconds of c3**): the script below calls `api.worker_tenants_to_release()` (read only, no arguments, returns no secret) with the secret key. It waits on `cms.tenants` until c3 ends, then on `cms.publish_requests`, so the call as a whole passes 10 s while neither wait reaches 8 s. Einar copies it to `~/timeout-check.sh` and runs `EXPECT_REF='<project-ref>' bash ~/timeout-check.sh`. It reads `.env.staging.local` exactly as section 7.2 does (its `env_value` is an identical copy) and prints only the target, the HTTP code, the error code and the elapsed time.
      ```bash
      #!/usr/bin/env bash
      # G3.2c (decision 36.7): a secret-key REST call held on two locks. Run by Einar only. Never with
      # `bash -x` or `set -x`. Prints only the target host, the HTTP code, the error code and the time.
      set -eu
-     ENV_FILE='/Users/einarzoega/litljomi-cms/.env.local'
+     ENV_FILE='/Users/einarzoega/litljomi-cms/.env.staging.local'
      REF_RE='^[a-z0-9]{20}$'; URL_RE='^https://[a-z0-9]{20}\.supabase\.co$'; KEY_RE='^[A-Za-z0-9._-]+$'
 
      # env_value NAME ERE: identical to section 7.2's copy; keep them identical (reads ENV_FILE without
@@ -239,11 +240,11 @@ Locally this is proven by `tests/integration/src/service-role-timeout.test.ts` (
          fi
        done < "$ENV_FILE"
        if [ "$n" -ne 1 ] || [ "$plain" -ne 1 ]; then
-         echo "FAILED: $1 must be on exactly one plain $1=value line in .env.local (found $n); nothing was sent" >&2
+         echo "FAILED: $1 must be on exactly one plain $1=value line in .env.staging.local (found $n); nothing was sent" >&2
          return 1
        fi
        if ! [[ $value =~ $allowed ]]; then
-         echo "FAILED: $1 in .env.local has an unexpected form (value not shown); nothing was sent" >&2; return 1
+         echo "FAILED: $1 in .env.staging.local has an unexpected form (value not shown); nothing was sent" >&2; return 1
        fi
        printf '%s' "$value"
      }
@@ -256,7 +257,7 @@ Locally this is proven by `tests/integration/src/service-role-timeout.test.ts` (
      URL="$(env_value NEXT_PUBLIC_SUPABASE_URL "$URL_RE")"
      SK="$(env_value SUPABASE_SECRET_KEY "$KEY_RE")"
      if [ "$URL" != "https://$REF.supabase.co" ]; then
-       echo "FAILED: .env.local points at ${URL#https://}, not $REF.supabase.co; nothing was sent" >&2; exit 1
+       echo "FAILED: .env.staging.local points at ${URL#https://}, not $REF.supabase.co; nothing was sent" >&2; exit 1
      fi
      printf 'target: %s\n' "${URL#https://}"
      # curl reads headers, URL and body as a config on stdin (--config -), so the key is on no command line.
@@ -485,16 +486,16 @@ The hook `private.passwordless_access_token(event jsonb) returns jsonb` (Task 4)
 | H5 | SQL editor (H5a, H5b), **while the test account still exists**, with the id part 1 printed | Executor | **0** `password` rows on the project; for the test account, **0** `password` rows and **at least 1** row in all (its H4 session, so the check is not vacuous) |
 | H6 | Part 2 script deletes the test account (the Auth admin API cannot clear a password, so the account is never reused); then the SQL check | Einar (deletion), executor (SQL) | Deletion HTTP **200**; the account is gone (H6a and H6b below each **0**) |
 
-**Keeping secrets off command lines.** A command line is visible to every user of the machine (`ps`) and to process auditing; a pipe is not. So in both scripts curl reads its headers, URL and body as a configuration on standard input (`curl -q --config -`; `-q` first, so `~/.curlrc` is not read), written by `printf`, a shell builtin, so its arguments never become a program's command line; request bodies are built by `jq` from values it reads on standard input; responses stay in shell variables. The values read from `.env.local` stay in the script's own shell variables and are never exported, so no process's environment holds them either. The secret key, the generated password, the token hash and the refresh token therefore never appear on any command line, and nothing is written to a file (pipes only: no temporary files and no here-documents). Never run the scripts with `bash -x` or `set -x`. They print only the target host, HTTP codes (or a curl error number), `true`/`false` results, `redirect_to` and the test account's id (not a secret).
+**Keeping secrets off command lines.** A command line is visible to every user of the machine (`ps`) and to process auditing; a pipe is not. So in both scripts curl reads its headers, URL and body as a configuration on standard input (`curl -q --config -`; `-q` first, so `~/.curlrc` is not read), written by `printf`, a shell builtin, so its arguments never become a program's command line; request bodies are built by `jq` from values it reads on standard input; responses stay in shell variables. The values read from `.env.staging.local` stay in the script's own shell variables and are never exported, so no process's environment holds them either. The secret key, the generated password, the token hash and the refresh token therefore never appear on any command line, and nothing is written to a file (pipes only: no temporary files and no here-documents). Never run the scripts with `bash -x` or `set -x`. They print only the target host, HTTP codes (or a curl error number), `true`/`false` results, `redirect_to` and the test account's id (not a secret).
 
-**Reading `.env.local` without executing it.** The scripts never source `.env.local` (`. ./.env.local` runs every line as shell code in a shell that holds the secret key, and a later duplicate line silently wins, which could send the key to another host). Each script reads only the names it needs, line by line, and refuses to send anything when:
+**Reading `.env.staging.local` without executing it.** The scripts never source `.env.staging.local` (`. ./.env.staging.local` runs every line as shell code in a shell that holds the secret key, and a later duplicate line silently wins, which could send the key to another host). Each script reads only the names it needs, line by line, and refuses to send anything when:
 - a name is assigned zero times or more than once, or not on a plain `NAME=value` line (an `export NAME=…` line or spaces around `=` count as assignments and are refused; comment lines are ignored);
 - a value contains characters that cannot occur in it: `NEXT_PUBLIC_SUPABASE_URL` must be exactly `https://`, 20 lowercase letters or digits (the project reference) and `.supabase.co`, with nothing before or after; the keys may contain only letters, digits, `.`, `_` and `-` (this also keeps quotes, spaces, `$`, `%`, `\` and a stray carriage return out of the curl configuration);
 - the URL is not the staging project's: Einar passes the project reference as `EXPECT_REF`, taken from his Supabase dashboard (or his own records), never from a repository file (the value recorded at G3.1 in `docs/verification/m1-report.md` is for the record only), and the URL must be `https://$EXPECT_REF.supabase.co`.
 
-A refusal prints a `FAILED:` line naming the variable, never its value. Before its first request, each script prints the target host (`target: <project-ref>.supabase.co`). A local-stack URL (for example `http://127.0.0.1:54321`, as `.env.local` holds for local work) is refused, so the checks can never run against, or delete an account on, the local stack by mistake; for these runs `.env.local` holds the staging values (how Einar keeps the local and staging values apart is his choice; confirm at execution time). **Confirm at execution time** that the staging project's reference has 20 characters and that the publishable and secret keys contain only the characters above. If the hosted URL or a key has another shape, stop and report; do not loosen the check.
+A refusal prints a `FAILED:` line naming the variable, never its value. Before its first request, each script prints the target host (`target: <project-ref>.supabase.co`). A local-stack URL (for example `http://127.0.0.1:54321`, as `.env.local` holds for local work) is refused, so the checks can never run against, or delete an account on, the local stack by mistake; the scripts read the separate file `.env.staging.local`, which holds the staging values, and `.env.local` is not swapped (Einar's ruling, section 1). **Confirm at execution time** that the staging project's reference has 20 characters and that the publishable and secret keys contain only the characters above. If the hosted URL or a key has another shape, stop and report; do not loosen the check.
 
-**How Einar runs them.** He copies each script, as shown, into a file outside the repository (the scripts hold no secret; for example `~/hook-check-1.sh` and `~/hook-check-2.sh`) and runs it with `bash`. The scripts read `/Users/einarzoega/litljomi-cms/.env.local` by its full path, so the directory he runs them from does not matter; nothing is loaded into his interactive shell:
+**How Einar runs them.** He copies each script, as shown, into a file outside the repository (the scripts hold no secret; for example `~/hook-check-1.sh` and `~/hook-check-2.sh`) and runs it with `bash`. The scripts read `/Users/einarzoega/litljomi-cms/.env.staging.local` by its full path, so the directory he runs them from does not matter; nothing is loaded into his interactive shell:
 
 ```sh
 EXPECT_REF='<project-ref>' EXPECT_REDIRECT='https://vefumsjon-staging.litljomi.is' bash ~/hook-check-1.sh
@@ -510,7 +511,7 @@ Before G3.7 is done, leave out `EXPECT_REDIRECT=…`; part 1 then prints `redire
 # Section 7.2, part 1 (H3, H4). Run by Einar only. Never with `bash -x` or `set -x`.
 # Prints only the target host, HTTP codes, true/false results, redirect_to and the test account's id.
 set -eu
-ENV_FILE='/Users/einarzoega/litljomi-cms/.env.local'
+ENV_FILE='/Users/einarzoega/litljomi-cms/.env.staging.local'
 REF_RE='^[a-z0-9]{20}$'; URL_RE='^https://[a-z0-9]{20}\.supabase\.co$'; KEY_RE='^[A-Za-z0-9._-]+$'
 
 # env_value NAME ERE: prints NAME's value from ENV_FILE without executing the file. Refuses, naming
@@ -526,11 +527,11 @@ env_value() {
     fi
   done < "$ENV_FILE"
   if [ "$n" -ne 1 ] || [ "$plain" -ne 1 ]; then
-    echo "FAILED: $1 must be on exactly one plain $1=value line in .env.local (found $n); nothing was sent" >&2
+    echo "FAILED: $1 must be on exactly one plain $1=value line in .env.staging.local (found $n); nothing was sent" >&2
     return 1
   fi
   if ! [[ $value =~ $allowed ]]; then
-    echo "FAILED: $1 in .env.local has an unexpected form (value not shown); nothing was sent" >&2; return 1
+    echo "FAILED: $1 in .env.staging.local has an unexpected form (value not shown); nothing was sent" >&2; return 1
   fi
   printf '%s' "$value"
 }
@@ -544,7 +545,7 @@ URL="$(env_value NEXT_PUBLIC_SUPABASE_URL "$URL_RE")"
 PK="$(env_value NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY "$KEY_RE")"
 SK="$(env_value SUPABASE_SECRET_KEY "$KEY_RE")"
 if [ "$URL" != "https://$REF.supabase.co" ]; then
-  echo "FAILED: .env.local points at ${URL#https://}, not $REF.supabase.co; nothing was sent" >&2; exit 1
+  echo "FAILED: .env.staging.local points at ${URL#https://}, not $REF.supabase.co; nothing was sent" >&2; exit 1
 fi
 printf 'target: %s\n' "${URL#https://}"
 EXPECT_REDIRECT="${EXPECT_REDIRECT:-}"
@@ -661,7 +662,7 @@ Run H5 even when part 1 failed: its counts are part of the evidence.
 # Section 7.2, part 2 (H6): deletes the test account by its id. Run by Einar only, after H5 is
 # recorded. Never with `bash -x` or `set -x`. Prints only the target host and the HTTP code.
 set -eu
-ENV_FILE='/Users/einarzoega/litljomi-cms/.env.local'
+ENV_FILE='/Users/einarzoega/litljomi-cms/.env.staging.local'
 REF_RE='^[a-z0-9]{20}$'; URL_RE='^https://[a-z0-9]{20}\.supabase\.co$'; KEY_RE='^[A-Za-z0-9._-]+$'
 
 # env_value NAME ERE: identical to part 1's copy; keep the two identical (reads ENV_FILE without
@@ -676,11 +677,11 @@ env_value() {
     fi
   done < "$ENV_FILE"
   if [ "$n" -ne 1 ] || [ "$plain" -ne 1 ]; then
-    echo "FAILED: $1 must be on exactly one plain $1=value line in .env.local (found $n); nothing was sent" >&2
+    echo "FAILED: $1 must be on exactly one plain $1=value line in .env.staging.local (found $n); nothing was sent" >&2
     return 1
   fi
   if ! [[ $value =~ $allowed ]]; then
-    echo "FAILED: $1 in .env.local has an unexpected form (value not shown); nothing was sent" >&2; return 1
+    echo "FAILED: $1 in .env.staging.local has an unexpected form (value not shown); nothing was sent" >&2; return 1
   fi
   printf '%s' "$value"
 }
@@ -697,7 +698,7 @@ fi
 URL="$(env_value NEXT_PUBLIC_SUPABASE_URL "$URL_RE")"
 SK="$(env_value SUPABASE_SECRET_KEY "$KEY_RE")"
 if [ "$URL" != "https://$REF.supabase.co" ]; then
-  echo "FAILED: .env.local points at ${URL#https://}, not $REF.supabase.co; nothing was sent" >&2; exit 1
+  echo "FAILED: .env.staging.local points at ${URL#https://}, not $REF.supabase.co; nothing was sent" >&2; exit 1
 fi
 printf 'target: %s\n' "${URL#https://}"
 # curl reads headers and URL as a config on stdin (--config -), so the secret key is on no command line.
@@ -888,7 +889,7 @@ Never touched under this runbook: the existing project `landssamband-bakarameist
 
 ## 11. Tenants, sites and the staging editor (Task 28 Step 5)
 
-The CLI (`tools/cli`) reads the staging URL and secret key from Einar's local environment (`.env.local`, never committed), so **Einar runs every `cms provision` command** in his own terminal (section 1); the executor prepares the exact commands (no secret in them) and runs the SQL checks. Run after G3.6, G3.7, G6.5 and G7.1.
+The CLI (`tools/cli`) reads the staging URL and secret key from Einar's staging file (`/Users/einarzoega/litljomi-cms/.env.staging.local`, never committed; section 1), so **Einar runs every `cms provision` command** in his own terminal (section 1); the executor prepares the exact commands (no secret in them) and runs the SQL checks. Run after G3.6, G3.7, G6.5 and G7.1. **`cms provision` does not exist yet in `tools/cli`** (it has only `gen-types`); this is an open item the controller raises with Einar (section 16).
 
 - **P-1 Tenants.** Owner: Einar runs `cms provision tenant labak`, `cms provision tenant demo`; the executor verifies. Verify: SQL editor `select slug from cms.tenants order by slug;` lists `demo` and `labak` (confirm the table and column names against the migrations at execution time).
 - **P-2 Sites.** Owner: Einar (the CLI and the webhook secret); the executor verifies. `cms provision site …` once per staging site, with base URL `https://demo-staging.litljomi.is` or `https://labak-hub.litljomi.is` and the site's revalidate route (`/api/cms/revalidate` on the demo site; the LABAK branch's route, confirm at execution time). The secret is stored in Supabase Vault (`api.admin_create_site` keeps only its ID), and the same value becomes that site's `CMS_WEBHOOK_SECRETS` (set here, not in G6.2); the site is then redeployed. **Carrying the secret without a file, the clipboard or shell history**, in one terminal session per site:
@@ -906,7 +907,7 @@ The CLI (`tools/cli`) reads the staging URL and secret key from Einar's local en
 
 ## 12. Secrets
 
-No secret is ever committed, logged, printed in an agent session, pasted into chat or written into a report. `.env*` files other than `.env.example` are never committed, and `.env.local` is never sourced (section 7.2, "Reading `.env.local` without executing it"). The executor never reveals a secret value in the dashboard or the SQL editor and runs only the queries this runbook gives (section 1). Every staging secret is **fresh**, created for staging only. Rotation: the SDK accepts two webhook secrets during rotation (§8.2).
+No secret is ever committed, logged, printed in an agent session, pasted into chat or written into a report. `.env*` files other than `.env.example` are never committed, and `.env.local` and `.env.staging.local` are never sourced (section 7.2, "Reading `.env.staging.local` without executing it"). The executor never reveals a secret value in the dashboard or the SQL editor and runs only the queries this runbook gives (section 1). Every staging secret is **fresh**, created for staging only. Rotation: the SDK accepts two webhook secrets during rotation (§8.2).
 
 **Generating and storing the CMS secrets (G6.2).** Einar, in his own terminal, once per secret, generates the value and pipes it straight into the CLI, so it is never printed, never in a file, the clipboard or shell history, and never on a command line:
 
@@ -919,7 +920,7 @@ Mark each sensitive if the CLI offers it (for example a `--sensitive` flag; conf
 
 | Secret | Created where | Stored where | Who may read it |
 |---|---|---|---|
-| Supabase secret key | Supabase project API keys (G3.1) | `vefumsjon-staging` server environment (`SUPABASE_SECRET_KEY`, entered by Einar); Einar's local `.env.local` for `tools/cli`, the section 7.2 and G3.2c scripts, and Task 29's automated sign-in | Code under `apps/cms/src/privileged/**` and `tools/cli` only (lint-enforced); in operation, only Einar's own terminal, never an agent session. Never in client bundles, sites or module code |
+| Supabase secret key | Supabase project API keys (G3.1) | `vefumsjon-staging` server environment (`SUPABASE_SECRET_KEY`, entered by Einar); Einar's `.env.staging.local` for `tools/cli`, the section 7.2 and G3.2c scripts, and Task 29's automated sign-in | Code under `apps/cms/src/privileged/**` and `tools/cli` only (lint-enforced); in operation, only Einar's own terminal, never an agent session. Never in client bundles, sites or module code |
 | Internal worker-trigger secret | Generated fresh, 32 random bytes, piped into `vercel env add` by Einar (above) | `vefumsjon-staging` (`CMS_INTERNAL_SECRET`) | The CMS server: the trigger and `verifyInternalSecret` |
 | Cron secret | Generated fresh, 32 random bytes, piped into `vercel env add` by Einar (above) | `vefumsjon-staging` (`CRON_SECRET`) | Vercel Cron (sends it) and `verifyCronSecret` |
 | Per-site webhook secret | Generated fresh by Einar, one per site (P-2: `cms provision site` needs the secret key) | Supabase Vault (by `cms provision site`) and the site's environment (`CMS_WEBHOOK_SECRETS`) | The worker through `service_role`-only functions (A9); the site's revalidation route |
@@ -935,13 +936,13 @@ No registry token exists: the LABAK branch gets the SDK as vendored files (G2.5)
 
 ## 13. Environment variables
 
-The same set as `.env.example` (`tools/checks/__tests__/env-example.test.ts` checks that the first column of this table and the `NAME=` lines of `.env.example` match both ways). Values are set per Vercel project (G6.2) and, for local work and `tools/cli`, in `.env.local`.
+The same set as `.env.example` (`tools/checks/__tests__/env-example.test.ts` checks that the first column of this table and the `NAME=` lines of `.env.example` match both ways). Values are set per Vercel project (G6.2) and, for local work, in `.env.local` (the local stack's values); the staging values that `tools/cli` and the section 7.2 scripts read are in `.env.staging.local` (section 1).
 
 | Variable | Used by | Secret | Value and where it comes from | Set on |
 |---|---|---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | CMS app; `tools/cli` locally | No (public) | `https://<project-ref>.supabase.co`, the project URL on the API settings page (confirm at execution time) | `vefumsjon-staging`; `.env.local` |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | CMS app (browser and server) | No (public by design; RLS and grants protect data) | The project's publishable key (API keys page) | `vefumsjon-staging`; `.env.local` |
-| `SUPABASE_SECRET_KEY` | `apps/cms/src/privileged/**`, `tools/cli` | **Yes** | The project's secret key (API keys page); entered by Einar (section 12) | `vefumsjon-staging`; Einar's `.env.local` |
+| `NEXT_PUBLIC_SUPABASE_URL` | CMS app; `tools/cli` locally | No (public) | `https://<project-ref>.supabase.co`, the project URL on the API settings page (confirm at execution time) | `vefumsjon-staging`; `.env.staging.local` |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | CMS app (browser and server) | No (public by design; RLS and grants protect data) | The project's publishable key (API keys page) | `vefumsjon-staging`; `.env.staging.local` |
+| `SUPABASE_SECRET_KEY` | `apps/cms/src/privileged/**`, `tools/cli` | **Yes** | The project's secret key (API keys page); entered by Einar (section 12) | `vefumsjon-staging`; Einar's `.env.staging.local` |
 | `CMS_INTERNAL_SECRET` | CMS app (worker trigger, header `x-cms-internal-secret`) | **Yes** | 32 random bytes, generated and piped into the CLI by Einar (section 12) | `vefumsjon-staging` |
 | `CRON_SECRET` | CMS app (`/api/cron/sweep`), Vercel Cron | **Yes** | 32 random bytes, generated and piped into the CLI by Einar (section 12) | `vefumsjon-staging` |
 | `CMS_PUBLIC_URL` | CMS app (worker trigger URL, magic-link redirect) | No | `https://vefumsjon-staging.litljomi.is` | `vefumsjon-staging` |
@@ -959,7 +960,7 @@ Before Task 29, run the full local suite (Task 29 Step 1) and the hook verificat
 
 **Who runs what (decision 43.1 and 43.9).**
 - **Einar runs every browser test** (`pnpm --filter cms e2e …` and the staging acceptance spec) in his own terminal, from **one exact command** the controller gives him, and pastes the output back; the controller reads it. Agents do not run browser tests.
-- **Automated sign-in** uses the Auth admin `generateLink` route with the staging secret key from Einar's environment only (his `.env.local` or his shell; never printed, never committed, never in an agent session), which is one more reason the spec runs in his terminal.
+- **Automated sign-in** uses the Auth admin `generateLink` route with the staging secret key from Einar's environment only (his `.env.staging.local` or his shell; never printed, never committed, never in an agent session), which is one more reason the spec runs in his terminal.
 - **The staging account** is `einsi@litljomi.is`, an editor of both `labak` and `demo` (P-3). No other editor, and no access for anyone else in M1.
 - **On staging, prove A6, A7, A8, A11 and A15**, and **re-run A1–A4 against hosted Supabase** (the integration suite's `http-boundary.test.ts` and `storage-boundary.test.ts`; the local suite refuses a hosted URL, so how it is pointed at staging is Task 29's, open item in section 16).
 - **Einar's manual check:** request a magic link on his laptop, open it on his phone, press "Halda áfram", publish a test article from the phone, and see it on `https://labak-hub.litljomi.is`.
@@ -1007,7 +1008,8 @@ The full list is decision 18's (plan, "Implementation-level decisions") and deci
 | Steps that need the secret key or another secret value are Einar's (section 1), including the section 7.2 and G3.2c scripts, every `cms provision` command, the secrets of section 12 and section 6's Management API route | Einar confirms | G3 |
 | Task 29's re-run of A1–A4 against hosted Supabase: the integration suite (`tests/integration/src/env.ts`) refuses any non-loopback stack, so Task 29 needs a reviewed way to point those two files at staging, run by Einar in his own terminal (it needs the secret key) | Controller raises with Einar | Before Task 29 |
 | The LABAK repository and Vercel: the approvals to connect it to `labak-hub` (section 1), and Einar's confirmation of G6.0's Ignored Build Step before G7.1 | Einar approves and confirms; controller raises | G6; the G7 push request |
-| A `deny` rule for agent Edit and Write of `.env` and `.env.local`: the project settings deny only Read of them, and the repository root is writable for agents, so an agent could change `.env.local` (for example add a second `NEXT_PUBLIC_SUPABASE_URL`). The section 7.2 scripts refuse a duplicate name, a malformed value and another project's URL, but other tools that read the file may not; adding the rule is a `.claude/**` change for Einar to approve | Controller raises with Einar | Before G3 (before staging values go into `.env.local`) |
+| A `deny` rule for agent Edit and Write of `.env` and `.env.local`: the project settings deny only Read of them, and the repository root is writable for agents, so an agent could change `.env.local` or `.env.staging.local` (for example add a second `NEXT_PUBLIC_SUPABASE_URL`); `.env.staging.local` also needs a read-deny rule, if the existing ones (`.env`, `.env.local`) do not match it. The section 7.2 scripts refuse a duplicate name, a malformed value and another project's URL, but other tools that read the file may not; adding the rule is a `.claude/**` change for Einar to approve | Controller raises with Einar | Before G3 (before staging values go into `.env.staging.local`) |
+| `cms provision` does not exist yet: `tools/cli` has only `gen-types`, so section 11's `cms provision` commands cannot run as written. Not designed here | Controller raises with Einar | Before section 11 (Task 28 Step 5) |
 | `ask` rules for risky hosted Supabase commands (`supabase config push`, `supabase db reset --linked`, `supabase migration repair`): today the project settings have no `ask` rule for them, so G3.2b's "never `supabase config push`" is behavioural only; adding the rules is a `.claude/**` change for Einar to approve | Controller raises with Einar | Before G3 |
 | The email rate limit value (G3.6) | Einar confirms | G3 |
 | SMTP credentials in the CMS environment (§8.2): no M1 code needs them, so no variable is defined; to be named when code that sends email is planned | Controller raises with Einar | When such code is planned |
