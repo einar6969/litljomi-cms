@@ -60,6 +60,29 @@ export const is = {
     unsupportedField: 'Þennan reit er ekki hægt að breyta hér ennþá. Gildi hans helst óbreytt.',
     entryLink: 'Tengill á aðra færslu. Honum er ekki breytt hér og hann helst óbreyttur.',
     invalidUrl: 'Ógild vefslóð (https://, http:// eða mailto:). Ekki vistað.',
+    // M2-07: a stored value of the wrong type (written outside this form) is shown, never silently replaced.
+    invalidStored: 'Vistaða gildið passar ekki við þennan reit. Veldu eða sláðu inn nýtt gildi.',
+    // M2-07: the scalar kinds' inputs. `{min}`, `{max}`, `{value}` and `{zone}` are filled in by the field.
+    number: {
+      integer: 'Heil tala',
+      decimal: 'Tala, aukastafir á eftir kommu',
+      range: 'frá {min} til {max}',
+      atLeast: 'minnst {min}',
+      atMost: 'mest {max}',
+      invalid: 'Ógild tala. Ekki vistað.',
+    },
+    boolean: {
+      yes: 'Já',
+      no: 'Nei',
+      unset: 'Ekki tilgreint',
+    },
+    select: {
+      placeholder: 'Veldu…',
+      unknown: 'Gildið „{value}“ er ekki lengur í boði. Veldu annað.',
+    },
+    datetime: {
+      help: 'Tími í tímabelti tölvunnar þinnar ({zone}).',
+    },
     image: {
       choose: 'Velja mynd',
       replace: 'Skipta um mynd',

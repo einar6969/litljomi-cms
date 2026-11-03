@@ -83,6 +83,9 @@ export function EntryForm({ tenant, entryId, fields, titleKey, initialData, init
                 required={field.required}
                 max={field.max}
                 multiline={field.multiline}
+                min={field.min}
+                integer={field.integer}
+                options={field.options}
                 value={data[field.key]}
                 onChange={(value) => change(field.key, value)}
               />
