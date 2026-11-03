@@ -17,7 +17,7 @@
 // request (`asset_mismatch`) with an alert, and the entry is not committed. Originals are
 // immutable for editors (media-private has no update or delete policy), and the metadata columns
 // for every writer but the owner, so what is checked here is what the release build copies.
-import { ProjectionError, projectEntry, type ContentType, type ProjectionContext } from '@litljomi/cms-schema';
+import { DRAFT_OUTDATED, DRAFT_SCHEMA_AHEAD, ProjectionError, projectEntry, type ContentType, type ProjectionContext } from '@litljomi/cms-schema';
 import { inspectImage } from '@/editor/server/image-metadata';
 import { getModule, getType } from '@/modules/registry';
 import { supabaseUrl } from '../../lib/supabase/env';
@@ -250,9 +250,13 @@ async function publish(db: SupabaseClient, read: WorkerRead, originals: Original
   const module = getModule(tenant.slug);
   const type = getType(tenant.slug, entry.type);
   if (!module || !type) return reject({ code: 'unknown_type', type: entry.type });
-  // §5.3: only a draft at the type's current schema version can be published.
+  // §5.3: only a draft at the type's current schema version can be published. The worker never
+  // upcasts a draft (the editor or the draft migration saves it at the current version first); the
+  // code tells an outdated draft (DRAFT_OUTDATED, which can be updated) from one written by a newer
+  // deploy than this one (DRAFT_SCHEMA_AHEAD).
   if (draft.schema_version !== type.version) {
-    return reject({ code: 'schema_outdated', draftSchemaVersion: draft.schema_version, currentSchemaVersion: type.version });
+    const code = draft.schema_version < type.version ? DRAFT_OUTDATED : DRAFT_SCHEMA_AHEAD;
+    return reject({ code, draftSchemaVersion: draft.schema_version, currentSchemaVersion: type.version });
   }
   // projectEntry validates again, but validating first gives the editor's own errors their own
   // code (invalid_data); projection_failed is left for what only the projection can find.

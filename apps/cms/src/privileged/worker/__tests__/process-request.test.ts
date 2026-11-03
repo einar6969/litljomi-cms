@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import sharp from 'sharp';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { ProjectionError, defineModule, defineType, newsType, type FieldKind } from '@litljomi/cms-schema';
+import { DRAFT_OUTDATED, DRAFT_SCHEMA_AHEAD, ProjectionError, defineModule, defineType, newsType, text, type FieldKind } from '@litljomi/cms-schema';
 
 type Call = { fn: string; args: Record<string, unknown> };
 type Reply = { data?: unknown; error?: { code: string; message: string } };
@@ -93,11 +93,21 @@ const deepProjectionType = defineType({
   preview: { title: 'title' },
   orderBy: 'title',
 });
+// At version 2 with a transform from 1 (M2-05): a draft still at 1 is outdated, never upcast here.
+const evolvedType = defineType({
+  name: 'evolved',
+  version: 2,
+  label: 'Evolved',
+  fields: { title: text({ label: 'Title', required: true }) },
+  preview: { title: 'title' },
+  orderBy: 'title',
+  transforms: { 1: (d) => ({ title: (d as { heading?: unknown }).heading }) },
+});
 const testModule = defineModule({
   tenant: 'prufa',
   locale: 'is',
   branding: { name: 'Prufa' },
-  types: [newsType, deepType, unprojectableType, deepProjectionType],
+  types: [newsType, deepType, unprojectableType, deepProjectionType, evolvedType],
   structure: [],
   site: {},
 });
@@ -118,14 +128,14 @@ const claimed = (o: Partial<{ id: string; attempts: number; action: string }> = 
   status: 'validating',
   attempts: o.attempts ?? 1,
 });
-const read = (o: { type?: string; data?: unknown; id?: string; action?: string } = {}) => ({
+const read = (o: { type?: string; data?: unknown; id?: string; action?: string; schemaVersion?: number } = {}) => ({
   request: claimed({ id: o.id, action: o.action }),
   entry: { id: 'e1', tenant_id: 't1', type: o.type ?? 'news', slug: 'frett' },
   tenant: { id: 't1', slug: 'prufa', status: 'active' },
   draft: {
     data: o.data ?? { title: 'T', date: '2026-10-15', image: { _ref: IMAGE, _kind: 'asset', alt: '' } },
     version: 2,
-    schema_version: 1,
+    schema_version: o.schemaVersion ?? 1,
   },
   refs: [],
 });
@@ -146,6 +156,30 @@ afterEach(() => {
 const called = (fn: string) => calls.filter((c) => c.fn === fn);
 
 describe('processRequestById', () => {
+  it.each([
+    [1, DRAFT_OUTDATED, { title: 'T' }],
+    [3, DRAFT_SCHEMA_AHEAD, { title: 'T' }],
+  ])('refuses a draft at schema version %s of a version 2 type with the named code %s, never upcasting or committing it (§5.3)', async (schemaVersion, code, data) => {
+    handlers = {
+      worker_claim_request: () => ({ data: claimed() }),
+      worker_read_request: () => ({ data: read({ type: 'evolved', schemaVersion, data }) }),
+      worker_reject_request: () => ({}),
+    };
+
+    const outcome = await processRequestById('r1');
+
+    const errors = { code, draftSchemaVersion: schemaVersion, currentSchemaVersion: 2 };
+    expect(outcome).toMatchObject({ status: 'failed_validation', errors });
+    expect(called('worker_reject_request')).toEqual([
+      { fn: 'worker_reject_request', args: { p_request_id: 'r1', p_status: 'failed_validation', p_error: errors } },
+    ]);
+    expect(called('worker_commit_publish')).toEqual([]);
+  });
+
+  it('the two codes are distinct', () => {
+    expect(DRAFT_OUTDATED).not.toBe(DRAFT_SCHEMA_AHEAD);
+  });
+
   it('treats a RangeError from validation (stack overflow on deep nesting) as failed validation', async () => {
     handlers = {
       worker_claim_request: () => ({ data: claimed() }),
