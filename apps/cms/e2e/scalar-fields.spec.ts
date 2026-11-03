@@ -14,8 +14,9 @@ const SAVED = { timeout: 10_000 };
 test('number, boolean, select and datetime inputs are keyboard-operable and autosave typed values', async ({ page }) => {
   await createEvent(page);
   await page.getByLabel('Title').fill('Tónleikar í Hörpu');
-  // Only the reference field (its picker is M2-08) still shows the component-less notice.
-  await expect(page.getByText(t.editor.unsupportedField)).toHaveCount(1);
+  // The scalar fields have components: the only component-less notices left are for the
+  // reference (its picker is M2-08) and the program group (its input is M2-15).
+  await expect(page.getByText(t.editor.unsupportedField)).toHaveCount(2);
 
   await test.step('number: typing, the error for a refused value, and arrow-key steps', async () => {
     const capacity = page.getByLabel('Capacity');
