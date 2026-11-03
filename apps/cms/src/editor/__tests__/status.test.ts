@@ -19,12 +19,14 @@ const base: PublicationStatusRow = {
   sites_live_ok: 2,
   sites_not_confirmed: 0,
   retries_exhausted: false,
+  live_retrying: false,
 };
 const row = (patch: Partial<PublicationStatusRow>): PublicationStatusRow => ({ ...base, ...patch });
 const unpublish = (patch: Partial<PublicationStatusRow> = {}) => row({ action: 'unpublish', ...patch });
 
 // Every value the view can give a delivered release's counts over two active sites: 0..2 notified,
-// live ok and not confirmed (not more than the sites), with the retries exhausted or not (M3-02).
+// live ok and not confirmed (not more than the sites), with the retries exhausted or not (M3-02),
+// and a live check retried or not (M3-03).
 function* deliveredCombinations(): Generator<PublicationStatusRow> {
   for (const action of ['publish', 'unpublish'] as const)
     for (const omitted of [false, true])
@@ -32,7 +34,16 @@ function* deliveredCombinations(): Generator<PublicationStatusRow> {
         for (let live = 0; live <= notified; live++)
           for (let notConfirmed = 0; live + notConfirmed <= notified; notConfirmed++)
             for (const exhausted of [false, true])
-              yield row({ action, omitted, sites_notified: notified, sites_live_ok: live, sites_not_confirmed: notConfirmed, retries_exhausted: exhausted });
+              for (const retrying of [false, true])
+                yield row({
+                  action,
+                  omitted,
+                  sites_notified: notified,
+                  sites_live_ok: live,
+                  sites_not_confirmed: notConfirmed,
+                  retries_exhausted: exhausted,
+                  live_retrying: retrying && notConfirmed > 0 && !exhausted,
+                });
 }
 
 describe('displayState: requested, committed and delivered (§7.4)', () => {
@@ -106,7 +117,7 @@ describe('displayState: live (decision 35)', () => {
   });
 
   it('every combination maps to one of the §7.4 labels', () => {
-    const labels = new Set<string>([t.publish.inProgress, t.publish.revalidated, t.publish.live, t.publish.removed, t.publish.deliveryFailed, t.publish.notConfirmed]);
+    const labels = new Set<string>([t.publish.inProgress, t.publish.revalidated, t.publish.live, t.publish.removed, t.publish.deliveryFailed, t.publish.notConfirmed, t.publish.notConfirmedRetrying]);
     for (const r of deliveredCombinations()) expect(labels).toContain(displayState(r).label);
   });
 });
@@ -144,7 +155,22 @@ describe('displayState: failures', () => {
     expect(displayState(row({ retries_exhausted: true })).label).toBe('Birt á vef ✓');
   });
 
-  it('live not confirmed: every site settled, one not_confirmed, is "Ekki staðfest á vef", final', () => {
+  it('live not confirmed and retried (M3-03): "Ekki enn staðfest á vef, reynt aftur…", pending (it changes on its own)', () => {
+    for (const action of ['publish', 'unpublish'] as const) {
+      const state = displayState(row({ action, sites_live_ok: 1, sites_not_confirmed: 1, live_retrying: true }));
+      expect(state).toEqual({ label: t.publish.notConfirmedRetrying, tone: 'pending', detail: t.publish.notConfirmedRetryingDetail });
+      expect(state.label).toBe('Ekki enn staðfest á vef, reynt aftur…');
+      expect(isFinal(state)).toBe(false);
+    }
+  });
+
+  it('live not confirmed with its retries exhausted (M3-03: 24 hours) is "Birting á vef mistókst", final', () => {
+    const state = displayState(row({ sites_live_ok: 1, sites_not_confirmed: 1, retries_exhausted: true }));
+    expect(state).toMatchObject({ label: 'Birting á vef mistókst', tone: 'error' });
+    expect(isFinal(state)).toBe(true);
+  });
+
+  it('live not confirmed, no retry (a newer release superseded it): "Ekki staðfest á vef", final', () => {
     for (const action of ['publish', 'unpublish'] as const) {
       const state = displayState(row({ action, sites_live_ok: 1, sites_not_confirmed: 1 }));
       expect(state).toMatchObject({ label: 'Ekki staðfest á vef', tone: 'error' });

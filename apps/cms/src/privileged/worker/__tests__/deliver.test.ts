@@ -586,3 +586,97 @@ describe('confirmSite: §7.4 re-send on a stale hash (M3-09)', () => {
     expect(webhooks()).toBe(1);
   });
 });
+
+// M3-03: a not_confirmed delivery is retried on M3-02's schedule (the database keeps it; the
+// selection and supersession are in 104_not_confirmed_retry and pipeline.integration.test.ts).
+describe('confirmSite: retries after not_confirmed (M3-03)', () => {
+  let site: FakeSite;
+  const recorded: Array<Record<string, unknown>> = [];
+  /** What api.worker_record_delivery answers for the live status: the delivery's schedule after the call. */
+  let schedule: unknown;
+  const db = {
+    rpc: async (fn: string, args: Record<string, unknown>) => {
+      if (fn === 'worker_record_delivery') recorded.push(args);
+      if (fn === 'worker_sites') return { data: [workerSite()], error: null };
+      return { data: fn === 'worker_record_delivery' ? schedule : null, error: null };
+    },
+  } as unknown as SupabaseClient;
+  const clock = { now: () => Date.UTC(2026, 10, 3, 12, 0, 0) };
+  const E = E1;
+  const published: DeliveredRelease = {
+    tenantId: 't',
+    tenantSlug: 'prufa',
+    releaseId: 'rel',
+    number: 2,
+    bundle: bundle(2, [entry(E, 'a', '2026-01-01T00:00:00.000Z')]),
+    previousBundle: null,
+    requests: [{ id: 'q1', entryId: E, action: 'publish' }],
+  };
+  const workerSite = (): WorkerSite => ({ id: 's', base_url: site.origin, revalidate_url: `${site.origin}/api/revalidate`, webhook_secrets: ['leyndo'] });
+  const webhooks = () => site.requests.filter((r) => r.method === 'POST').length;
+  /** The entry's own page and the listing, at the hash the fake site currently renders. */
+  const serve = (hash: string) => {
+    site.pages.set('/n/a', { status: 200, html: entryMarker(E, hash) });
+    site.pages.set('/n', { status: 200, html: entryMarker(E, hash) });
+  };
+  const fast = { ...clock, pollMs: 20, timeoutMs: 300 };
+
+  beforeEach(async () => {
+    recorded.length = 0;
+    schedule = [{ notify_attempts: 1, next_attempt_at: '2026-11-03T12:01:00.000Z', retries_exhausted: false }];
+    mocks.alert.mockClear();
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://example.supabase.co');
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+    site = await startFakeSite();
+    site.pages.set('/api/revalidate', { status: 200 });
+  });
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    vi.mocked(console.info).mockRestore();
+    await site.close();
+  });
+
+  it('a stale page that becomes fresh on the second attempt ends ok: re-notified, then live-checked in full', async () => {
+    serve('old');
+    await confirmRelease(db, published, fast);
+    expect(recorded.map((r) => [r.p_notify_status, r.p_live_status])).toEqual([
+      ['ok', null],
+      [null, 'not_confirmed'],
+    ]);
+    expect(mocks.alert).not.toHaveBeenCalled(); // a next attempt is scheduled
+    const before = webhooks();
+
+    // The site has caught up by the sweep's retry (no pointer wait on a retry).
+    serve('h-' + E);
+    recorded.length = 0;
+    schedule = [{ notify_attempts: 2, next_attempt_at: null, retries_exhausted: false }];
+    await confirmRelease(db, published, { ...fast, now: () => clock.now() + 60_000 }, new Set(['s']));
+
+    expect(webhooks() - before).toBe(1); // notified again
+    expect(recorded.map((r) => [r.p_notify_status, r.p_live_status, r.p_now])).toEqual([
+      ['ok', null, '2026-11-03T12:01:00.000Z'],
+      [null, 'ok', '2026-11-03T12:01:00.000Z'],
+    ]);
+    expect(recorded.at(-1)?.p_error).toBeNull();
+    expect(mocks.alert).not.toHaveBeenCalled();
+  });
+
+  it('a page still stale on a retry is recorded not_confirmed again, without an alert while a next attempt is due', async () => {
+    serve('old');
+    schedule = [{ notify_attempts: 3, next_attempt_at: '2026-11-03T12:05:00.000Z', retries_exhausted: false }];
+    await confirmRelease(db, published, fast, new Set(['s']));
+    expect(recorded.at(-1)).toMatchObject({ p_notify_status: null, p_live_status: 'not_confirmed', p_error: { code: 'live_not_confirmed' } });
+    expect(mocks.alert).not.toHaveBeenCalled();
+  });
+
+  it('alerts once that the retries are exhausted when the not_confirmed record says so (24 hours after the first failure)', async () => {
+    serve('old');
+    schedule = [{ notify_attempts: 12, next_attempt_at: null, retries_exhausted: true }];
+    expect(await confirmSite(db, published, workerSite(), [{ entryId: E, requestIds: ['q1'], failure: null, checks: [{ path: '/n', expect: 'present' }], ownPath: '/n/a', contentHash: 'h-' + E, mediaUrls: [] }], fast)).toBe(
+      'not_confirmed',
+    );
+    expect(mocks.alert.mock.calls).toEqual([
+      ['delivery.retries_exhausted', { tenantId: 't', releaseId: 'rel', number: 2, siteId: 's', attempts: 12, code: 'live_not_confirmed', failures: 1 }],
+    ]);
+  });
+});

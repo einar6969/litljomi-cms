@@ -33,6 +33,7 @@ const row = (patch: Partial<PublicationStatusRow>): PublicationStatusRow => ({
   sites_live_ok: 0,
   sites_not_confirmed: 0,
   retries_exhausted: false,
+  live_retrying: false,
   ...patch,
 });
 const live = (patch: Partial<PublicationStatusRow> = {}) =>
