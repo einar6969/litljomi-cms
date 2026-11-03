@@ -50,3 +50,12 @@ export {
   type StructureItem,
   type StructureNode,
 } from './module.ts';
+export {
+  compareSchema,
+  moduleSnapshot,
+  updateSnapshot,
+  type FieldSnapshot,
+  type ModuleSnapshot,
+  type SchemaComparison,
+  type TypeSnapshot,
+} from './snapshot.ts';

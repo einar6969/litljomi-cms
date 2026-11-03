@@ -1,0 +1,51 @@
+{
+  "tenant": "labak",
+  "types": {
+    "news": {
+      "version": 1,
+      "transforms": [],
+      "fields": {
+        "title": {
+          "kind": "text",
+          "required": true,
+          "max": 200,
+          "multiline": false
+        },
+        "date": {
+          "kind": "date",
+          "required": true
+        },
+        "excerpt": {
+          "kind": "text",
+          "required": false,
+          "max": 400,
+          "multiline": true
+        },
+        "image": {
+          "kind": "image",
+          "required": true
+        },
+        "body": {
+          "kind": "richText",
+          "required": false
+        },
+        "source": {
+          "kind": "link",
+          "required": false,
+          "entryTypes": null
+        },
+        "secondaryImage": {
+          "kind": "image",
+          "required": false
+        },
+        "sourceLabel": {
+          "kind": "text",
+          "required": false,
+          "max": 80,
+          "multiline": false
+        }
+      },
+      "retired": {}
+    }
+  }
+}
