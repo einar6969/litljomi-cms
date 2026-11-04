@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { runCli } from '../cli.ts';
-import type { ProvisionDeps } from '../provision.ts';
+import { isAllowedPreviewUrl, type ProvisionDeps } from '../provision.ts';
 
 // Test values only: no real project, key or secret.
 const REF = 'abcdefghij0123456789';
@@ -107,6 +107,8 @@ const siteArgs = [
 ];
 const previewArgs = ['provision', 'preview-secret', '--site-id', SITE_ID, ...common];
 const PREVIEW_SECRET = 'TestOnlyPreviewSecret+0123456789/abcdefgh=';
+const PREVIEW_URL = 'https://site.example.is/api/cms/preview';
+const previewUrlArgs = (url: string) => ['provision', 'preview-url', '--site-id', SITE_ID, '--preview-url', url, ...common];
 const editorArgs = ['provision', 'editor', '--email', 'editor@example.is', '--tenant-id', TENANT_A, '--tenant-id', TENANT_B, ...common];
 
 const path = (c: Call) => new URL(c.url).pathname + new URL(c.url).search;
@@ -138,6 +140,16 @@ describe('provision: argument parsing', () => {
     ['preview-secret with a malformed site id', ['provision', 'preview-secret', '--site-id', 'nope', ...common]],
     ['the preview secret as an argument', [...previewArgs, '--preview-secret', PREVIEW_SECRET]],
     ['the preview secret as a positional argument', [...previewArgs, PREVIEW_SECRET]],
+    ['site with an http preview URL to a public host', [...siteArgs, '--preview-url', 'http://site.example.is/api/cms/preview']],
+    ['site with a preview URL carrying a query', [...siteArgs, '--preview-url', `${PREVIEW_URL}?x=1`]],
+    ['site with --preview-url none (only preview-url clears)', [...siteArgs, '--preview-url', 'none']],
+    ['preview-url without --site-id', ['provision', 'preview-url', '--preview-url', PREVIEW_URL, ...common]],
+    ['preview-url with a malformed site id', ['provision', 'preview-url', '--site-id', 'nope', '--preview-url', PREVIEW_URL, ...common]],
+    ['preview-url without --preview-url', ['provision', 'preview-url', '--site-id', SITE_ID, ...common]],
+    ['preview-url with an http URL to a public host', previewUrlArgs('http://site.example.is/api/cms/preview')],
+    ['preview-url with user info', previewUrlArgs('https://localhost@evil.example/preview')],
+    ['preview-url with an empty URL', ['provision', 'preview-url', '--site-id', SITE_ID, '--preview-url=', ...common]],
+    ['preview-url with the URL as a positional argument', ['provision', 'preview-url', '--site-id', SITE_ID, PREVIEW_URL, ...common]],
     ['editor with both --email and --user-id', [...editorArgs, '--user-id', USER_ID]],
     ['editor with neither --email nor --user-id', ['provision', 'editor', '--tenant-id', TENANT_A, ...common]],
     ['editor without --tenant-id', ['provision', 'editor', '--email', 'editor@example.is', ...common]],
@@ -292,6 +304,12 @@ describe('provision site', () => {
     });
   });
 
+  it('passes --preview-url to api.admin_create_site', async () => {
+    const r = await run([...siteArgs, '--preview-url', PREVIEW_URL], { stdin: SECRET, handler: siteHandler() });
+    expect(r.code).toBe(0);
+    expect((r.calls[1] as Call).body).toMatchObject({ p_preview_url: PREVIEW_URL, p_webhook_secret: SECRET });
+  });
+
   it('strips one trailing newline only', async () => {
     const r = await run(siteArgs, { stdin: `${SECRET}\n\n`, handler: siteHandler() });
     expect(r.code).toBe(1);
@@ -422,6 +440,101 @@ describe('provision preview-secret', () => {
     expect(r.code).toBe(1);
     expect(r.err.join('\n')).toContain('[redacted]');
     expect(r.lines.join('\n')).not.toContain(PREVIEW_SECRET);
+  });
+});
+
+// fix/preview-url: a site's preview URL, set, replaced or cleared, never read from stdin.
+describe('provision preview-url', () => {
+  const handler: Handler = (c) => (path(c) === '/rest/v1/rpc/admin_set_preview_url' ? new Response(null, { status: 204 }) : json(404, {}));
+
+  it('sets the site\'s preview URL through api.admin_set_preview_url', async () => {
+    const r = await run(previewUrlArgs(PREVIEW_URL), { handler });
+    expect(r.code).toBe(0);
+    expect(r.out).toEqual([`target: ${REF}.supabase.co`, `site ${SITE_ID}: preview URL set to ${PREVIEW_URL}`]);
+    expect(r.calls.map(path)).toEqual(['/rest/v1/rpc/admin_set_preview_url']);
+    const [call] = r.calls as [Call];
+    expect(call.body).toEqual({ p_site_id: SITE_ID, p_preview_url: PREVIEW_URL });
+    expect(header(call, 'Content-Profile')).toBe('api');
+    expect(header(call, 'apikey')).toBe(KEY);
+    expect(r.stdinReads).toBe(0);
+  });
+
+  it('clears the preview URL with none (null)', async () => {
+    const r = await run(previewUrlArgs('none'), { handler });
+    expect(r.code).toBe(0);
+    expect(r.out).toEqual([`target: ${REF}.supabase.co`, `site ${SITE_ID}: preview URL cleared`]);
+    expect((r.calls[0] as Call).body).toEqual({ p_site_id: SITE_ID, p_preview_url: null });
+  });
+
+  it('accepts --preview-url=<url>', async () => {
+    const r = await run(['provision', 'preview-url', '--site-id', SITE_ID, `--preview-url=${PREVIEW_URL}`, ...common], { handler });
+    expect(r.code).toBe(0);
+    expect((r.calls[0] as Call).body).toEqual({ p_site_id: SITE_ID, p_preview_url: PREVIEW_URL });
+  });
+
+  it('reports an unknown site or a refused URL as status, code and message', async () => {
+    let r = await run(previewUrlArgs(PREVIEW_URL), { handler: () => json(400, { code: 'P0001', message: 'not_found' }) });
+    expect(r.code).toBe(1);
+    expect(r.err.join('\n')).toContain(`FAILED: setting the preview URL of site ${SITE_ID}: HTTP 400 P0001 not_found`);
+    r = await run(previewUrlArgs(PREVIEW_URL), {
+      handler: () => json(400, { code: '22023', message: `p_preview_url must be an https URL ${KEY}` }),
+    });
+    expect(r.code).toBe(1);
+    expect(r.err.join('\n')).toContain('[redacted]');
+  });
+});
+
+// The same cases as supabase/tests/database/110_preview_url.test.sql: the CLI refuses before
+// sending what api.admin_set_preview_url would refuse, and refuses nothing it accepts.
+describe('provision: the preview URL rule', () => {
+  it.each([
+    'https://a.is',
+    'https://demo-staging.litljomi.is/api/cms/preview',
+    'https://Site.Example.IS/Preview',
+    'https://203.0.113.7:8443/preview',
+    'https://[2001:db8::1]/preview',
+    'http://localhost:3101/api/cms/preview',
+    'http://localhost',
+    'http://127.0.0.1:3101/api/cms/preview',
+    'http://127.255.10.1/p',
+    'http://[::1]:3101/api/cms/preview',
+    `https://demo.example.is/${'a'.repeat(2024)}`,
+  ])('accepts %s', (url) => {
+    expect(isAllowedPreviewUrl(url)).toBe(true);
+    // ... and the token route's URL parser reads it as https, or http to a loopback host.
+    const parsed = new URL(url);
+    expect(parsed.protocol === 'https:' || ['localhost', '[::1]'].includes(parsed.hostname) || parsed.hostname.startsWith('127.')).toBe(true);
+  });
+
+  it.each([
+    ['http to a public host', 'http://demo.example.is/preview'],
+    ['http to a private address', 'http://10.0.0.5/preview'],
+    ['http to 0.0.0.0', 'http://0.0.0.0:3101/preview'],
+    ['http to a host that only starts with localhost', 'http://localhost.example.is/preview'],
+    ['http to a host that only starts with 127', 'http://127.0.0.1.example.is/preview'],
+    ['http to an out-of-range 127 address', 'http://127.0.0.256/preview'],
+    ['http to a 127 address with a leading zero', 'http://127.0.0.01/preview'],
+    ['http to an IPv6 address other than ::1', 'http://[::2]/preview'],
+    ['an uppercase scheme', 'HTTPS://demo.example.is/preview'],
+    ['another scheme', 'javascript:alert(1)'],
+    ['a ftp URL', 'ftp://demo.example.is/preview'],
+    ['no scheme', 'demo.example.is/preview'],
+    ['a scheme-relative URL', '//demo.example.is/preview'],
+    ['user info', 'https://user:pass@demo.example.is/preview'],
+    ['user info hiding the host', 'https://localhost@evil.example/preview'],
+    ['a query', 'https://demo.example.is/preview?x=1'],
+    ['a fragment', 'https://demo.example.is/preview#x'],
+    ['a space', 'https://demo.example.is/pre view'],
+    ['a backslash', 'https://demo.example.is\\preview'],
+    ['a newline', 'https://demo.example.is/preview\n'],
+    ['an empty host', 'https:///preview'],
+    ['a trailing dot in the host', 'https://demo.example.is./preview'],
+    ['a percent-encoded host', 'https://%6c%6f%63%61%6c%68%6f%73%74/preview'],
+    ['a non-ASCII host', 'https://bakarí.is/preview'],
+    ['an empty string', ''],
+    ['more than 2048 characters', `https://demo.example.is/${'a'.repeat(2025)}`],
+  ])('refuses %s', (_name, url) => {
+    expect(isAllowedPreviewUrl(url)).toBe(false);
   });
 });
 

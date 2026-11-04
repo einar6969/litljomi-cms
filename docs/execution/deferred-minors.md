@@ -155,6 +155,7 @@
 | 31 | spec-quality r3 | Suspended-tenant notice not screenshotted (Major waived by Einar, "Waive the screenshot"); "Enginn vefur tengdur" shows the `error` tone from `status.ts` (red badge for a non-error) | Einar | cleared 8803fb9 (tone: warning, decision 41.1); waived (screenshot) |
 | 31 | spec-quality r3 | `not-found.tsx:10` repeats `hover:bg-recessed` and relies on class order for `no-underline`; `ImageField` `busyPicker` duplicates Button's disabled look; `toneOf` and the aria-live branch both test `endsWith('Saved')`; long header comment line in `design.spec.ts`; focal button focus ring not verified (`task-31-r3-spec-quality.md`) | C3 | open |
 | 31 | security r3 | `design.spec.ts:8-9` header says only PNGs are written; the step-2 tests also write drafts, an upload and publishes on the local stack (`task-31-r3-security.md`) | C3 | open |
+| Security round 2 (Thread F, fix/preview-url) | Einar 2026-11-04 | Sign-out clears the pending sign-in cookie (`cms-confirm-pending`, M3-14) but cannot revoke the session it holds, because the cookie is sent only to `/auth/confirm`, so sign-out never reads it; the pending session stays valid until its tokens expire | M5 | open |
 
 ## Carried from Phase 0 before ratings existed
 

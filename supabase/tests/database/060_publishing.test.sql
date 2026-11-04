@@ -194,8 +194,8 @@ select set_eq($$ select * from tests.column_privs('service_role', 'cms.releases'
             ('cleaned_at', 'UPDATE'), ('pointer_lag_ms', 'UPDATE'), ('pointer_fresh', 'UPDATE') $$,
   'service_role: update (status, bundle_path, delivered_at, error), M3-06''s retention columns and M3-08''s pointer lag on releases only');
 select set_eq($$ select * from tests.column_privs('service_role', 'cms.sites') where priv <> 'INSERT' $$,
-  $$ values ('preview_secret_ref', 'UPDATE') $$,
-  'service_role: update preview_secret_ref on sites only (M3-10, admin_set_preview_secret)');
+  $$ values ('preview_secret_ref', 'UPDATE'), ('preview_url', 'UPDATE') $$,
+  'service_role: update preview_secret_ref and preview_url on sites only (M3-10 admin_set_preview_secret, fix/preview-url admin_set_preview_url)');
 select set_eq($$ select * from tests.column_privs('service_role', 'cms.site_deliveries') where priv <> 'INSERT' $$,
   $$ values ('notify_status', 'UPDATE'), ('notify_attempts', 'UPDATE'), ('notified_at', 'UPDATE'),
             ('live_status', 'UPDATE'), ('live_confirmed_at', 'UPDATE'), ('last_error', 'UPDATE'),
