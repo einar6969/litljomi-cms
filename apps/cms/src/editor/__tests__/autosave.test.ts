@@ -328,16 +328,30 @@ describe('session expiry loses no work (M2-17)', () => {
     expect(copies.has(ENTRY)).toBe(false);
   });
 
-  it('on start, restores the tab\'s copy into the form and saves it at the version it was made on', async () => {
+  it('on start, restores the tab\'s copy into the form and saves nothing until the editor chooses to', async () => {
     const { store, copies } = memoryStore();
     copies.set(ENTRY, { version: 2, data: { title: 'Frá því áðan' } });
     const onRestore = vi.fn();
+    const sessionIsValid = vi.fn(async () => true);
     const save = saveAnswering({ ok: true, version: 3 });
-    const c = controllerFor(save, { store, onRestore });
+    const c = controllerFor(save, { store, onRestore, sessionIsValid });
     c.start();
     expect(onRestore).toHaveBeenCalledExactlyOnceWith({ title: 'Frá því áðan' });
+    expect(c.getSnapshot()).toEqual({ version: 2, state: 'restored' });
+    // Neither time, an edit, retry() nor resume() saves it.
+    await pause(DEBOUNCE * 4);
+    c.schedule({ title: 'Frá því áðan, breytt' });
+    await pause();
+    c.retry();
+    await c.resume();
     await pause(0);
-    expect(save).toHaveBeenCalledExactlyOnceWith(ENTRY, 2, { title: 'Frá því áðan' });
+    expect(save).not.toHaveBeenCalled();
+    expect(c.getSnapshot()).toEqual({ version: 2, state: 'restored' });
+    expect(copies.get(ENTRY)).toEqual({ version: 2, data: { title: 'Frá því áðan, breytt' } });
+    // The editor chooses to save it: at the version it was made on.
+    c.saveRestored();
+    await pause(0);
+    expect(save).toHaveBeenCalledExactlyOnceWith(ENTRY, 2, { title: 'Frá því áðan, breytt' });
     expect(c.getSnapshot()).toEqual({ version: 3, state: 'saved' });
     expect(copies.has(ENTRY)).toBe(false);
     // A second start (React remounting in development) restores nothing more.
@@ -347,16 +361,101 @@ describe('session expiry loses no work (M2-17)', () => {
     expect(save).toHaveBeenCalledTimes(1);
   });
 
-  it('a restored copy older than the draft goes through the conflict flow, not over the newer draft', async () => {
+  it('a restored copy is not sent when the form unmounts before the editor chooses', async () => {
+    const { store, copies } = memoryStore();
+    copies.set(ENTRY, { version: 2, data: { title: 'Frá því áðan' } });
+    const save = saveAnswering({ ok: true, version: 3 });
+    const c = controllerFor(save, { store });
+    c.start();
+    c.schedule({ title: 'Frá því áðan, breytt' });
+    c.dispose();
+    await pause(DEBOUNCE * 2);
+    expect(save).not.toHaveBeenCalled();
+    expect(copies.get(ENTRY)).toEqual({ version: 2, data: { title: 'Frá því áðan, breytt' } });
+  });
+
+  it('dropping a restored copy removes it and goes back to the loaded version, saving nothing', async () => {
+    const { store, copies } = memoryStore();
+    copies.set(ENTRY, { version: 2, data: { title: 'Frá því áðan' } });
+    const save = saveAnswering({ ok: true, version: 4 });
+    const c = controllerFor(save, { store });
+    c.start();
+    c.discardRestored();
+    expect(c.getSnapshot()).toEqual({ version: 3, state: 'idle' });
+    expect(c.pendingData()).toBeNull();
+    expect(copies.has(ENTRY)).toBe(false);
+    await pause(DEBOUNCE * 2);
+    expect(save).not.toHaveBeenCalled();
+    c.schedule({ title: 'Nýtt' });
+    await pause();
+    expect(save).toHaveBeenCalledExactlyOnceWith(ENTRY, 3, { title: 'Nýtt' });
+  });
+
+  it('a restored copy older than the draft, once saved, goes through the conflict flow, not over the newer draft', async () => {
     const { store, copies } = memoryStore();
     copies.set(ENTRY, { version: 2, data: { title: 'Gamalt' } });
     const loadLatest = vi.fn(async () => ({ ok: true as const, version: 3, data: { title: 'Nýrra' } }));
     const c = controllerFor(saveAnswering({ ok: false, code: 'version_conflict' }), { store, loadLatest });
     c.start();
+    c.saveRestored();
     await pause(0);
     expect(c.getSnapshot()).toEqual({ version: 2, state: 'conflict', theirs: { status: 'ready', version: 3, data: { title: 'Nýrra' } } });
     expect(c.pendingData()).toEqual({ title: 'Gamalt' });
     expect(copies.get(ENTRY)).toEqual({ version: 2, data: { title: 'Gamalt' } });
+  });
+
+  it('close() (sign-out) removes the copy and the pending data; afterwards nothing is saved or stored', async () => {
+    const { store, copies } = memoryStore();
+    const sessionIsValid = vi.fn(async () => true);
+    const save = saveAnswering({ ok: false, code: 'auth' }, { ok: true, version: 4 });
+    const c = controllerFor(save, { store, sessionIsValid });
+    c.schedule({ title: 'Óvistað' });
+    await pause();
+    expect(copies.has(ENTRY)).toBe(true);
+    c.close();
+    expect(copies.has(ENTRY)).toBe(false);
+    expect(c.pendingData()).toBeNull();
+    expect(c.getSnapshot().state).toBe('signed_out');
+    c.schedule({ title: 'Eftir útskráningu' });
+    c.retry();
+    await c.resume();
+    c.dispose();
+    await pause(DEBOUNCE * 2);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(copies.has(ENTRY)).toBe(false);
+    expect(sessionIsValid).not.toHaveBeenCalled();
+  });
+
+  it('a save in flight at sign-out cannot re-create the copy, whatever it answers', async () => {
+    for (const answer of [{ ok: true, version: 4 }, { ok: false, code: 'auth' }, { ok: false, code: 'error' }] as Result[]) {
+      const { store, copies } = memoryStore();
+      let finish!: (r: Result) => void;
+      const save = vi.fn<Save>().mockImplementationOnce(() => new Promise<Result>((resolve) => (finish = resolve)));
+      const c = controllerFor(save, { store });
+      c.schedule({ n: 1 });
+      await pause();
+      // An edit during the save: without close() the answer would keep it as the next copy.
+      c.schedule({ n: 2 });
+      c.close();
+      finish(answer);
+      await pause(DEBOUNCE * 2);
+      expect(copies.has(ENTRY)).toBe(false);
+      expect(save).toHaveBeenCalledTimes(1);
+      expect(c.getSnapshot().state).toBe('signed_out');
+    }
+  });
+
+  it('a restored copy is dropped by close() too, and saveRestored() then does nothing', async () => {
+    const { store, copies } = memoryStore();
+    copies.set(ENTRY, { version: 2, data: { title: 'Frá því áðan' } });
+    const save = saveAnswering({ ok: true, version: 3 });
+    const c = controllerFor(save, { store });
+    c.start();
+    c.close();
+    c.saveRestored();
+    await pause(0);
+    expect(save).not.toHaveBeenCalled();
+    expect(copies.has(ENTRY)).toBe(false);
   });
 
   it('resume() saves the pending data only once the session is valid again', async () => {

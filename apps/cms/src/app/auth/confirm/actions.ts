@@ -5,6 +5,7 @@ import { safeRedirectPath } from '@/lib/auth/routing';
 import { createDetachedClient, createEditorClient } from '@/lib/supabase/server';
 import type { SupabaseClient } from '@/lib/supabase/types';
 import { clearPending, readPending, writePending } from './pending';
+import { discardPending, logFailure, revoke } from './revoke';
 
 // The shape Auth issues for `{{ .TokenHash }}` (GoTrue v2.197.0, observed 2026-11-02): a SHA-224
 // hex digest, prefixed `pkce_` when the link was requested by the PKCE client.
@@ -123,18 +124,6 @@ async function adopt(client: SupabaseClient, session: Pick<Session, 'access_toke
   return true;
 }
 
-/** Ends a pending session left in the cookie, if any, and removes the cookie. */
-async function discardPending(): Promise<void> {
-  const pending = await readPending();
-  await clearPending();
-  if (pending === null) return;
-  try {
-    await revoke(createDetachedClient(), pending.accessToken);
-  } catch (error) {
-    logFailure('revoking the replaced session failed', error);
-  }
-}
-
 /**
  * The session already in the visitor's cookies, if any (to know whether to ask, and to revoke it).
  * Its account is the one Auth verifies (getUser), not the one the cookie claims; when Auth cannot
@@ -158,21 +147,4 @@ async function verifiedUserId(client: SupabaseClient, accessToken: string): Prom
   } catch {
     return null;
   }
-}
-
-/**
- * Ends a session on Auth's side (`local` scope: that session only, not the account's other devices).
- * A failure is logged (status and code, never a token) and otherwise ignored.
- */
-async function revoke(client: SupabaseClient, accessToken: string): Promise<void> {
-  try {
-    const { error } = await client.auth.admin.signOut(accessToken, 'local');
-    if (error) console.error('[auth] revoking the replaced session failed:', error.status, error.code);
-  } catch (error) {
-    logFailure('revoking the replaced session failed', error);
-  }
-}
-
-function logFailure(what: string, error: unknown): void {
-  console.error(`[auth] ${what}:`, error instanceof Error ? error.name : 'unknown error');
 }

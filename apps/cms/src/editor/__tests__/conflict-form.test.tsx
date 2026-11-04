@@ -18,6 +18,8 @@ const { EntryForm } = await import('../form/EntryForm');
 
 const TENANT = { id: '00000000-0000-4000-8000-0000000000f1', slug: 'acme' };
 const ENTRY = '00000000-0000-4000-8000-0000000000e1';
+/** The signed-in editor the page was rendered for (M2-17). */
+const USER = '00000000-0000-4000-8000-0000000000b1';
 const FIELDS = [
   { key: 'title', kind: 'text', label: 'Titill', required: true },
   { key: 'excerpt', kind: 'text', label: 'Inngangur', required: false, multiline: true },
@@ -63,6 +65,7 @@ async function renderInConflict(theirs: Record<string, unknown> = { title: 'Þei
     root.render(
       <EntryForm
         tenant={TENANT}
+        userId={USER}
         entryId={ENTRY}
         fields={FIELDS}
         titleKey="title"
@@ -81,7 +84,7 @@ async function renderInConflict(theirs: Record<string, unknown> = { title: 'Þei
 describe('the conflict view (M2-11)', () => {
   it('keeps the editor\'s values and shows only the differing fields, theirs next to mine', async () => {
     await renderInConflict();
-    expect(actions.saveDraftAction).toHaveBeenCalledExactlyOnceWith(ENTRY, 3, { title: 'Minn titill', excerpt: 'Inngangur' });
+    expect(actions.saveDraftAction).toHaveBeenCalledExactlyOnceWith(ENTRY, 3, { title: 'Minn titill', excerpt: 'Inngangur' }, USER);
     expect(actions.loadDraftAction).toHaveBeenCalledExactlyOnceWith(ENTRY);
     expect(alert()?.textContent).toContain(t.editor.conflict);
     expect($<HTMLInputElement>('#field-title')!.value).toBe('Minn titill');
@@ -107,7 +110,7 @@ describe('the conflict view (M2-11)', () => {
     actions.saveDraftAction.mockResolvedValueOnce({ ok: true, version: 6 });
     await act(async () => button(r.keepMine)!.click());
     await pause(0);
-    expect(actions.saveDraftAction).toHaveBeenLastCalledWith(ENTRY, 5, { title: 'Minn titill', excerpt: 'Inngangur' });
+    expect(actions.saveDraftAction).toHaveBeenLastCalledWith(ENTRY, 5, { title: 'Minn titill', excerpt: 'Inngangur' }, USER);
     expect(alert()).toBeNull();
     expect(container.querySelector('[role="status"]')?.textContent).toBe(t.editor.saved);
     expect($<HTMLInputElement>('#field-title')!.value).toBe('Minn titill');
@@ -121,7 +124,7 @@ describe('the conflict view (M2-11)', () => {
     actions.saveDraftAction.mockResolvedValueOnce({ ok: true, version: 6 });
     await type($<HTMLInputElement>('#field-title')!, 'Þeirra titill, breytt');
     await pause();
-    expect(actions.saveDraftAction).toHaveBeenLastCalledWith(ENTRY, 5, { title: 'Þeirra titill, breytt', excerpt: 'Inngangur' });
+    expect(actions.saveDraftAction).toHaveBeenLastCalledWith(ENTRY, 5, { title: 'Þeirra titill, breytt', excerpt: 'Inngangur' }, USER);
   });
 
   it('says when the versions are the same in every field', async () => {
@@ -135,7 +138,7 @@ describe('the conflict view (M2-11)', () => {
     actions.saveDraftAction.mockResolvedValueOnce({ ok: false, code: 'version_conflict' });
     actions.loadDraftAction.mockResolvedValueOnce({ ok: false, code: 'error' }).mockResolvedValueOnce({ ok: true, version: 5, data: { title: 'Þeirra titill' } });
     await act(async () =>
-      root.render(<EntryForm tenant={TENANT} entryId={ENTRY} fields={FIELDS} titleKey="title" initialData={{ title: 'Upphaf' }} initialVersion={3} initialSlug={null} slugLocked={false} />),
+      root.render(<EntryForm tenant={TENANT} userId={USER} entryId={ENTRY} fields={FIELDS} titleKey="title" initialData={{ title: 'Upphaf' }} initialVersion={3} initialSlug={null} slugLocked={false} />),
     );
     await type($<HTMLInputElement>('#field-title')!, 'Minn titill');
     await pause();
@@ -177,7 +180,7 @@ describe('restore in the form (M2-16)', () => {
 
   it('restore waits while an edit is not saved yet', async () => {
     await act(async () =>
-      root.render(<EntryForm tenant={TENANT} entryId={ENTRY} fields={FIELDS} titleKey="title" initialData={{ title: 'Upphaf' }} initialVersion={3} initialSlug={null} slugLocked={false} revisions={[REVISION]} />),
+      root.render(<EntryForm tenant={TENANT} userId={USER} entryId={ENTRY} fields={FIELDS} titleKey="title" initialData={{ title: 'Upphaf' }} initialVersion={3} initialSlug={null} slugLocked={false} revisions={[REVISION]} />),
     );
     await type($<HTMLInputElement>('#field-title')!, 'Óvistað');
     await act(async () => button(t.editor.history.restore)!.click());
@@ -187,7 +190,7 @@ describe('restore in the form (M2-16)', () => {
 
   it('says once that an older publication was restored, when the page was opened after a restore', async () => {
     await act(async () =>
-      root.render(<EntryForm tenant={TENANT} entryId={ENTRY} fields={FIELDS} titleKey="title" initialData={{ title: 'Upphaf' }} initialVersion={4} initialSlug={null} slugLocked={false} restored />),
+      root.render(<EntryForm tenant={TENANT} userId={USER} entryId={ENTRY} fields={FIELDS} titleKey="title" initialData={{ title: 'Upphaf' }} initialVersion={4} initialSlug={null} slugLocked={false} restored />),
     );
     expect(container.querySelector('[role="status"]')?.textContent).toBe(t.editor.history.restored);
   });

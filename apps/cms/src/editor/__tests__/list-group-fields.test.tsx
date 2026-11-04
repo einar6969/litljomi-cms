@@ -30,6 +30,8 @@ const { getType } = await import('@/modules/registry');
 
 const TENANT = { id: '00000000-0000-4000-8000-0000000000f1', slug: 'demo' };
 const ENTRY = '00000000-0000-4000-8000-0000000000e1';
+/** The signed-in editor the page was rendered for (M2-17). */
+const USER = '00000000-0000-4000-8000-0000000000b1';
 
 let container: HTMLDivElement;
 let root: Root;
@@ -371,6 +373,7 @@ describe('EntryForm with a list', () => {
     await render(
       <EntryForm
         tenant={TENANT}
+        userId={USER}
         entryId={ENTRY}
         fields={[
           { key: 'title', kind: 'text', label: 'Titill', required: true },
@@ -388,7 +391,7 @@ describe('EntryForm with a list', () => {
     await act(async () => vi.advanceTimersByTime(1500));
     expect(saveDraftAction).toHaveBeenCalledTimes(1);
     const reordered = [{ _key: 'k2', value: 'c' }, { _key: 'k0', value: 'a' }, { _key: 'k1', value: 'b' }];
-    expect(saveDraftAction).toHaveBeenCalledWith(ENTRY, 1, { title: 'Tónleikar', tags: reordered });
+    expect(saveDraftAction).toHaveBeenCalledWith(ENTRY, 1, { title: 'Tónleikar', tags: reordered }, USER);
     expect(list(text({ label: 'Merki' }), { label: 'Merki' }).draftSchema().safeParse(reordered).success).toBe(true);
   });
 
@@ -398,6 +401,7 @@ describe('EntryForm with a list', () => {
     await render(
       <EntryForm
         tenant={TENANT}
+        userId={USER}
         entryId={ENTRY}
         fields={describeFields(getType('demo', 'event')!)}
         titleKey="title"

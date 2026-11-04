@@ -2,6 +2,7 @@
 
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
+import { discardPending } from '@/app/auth/confirm/revoke';
 import { createEditorClient } from '@/lib/supabase/server';
 
 const emailSchema = z.email().max(254);
@@ -43,8 +44,17 @@ export async function requestMagicLink(formData: FormData): Promise<void> {
   redirect('/login?sent=1');
 }
 
-/** Ends the editor's session on this device and returns to the sign-in page. */
+/**
+ * Ends the editor's session on this device and returns to the sign-in page. A session a magic link
+ * left waiting for the confirm page's question (M3-14) is discarded first, so it cannot be taken
+ * over after the editor has signed out; a failure there does not keep the editor signed in.
+ */
 export async function signOut(): Promise<void> {
+  try {
+    await discardPending();
+  } catch (error) {
+    console.error('[auth] discarding the pending session failed:', error instanceof Error ? error.name : 'unknown error');
+  }
   const client = await createEditorClient();
   await client.auth.signOut({ scope: 'local' });
   redirect('/login');

@@ -8,6 +8,7 @@ import { OutdatedDraft } from '@/editor/form/OutdatedDraft';
 import { RESTORED_PARAM } from '@/editor/revisions';
 import { loadRevisionHistory } from '@/editor/server/restore-revision';
 import { t } from '@/i18n/is';
+import { requireUserId } from '@/lib/auth/session';
 import { createEditorClient } from '@/lib/supabase/server';
 import { currentTenant, isActive } from '@/lib/tenant';
 import { getModule, getType } from '@/modules/registry';
@@ -39,6 +40,8 @@ export default async function EntryPage({ params, searchParams }: Props) {
   const type = getType(tenant.slug, typeName);
   if (!type) notFound();
   const client = await createEditorClient();
+  // The form keeps unsaved changes under this user and names them in every save (M2-17).
+  const userId = await requireUserId(client);
   const { data, error } = await client
     .from('entry_detail')
     .select('data, slug, schema_version, draft_version, first_published_at, status')
@@ -74,6 +77,7 @@ export default async function EntryPage({ params, searchParams }: Props) {
       ) : (
         <EntryForm
           tenant={{ id: tenant.id, slug: tenant.slug }}
+          userId={userId}
           entryId={entryId}
           fields={fields}
           titleKey={type.preview.title}

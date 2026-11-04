@@ -2,7 +2,7 @@
 
 import { isSingleton } from '@litljomi/cms-schema';
 import { z } from 'zod';
-import { authOrError, failureAmong, hasSession, loadEntryContext } from '@/editor/server/entry-context';
+import { authOrError, failureAmong, hasSession, loadEntryContext, sessionUserId } from '@/editor/server/entry-context';
 import { restoreRevision, type RestoreRevisionResult } from '@/editor/server/restore-revision';
 import { openSingleton, type OpenSingletonResult } from '@/editor/server/singleton';
 import { updateDraftSchema, type UpdateDraftSchemaResult } from '@/editor/server/update-draft-schema';
@@ -79,14 +79,17 @@ export async function openSingletonAction(tenantSlug: string, type: string): Pro
  * Autosave (§5.5). The data is checked with the type's lenient draft validator, which also strips
  * keys the type does not define (§5.3); `title` and `sort_at` come from the same type. The caller's
  * version is passed through, so a stale save is `version_conflict`. A field kind the form cannot
- * edit yet is saved unchanged because the form sends it back as it received it.
+ * edit yet is saved unchanged because the form sends it back as it received it. `expectedUserId`
+ * is the user the form was opened for; a session of any other user is answered `auth`.
  */
-export async function saveDraftAction(id: string, expectedVersion: number, data: unknown): Promise<SaveDraftResult> {
-  const args = z.object({ id: entryId, expectedVersion: draftVersion }).safeParse({ id, expectedVersion });
+export async function saveDraftAction(id: string, expectedVersion: number, data: unknown, expectedUserId: string): Promise<SaveDraftResult> {
+  const args = z.object({ id: entryId, expectedVersion: draftVersion, expectedUserId: z.uuid() }).safeParse({ id, expectedVersion, expectedUserId });
   if (!args.success) return { ok: false, code: 'invalid' };
   try {
     const client = await createEditorClient();
-    if (!(await hasSession(client))) return { ok: false, code: 'auth' };
+    // The edits belong to the user the form was opened for: another account's session (signed in
+    // in another tab since) is answered like no session, so it never saves them.
+    if ((await sessionUserId(client)) !== args.data.expectedUserId) return { ok: false, code: 'auth' };
     const context = await loadEntryContext(client, args.data.id);
     if (!context) return { ok: false, code: 'error' };
     const parsed = context.type.draftValidator().safeParse(data);

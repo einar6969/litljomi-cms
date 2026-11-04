@@ -1,17 +1,21 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
-import type { loadDraftAction, saveDraftAction } from '@/app/(editor)/t/[tenant]/actions';
+import type { loadDraftAction, SaveDraftResult } from '@/app/(editor)/t/[tenant]/actions';
 import type { UnsavedStore } from './unsaved';
 
-export type AutosaveState = 'idle' | 'saving' | 'saved' | 'conflict' | 'signed_out' | 'error';
+export type AutosaveState = 'idle' | 'saving' | 'saved' | 'conflict' | 'signed_out' | 'error' | 'restored';
+
+/** One save of the entry's draft: `saveDraftAction` with the form's user bound to it. */
+export type SaveDraft = (entryId: string, expectedVersion: number, data: unknown) => Promise<SaveDraftResult>;
 
 export type AutosaveOptions = {
   entryId: string;
   initialVersion: number;
-  save: typeof saveDraftAction;
+  save: SaveDraft;
   debounceMs?: number;
   /**
    * Asked when a save throws instead of answering (a redirect to the sign-in page, a network
-   * failure): false means the session is gone, so the editor is told to sign in again.
+   * failure), and before `resume()` saves: false means the session is gone or belongs to another
+   * user, so the editor is told to sign in again.
    */
   sessionIsValid?: () => Promise<boolean>;
   /** Reads the newer version after a conflict (M2-11), so the editor can compare and choose. */
@@ -19,8 +23,9 @@ export type AutosaveOptions = {
   /**
    * The tab's copy of the unsaved changes (M2-17): written while a change waits to be saved,
    * removed once it is saved. A copy found when the form starts (the tab was reloaded while signed
-   * out) is given to `onRestore` and saved at the version it was made on, so a newer draft meets
-   * M2-11's conflict flow instead of being overwritten.
+   * out) is given to `onRestore` and waits in the `restored` state: nothing is saved until the
+   * editor chooses `saveRestored()`, which saves it at the version it was made on, so a newer draft
+   * meets M2-11's conflict flow instead of being overwritten, or `discardRestored()`.
    */
   store?: UnsavedStore;
   /** Shows a restored copy's data in the form. */
@@ -48,7 +53,9 @@ export const RESUME_POLL_MS = 5000;
  * waits for the editor's choice (M2-11): `keepMine()` saves the pending data on top of it,
  * `takeTheirs()` drops the pending data and continues from it. Nothing is discarded otherwise.
  * The pending data is also kept in the tab's store (M2-17), and `resume()` saves it once the
- * editor has signed in again after the session expired.
+ * editor has signed in again after the session expired. `close()` (sign-out) drops the pending
+ * data and the copy for good: the controller saves and stores nothing afterwards, not even when a
+ * save that was in flight answers.
  */
 export class AutosaveController {
   private snapshot: AutosaveSnapshot;
@@ -61,6 +68,7 @@ export class AutosaveController {
   private loadSeq = 0;
   private restoreChecked = false;
   private resuming = false;
+  private closed = false;
   private readonly listeners = new Set<() => void>();
 
   constructor(private readonly o: AutosaveOptions) {
@@ -76,10 +84,12 @@ export class AutosaveController {
 
   /** Records the latest complete data and saves it once the edits pause. */
   schedule(data: unknown): void {
+    if (this.closed) return;
     this.pending = { data };
     this.seq += 1;
     this.persist();
-    if (this.snapshot.state === 'conflict') return;
+    // A restored copy is saved only when the editor chooses to (saveRestored): edits are kept until then.
+    if (this.snapshot.state === 'conflict' || this.snapshot.state === 'restored') return;
     if (this.snapshot.state === 'saved') this.set({ state: 'idle' });
     this.clearTimer();
     this.timer = setTimeout(() => void this.flush(), this.o.debounceMs ?? DEFAULT_DEBOUNCE_MS);
@@ -90,6 +100,7 @@ export class AutosaveController {
    * nothing: it reads the newer version again if that failed.
    */
   retry(): void {
+    if (this.closed || this.snapshot.state === 'restored') return;
     if (this.snapshot.state === 'conflict') {
       if (this.snapshot.theirs?.status === 'failed') void this.loadTheirs();
       return;
@@ -134,7 +145,7 @@ export class AutosaveController {
    * on. A newer draft then meets M2-11's conflict flow. Does nothing while still signed out.
    */
   async resume(): Promise<void> {
-    if (this.snapshot.state !== 'signed_out' || this.resuming || !this.o.sessionIsValid) return;
+    if (this.closed || this.snapshot.state !== 'signed_out' || this.resuming || !this.o.sessionIsValid) return;
     this.resuming = true;
     let valid: boolean;
     try {
@@ -149,19 +160,54 @@ export class AutosaveController {
 
   /**
    * Called when the form mounts (and again if React remounts it in development). The first call
-   * restores the tab's copy of unsaved changes, if there is one, and saves it now.
+   * restores the tab's copy of unsaved changes, if there is one, into the `restored` state: the
+   * form shows it and says so, and nothing is saved until the editor chooses.
    */
   start(): void {
     this.disposed = false;
-    if (this.restoreChecked) return;
+    if (this.restoreChecked || this.closed) return;
     this.restoreChecked = true;
     const copy = this.o.store?.read(this.o.entryId);
     if (!copy) return;
     this.pending = { data: copy.data };
     this.seq += 1;
-    this.set({ version: copy.version, state: 'idle' });
+    this.set({ version: copy.version, state: 'restored' });
     this.o.onRestore?.(copy.data);
+  }
+
+  /** The editor chose to save a restored copy (with any edits since): saved at its version now. */
+  saveRestored(): void {
+    if (this.closed || this.snapshot.state !== 'restored') return;
+    this.set({ state: 'idle' });
+    this.clearTimer();
     void this.flush();
+  }
+
+  /**
+   * The editor chose to drop a restored copy (with any edits since): the copy is removed and the
+   * form goes back to the draft it loaded, at that draft's version. Nothing is saved.
+   */
+  discardRestored(): void {
+    if (this.closed || this.snapshot.state !== 'restored') return;
+    this.pending = null;
+    this.seq += 1;
+    this.set({ version: this.o.initialVersion, state: 'idle' });
+    this.persist();
+  }
+
+  /**
+   * Sign-out (M2-17): drops the pending data and the tab's copy, and from now on saves and stores
+   * nothing. A save already in flight may still reach the server, but its answer writes no copy.
+   */
+  close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.clearTimer();
+    this.pending = null;
+    this.seq += 1;
+    this.rerun = false;
+    this.o.store?.clear(this.o.entryId);
+    this.set({ state: 'signed_out', theirs: undefined });
   }
 
   /** Called when the form unmounts: edits still waiting for the debounce are sent once, now. */
@@ -184,7 +230,7 @@ export class AutosaveController {
 
   private async flush(): Promise<void> {
     this.timer = null;
-    if (this.disposed || this.pending === null || this.snapshot.state === 'conflict') return;
+    if (this.closed || this.disposed || this.pending === null || this.snapshot.state === 'conflict' || this.snapshot.state === 'restored') return;
     if (this.inFlight) {
       this.rerun = true;
       return;
@@ -216,6 +262,8 @@ export class AutosaveController {
       next = { state: (await this.sessionLost()) ? 'signed_out' : 'error' };
     }
     this.inFlight = false;
+    // Signed out while the save was in flight: its answer changes nothing and stores nothing.
+    if (this.closed) return;
     this.set(next);
     if (persistAfter) this.persist();
     if (next.state === 'conflict' && this.o.loadLatest) void this.loadTheirs();
@@ -247,7 +295,7 @@ export class AutosaveController {
   /** Mirrors the pending data, with the version the next save expects, in the tab's store. */
   private persist(): void {
     const store = this.o.store;
-    if (!store) return;
+    if (!store || this.closed) return;
     const data = this.pending?.data;
     if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
       store.write(this.o.entryId, { version: this.snapshot.version, data: data as Record<string, unknown> });
@@ -268,13 +316,17 @@ export class AutosaveController {
 /**
  * Autosave for one entry's form. `schedule(data)` takes the complete form data after each edit;
  * `retry()` saves again after `signed_out` or `error` (and, while signed out, the hook tries by
- * itself once the session is back); `keepMine()` and `takeTheirs()` resolve a
+ * itself once the session is back); `saveRestored()` and `discardRestored()` answer a restored
+ * copy; `close()` is sign-out; `keepMine()` and `takeTheirs()` resolve a
  * conflict. The version is the draft version the next
  * save will expect.
  */
 export type AutosaveActions = {
   schedule: (data: unknown) => void;
   retry: () => void;
+  saveRestored: () => void;
+  discardRestored: () => void;
+  close: () => void;
   keepMine: () => void;
   takeTheirs: () => Record<string, unknown> | null;
   pendingData: () => unknown;
@@ -311,6 +363,9 @@ export function useAutosave(o: AutosaveOptions): AutosaveSnapshot & AutosaveActi
     () => ({
       schedule: (data) => controller.schedule(data),
       retry: () => controller.retry(),
+      saveRestored: () => controller.saveRestored(),
+      discardRestored: () => controller.discardRestored(),
+      close: () => controller.close(),
       keepMine: () => controller.keepMine(),
       takeTheirs: () => controller.takeTheirs(),
       pendingData: () => controller.pendingData(),
