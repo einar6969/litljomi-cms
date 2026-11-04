@@ -8,7 +8,6 @@ const eventType = defineType({
     title: text({ label: 'Title', required: true }),
     startDate: date({ label: 'Start date', required: true }),
     endDate: date({ label: 'End date' }),
-    location: text({ label: 'Location' }),
     description: richText({ label: 'Description' }),
     registration: link({ label: 'Registration' }),
     // One optional field of each scalar kind (M2-03); optional, so existing events stay valid.
