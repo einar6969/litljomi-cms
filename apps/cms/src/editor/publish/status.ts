@@ -76,7 +76,9 @@ export const isFinal = (state: DisplayState): boolean => state.tone !== 'pending
  * - every site settled, one not confirmed and checked again later (M3-03) → "Ekki enn staðfest á
  *   vef, reynt aftur…", pending (it changes on its own);
  * - every site settled, one not confirmed and no retry left (its release superseded by a newer
- *   one) → "Ekki staðfest á vef";
+ *   one) → "Ekki staðfest á vef"; an unpublish is still checked after that (W1): within the hour
+ *   after its release it shows the retry, after it "Ekki staðfest á vef" until the site confirms
+ *   ("Tekið af vef") or the retries run out (the view, 20261104180000_withdrawal_confirmation.sql);
  * - delivered in a tenant with no active site → "Enginn vefur tengdur", a final warning (decision 39.3);
  * - the request's own failures: failed_validation, superseded, rejected, failed.
  *

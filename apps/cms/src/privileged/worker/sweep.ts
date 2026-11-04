@@ -15,14 +15,20 @@
 //      housekeeping release waits while a site's delivery of the withdrawing release is unsettled
 //      (its first live check not recorded yet, or a retry scheduled), for at most an hour after
 //      that delivery, so step 3's retries of it run (Thread E). When the hour ends with sites still
-//      unsettled, the selection names them, and the sweep raises one alert per release and site
-//      (`delivery.withdrawal_unconfirmed`) before it builds the housekeeping release.
+//      unsettled, the selection names those not alerted yet, and the sweep raises one alert per
+//      release and site (`delivery.withdrawal_unconfirmed`), marks it on the delivery, and builds
+//      the housekeeping release.
 //   3. Deliveries of each tenant's latest delivered release that still need a notification or a
 //      live check, or whose live check missed (not_confirmed, M3-03), are retried when their next
 //      attempt is due (api.worker_deliveries_to_retry): the site is notified again and the full
 //      live check runs. A release superseded by a newer delivered one is never retried, nor is one
 //      that step 2 of this same sweep superseded. Steps 2 and 3 run per tenant, concurrently
 //      across tenants: one tenant's build never delays another's retries.
+//      W1: a superseded release's withdrawals that a site did not confirm are checked again from
+//      the checks its delivery stored (no bundle is read), while the entry's latest request is
+//      still that unpublish: when their next attempt is due, or once the hour after the release
+//      ended unalerted (the alert, once, if they still miss). These run at once, also while the
+//      tenant builds: a new release never re-checks them.
 //   4. Originals in media-private with no assets row, older than a day, are removed
 //      (api.worker_private_orphans; M3-07).
 //   5. Releases older than the previous one, an hour after the newer delivery, are removed from
@@ -45,7 +51,16 @@ import type { SupabaseClient } from '../../lib/supabase/types';
 import { createAdminClient } from '../admin-client';
 import { alert } from './alerts';
 import { alertIfBuildRetriesExhausted, supabaseReleaseStorage } from './build-release';
-import { clockOf, confirmRelease, deliverTenant, type DeliveredRelease, type DeliveryOptions } from './deliver';
+import {
+  clockOf,
+  confirmRelease,
+  confirmWithdrawalRetry,
+  deliverTenant,
+  markWithdrawalAlerted,
+  type DeliveredRelease,
+  type DeliveryOptions,
+  type WithdrawalState,
+} from './deliver';
 import { removePrivateOrphans } from './media-orphans';
 import { processPendingRequests } from './process-request';
 import { removeExpiredReleaseFiles } from './retention';
@@ -82,20 +97,28 @@ export async function failStaleReleases(db: SupabaseClient): Promise<StaleReleas
   return failed;
 }
 
-/** A row of api.worker_deliveries_to_retry. */
+/**
+ * A row of api.worker_deliveries_to_retry. A superseded release's withdrawal check (W1) carries
+ * `withdrawal` and no bundle path; a latest release's row has `withdrawal` null.
+ */
 type RetryRow = {
   release_id: string;
   tenant_id: string;
   tenant_slug: string;
   release_number: number;
-  bundle_path: string;
+  bundle_path: string | null;
   previous_bundle_path: string | null;
   site_id: string;
   notify_status: string;
   notify_attempts: number;
   live_status: string;
   requests: Array<{ id: string; entry_id: string; action: 'publish' | 'unpublish' }>;
+  notify_release_number?: number;
+  withdrawal?: WithdrawalState | null;
 };
+
+/** Whether a release group is a superseded release's withdrawal check (W1). */
+const isWithdrawalCheck = (group: RetryRow[]): boolean => group[0]?.withdrawal != null;
 
 /**
  * A row of api.worker_tenants_to_release: a tenant to build. The `unconfirmed_*` columns are set
@@ -110,11 +133,13 @@ export type TenantToRelease = {
 };
 
 /**
- * One alert per release and site whose withdrawal the hold ended without confirming (§7.2, §7.4).
- * The incident is the release and the site (incidentOf), so the email goes out once however often
- * the tenant is listed (a housekeeping build that fails is listed again on its retry schedule).
+ * One alert per release and site whose withdrawal the hold ended without confirming (§7.2, §7.4),
+ * each marked on its delivery (W1), so neither a later listing (a housekeeping build that fails is
+ * listed again on its retry schedule) nor the withdrawal's own retries raise it again. The
+ * incident is the release and the site (incidentOf), so the email goes out once even when the mark
+ * could not be written.
  */
-export async function alertUnconfirmedWithdrawal(row: TenantToRelease): Promise<void> {
+export async function alertUnconfirmedWithdrawal(db: SupabaseClient, row: TenantToRelease, options: DeliveryOptions): Promise<void> {
   if (!row.unconfirmed_release_id) return;
   for (const siteId of row.unconfirmed_site_ids ?? []) {
     await alert('delivery.withdrawal_unconfirmed', {
@@ -123,6 +148,7 @@ export async function alertUnconfirmedWithdrawal(row: TenantToRelease): Promise<
       number: row.unconfirmed_release_number,
       siteId,
     });
+    await markWithdrawalAlerted(db, row.unconfirmed_release_id, siteId, options);
   }
 }
 
@@ -179,11 +205,12 @@ export async function runSweep(options: DeliveryOptions = {}): Promise<void> {
     failed('deliveries_to_retry')(error);
   }
   const building = new Set(listed.map((t) => t.tenant_id));
+  const ofTenant = (tenantId: string, withdrawals: boolean) => (retries.get(tenantId) ?? []).filter((g) => isWithdrawalCheck(g) === withdrawals);
   await Promise.all([
     ...listed.map(async (row) => {
       const tenantId = row.tenant_id;
-      // alert() never rejects.
-      await alertUnconfirmedWithdrawal(row);
+      // alert() and the mark never reject.
+      await alertUnconfirmedWithdrawal(db, row, options);
       let result: Awaited<ReturnType<typeof deliverTenant>>;
       try {
         result = await deliverTenant(tenantId, { ...options, db });
@@ -192,8 +219,10 @@ export async function runSweep(options: DeliveryOptions = {}): Promise<void> {
         return;
       }
       if (result.status === 'delivered') return;
-      await retryReleases(db, retries.get(tenantId) ?? [], options, failed);
+      await retryReleases(db, ofTenant(tenantId, false), options, failed);
     }),
+    // W1: withdrawal checks of superseded releases do not wait for the build.
+    ...listed.map((row) => retryReleases(db, ofTenant(row.tenant_id, true), options, failed)),
     ...[...retries].filter(([tenantId]) => !building.has(tenantId)).map(([, groups]) => retryReleases(db, groups, options, failed)),
   ]);
 
@@ -236,6 +265,17 @@ async function retryReleases(
 
 async function retryRelease(db: SupabaseClient, rows: RetryRow[], options: DeliveryOptions): Promise<void> {
   const first = rows[0]!;
+  if (isWithdrawalCheck(rows)) {
+    // W1: the stored checks only; the release's bundles may be gone.
+    await confirmWithdrawalRetry(
+      db,
+      { tenantId: first.tenant_id, tenantSlug: first.tenant_slug, releaseId: first.release_id, number: first.release_number, notifyRelease: first.notify_release_number ?? first.release_number },
+      new Map(rows.map((row) => [row.site_id, row.withdrawal!])),
+      options,
+    );
+    return;
+  }
+  if (first.bundle_path === null) throw new Error(`release ${first.release_number} of ${first.tenant_slug}: no bundle to retry`);
   const storage = supabaseReleaseStorage(db);
   const read = async (path: string, release: number | null): Promise<Bundle> => {
     const bundle = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await storage.download('delivery', path))) as Bundle;

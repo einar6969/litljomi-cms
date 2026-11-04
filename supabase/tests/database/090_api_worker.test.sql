@@ -123,7 +123,8 @@ select set_eq($$ select p.proname::text, pg_catalog.pg_get_function_result(p.oid
             -- M3-02 (102_retry_backoff).
             ('worker_next_attempt_at', 'timestamp with time zone'),
             ('worker_release_retry', 'TABLE(status text, next_attempt_at timestamp with time zone, retries_exhausted boolean)'),
-            ('worker_deliveries_to_retry', 'TABLE(release_id uuid, tenant_id uuid, tenant_slug text, release_number integer, bundle_path text, previous_bundle_path text, site_id uuid, notify_status text, notify_attempts integer, live_status text, requests jsonb)'),
+            -- notify_release_number and withdrawal from W1 (112_withdrawal_confirmation).
+            ('worker_deliveries_to_retry', 'TABLE(release_id uuid, tenant_id uuid, tenant_slug text, release_number integer, bundle_path text, previous_bundle_path text, site_id uuid, notify_status text, notify_attempts integer, live_status text, requests jsonb, notify_release_number integer, withdrawal jsonb)'),
             -- Task 30 (098_worker_recovery).
             ('worker_fail_stale_releases', 'TABLE(release_id uuid, tenant_id uuid, number integer, created_at timestamp with time zone)'),
             ('worker_pointer_check', 'TABLE(building boolean, latest_delivered integer)'),
