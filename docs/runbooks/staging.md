@@ -939,7 +939,7 @@ Mark each sensitive if the CLI offers it (for example a `--sensitive` flag; conf
 | Internal worker-trigger secret | Generated fresh, 32 random bytes, piped into `vercel env add` by Einar (above) | `vefumsjon-staging` (`CMS_INTERNAL_SECRET`) | The CMS server: the trigger and `verifyInternalSecret` |
 | Cron secret | Generated fresh, 32 random bytes, piped into `vercel env add` by Einar (above) | `vefumsjon-staging` (`CRON_SECRET`) | Vercel Cron (sends it) and `verifyCronSecret` |
 | Per-site webhook secret | Generated fresh by Einar, one per site (P-2: `provision site` needs the secret key) | Supabase Vault (by `provision site`) and the site's environment (`CMS_WEBHOOK_SECRETS`) | The worker through `service_role`-only functions (A9); the site's revalidation route |
-| Per-site preview secret | **Not created in M1** unless Einar decides otherwise: preview is M3, `api.admin_create_site` stores no preview secret, and no variable reads one (open item, section 16) | Vault and the site's environment, when M3 adds it | Privileged zone only (§8.2) |
+| Per-site preview secret | Generated fresh by Einar, one per site, and set with `provision preview-secret` (it reads the secret from standard input only) | Supabase Vault (by `provision preview-secret`) and the site's environment (`CMS_PREVIEW_SECRETS`) | The privileged zone: the preview-token route and the preview endpoint (§8.2); the site's preview route |
 | SMTP credentials (SendGrid restricted API key, Mail Send only) | Einar, in SendGrid (G4.1) | Supabase Auth SMTP settings (G4.2), entered by Einar | Supabase Auth. §8.2 also lists the CMS environment; M1 code sends no email itself, so no variable is defined (section 16) |
 | Supabase database password | Einar at project creation (G3.1) | Einar's password manager | Einar, typed at the `supabase link`/`db push` prompt only (G3.2b) |
 | Supabase CLI access token | `supabase login` by Einar | The Supabase CLI's local credential store | Einar's machine only |
@@ -970,6 +970,8 @@ The same set as `.env.example` (`tools/checks/__tests__/env-example.test.ts` che
 | `CMS_DELIVERY_BASE_URL` | Sites (SDK release reading) | No | Public URL of the `delivery` bucket, as Storage shows it (expected `https://<project-ref>.supabase.co/storage/v1/object/public/delivery`; confirm at execution time) | `demo-staging`, `labak-hub` |
 | `CMS_TENANT` | Sites | No | The site's tenant slug: `demo` or `labak` | `demo-staging` (`demo`), `labak-hub` (`labak`) |
 | `CMS_WEBHOOK_SECRETS` | Sites (revalidation route) | **Yes** | The site's webhook secret from P-2; two, comma-separated, during rotation; entered by Einar | Each site project, its own secret only |
+| `CMS_PREVIEW_SECRETS` | Demo site (preview route) | **Yes** | The site's preview secrets, comma-separated; the same value is stored in Vault with `provision preview-secret` (section 12); entered by Einar | `demo-staging`, its own secret only |
+| `CMS_PREVIEW_BASE_URL` | Demo site (preview endpoint; read only in draft mode) | No | The CMS origin: `https://vefumsjon-staging.litljomi.is` | `demo-staging` |
 | `CMS_MEDIA_HOST` | Sites (`next/image` `remotePatterns`) | No | The host of `media-public` public URLs (expected `<project-ref>.supabase.co`; confirm at execution time) | `demo-staging`, `labak-hub` |
 | `SITE_NOINDEX` | The LABAK branch (`hub-integration`): sends `X-Robots-Tag: noindex` when `1` | No | `1` | `labak-hub` only (the CMS and the demo site send the header from their `vercel.json`; LABAK's `main` and `landssamband-bakarameistara` never get it) |
 

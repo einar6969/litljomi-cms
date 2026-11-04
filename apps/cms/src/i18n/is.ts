@@ -19,7 +19,7 @@ export const is = {
     intro: 'Smelltu á hnappinn til að skrá þig inn í Litljómi vefumsjón.',
     submit: 'Halda áfram',
     signedIn: 'Þú ert þegar skráð/ur inn',
-    // M3-14 (drafts for Einar): the question asked before a link replaces the visitor's session.
+    // M3-14: the question asked before a link replaces the visitor's session.
     signedInDetail: 'Áður en skipt er um aðgang sérðu hvaða aðgangi hlekkurinn tilheyrir.',
     replaceTitle: 'Skipta um aðgang?',
     replaceAccount: 'Þessi hlekkur skráir inn sem',
@@ -58,7 +58,7 @@ export const is = {
       changed: 'Breytt eftir birtingu',
       archived: 'Í skjalasafni',
     },
-    // M2-10: the list's title search and status filter. Drafts for Einar.
+    // M2-10: the list's title search and status filter.
     filter: {
       label: 'Leit og sía',
       search: 'Leita í titlum',
@@ -77,7 +77,7 @@ export const is = {
     conflict: 'Annar notandi breytti færslunni',
     conflictBody: 'Breytingarnar þínar eru enn á skjánum en hafa ekki verið vistaðar. Berðu saman útgáfurnar og veldu hvora þú vilt halda.',
     reload: 'Hlaða aftur',
-    // Conflict resolution (spec §5.5, M2-11): drafts for Einar.
+    // Conflict resolution (spec §5.5, M2-11).
     resolve: {
       loading: 'Sæki nýju útgáfuna…',
       loadError: 'Ekki tókst að sækja nýju útgáfuna. Breytingarnar þínar eru enn á skjánum.',
@@ -130,7 +130,7 @@ export const is = {
     datetime: {
       help: 'Tími í tímabelti tölvunnar þinnar ({zone}).',
     },
-    // M2-15: the list input. Drafts for Einar. `{label}`, `{n}`, `{total}`, `{min}` and `{max}` are filled in by the field.
+    // M2-15: the list input. `{label}`, `{n}`, `{total}`, `{min}` and `{max}` are filled in by the field.
     list: {
       item: '{label} {n}',
       add: 'Bæta við',
@@ -153,7 +153,7 @@ export const is = {
       failed: 'Ekki tókst að uppfæra uppkastið. Reyndu aftur.',
       cannotUpdate: 'Ekki er hægt að uppfæra þetta uppkast sjálfkrafa. Hafðu samband við kerfisstjóra.',
     },
-    // Revision history and restore (spec §5.5, M2-16): drafts for Einar.
+    // Revision history and restore (spec §5.5, M2-16).
     history: {
       title: 'Fyrri birtingar',
       empty: 'Færslan hefur ekki verið birt.',
@@ -256,9 +256,9 @@ export const is = {
     deliveryFailedDetail: 'Kerfisstjóra hefur verið gert viðvart.',
     notConfirmed: 'Ekki staðfest á vef',
     notConfirmedDetail: 'Færslan var send á vefinn en ekki tókst að staðfesta að hún birtist þar.',
-    // Thread E (draft for Einar): the same, for an unpublish (the entry must be gone, not shown).
+    // Thread E: the same, for an unpublish (the entry must be gone, not shown).
     notConfirmedUnpublishDetail: 'Beiðnin var send á vefinn en ekki tókst að staðfesta að færslan sé horfin þaðan.',
-    // M3-03 (drafts for Einar): "live not confirmed, retrying", while the sweep retries the live check.
+    // M3-03: "live not confirmed, retrying", while the sweep retries the live check.
     notConfirmedRetrying: 'Ekki enn staðfest á vef, reynt aftur…',
     notConfirmedRetryingDetail: 'Færslan var send á vefinn en hefur ekki enn sést þar. Kerfið reynir aftur sjálfkrafa.',
     // Approved by Einar 2026-11-04 (not a draft): the same, for an unpublish (the entry must leave the site).
@@ -267,7 +267,7 @@ export const is = {
     requestFailed: 'Ekki tókst að senda beiðnina. Reyndu aftur.',
     statusUnavailable: 'Ekki tókst að sækja stöðu birtingar.',
   },
-  // M3-12 (drafts for Einar): the editor's preview button and its failures.
+  // M3-12: the editor's preview button and its failures.
   preview: {
     open: 'Forskoða',
     opening: 'Opnar forskoðun…',
@@ -283,14 +283,14 @@ export const is = {
     defaultAlt: 'Sjálfgefinn alt-texti',
     defaultAltHelp: 'Lýsing sem á við myndina almennt. Á vefnum gildir alt-texti hvers staðar sem myndin er notuð.',
     saveDefaultAlt: 'Vista sjálfgefinn alt-texta',
-    // M2-19 (draft for Einar): `{width}` and `{height}` are the image's size in pixels.
+    // M2-19: `{width}` and `{height}` are the image's size in pixels.
     dimensions: '{width} × {height} px',
   },
   notFound: {
     title: 'Síðan fannst ekki',
     back: 'Á forsíðu',
   },
-  // M2-19 (drafts for Einar): the page shown when a page fails to load, instead of the framework's English one.
+  // M2-19: the page shown when a page fails to load, instead of the framework's English one.
   error: {
     title: 'Eitthvað fór úrskeiðis',
     body: 'Ekki tókst að sýna síðuna. Breytingar sem höfðu verið vistaðar eru óhultar. Reyndu aftur eftir augnablik.',
