@@ -55,7 +55,7 @@ select is_empty($$ select p.oid::regprocedure::text from pg_proc p join pg_names
     and (p.proacl is null or exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0)) $$,
   'no api function is executable by PUBLIC');
 -- worker_* and admin_* (§4.6, §8.1 item 2; plan Task 11): EXECUTE for
--- service_role only; the owner (postgres) is the only other grantee. 35 = 29
+-- service_role only; the owner (postgres) is the only other grantee. 36 = 29
 -- worker_* (11 from Task 11, worker_claim_request and worker_record_alert from
 -- Task 19, worker_tenants_to_release and worker_deliveries_to_retry from
 -- Task 21, worker_fail_stale_releases and worker_pointer_check from Task 30,
@@ -64,13 +64,14 @@ select is_empty($$ select p.oid::regprocedure::text from pg_proc p join pg_names
 -- worker_claim_release_cleanup and worker_finish_release_cleanup from M3-06, worker_preview_tenant
 -- and worker_preview_draft from M3-11, worker_claim_alert_email from M3-04, worker_record_pointer_lag
 -- from M3-08)
--- + 6 admin_* functions (3 from Task 11, admin_set_preview_secret from M3-10,
--- admin_outdated_drafts and admin_migrate_draft from M2-13; the same counts as
+-- + 7 admin_* functions (3 from Task 11, admin_set_preview_secret from M3-10,
+-- admin_outdated_drafts and admin_migrate_draft from M2-13, admin_set_preview_url
+-- from fix/preview-url; the same counts as
 -- 100_escalation); a task that adds
 -- one updates both files.
 select is((select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-           where n.nspname = 'api' and p.proname ~ '^(worker|admin)_'), 35,
-  'api holds the 35 worker_* and admin_* functions (so the checks below are not vacuous)');
+           where n.nspname = 'api' and p.proname ~ '^(worker|admin)_'), 36,
+  'api holds the 36 worker_* and admin_* functions (so the checks below are not vacuous)');
 select is_empty($$ select p.oid::regprocedure::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'api' and p.proname ~ '^(worker|admin)_'
     and (not has_function_privilege('service_role', p.oid, 'execute')

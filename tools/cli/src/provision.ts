@@ -8,7 +8,9 @@
 //   refusal names the variable, never its value.
 // - The URL must be https://<--expect-ref>.supabase.co; any other host (loopback included) is refused.
 // - Requests go only to that origin, with the key in headers only, and never follow a redirect.
-// - The webhook secret and the preview secret are read from standard input only.
+// - The webhook secret and the preview secret are read from standard input only. A preview URL is
+//   not a secret and is an argument; it is checked against the token route's rule before anything
+//   is sent.
 // - Output is the target host, ids and statuses. Server errors are shown as the HTTP status and the
 //   error's code and message fields only; any occurrence of the key or the secret is redacted.
 import {
@@ -47,8 +49,10 @@ export interface ProvisionIo {
 
 export const PROVISION_USAGE = [
   'usage: provision tenant <slug> --name <name> --expect-ref <ref> [--env-file=<absolute path>]',
-  '       provision site --tenant-id <uuid> --base-url https://<host> --revalidate-path /<path> --expect-ref <ref> [--env-file=<absolute path>]',
+  '       provision site --tenant-id <uuid> --base-url https://<host> --revalidate-path /<path> [--preview-url <url>] --expect-ref <ref> [--env-file=<absolute path>]',
   '         (the webhook secret is read from standard input only)',
+  '       provision preview-url --site-id <uuid> --preview-url (<url> | none) --expect-ref <ref> [--env-file=<absolute path>]',
+  '         (sets the preview URL of an existing site, or clears it with none)',
   '       provision preview-secret --site-id <uuid> --expect-ref <ref> [--env-file=<absolute path>]',
   '         (the preview secret is read from standard input only; it sets the secret or rotates it)',
   '       provision editor (--email <address> | --user-id <uuid>) --tenant-id <uuid> [--tenant-id <uuid> ...] --expect-ref <ref> [--env-file=<absolute path>]',
@@ -65,14 +69,31 @@ const EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 // Printable ASCII without space or comma (CMS_WEBHOOK_SECRETS and CMS_PREVIEW_SECRETS are
 // comma-separated); 32–256 characters. Both secrets have this form.
 const SECRET_RE = /^[\x21-\x2b\x2d-\x7e]{32,256}$/;
+// A preview URL: https to any host, or plain http to a loopback host only (the token route's rule,
+// apps/cms/src/privileged/preview/token.ts isAllowedPreviewUrl; security review B4). The same
+// expressions as api.admin_set_preview_url (20261104161000_preview_url.sql), which is the authority:
+// a host of DNS labels, an IPv4 address or a bracketed IPv6 address, an optional port and path, and
+// no user info, query, fragment, whitespace or backslash; at most 2048 characters.
+const URL_PATH = "(?:/[A-Za-z0-9._~%!$&()*+,;=:@/-]*)?";
+const PORT = '(?::[0-9]{1,5})?';
+const OCTET = '(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])';
+const HTTPS_PREVIEW_RE = new RegExp(
+  `^https://(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*|\\[[0-9A-Fa-f:.]+\\])${PORT}${URL_PATH}$`,
+);
+const HTTP_LOOPBACK_PREVIEW_RE = new RegExp(`^http://(?:localhost|127\\.${OCTET}\\.${OCTET}\\.${OCTET}|\\[::1\\])${PORT}${URL_PATH}$`);
+export const isAllowedPreviewUrl = (url: string): boolean =>
+  url.length <= 2048 && (HTTPS_PREVIEW_RE.test(url) || HTTP_LOOPBACK_PREVIEW_RE.test(url));
+/** `--preview-url none` on `provision preview-url` clears the site's preview URL. */
+const CLEAR = 'none';
 
 // ---------------------------------------------------------------------------------------------
 // Arguments
 
 const COMMANDS: Record<string, ArgSpec> = {
   tenant: { positionals: 1, flags: ['--name'] },
-  site: { positionals: 0, flags: ['--tenant-id', '--base-url', '--revalidate-path'] },
+  site: { positionals: 0, flags: ['--tenant-id', '--base-url', '--revalidate-path', '--preview-url'] },
   'preview-secret': { positionals: 0, flags: ['--site-id'] },
+  'preview-url': { positionals: 0, flags: ['--site-id', '--preview-url'] },
   editor: { positionals: 0, flags: ['--email', '--user-id', '--tenant-id'], repeatable: ['--tenant-id'] },
 };
 
@@ -170,6 +191,7 @@ async function site(p: Parsed, ctx: Context, secret: string): Promise<number> {
   const tenantId = one(p, '--tenant-id') as string;
   const baseUrl = one(p, '--base-url') as string;
   const revalidateUrl = baseUrl + (one(p, '--revalidate-path') as string);
+  const sitePreviewUrl = one(p, '--preview-url') ?? null;
 
   // No duplicate (decision 44.2): cms.sites has no unique (tenant_id, base_url), so the tenant's
   // active sites are read first, through the service_role-only api.worker_sites. Only id and
@@ -186,7 +208,7 @@ async function site(p: Parsed, ctx: Context, secret: string): Promise<number> {
     p_tenant_id: tenantId,
     p_base_url: baseUrl,
     p_revalidate_url: revalidateUrl,
-    p_preview_url: null,
+    p_preview_url: sitePreviewUrl,
     p_webhook_secret: secret,
   });
   if (!created.ok) throw new Failure(`FAILED: creating the site: ${created.detail}`);
@@ -203,6 +225,19 @@ async function previewSecret(p: Parsed, ctx: Context, secret: string): Promise<n
   const result = await ctx.api.rpc('admin_set_preview_secret', { p_site_id: siteId, p_preview_secret: secret });
   if (!result.ok) throw new Failure(`FAILED: setting the preview secret of site ${siteId}: ${result.detail}`);
   ctx.log(`site ${siteId}: preview secret set`);
+  return 0;
+}
+
+// A site's preview URL (spec §7.5; fix/preview-url), through the service_role-only
+// api.admin_set_preview_url: set or replaced, or cleared with `none` (null). The site previews once it
+// has both this URL and a preview secret (`provision preview-secret`).
+async function previewUrl(p: Parsed, ctx: Context): Promise<number> {
+  const siteId = one(p, '--site-id') as string;
+  const value = one(p, '--preview-url') as string;
+  const url = value === CLEAR ? null : value;
+  const result = await ctx.api.rpc('admin_set_preview_url', { p_site_id: siteId, p_preview_url: url });
+  if (!result.ok) throw new Failure(`FAILED: setting the preview URL of site ${siteId}: ${result.detail}`);
+  ctx.log(url === null ? `site ${siteId}: preview URL cleared` : `site ${siteId}: preview URL set to ${url}`);
   return 0;
 }
 
@@ -250,6 +285,8 @@ async function editor(p: Parsed, ctx: Context): Promise<number> {
   return 0;
 }
 
+const PREVIEW_URL_FORM = '--preview-url must be https, or http to localhost, 127.0.0.0/8 or [::1], with no user info, query or fragment';
+
 function validate(command: string, p: Parsed): void {
   if (command === 'tenant') {
     if (!SLUG_RE.test(p.positionals[0] as string)) throw new UsageError('the slug has an unexpected form');
@@ -259,8 +296,15 @@ function validate(command: string, p: Parsed): void {
     required(p, '--tenant-id', UUID_RE);
     required(p, '--base-url', BASE_URL_RE);
     required(p, '--revalidate-path', PATH_RE);
+    const preview = one(p, '--preview-url');
+    if (preview !== undefined && !isAllowedPreviewUrl(preview)) throw new UsageError(PREVIEW_URL_FORM);
   } else if (command === 'preview-secret') {
     required(p, '--site-id', UUID_RE);
+  } else if (command === 'preview-url') {
+    required(p, '--site-id', UUID_RE);
+    const preview = one(p, '--preview-url');
+    if (preview === undefined) throw new UsageError('--preview-url is required (a URL, or none to clear it)');
+    if (preview !== CLEAR && !isAllowedPreviewUrl(preview)) throw new UsageError(PREVIEW_URL_FORM);
   } else {
     const email = one(p, '--email');
     const userId = one(p, '--user-id');
@@ -307,6 +351,7 @@ export async function runProvision(args: string[], io: ProvisionIo, deps: Provis
       secrets.push(secret);
       return await previewSecret(parsed, ctx, secret);
     }
+    if (command === 'preview-url') return await previewUrl(parsed, ctx);
     return await editor(parsed, ctx);
   } catch (e) {
     // Our own refusals are printed; anything else only by its kind, never its text.

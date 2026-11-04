@@ -113,6 +113,8 @@ select set_eq($$ select p.proname::text, pg_catalog.pg_get_function_result(p.oid
             -- M3-10 (103_preview_secrets).
             ('worker_preview_sites', 'TABLE(id uuid, preview_url text, preview_secret text)'),
             ('admin_set_preview_secret', 'void'),
+            -- fix/preview-url (110_preview_url).
+            ('admin_set_preview_url', 'void'),
             -- M3-11 (107_preview_endpoint).
             ('worker_preview_tenant', 'uuid'),
             ('worker_preview_draft', 'jsonb'),

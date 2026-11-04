@@ -198,7 +198,7 @@ Column lists are the v1 minimum; implementation may add timestamps and indexes.
 | `tenants` | `id`, `slug` (unique), `name`, `status` (`active`, `suspended`) | — |
 | `memberships` | `(tenant_id, user_id)` PK, `role`, `created_at`, `created_by` | `role` is an enum with the single v1 value `editor` |
 | `platform_admins` | `user_id` PK | — |
-| `entries` | `id`, `tenant_id`, `type`, `slug` (nullable), `published_rev_id` (nullable), `published_draft_version` (nullable), `first_published_at`, `last_published_at`, `created_at/by`, `archived_at` | Partial unique `(tenant_id, type, slug)` where `slug IS NOT NULL AND archived_at IS NULL`. Slug is immutable once `first_published_at` is set (trigger). `published_rev_id` must reference a revision of the same entry and tenant (composite FK) |
+| `entries` | `id`, `tenant_id`, `type`, `slug` (nullable), `singleton`, `published_rev_id` (nullable), `published_draft_version` (nullable), `first_published_at`, `last_published_at`, `created_at/by`, `archived_at` | Partial unique `(tenant_id, type, slug)` where `slug IS NOT NULL AND archived_at IS NULL`. Slug is immutable once `first_published_at` is set (trigger). `published_rev_id` must reference a revision of the same entry and tenant (composite FK) |
 | `drafts` | `entry_id` PK, `tenant_id`, `schema_version`, `data` jsonb, `title`, `sort_at`, `version` int, `updated_at/by` | `data` is a JSON object under a size limit (1 MB). `version` increments by exactly 1 on every update, and `data` cannot change without it (trigger) |
 | `revisions` | `id`, `tenant_id`, `entry_id`, `draft_version`, `schema_version`, `data`, `title`, `sort_at`, `requested_by`, `committed_at` | **Append-only**: `anon`, `authenticated` and `service_role` have no `UPDATE` or `DELETE`. Only the table owner (migrations) retains them |
 | `draft_refs` | `tenant_id`, `entry_id`, `path`, `target_entry_id` or `target_asset_id` (exactly one) | Rebuilt by trigger on every draft write. Same-tenant FKs |
@@ -260,7 +260,7 @@ Column lists are the v1 minimum; implementation may add timestamps and indexes.
 
 | Table | Grant |
 |---|---|
-| `entries` | `SELECT`; `INSERT (tenant_id, type, slug, created_by)`; `UPDATE (slug, archived_at)` |
+| `entries` | `SELECT`; `INSERT (tenant_id, type, slug, singleton, created_by)`; `UPDATE (slug, archived_at)` |
 | `drafts` | `SELECT`; `INSERT (entry_id, tenant_id, schema_version, data, title, sort_at, updated_by)`; `UPDATE (data, schema_version, title, sort_at, updated_at, updated_by)`. `version` is set by trigger only |
 | `draft_refs` | `SELECT`, `INSERT`, `DELETE`, with the same tenant policies as `drafts`. The ref-extraction trigger runs as the invoking role and needs them; `cms` is not exposed, so the only route is through `api` functions |
 | `revision_refs`, `revisions` | `SELECT` (written only by the worker) |
@@ -294,8 +294,9 @@ Column lists are the v1 minimum; implementation may add timestamps and indexes.
 | `request_publish(entry_id, expected_draft_version)` | `authenticated` | Inserts a publish request |
 | `request_unpublish(entry_id)` | `authenticated` | Inserts an unpublish request |
 | `worker_*` (claim, commit, release, delivery functions) | `service_role` only | Privileged worker operations (§6) |
+| `admin_*`: `admin_create_tenant`, `admin_create_site`, `admin_add_membership`, `admin_set_preview_secret`, `admin_set_preview_url(site_id, url)`, `admin_outdated_drafts`, `admin_migrate_draft` | `service_role` only | Provisioning and content migration by the CLI (§9.2). `admin_set_preview_url` sets or replaces a site's preview URL, or clears it with null; the URL must be https, or plain http only to a loopback host (`localhost`, `127.0.0.0/8`, `[::1]`), the token route's rule (§7.5) |
 
-This list is complete for v1 editor writes. All are `SECURITY INVOKER` with `search_path = ''` and schema-qualified names. `worker_*` functions are not executable by `anon` or `authenticated`. Because the secret key bypasses RLS, `worker_*` functions perform their authorization checks explicitly (§6.2).
+This list is complete for v1 editor writes. All are `SECURITY INVOKER` with `search_path = ''` and schema-qualified names. `worker_*` and `admin_*` functions are not executable by `anon` or `authenticated`. Because the secret key bypasses RLS, `worker_*` functions perform their authorization checks explicitly (§6.2).
 
 ### 4.7 Audit
 
