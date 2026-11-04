@@ -745,3 +745,47 @@ describe('processRequestById: private originals', () => {
     });
   });
 });
+
+// §6.3 (security fix, Thread A): a request that used its attempts, or is past its deadline, is
+// failed by the claim itself (20261104150000_publish_state.sql) and returned with status 'failed'.
+// The worker alerts and never reads, validates or commits it.
+describe('a request the claim failed', () => {
+  const failedRow = (id: string, code: string, attempts: number) => ({ ...claimed({ id, attempts }), status: 'failed', error: { code, attempts } });
+
+  it('processRequestById alerts and does not process it', async () => {
+    handlers = {
+      worker_claim_request: () => ({ data: failedRow('r1', 'attempts_exhausted', 5) }),
+      worker_record_alert: () => ({}),
+    };
+
+    expect(await processRequestById('r1')).toMatchObject({
+      requestId: 'r1',
+      status: 'failed',
+      errors: { code: 'attempts_exhausted', attempts: 5 },
+    });
+    expect(calls.map((c) => c.fn)).toEqual(['worker_claim_request', 'worker_record_alert']);
+    expect(called('worker_record_alert')[0]!.args).toMatchObject({
+      p_event: 'publish_request.failed',
+      p_details: { requestId: 'r1', code: 'attempts_exhausted', attempts: 5, atClaim: true },
+    });
+  });
+
+  it('processPendingRequests alerts for it, does not process it, and processes the others', async () => {
+    handlers = {
+      worker_claim_requests: () => ({ data: [failedRow('r1', 'deadline_exceeded', 2), claimed({ id: 'r2' })] }),
+      worker_read_request: ({ p_request_id }) => ({ data: read({ id: p_request_id as string }) }),
+      worker_commit_publish: () => ({ data: 'committed' }),
+      worker_record_alert: () => ({}),
+    };
+
+    const outcomes = await processPendingRequests();
+
+    expect(outcomes.map((o) => [o.requestId, o.status])).toEqual([
+      ['r1', 'failed'],
+      ['r2', 'committed'],
+    ]);
+    expect(called('worker_read_request').map((c) => c.args.p_request_id)).not.toContain('r1');
+    expect(called('worker_commit_publish').map((c) => c.args.p_request_id)).toEqual(['r2']);
+    expect(called('worker_record_alert')[0]!.args).toMatchObject({ p_details: { requestId: 'r1', code: 'deadline_exceeded' } });
+  });
+});
