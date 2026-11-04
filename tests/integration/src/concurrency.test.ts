@@ -157,6 +157,32 @@ describe('exactness under concurrency (consideration 1)', () => {
     expect(await ownerQuery('select 1 from cms.revisions where entry_id = $1', [entryId])).toEqual([]);
   });
 
+  // Security fix, Thread A (§7.1 "withdrawal always wins"): an older publish still validating
+  // must not commit over a newer unpublish that committed meanwhile.
+  it('P1 validating, U1 commits (P1 waits on its lock), then P1 is superseded and does not commit', async () => {
+    const { id: entryId, version } = await entryWithDraft([{ title: 'live' }]);
+    await publishNow(entryId, version);
+    const live = await publishedRev(entryId);
+    expect(live).not.toBeNull();
+    const p1 = await claimedRequest(entryId, 'publish', version);
+    const u1 = await claimedRequest(entryId, 'unpublish');
+
+    const wu = await pgAs('service');
+    const wp = await pgAs('service');
+    expect(await one(wu, 'select api.worker_commit_unpublish($1)', [u1])).toBe('committed'); // tx open, entry locked
+    const pending = wp.query(`select api.worker_commit_publish($1, $2, 1, 'T', now())`, [p1, version]);
+    await expectBlocked(wp);
+    await wu.query('commit');
+    const result = await pending;
+    await wp.query('commit');
+
+    expect(Object.values(result.rows[0] as Record<string, unknown>)[0]).toBe('superseded');
+    expect(await requestStatus(p1)).toEqual({ status: 'superseded', error: { code: 'superseded', newer_request_id: u1 } });
+    expect(await requestStatus(u1)).toMatchObject({ status: 'committed' });
+    expect(await publishedRev(entryId)).toBeNull();
+    expect(await ownerQuery<{ n: number }>('select count(*)::int as n from cms.revisions where entry_id = $1', [entryId])).toEqual([{ n: 1 }]);
+  });
+
   it('two worker_begin_release calls for one tenant: one row, one null', async () => {
     // A building release left by an earlier run would make both calls null.
     const leftovers = await ownerQuery<{ id: string }>(`select id from cms.releases where tenant_id = $1 and status = 'building'`, [TENANT.labak]);

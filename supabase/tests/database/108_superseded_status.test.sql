@@ -1,9 +1,14 @@
 -- supabase/tests/database/108_superseded_status.test.sql
--- M3-15 (deferred Minor Task 25 security r1): once a newer delivered release supersedes the
--- request's release, api.publication_status shows the newer release's deliveries, so an entry
--- whose release the sweep no longer retries does not stay "Í birtingu…" / "Bíður eftir vefnum".
--- A request release that is not superseded keeps its own deliveries; release_number and
--- release_status stay the request's own.
+-- M3-15 (deferred Minor Task 25 security r1), corrected by 20261104150000_publish_state.sql: once
+-- a newer delivered release supersedes the request's release, the sweep no longer retries it, so
+-- an entry must not stay "Í birtingu…" / "Bíður eftir vefnum". But a release live-checks only its
+-- own linked requests, so the newer release's deliveries prove nothing about this entry (§7.4:
+-- "Success is never shown before its proof exists"). M3-15 took them; this test pinned that.
+-- Now: a site that confirmed the request's own release live stays live; any other site counts as
+-- not confirmed, final (not retrying, not exhausted), except within 420 s of the request
+-- release's delivery, while its own pending check may still pass. The newer release's deliveries
+-- are never read. A request release that is not superseded keeps its own deliveries;
+-- release_number and release_status stay the request's own.
 --
 -- Fixtures (owner context; tests.k('xxxx') = 00000000-0000-4000-8000-00000000xxxx):
 --   labak   sites 5b01, 5b02 active
@@ -12,7 +17,7 @@
 --           entry cc02, request ec02 committed in no release yet
 begin;
 \ir _helpers.sql
-select plan(8);
+select plan(13);
 
 create function tests.k(p_key text) returns uuid
 language plpgsql
@@ -60,7 +65,9 @@ select results_eq($$ select site_count, sites_notified, sites_live_ok from api.p
   $$ values (2, 1, 0) $$,
   'a newer release that is only building: still the request''s own deliveries');
 
--- Delivered and live on one site, notified on the other: the newer release's state.
+-- The newer release is delivered and live on one site, notified on the other. The request's
+-- release (delivered an hour ago) is superseded: its sites that were not live count as not
+-- confirmed, whatever the newer release shows.
 select tests.act_as_owner();
 update cms.releases set status = 'delivered', bundle_path = 'labak/releases/2.json', delivered_at = now() where id = tests.k('d002');
 update cms.publish_requests set release_id = tests.k('d002') where id = tests.k('ec02');
@@ -70,8 +77,11 @@ insert into cms.site_deliveries (release_id, site_id, tenant_id, notify_status, 
 select tests.act_as(tests.persona('editor_labak'));
 select results_eq($$ select release_number, release_status, site_count, sites_notified, sites_live_ok, retries_exhausted
                      from api.publication_status where entry_id = tests.entry('cc01') $$,
-  $$ values (1, 'delivered', 2, 2, 1, false) $$,
-  'superseded: the newer release''s deliveries; release_number stays the request''s own');
+  $$ values (1, 'delivered', 2, 1, 0, false) $$,
+  'superseded: its own deliveries only (one site notified, none live); release_number stays the request''s own');
+select results_eq($$ select sites_not_confirmed, live_retrying from api.publication_status where entry_id = tests.entry('cc01') $$,
+  $$ values (2, false) $$,
+  'superseded: both sites that were not live count as not confirmed, final (no retry will come)');
 
 -- A site that confirmed the request's own release live keeps it, whatever the newer one shows.
 select tests.act_as_owner();
@@ -79,8 +89,8 @@ update cms.site_deliveries set live_status = 'ok' where release_id = tests.k('d0
 update cms.site_deliveries set live_status = 'pending' where release_id = tests.k('d002') and site_id = tests.k('5b01');
 select tests.act_as(tests.persona('editor_labak'));
 select results_eq($$ select sites_notified, sites_live_ok from api.publication_status where entry_id = tests.entry('cc01') $$,
-  $$ values (2, 1) $$,
-  'superseded: a site live for the request''s own release stays live; the other site shows the newer release');
+  $$ values (1, 1) $$,
+  'superseded: a site live for the request''s own release stays live; the other site is not confirmed');
 select tests.act_as_owner();
 update cms.site_deliveries set live_status = 'pending' where release_id = tests.k('d001') and site_id = tests.k('5b01');
 update cms.site_deliveries set live_status = 'ok' where release_id = tests.k('d002') and site_id = tests.k('5b01');
@@ -91,8 +101,8 @@ update cms.site_deliveries set live_status = 'ok' where release_id = tests.k('d0
 select tests.act_as(tests.persona('editor_labak'));
 select results_eq($$ select entry_id, site_count, sites_live_ok from api.publication_status
                      where entry_id in (tests.entry('cc01'), tests.entry('cc02')) order by entry_id $$,
-  $$ values (tests.entry('cc01'), 2, 2), (tests.entry('cc02'), 2, 2) $$,
-  'the superseded request and the newer one both show live on every site');
+  $$ values (tests.entry('cc01'), 2, 0), (tests.entry('cc02'), 2, 2) $$,
+  'live on every site in the newer release: the newer request is live, the superseded one is not shown live');
 
 -- The newer release's exhausted or retrying delivery is what the superseded entry shows.
 select tests.act_as_owner();
@@ -101,18 +111,68 @@ update cms.site_deliveries set live_status = 'not_confirmed', first_failed_at = 
 select tests.act_as(tests.persona('editor_labak'));
 select results_eq($$ select sites_live_ok, sites_not_confirmed, retries_exhausted, live_retrying
                      from api.publication_status where entry_id = tests.entry('cc01') $$,
-  $$ values (1, 1, false, true) $$,
-  'superseded: the newer release''s not_confirmed delivery with a next attempt shows as retrying');
+  $$ values (0, 2, false, false) $$,
+  'superseded: the newer release''s retrying delivery is not the older entry''s; its own show not confirmed, not retrying');
 select tests.act_as_owner();
 update cms.site_deliveries set next_attempt_at = null where release_id = tests.k('d002') and site_id = tests.k('5b02');
 select tests.act_as(tests.persona('editor_labak'));
 select results_eq($$ select retries_exhausted, live_retrying from api.publication_status where entry_id = tests.entry('cc01') $$,
-  $$ values (true, false) $$,
-  'superseded: the newer release''s exhausted delivery shows as delivery failed, not the older one''s pending retry');
+  $$ values (false, false) $$,
+  'superseded: the newer release''s exhausted delivery is not the older entry''s either');
+
+-- Within 420 s of the request release's delivery, its own pending check may still pass: a site
+-- not recorded yet, or notified and pending, keeps its own state (in progress), not not_confirmed.
+select tests.act_as_owner();
+update cms.releases set delivered_at = now() - interval '2 minutes' where id = tests.k('d001');
+update cms.site_deliveries set notify_status = 'ok', next_attempt_at = null where release_id = tests.k('d001') and site_id = tests.k('5b02');
+delete from cms.site_deliveries where release_id = tests.k('d001') and site_id = tests.k('5b01');
+select tests.act_as(tests.persona('editor_labak'));
+select results_eq($$ select sites_notified, sites_live_ok, sites_not_confirmed, retries_exhausted, live_retrying
+                     from api.publication_status where entry_id = tests.entry('cc01') $$,
+  $$ values (1, 0, 0, false, false) $$,
+  'superseded within its run: its own pending checks stay in progress, not confirmed by the newer release');
+select tests.act_as_owner();
+update cms.releases set delivered_at = now() - interval '8 minutes' where id = tests.k('d001');
+select tests.act_as(tests.persona('editor_labak'));
+select results_eq($$ select sites_live_ok, sites_not_confirmed, live_retrying from api.publication_status where entry_id = tests.entry('cc01') $$,
+  $$ values (0, 2, false) $$,
+  'superseded after its run: the same pending checks are not confirmed, final');
+
+-- The reproduction (security review, Thread A): an unpublish whose own check failed, then an
+-- unrelated delivered release live on every site, must not show removed.
+select tests.act_as_owner();
+insert into cms.entries (id, tenant_id, type, slug, created_by) values
+  (tests.entry('cc03'), tests.tenant('labak'), 'news', 'c', tests.persona('editor_labak')),
+  (tests.entry('cc04'), tests.tenant('labak'), 'news', 'd', tests.persona('editor_labak'));
+insert into cms.releases (id, tenant_id, number, status, bundle_path, created_at, delivered_at) values
+  (tests.k('d003'), tests.tenant('labak'), 3, 'delivered', 'labak/releases/3.json', now() - interval '30 minutes', now() - interval '30 minutes');
+insert into cms.site_deliveries (release_id, site_id, tenant_id, notify_status, notify_attempts, notified_at, live_status,
+                                 first_failed_at, next_attempt_at) values
+  (tests.k('d003'), tests.k('5b01'), tests.tenant('labak'), 'ok', 1, now(), 'not_confirmed', now() - interval '30 minutes', now() + interval '1 minute'),
+  (tests.k('d003'), tests.k('5b02'), tests.tenant('labak'), 'ok', 1, now(), 'not_confirmed', now() - interval '30 minutes', now() + interval '1 minute');
+insert into cms.publish_requests (id, tenant_id, entry_id, action, draft_version, requested_by, status, release_id) values
+  (tests.k('ec03'), tests.tenant('labak'), tests.entry('cc03'), 'unpublish', null, tests.persona('editor_labak'), 'committed', tests.k('d003'));
+select tests.act_as(tests.persona('editor_labak'));
+select results_eq($$ select sites_live_ok, sites_not_confirmed, live_retrying from api.publication_status where entry_id = tests.entry('cc03') $$,
+  $$ values (0, 2, true) $$,
+  'reproduction: the unpublish''s own check failed and is retrying');
+select tests.act_as_owner();
+insert into cms.releases (id, tenant_id, number, status, bundle_path, created_at, delivered_at) values
+  (tests.k('d004'), tests.tenant('labak'), 4, 'delivered', 'labak/releases/4.json', now(), now());
+insert into cms.site_deliveries (release_id, site_id, tenant_id, notify_status, notify_attempts, notified_at, live_status) values
+  (tests.k('d004'), tests.k('5b01'), tests.tenant('labak'), 'ok', 1, now(), 'ok'),
+  (tests.k('d004'), tests.k('5b02'), tests.tenant('labak'), 'ok', 1, now(), 'ok');
+insert into cms.publish_requests (id, tenant_id, entry_id, action, draft_version, requested_by, status, release_id) values
+  (tests.k('ec04'), tests.tenant('labak'), tests.entry('cc04'), 'publish', 1, tests.persona('editor_labak'), 'committed', tests.k('d004'));
+select tests.act_as(tests.persona('editor_labak'));
+select results_eq($$ select action, site_count, sites_live_ok, sites_not_confirmed, retries_exhausted, live_retrying
+                     from api.publication_status where entry_id = tests.entry('cc03') $$,
+  $$ values ('unpublish'::text, 2, 0, 2, false, false) $$,
+  'reproduction: after an unrelated delivered release, live on every site, the unpublish is not shown removed (not confirmed)');
 
 -- Grants and security_invoker unchanged; another tenant sees nothing.
 select tests.act_as(tests.persona('editor_demo'));
-select is_empty($$ select 1 from api.publication_status where entry_id in (tests.entry('cc01'), tests.entry('cc02')) $$,
+select is_empty($$ select 1 from api.publication_status where entry_id in (tests.entry('cc01'), tests.entry('cc02'), tests.entry('cc03')) $$,
   'another tenant''s editor sees no row for either entry');
 
 select * from finish();
