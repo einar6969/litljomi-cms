@@ -173,6 +173,7 @@ The order is section 3's: G2.4 (pins) and G2.0 (history scan) come **before** th
 - **Settings:**
   - A **Free** organisation named "Litljómi" and a project named "staging" in **Central EU (Frankfurt) `eu-central-1`**. Pro comes with the production project (an approved deferral of §2.2, decision 42.4); the Custom Access Token hook is available on Free, so M1 staging does not depend on the plan.
   - The database password is set by Einar and kept in his password manager; it is typed only at the Supabase CLI's prompt (G3.2b) and never written anywhere else.
+- **Region as built (C5, 2026-11-04):** the staging project is in `eu-west-1`, not `eu-central-1`. Einar ruled that it stays there. Vercel functions are set to `fra1`.
 - **Verify:** the project's settings page shows region `eu-central-1` and the Free plan (Einar reads them out, or a screenshot without keys); the region and project reference are recorded in `docs/verification/m1-report.md` (no secrets), and the organisation and project in the undo table (section 1).
 
 ### G3.2 The role timeout, then link and apply migrations
