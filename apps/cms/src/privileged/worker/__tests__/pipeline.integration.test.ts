@@ -23,6 +23,8 @@ import { createAdminClient } from '../../admin-client';
 import { buildRelease } from '../build-release';
 import { processAndDeliver, sweep } from '../pipeline';
 import { STALE_RELEASE_SECONDS } from '../sweep';
+import { PUBLICATION_STATUS_COLUMNS, displayState, type PublicationStatusRow } from '@/editor/publish/status';
+import { t } from '@/i18n/is';
 import { processPendingRequests } from '../process-request';
 import { removeExpiredReleaseFiles } from '../retention';
 import { entryMarker, html, releaseMeta, startFakeSite, type FakeSite } from './fake-site';
@@ -51,6 +53,8 @@ let revalidates = true;
  * layout and every other entry follow the release it loaded (a page that regenerated only in part).
  */
 const frozenHashes = new Map<string, string>();
+/** Pages the fake site keeps serving as they are, whatever it loaded (a stale cached page; W1). */
+const stalePages = new Map<string, string>();
 
 const JPEG = TEST_JPEG;
 
@@ -82,6 +86,8 @@ async function startLabakSite(): Promise<FakeSite> {
       if (revalidates) rendered = await loadBundle();
       return { status: 200, html: '{"revalidated":true}' };
     }
+    const stale = stalePages.get(req.path);
+    if (stale !== undefined) return { status: 200, html: stale };
     if (req.path === '/' || req.path === '/frettir') return { status: 200, html: listing() };
     const slug = /^\/frettir\/([a-z0-9-]+)$/.exec(req.path)?.[1];
     const entry = slug ? news().find((e) => e.slug === slug) : undefined;
@@ -606,7 +612,7 @@ describe('housekeeping hold: a withdrawal whose first live check missed', () => 
     expect(await scheduleOf(requestId)).toEqual({ first_failed_at: t0, next_attempt_at: t0 + MINUTE });
     const withdrawing = await latestRelease();
     expect(withdrawing).toMatchObject({ status: 'delivered', number: d.number });
-    return { entryId: r.entryId, requestId, release: withdrawing, image: image.public_path! };
+    return { entryId: r.entryId, slug: r.slug, requestId, release: withdrawing, image: image.public_path! };
   }
 
   for (const kind of ['unpublish', 'image'] as const) {
@@ -664,9 +670,13 @@ describe('housekeeping hold: a withdrawal whose first live check missed', () => 
         expect(alerts.map((a) => a.details)).toEqual([
           { tenantId: TENANT.labak, releaseId: w.release.id, number: w.release.number, siteId },
         ]);
-        // The withdrawal is superseded: final "not confirmed", no retry left, no second alert.
+        // The withdrawal is superseded but still not confirmed, and no second alert. An unpublish
+        // stays checked (W1): the view reads the hour from the database's real clock, and the
+        // release was really delivered seconds ago, so it still shows the retry; past the hour it
+        // shows "not confirmed" (112_withdrawal_confirmation). An image replacement is not
+        // re-checked once superseded.
         const status = await editor.schema('api').from('publication_status').select('sites_not_confirmed, live_retrying').eq('entry_id', w.entryId).single();
-        expect(status.data).toEqual({ sites_not_confirmed: 1, live_retrying: false });
+        expect(status.data).toEqual({ sites_not_confirmed: 1, live_retrying: kind === 'unpublish' });
         await sweep({ ...SLOW, now: () => t0 + 62 * MINUTE });
         expect(await withdrawalAlerts(w.release.id)).toHaveLength(1);
         expect((await latestRelease()).id).toBe(h.id);
@@ -684,4 +694,233 @@ describe('housekeeping hold: a withdrawal whose first live check missed', () => 
       expect(await statusOf('delivery', `labak/releases/${w.release.number}.json`)).toBe(200);
     });
   }
+
+  // W1 (spec §5.6, §7.2, §7.4; migration 20261104180000): the withdrawal is checked again after its
+  // release is superseded, from the checks its delivery stored, on the same schedule.
+  describe('an unconfirmed withdrawal after its release is superseded (W1)', () => {
+    /** What the editor sees for the entry. */
+    const panel = async (entryId: string) => {
+      const { data, error } = await editor.schema('api').from('publication_status').select(PUBLICATION_STATUS_COLUMNS).eq('entry_id', entryId).single();
+      if (error) throw new Error(error.message);
+      return { row: data as unknown as PublicationStatusRow, label: displayState(data as unknown as PublicationStatusRow).label };
+    };
+    const d_rows = async (releaseId: string, now: number) =>
+      withTx('service', async (w) =>
+        (await w.query('select site_id, notify_release_number, bundle_path, withdrawal from api.worker_deliveries_to_retry($1) where release_id = $2', [new Date(now).toISOString(), releaseId])).rows,
+      );
+    /** A stale copy of the withdrawn entry's own page, which the site keeps serving. */
+    const keepPage = (w: { entryId: string; slug: string }) =>
+      stalePages.set(`/frettir/${w.slug}`, html(releaseMeta(1), `<article>${entryMarker(w.entryId, 'gamalt')}<h1>Gamalt</h1></article>`));
+
+    /** Another news item published and confirmed at `at`: a release that supersedes the withdrawal's. */
+    async function supersede(at: number, title = 'Önnur frétt'): Promise<{ id: string; number: number }> {
+      const other = await requested(title);
+      await processAndDeliver(other.requestId, { ...fast, now: () => at });
+      const d = await deliveryOf(other.requestId);
+      expect(d).toMatchObject({ status: 'committed', live_status: 'ok' });
+      return { id: d.release_id!, number: d.number };
+    }
+
+    const cleanup = async () => {
+      revalidates = true;
+      stalePages.clear();
+      rendered = await loadBundle();
+    };
+
+    it('1. a miss, then the hour ends, then housekeeping, then confirmation: "Tekið af vef"; housekeeping and cleanup at their usual times', async () => {
+      const t0 = Date.now();
+      const w = await missedWithdrawal('unpublish', t0);
+      revalidates = false;
+      try {
+        // 7. The hold and the housekeeping release keep their times.
+        expect((await labakListed(t0 + 59 * MINUTE)).listed).toBe(false);
+        const hourLater = t0 + 60 * MINUTE + 30_000;
+        expect(await labakListed(hourLater)).toEqual({ listed: true, unconfirmed: [siteId] });
+        await sweep({ ...SLOW, now: () => hourLater });
+        const h = await latestRelease();
+        expect(h).toMatchObject({ status: 'delivered', number: w.release.number + 1 });
+        expect(await withdrawalAlerts(w.release.id)).toHaveLength(1);
+        expect((await panel(w.entryId)).label).not.toBe(t.publish.removed);
+
+        // Superseded, D's delivery is still checked when its next attempt is due; the site now
+        // reloads, so the entry is confirmed gone.
+        revalidates = true;
+        const [row] = await d_rows(w.release.id, t0 + 3 * 60 * MINUTE);
+        expect(row).toMatchObject({ site_id: siteId, notify_release_number: h.number, bundle_path: null });
+        const before = webhooks().length;
+        await sweep({ ...fast, now: () => t0 + 3 * 60 * MINUTE });
+        expect(webhooks().slice(before).map((r) => JSON.parse(r.body.toString()).release)).toContain(h.number);
+        expect(await deliveryOf(w.requestId)).toMatchObject({ live_status: 'ok', last_error: null });
+        expect((await panel(w.entryId)).label).toBe(t.publish.removed);
+        expect(await withdrawalAlerts(w.release.id)).toHaveLength(1);
+        // Nothing more is checked or built.
+        expect(await d_rows(w.release.id, t0 + 5 * 60 * MINUTE)).toEqual([]);
+        expect((await latestRelease()).id).toBe(h.id);
+
+        // 7. Cleanup: the release before D leaves an hour after H, not sooner.
+        const db = createAdminClient();
+        const claimed: string[] = [];
+        const at = (n: number) => new Date(Date.now() + n * MINUTE);
+        for (let i = 0; i < 100; i++) {
+          const { releaseIds } = await removeExpiredReleaseFiles(db, { now: () => at(55) });
+          if (releaseIds.length === 0) break;
+          claimed.push(...releaseIds);
+        }
+        expect(claimed).not.toContain(w.release.id);
+        const [beforeD] = await ownerQuery<{ id: string }>('select id from cms.releases where tenant_id = $1 and number = $2', [TENANT.labak, w.release.number - 1]);
+        expect(claimed).not.toContain(beforeD!.id);
+        for (let i = 0; i < 100 && (await removeExpiredReleaseFiles(db, { now: () => at(61) })).releaseIds.length > 0; i++);
+        const [cleaned] = await ownerQuery<{ cleaned_at: Date | null }>('select cleaned_at from cms.releases where id = $1', [beforeD!.id]);
+        expect(cleaned!.cleaned_at).not.toBeNull();
+      } finally {
+        await cleanup();
+      }
+    });
+
+    /** A withdrawal that missed, superseded during the hold by a committed request, its own page left stale on the site. */
+    async function supersededDuringHold(t0: number) {
+      const w = await missedWithdrawal('unpublish', t0);
+      keepPage(w);
+      revalidates = true;
+      const newer = await supersede(t0 + 5 * MINUTE);
+      expect(newer.number).toBe(w.release.number + 1);
+      return { ...w, newer };
+    }
+
+    it('2. a request committed during the hold: the withdrawal is still checked, and one alert when it never confirms', async () => {
+      const t0 = Date.now();
+      try {
+        const w = await supersededDuringHold(t0);
+        expect((await labakListed(t0 + 6 * MINUTE)).listed).toBe(false);
+
+        // Due within the hour: checked (the site is told about the newer release), still there, no alert.
+        const before = webhooks().length;
+        await sweep({ ...SLOW, now: () => t0 + 10 * MINUTE });
+        expect(webhooks().slice(before).map((r) => JSON.parse(r.body.toString()))).toContainEqual({ tenant: 'labak', release: w.newer.number });
+        expect(await deliveryOf(w.requestId)).toMatchObject({ notify_attempts: 2, live_status: 'not_confirmed' });
+        expect(await withdrawalAlerts(w.release.id)).toEqual([]);
+        expect((await panel(w.entryId)).row).toMatchObject({ live_retrying: true });
+
+        // The hour ends: listed at once, checked, still there: exactly one alert.
+        await sweep({ ...SLOW, now: () => t0 + 61 * MINUTE });
+        const alerts = await withdrawalAlerts(w.release.id);
+        expect(alerts.map((a) => a.details)).toEqual([{ tenantId: TENANT.labak, releaseId: w.release.id, number: w.release.number, siteId }]);
+        await sweep({ ...SLOW, now: () => t0 + 63 * MINUTE });
+        await sweep({ ...SLOW, now: () => t0 + 4 * 60 * MINUTE });
+        expect(await withdrawalAlerts(w.release.id)).toHaveLength(1);
+        expect((await panel(w.entryId)).label).not.toBe(t.publish.removed);
+        // Nothing withdrawn came back, and the live release is still the newer one.
+        expect((await latestRelease()).id).toBe(w.newer.id);
+        expect(news().some((e) => e.id === w.entryId)).toBe(false);
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it('3. publishing the entry again stops the checks at once and raises no alert', async () => {
+      const t0 = Date.now();
+      try {
+        const w = await missedWithdrawal('unpublish', t0);
+        revalidates = true;
+        const [{ version }] = (await ownerQuery<{ version: number }>('select version from cms.drafts where entry_id = $1', [w.entryId])) as [{ version: number }];
+        const again = await rerequested(w.entryId, version, 'Birt aftur');
+        await processAndDeliver(again, { ...fast, now: () => t0 + 5 * MINUTE });
+        expect(await deliveryOf(again)).toMatchObject({ status: 'committed', live_status: 'ok' });
+
+        expect(await d_rows(w.release.id, t0 + 10 * MINUTE)).toEqual([]);
+        expect(await d_rows(w.release.id, t0 + 2 * 60 * MINUTE)).toEqual([]);
+        const attempts = (await deliveryOf(w.requestId)).notify_attempts;
+        await sweep({ ...fast, now: () => t0 + 61 * MINUTE });
+        expect((await deliveryOf(w.requestId)).notify_attempts).toBe(attempts);
+        expect(await withdrawalAlerts(w.release.id)).toEqual([]);
+        expect((await panel(w.entryId)).label).toBe(t.publish.live);
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it('4. retries running out: the delivery fails for the editor, with the one alert, and is never checked again', { timeout: 120_000 }, async () => {
+      const t0 = Date.now();
+      try {
+        const w = await supersededDuringHold(t0);
+        await sweep({ ...SLOW, now: () => t0 + 61 * MINUTE });
+        expect(await withdrawalAlerts(w.release.id)).toHaveLength(1);
+        await sweep({ ...SLOW, now: () => t0 + DAY + 5 * MINUTE });
+        expect(await scheduleOf(w.requestId)).toMatchObject({ next_attempt_at: null });
+        const { row, label } = await panel(w.entryId);
+        expect(row.retries_exhausted).toBe(true);
+        expect(label).toBe(t.publish.deliveryFailed);
+        expect(await withdrawalAlerts(w.release.id)).toHaveLength(1);
+        const exhausted = await ownerQuery('select 1 from cms.audit_log where action = $1 and details ->> $2 = $3', ['system.alert.delivery.retries_exhausted', 'releaseId', w.release.id]);
+        expect(exhausted).toEqual([]);
+        const before = webhooks().length;
+        expect(await d_rows(w.release.id, t0 + 3 * DAY)).toEqual([]);
+        await sweep({ ...SLOW, now: () => t0 + 3 * DAY });
+        expect(webhooks().length).toBe(before);
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it('5. two sites, one confirmed and one not: only the unconfirmed one is checked again', async () => {
+      const t0 = Date.now();
+      // A second site that always revalidates, so it confirms the withdrawal at once.
+      let second: Bundle | null = await loadBundle();
+      const other = await startFakeSite();
+      other.handler = async (req) => {
+        if (req.method === 'POST' && req.path === '/api/cms/revalidate') {
+          second = await loadBundle();
+          return { status: 200, html: '{}' };
+        }
+        const items = second?.entries['news'] ?? [];
+        if (req.path === '/' || req.path === '/frettir') return { status: 200, html: html(releaseMeta(second?.release ?? 0), items.map((e) => entryMarker(e.id, e.contentHash)).join('')) };
+        const slug = /^\/frettir\/([a-z0-9-]+)$/.exec(req.path)?.[1];
+        const e = slug ? items.find((x) => x.slug === slug) : undefined;
+        return e ? { status: 200, html: html(releaseMeta(second!.release), entryMarker(e.id, e.contentHash)) } : { status: 404, html: '' };
+      };
+      const { data: otherId, error } = await secretClient()
+        .schema('api')
+        .rpc('admin_create_site', { p_tenant_id: TENANT.labak, p_base_url: other.origin, p_revalidate_url: `${other.origin}/api/cms/revalidate`, p_preview_url: null, p_webhook_secret: 'annar-vefur' });
+      if (error) throw new Error(error.message);
+      try {
+        const w = await supersededDuringHold(t0);
+        const [confirmed] = await ownerQuery<{ live_status: string }>('select live_status from cms.site_deliveries where release_id = $1 and site_id = $2', [w.release.id, otherId]);
+        expect(confirmed!.live_status).toBe('ok');
+        expect((await d_rows(w.release.id, t0 + 10 * MINUTE)).map((r) => r.site_id)).toEqual([siteId]);
+        expect((await panel(w.entryId)).row).toMatchObject({ site_count: 2, sites_live_ok: 1 });
+
+        stalePages.clear();
+        const otherBefore = other.requests.length;
+        await sweep({ ...fast, now: () => t0 + 10 * MINUTE });
+        expect(other.requests.slice(otherBefore).filter((r) => r.path.startsWith('/frettir/'))).toEqual([]);
+        expect((await panel(w.entryId)).row).toMatchObject({ site_count: 2, sites_live_ok: 2 });
+        expect((await panel(w.entryId)).label).toBe(t.publish.removed);
+      } finally {
+        await ownerQuery('update cms.sites set active = false where id = $1', [otherId]);
+        await other.close();
+        await cleanup();
+      }
+    });
+
+    it('6. the first check after the old bundles were removed still runs, from the stored paths', async () => {
+      const t0 = Date.now();
+      try {
+        const w = await supersededDuringHold(t0);
+        await supersede(t0 + 6 * MINUTE, 'Þriðja frétt');
+        // Retention removes the release before D and D itself (an hour after the newer releases).
+        const db = createAdminClient();
+        const later = new Date(Date.now() + 61 * MINUTE);
+        for (let i = 0; i < 100 && (await removeExpiredReleaseFiles(db, { now: () => later })).releaseIds.length > 0; i++);
+        expect(await statusOf('delivery', `labak/releases/${w.release.number}.json`)).toBe(404);
+        expect(await statusOf('delivery', `labak/releases/${w.release.number - 1}.json`)).toBe(404);
+
+        stalePages.clear();
+        await sweep({ ...fast, now: () => t0 + 10 * MINUTE });
+        expect(await deliveryOf(w.requestId)).toMatchObject({ live_status: 'ok' });
+        expect((await panel(w.entryId)).label).toBe(t.publish.removed);
+      } finally {
+        await cleanup();
+      }
+    });
+  });
 });
