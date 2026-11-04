@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { signPreviewToken, type Bundle, type BundleEntry } from '@litljomi/cms-sdk';
 import type { SupabaseClient } from '@/lib/supabase/types';
@@ -11,7 +12,9 @@ const TENANT = '00000000-0000-4000-8000-00000000a001';
 const ENTRY = '0b5d4c1e-2f3a-4b5c-8d7e-9f0a1b2c3d4e';
 const OTHER = '1c6e5d2f-3a4b-4c5d-9e8f-0a1b2c3d4e5f';
 const ASSET = '2d7f6e3a-4b5c-4d6e-8f9a-1b2c3d4e5f6a';
-const SECRET = 'labak-preview-secret';
+// Test values only, each 32 characters or more (MIN_PREVIEW_SECRET_LENGTH).
+const SECRET = 'labak-preview-secret-0123456789abcdef';
+const SECOND = 'labak-second-preview-secret-0123456789';
 const ORIGINAL = `${TENANT}/${ASSET}/mynd.jpg`;
 
 const news = (title: string) => ({
@@ -134,7 +137,7 @@ describe('readPreview', () => {
   });
 
   it('reads nothing about the draft before the token is verified', async () => {
-    expect(await readPreview(deps(), { tenant: 'labak', token: token({}, 'another-secret') })).toEqual({ ok: false, failure: 'invalid_token' });
+    expect(await readPreview(deps(), { tenant: 'labak', token: token({}, 'another-preview-secret-0123456789abcdef') })).toEqual({ ok: false, failure: 'invalid_token' });
     expect(state.calls).toEqual(['worker_preview_tenant', 'worker_preview_sites']);
   });
 
@@ -154,8 +157,8 @@ describe('readPreview', () => {
   });
 
   it('accepts a token signed with any of the tenant\'s preview secrets', async () => {
-    state.sites.push({ id: 's2', preview_url: 'https://labak-2.example/api/cms/preview', preview_secret: 'second' });
-    expect((await readPreview(deps(), { tenant: 'labak', token: token({}, 'second') })).ok).toBe(true);
+    state.sites.push({ id: 's2', preview_url: 'https://labak-2.example/api/cms/preview', preview_secret: SECOND });
+    expect((await readPreview(deps(), { tenant: 'labak', token: token({}, SECOND) })).ok).toBe(true);
   });
 
   it('not_found for an entry that is gone or archived; draft_changed for another draft version', async () => {
@@ -191,6 +194,44 @@ describe('readPreview', () => {
     asset.archived = true;
     await readPreview(deps(), { tenant: 'labak', token: token() });
     expect(state.signed).toEqual([]);
+  });
+
+  // Security review B6: a token that cannot be valid is refused before any RPC.
+  it.each([
+    ['garbage', () => 'x.y'],
+    ['a malformed payload', () => `${Buffer.from('{"tenant":"labak"}').toString('base64url')}.c2ln`],
+    ['an expired token', () => token({ exp: NOW })],
+    ['an expiry beyond the lifetime', () => token({ exp: NOW + 3600 })],
+    ['another tenant\'s claim', () => token({ tenant: 'demo' })],
+  ])('refuses %s before any read', async (_name, t) => {
+    expect(await readPreview(deps(), { tenant: 'labak', token: t() })).toEqual({ ok: false, failure: 'invalid_token' });
+    expect(state.calls).toEqual([]);
+  });
+
+  // Security review B5: a site's secret shorter than 32 characters verifies nothing.
+  it('never verifies a token against a preview secret shorter than 32 characters', async () => {
+    const short = 'x'.repeat(31);
+    state.sites = [{ id: 's1', preview_url: 'https://labak.example/api/cms/preview', preview_secret: short }];
+    const p = Buffer.from(JSON.stringify({ tenant: 'labak', entry_id: ENTRY, draft_version: 4, exp: NOW + 600 })).toString('base64url');
+    const forged = `${p}.${createHmac('sha256', short).update(p).digest('base64url')}`;
+    expect(await readPreview(deps(), { tenant: 'labak', token: forged })).toEqual({ ok: false, failure: 'invalid_token' });
+    expect(state.calls).not.toContain('worker_preview_draft');
+  });
+
+  // Security review B3: a signed media URL never outlives the token it was issued for.
+  it('signs the media for no longer than the token has left', async () => {
+    await readPreview(deps(), { tenant: 'labak', token: token({ exp: NOW + 120 }) });
+    expect(state.signed).toEqual([{ paths: [ORIGINAL], ttl: 120 }]);
+    state.signed = [];
+    await readPreview(deps(), { tenant: 'labak', token: token({ exp: NOW + 1 }) });
+    expect(state.signed).toEqual([{ paths: [ORIGINAL], ttl: 1 }]);
+    state.signed = [];
+    await readPreview(deps({ mediaTtlSeconds: 60 }), { tenant: 'labak', token: token({ exp: NOW + 600 }) });
+    expect(state.signed).toEqual([{ paths: [ORIGINAL], ttl: 60 }]);
+    // A fractional clock (Date.now() / 1000) gives whole seconds, rounded down.
+    state.signed = [];
+    await readPreview(deps({ nowSeconds: () => NOW + 0.4 }), { tenant: 'labak', token: token({ exp: NOW + 120 }) });
+    expect(state.signed).toEqual([{ paths: [ORIGINAL], ttl: 119 }]);
   });
 
   it('throws when the delivered bundle is another tenant\'s or release\'s', async () => {

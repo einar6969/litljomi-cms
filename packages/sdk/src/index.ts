@@ -6,9 +6,12 @@ export { parseEntryMarkerIds, parseEntryMarkers, parseReleaseMarker, scanEntryMa
 export { createCmsClient, type CmsClient, type CmsPreviewOptions } from './client.ts';
 export { CMS_REVALIDATE_PROFILE, createRevalidateHandler, type NextRevalidateTag } from './revalidate-handler.ts';
 export {
+  MIN_PREVIEW_SECRET_LENGTH,
   PREVIEW_TOKEN_SKEW_SECONDS,
   PREVIEW_TOKEN_TTL_SECONDS,
   isPreviewClaims,
+  isUsablePreviewSecret,
+  readUnverifiedPreviewClaims,
   signPreviewToken,
   verifyPreviewToken,
   type PreviewClaims,

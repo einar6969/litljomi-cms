@@ -11,9 +11,20 @@ export const isPublicPath = (pathname: string): boolean => PUBLIC_PATHS.has(path
 const SAME_ORIGIN_PATH = /^\/(?![/\\])[\x21-\x5b\x5d-\x7e]*$/;
 const BASE = 'http://cms.invalid';
 
-/** `value` if it is a path on this origin, else `/`, so a redirect never leaves the CMS. */
+/**
+ * `value` if it is a path on this origin, else `/`, so a redirect never leaves the CMS. Dot
+ * segments are resolved before the check as well: `/.//evil.example` or `/%2e//evil.example`
+ * resolves to the path `//evil.example`, which anything that re-emits the resolved path would turn
+ * into a protocol-relative URL, so it is refused.
+ */
 export function safeRedirectPath(value: string | null | undefined): string {
   if (typeof value !== 'string' || !SAME_ORIGIN_PATH.test(value)) return '/';
-  // Belt and braces: the resolved URL must still be on the base origin.
-  return new URL(value, BASE).origin === BASE ? value : '/';
+  let url: URL;
+  try {
+    url = new URL(value, BASE);
+  } catch {
+    return '/';
+  }
+  // The resolved URL must still be on the base origin, with a path that is not protocol-relative.
+  return url.origin === BASE && !url.pathname.startsWith('//') ? value : '/';
 }

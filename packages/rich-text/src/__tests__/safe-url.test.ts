@@ -6,6 +6,12 @@ it('isRootRelativePath', () => {
   for (const bad of ['', 'a', '//evil.com', '/\\evil.com', '/\t/evil.com', '/a b', '/a\nb', 'https://a.is', 'javascript:1'])
     expect(isRootRelativePath(bad)).toBe(false);
 });
+// Security review B2: dot segments that resolve to a protocol-relative path.
+it('isRootRelativePath refuses a path that resolves to //host', () => {
+  for (const bad of ['/.//evil.com', '/%2e//evil.com', '/%2E//evil.com', '/a/..//evil.com', '/././/evil.com/x'])
+    expect(isRootRelativePath(bad), bad).toBe(false);
+  for (const ok of ['/a//b', '/a/../b', '/%2e/b']) expect(isRootRelativePath(ok), ok).toBe(true);
+});
 it('isHttpsUrl', () => {
   expect(isHttpsUrl('https://m.test/a.jpg')).toBe(true);
   for (const bad of ['http://m.test', 'data:x', 'javascript:1', '//m.test', '/a', 'https://', ' https://m.test', 'https://m.test/\n', ''])

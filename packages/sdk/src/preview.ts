@@ -1,4 +1,4 @@
-import { verifyPreviewToken } from './preview-token.ts';
+import { MIN_PREVIEW_SECRET_LENGTH, isUsablePreviewSecret, verifyPreviewToken } from './preview-token.ts';
 
 /**
  * Preview on the site (spec §7.5, plan M3-12). The editor's "Forskoða" sends the browser to the
@@ -22,22 +22,28 @@ const NO_STORE = { 'cache-control': 'private, no-store', 'referrer-policy': 'no-
 
 /**
  * The secrets in a comma-separated list such as `CMS_PREVIEW_SECRETS` (two during rotation), each
- * trimmed. Throws, naming no secret, on an empty entry: a mistyped list is refused, not read as
- * fewer secrets.
+ * trimmed. Throws, naming no secret, on an empty entry or one shorter than 32 characters
+ * (`MIN_PREVIEW_SECRET_LENGTH`): a mistyped list is refused, not read as fewer secrets.
  */
 export function parsePreviewSecrets(value: string): string[] {
   const list = value.split(',');
   return list.map((secret, i) => {
     const trimmed = secret.trim();
     if (trimmed === '') throw new Error(`preview secret list: entry ${i + 1} of ${list.length} is empty`);
+    if (!isUsablePreviewSecret(trimmed)) {
+      throw new Error(`preview secret list: entry ${i + 1} of ${list.length} is shorter than ${MIN_PREVIEW_SECRET_LENGTH} characters`);
+    }
     return trimmed;
   });
 }
 
 /**
- * `path` when it is a path on the site itself: it starts with one `/`, has no backslash or control
- * character, and resolves to the same origin. Otherwise null, so the preview route can never
- * redirect to another site (the path is not part of the signed token).
+ * `path`, normalised, when it is a path on the site itself: it starts with one `/`, has no
+ * backslash or control character, resolves to the same origin, and its normalised form does not
+ * start with `//` either (`/.//evil.example` and `/%2e//evil.example` normalise to
+ * `//evil.example`, which a browser reads as another host). Otherwise null, so the preview route
+ * can never redirect to another site (the path is not part of the signed token). The check is on
+ * the value returned, not only on the input.
  */
 export function safePreviewPath(path: string | null): string | null {
   if (typeof path !== 'string' || path.length === 0 || path.length > MAX_PATH_LENGTH) return null;
@@ -52,7 +58,9 @@ export function safePreviewPath(path: string | null): string | null {
     return null;
   }
   if (url.origin !== base) return null;
-  return `${url.pathname}${url.search}${url.hash}`;
+  const normalised = `${url.pathname}${url.search}${url.hash}`;
+  if (!normalised.startsWith('/') || normalised.startsWith('//')) return null;
+  return normalised;
 }
 
 const answer = (status: number) => Response.json({ preview: false }, { status, headers: NO_STORE });
@@ -60,7 +68,8 @@ const answer = (status: number) => Response.json({ preview: false }, { status, h
 /**
  * Route handler (GET) for the site's preview route. 401 when the token is missing, malformed,
  * tampered, expired, signed with another secret, or for another tenant; 400 when the path is not
- * a path on this site; a plain 500 when `secrets()` throws or returns an empty entry. Draft mode
+ * a path on this site; a plain 500 when `secrets()` throws or returns an empty entry or one shorter
+ * than 32 characters. Draft mode
  * is enabled only after all of that has passed. Then 307 to the path, with the token in an
  * HttpOnly, SameSite=Lax cookie that expires with the token (Secure on https). Never cached.
  */
@@ -80,7 +89,7 @@ export function createPreviewHandler(o: {
     let secrets: string[];
     try {
       secrets = o.secrets().map((s) => (typeof s === 'string' ? s.trim() : ''));
-      if (secrets.length === 0 || secrets.some((s) => s === '')) throw new Error('preview secret list: empty entry');
+      if (secrets.length === 0 || !secrets.every(isUsablePreviewSecret)) throw new Error('preview secret list: empty or short entry');
     } catch {
       return answer(500);
     }

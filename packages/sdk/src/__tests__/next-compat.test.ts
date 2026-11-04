@@ -13,6 +13,9 @@ import { createRequire } from 'node:module';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { PREVIEW_COOKIE, createPreviewHandler, createRevalidateHandler, readPreviewToken, signPreviewToken, signWebhook } from '../index.ts';
 
+// A test value only, 32 characters or more (MIN_PREVIEW_SECRET_LENGTH).
+const PREVIEW_SECRET = 'next-compat-preview-secret-0123456789';
+
 type Major = 'next15' | 'next16';
 const pkg = process.env['CMS_SDK_NEXT'] as Major | undefined;
 const EXPECTED_MAJOR: Record<Major, number> = { next15: 15, next16: 16 };
@@ -133,12 +136,12 @@ describe(`the SDK on Next.js (${pkg ?? 'CMS_SDK_NEXT not set'})`, () => {
   });
 
   describe('preview with this major’s draftMode and cookies', () => {
-    const token = () => signPreviewToken({ tenant: TENANT, entry_id: '0b1c2d3e-4f50-4617-8899-aabbccddeeff', draft_version: 1, exp: NOW + 600 }, 'p1');
+    const token = () => signPreviewToken({ tenant: TENANT, entry_id: '0b1c2d3e-4f50-4617-8899-aabbccddeeff', draft_version: 1, exp: NOW + 600 }, PREVIEW_SECRET);
 
     it('createPreviewHandler enables draft mode through draftMode().enable() and redirects', async () => {
       const handler = createPreviewHandler({
         tenant: TENANT,
-        secrets: () => ['p1'],
+        secrets: () => [PREVIEW_SECRET],
         enableDraftMode: async () => (await next.draftMode()).enable(),
         now: () => NOW * 1000,
       });
@@ -151,9 +154,9 @@ describe(`the SDK on Next.js (${pkg ?? 'CMS_SDK_NEXT not set'})`, () => {
     });
 
     it('a refused token leaves draft mode off', async () => {
-      const handler = createPreviewHandler({ tenant: TENANT, secrets: () => ['p1'], enableDraftMode: async () => (await next.draftMode()).enable(), now: () => NOW * 1000 });
+      const handler = createPreviewHandler({ tenant: TENANT, secrets: () => [PREVIEW_SECRET], enableDraftMode: async () => (await next.draftMode()).enable(), now: () => NOW * 1000 });
       const { state, store } = requestStore({ draft: false });
-      const url = `https://site.example/api/cms/preview?token=${encodeURIComponent(signPreviewToken({ tenant: 'another-site', entry_id: '0b1c2d3e-4f50-4617-8899-aabbccddeeff', draft_version: 1, exp: NOW + 600 }, 'p1'))}&path=%2F`;
+      const url = `https://site.example/api/cms/preview?token=${encodeURIComponent(signPreviewToken({ tenant: 'another-site', entry_id: '0b1c2d3e-4f50-4617-8899-aabbccddeeff', draft_version: 1, exp: NOW + 600 }, PREVIEW_SECRET))}&path=%2F`;
       const res = await next.workAsyncStorage.run(workStore('/api/cms/preview'), () => next.workUnitAsyncStorage.run(store, () => handler(new Request(url))));
       expect(res.status).toBe(401);
       expect(state.enabled).toBe(false);
