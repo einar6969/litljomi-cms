@@ -21,7 +21,8 @@
 --     c995  e996 failed_validation asset_missing [f992, f991, f993]
 --     c996  e997 unpublish committed, no release yet
 --     c997  e998 superseded
---     c998  e999 committed in a993                       none recorded for a993; superseded, so a991's (M3-15)
+--     c998  e999 committed in a993                       none recorded for a993 yet; superseded by a991, but
+--                                                        a993 was delivered just now, so its own (in progress)
 --   demo: c999 with e99a pending
 begin;
 \ir _helpers.sql
@@ -128,7 +129,7 @@ select results_eq($$ select entry_id, request_id, action, status, release_number
      (tests.entry('c995'), tests.k('e996'), 'publish', 'failed_validation', null, null, false, array['b.jpg', 'a.jpg'], 2, 0, 0, 0, false),
      (tests.entry('c996'), tests.k('e997'), 'unpublish', 'committed', null, null, false, null, 2, 0, 0, 0, false),
      (tests.entry('c997'), tests.k('e998'), 'publish', 'superseded', null, null, false, null, 2, 0, 0, 0, false),
-     (tests.entry('c998'), tests.k('e999'), 'publish', 'committed', 1, 'delivered', false, null, 2, 1, 0, 1, true) $$,
+     (tests.entry('c998'), tests.k('e999'), 'publish', 'committed', 1, 'delivered', false, null, 2, 0, 0, 0, false) $$,
   'one row per entry''s latest request: omitted, missing images, and counts over the active sites only');
 select is((select count(*)::int from api.publication_status where entry_id = tests.entry('c991')), 1,
   'an entry with two requests has one row (its latest)');

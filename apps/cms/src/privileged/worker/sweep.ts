@@ -8,7 +8,10 @@
 //   1. Pending requests (and validating ones whose claim is older than 5 minutes) are processed.
 //   2. Every active tenant with committed requests in no release gets a release built, delivered
 //      and confirmed on its sites (api.worker_tenants_to_release), unless its latest build failed
-//      and the next build attempt is not due yet.
+//      and the next build attempt is not due yet. A tenant whose latest delivered release withdrew
+//      something (an unpublish, or media the release before it referenced) is listed too, with
+//      nothing committed: its build is the housekeeping release (§7.2), so the release before the
+//      withdrawal expires in step 5 an hour later even if the tenant never publishes again.
 //   3. Deliveries of each tenant's latest delivered release that still need a notification or a
 //      live check, or whose live check missed (not_confirmed, M3-03), are retried when their next
 //      attempt is due (api.worker_deliveries_to_retry): the site is notified again and the full
@@ -28,7 +31,10 @@
 // at the options' clock (`now`, `Date.now` by default), so tests simulate the 24 hours.
 //
 // A failing step does not stop the next one; the sweep throws at the end if any step failed, so
-// the cron route reports it.
+// the cron route reports it. Before it throws, it raises one alert per failed step
+// (`worker.step_failed`, §8.4: worker failures alert the platform admin), with the step and an
+// hour bucket of the sweep's clock: the email goes out once per step and hour (incidentOf), so a
+// step that fails every minute sends one email an hour, not one a minute and not just one ever.
 import type { Bundle } from '@litljomi/cms-sdk';
 import type { SupabaseClient } from '../../lib/supabase/types';
 import { createAdminClient } from '../admin-client';
@@ -86,19 +92,39 @@ type RetryRow = {
   requests: Array<{ id: string; entry_id: string; action: 'publish' | 'unpublish' }>;
 };
 
+/** The sweep's steps as `worker.step_failed` names them, with the wording of the log line. */
+const STEP_LABELS = {
+  stale_releases: 'failing stale releases',
+  pending_requests: 'processing pending requests',
+  tenants_to_release: 'listing tenants to release',
+  deliveries_to_retry: 'listing deliveries to retry',
+  release: 'a release',
+  delivery_retry: 'a delivery retry',
+  private_orphans: 'removing orphaned originals',
+  release_cleanup: 'removing expired release files',
+} as const;
+
+export type SweepStep = keyof typeof STEP_LABELS;
+
+/** The hour of the clock (`2026-11-03T12`), the time bucket of a step failure's incident. */
+export const hourBucket = (at: string): string => new Date(at).toISOString().slice(0, 13);
+
 export async function runSweep(options: DeliveryOptions = {}): Promise<void> {
   const db = createAdminClient();
   const errors: unknown[] = [];
-  const failed = (step: string) => (error: unknown) => {
-    console.error(`[cms-worker] sweep: ${step} failed`, error);
+  /** Failures per step, in the order the steps first failed. */
+  const failures = new Map<SweepStep, number>();
+  const failed = (step: SweepStep) => (error: unknown) => {
+    console.error(`[cms-worker] sweep: ${STEP_LABELS[step]} failed`, error);
     errors.push(error);
+    failures.set(step, (failures.get(step) ?? 0) + 1);
   };
 
   // 0. Stale building releases, before anything is built.
-  await failStaleReleases(db).catch(failed('failing stale releases'));
+  await failStaleReleases(db).catch(failed('stale_releases'));
 
   // 1. Requests the fast path never processed (or left validating).
-  await processPendingRequests().catch(failed('processing pending requests'));
+  await processPendingRequests().catch(failed('pending_requests'));
 
   // 2 and 3. Both selections are read first, at the same clock; then every tenant runs on its own,
   // concurrently: a tenant with no release to build retries its due deliveries at once, so one
@@ -112,13 +138,13 @@ export async function runSweep(options: DeliveryOptions = {}): Promise<void> {
       (t) => t.tenant_id,
     );
   } catch (error) {
-    failed('listing tenants to release')(error);
+    failed('tenants_to_release')(error);
   }
   let retries = new Map<string, RetryRow[][]>();
   try {
     retries = retriesByTenant((await callRpc<RetryRow[] | null>(db, 'worker_deliveries_to_retry', { p_now: clockOf(options) })) ?? []);
   } catch (error) {
-    failed('listing deliveries to retry')(error);
+    failed('deliveries_to_retry')(error);
   }
   const building = new Set(tenants);
   await Promise.all([
@@ -127,7 +153,7 @@ export async function runSweep(options: DeliveryOptions = {}): Promise<void> {
       try {
         result = await deliverTenant(tenantId, { ...options, db });
       } catch (error) {
-        failed('a release')(error);
+        failed('release')(error);
         return;
       }
       if (result.status === 'delivered') return;
@@ -137,12 +163,17 @@ export async function runSweep(options: DeliveryOptions = {}): Promise<void> {
   ]);
 
   // 4. Orphaned private originals.
-  await removePrivateOrphans(db).catch(failed('removing orphaned originals'));
+  await removePrivateOrphans(db).catch(failed('private_orphans'));
 
   // 5. Expired releases and the public media only they referenced.
-  await removeExpiredReleaseFiles(db, { now: () => new Date(clockOf(options)) }).catch(failed('removing expired release files'));
+  await removeExpiredReleaseFiles(db, { now: () => new Date(clockOf(options)) }).catch(failed('release_cleanup'));
 
-  if (errors.length > 0) throw new AggregateError(errors, `sweep: ${errors.length} step(s) failed`);
+  if (errors.length > 0) {
+    // One alert per failed step; alert() never rejects. Platform alerts: no tenant.
+    const bucket = hourBucket(clockOf(options));
+    for (const [step, count] of failures) await alert('worker.step_failed', { step, failures: count, bucket });
+    throw new AggregateError(errors, `sweep: ${errors.length} step(s) failed`);
+  }
 }
 
 /** The rows to retry, by tenant and then by release (in the order the database lists them). */
@@ -162,10 +193,10 @@ async function retryReleases(
   db: SupabaseClient,
   groups: RetryRow[][],
   options: DeliveryOptions,
-  failed: (step: string) => (error: unknown) => void,
+  failed: (step: SweepStep) => (error: unknown) => void,
 ): Promise<void> {
   const results = await Promise.allSettled(groups.map((group) => retryRelease(db, group, options)));
-  for (const r of results) if (r.status === 'rejected') failed('a delivery retry')(r.reason);
+  for (const r of results) if (r.status === 'rejected') failed('delivery_retry')(r.reason);
 }
 
 async function retryRelease(db: SupabaseClient, rows: RetryRow[], options: DeliveryOptions): Promise<void> {
