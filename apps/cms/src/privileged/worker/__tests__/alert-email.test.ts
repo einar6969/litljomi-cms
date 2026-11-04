@@ -86,6 +86,15 @@ describe('incidentOf (deduplication key)', () => {
     expect(incidentOf('sweep.failed', { marker: 'x' })).toBe('sweep.failed');
   });
 
+  // Security fix, Thread A: a platform alert with no ids was one incident forever (one email ever).
+  it('keys a sweep step failure by its step and its hour bucket', () => {
+    const at12 = incidentOf('worker.step_failed', { step: 'release', failures: 2, bucket: '2026-11-03T12' });
+    expect(at12).toBe('worker.step_failed:release:2026-11-03t12');
+    expect(incidentOf('worker.step_failed', { step: 'release', failures: 9, bucket: '2026-11-03T12' })).toBe(at12);
+    expect(incidentOf('worker.step_failed', { step: 'release', bucket: '2026-11-03T13' })).not.toBe(at12);
+    expect(incidentOf('worker.step_failed', { step: 'private_orphans', bucket: '2026-11-03T12' })).not.toBe(at12);
+  });
+
   it('stays within the database rule (1-200 characters of [a-z0-9_.:-]) for any id', () => {
     const key = incidentOf('release.failed', { releaseId: 'Ab C/<script>'.repeat(30), requestId: 'Ü'.repeat(300), siteId: 7 });
     expect(key).toMatch(/^[a-z0-9_.:-]{1,200}$/);

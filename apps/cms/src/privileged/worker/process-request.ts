@@ -47,7 +47,12 @@ export type RequestOutcome = {
   errors?: unknown;
 };
 
-/** An unexpected error leaves a request validating; the claim after 5 minutes retries it, up to this many attempts (§6.3). */
+/**
+ * An unexpected error leaves a request validating; the claim after 5 minutes retries it, up to this
+ * many attempts (§6.3). The claim functions hold the same number: a request that has used them (a
+ * worker killed mid-request leaves no failure behind) is failed at the claim, not claimed again
+ * (20261104150000_publish_state.sql), as is one requested more than an hour ago (its deadline).
+ */
 export const MAX_ATTEMPTS = 5;
 
 export type ProcessOptions = {
@@ -68,6 +73,9 @@ type ClaimedRow = {
   tenant_id: string;
   entry_id: string;
   action: 'publish' | 'unpublish';
+  /** 'validating' when claimed; 'failed' when the claim failed it instead (attempts or deadline). */
+  status: string;
+  error: unknown;
   draft_version: number | null;
   attempts: number;
 };
@@ -101,6 +109,7 @@ export async function processRequestById(requestId: string, options: ProcessOpti
     const read = await callRpc<WorkerRead>(db, 'worker_read_request', { p_request_id: requestId });
     return { ...outcomeOf(read), status: 'skipped' };
   }
+  if (row.status !== 'validating') return failedAtClaim(row as ClaimedRequest);
   return processClaimed(db, row as ClaimedRequest, originalsOf(db, options));
 }
 
@@ -115,6 +124,10 @@ export async function processPendingRequests(limit = 10, options: ProcessOptions
   const outcomes: RequestOutcome[] = [];
   const originals = originalsOf(db, options);
   for (const row of rows) {
+    if (row.status !== 'validating') {
+      outcomes.push(await failedAtClaim(row));
+      continue;
+    }
     try {
       outcomes.push(await processClaimed(db, row, originals));
     } catch (error) {
@@ -226,6 +239,35 @@ async function failUnexpected(db: SupabaseClient, row: ClaimedRequest, read: Wor
   }
   await alert('publish_request.failed', details);
   return { ...base, status: 'failed', errors: failure };
+}
+
+/**
+ * A request the claim failed instead of claiming it (§6.3): it had used its MAX_ATTEMPTS, or was past
+ * its deadline. The database recorded `failed` and the code; the worker raises the alert and never
+ * processes it. Fails closed: any status other than 'validating' is not processed.
+ */
+async function failedAtClaim(row: ClaimedRequest): Promise<RequestOutcome> {
+  const errors = row.error ?? { code: 'unexpected' };
+  const code = typeof errors === 'object' && errors !== null && 'code' in errors ? (errors as { code: unknown }).code : 'unexpected';
+  await alert('publish_request.failed', {
+    tenantId: row.tenant_id,
+    requestId: row.id,
+    entryId: row.entry_id,
+    action: row.action,
+    code,
+    attempts: row.attempts,
+    atClaim: true,
+  });
+  return {
+    requestId: row.id,
+    tenantId: row.tenant_id,
+    tenantSlug: null,
+    entryId: row.entry_id,
+    action: row.action,
+    type: null,
+    status: 'failed',
+    errors,
+  };
 }
 
 /** Validates and projects a publish request's draft, checks its private originals, then commits it (§6.1, §6.2). */

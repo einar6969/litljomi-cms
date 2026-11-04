@@ -161,6 +161,29 @@ describe('runSweep', () => {
     ]);
   });
 
+  // Security fix, Thread A (§8.4): every failed step alerts, once per step and sweep, with an hour
+  // bucket of the sweep's clock for the email's incident key.
+  it('alerts worker.step_failed once per failed step, with the step, its failure count and the hour', async () => {
+    handlers.worker_fail_stale_releases = () => ({ error: { code: '57014', message: 'canceling statement due to statement timeout' } });
+    handlers.worker_tenants_to_release = () => ({ data: [{ tenant_id: 't1' }, { tenant_id: 't2' }] });
+    deliverTenantMock.mockRejectedValueOnce(new Error('t1 broke')).mockRejectedValueOnce(new Error('t2 broke'));
+
+    await expect(runSweep(clock)).rejects.toThrow(AggregateError);
+
+    expect(alertMock.mock.calls.filter((c) => c[0] === 'worker.step_failed')).toEqual([
+      ['worker.step_failed', { step: 'stale_releases', failures: 1, bucket: '2026-11-03T12' }],
+      ['worker.step_failed', { step: 'release', failures: 2, bucket: '2026-11-03T12' }],
+    ]);
+  });
+
+  it('alerts no step failure when every step succeeds', async () => {
+    handlers.worker_fail_stale_releases = () => ({ data: [] });
+
+    await runSweep(clock);
+
+    expect(alertMock.mock.calls.filter((c) => c[0] === 'worker.step_failed')).toEqual([]);
+  });
+
   it('a failing orphan removal is reported like any other step', async () => {
     handlers.worker_private_orphans = () => ({ error: { code: '57014', message: 'canceling statement due to statement timeout' } });
 
