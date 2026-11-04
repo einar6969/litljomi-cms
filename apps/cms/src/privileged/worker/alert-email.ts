@@ -79,14 +79,24 @@ const idPart = (value: unknown): string | null =>
   typeof value === 'string' && value !== '' ? value.toLowerCase().replace(/[^a-z0-9_.-]/g, '-').slice(0, 64) : null;
 
 /**
+ * Events keyed by details of their own instead of ids: a sweep step's failure by the step and the
+ * hour it failed in (`bucket`), so a step that keeps failing is emailed once an hour, and a
+ * different step separately. A missing part is left out of the key, never invented.
+ */
+const INCIDENT_KEYS: Record<string, readonly string[]> = {
+  'worker.step_failed': ['step', 'bucket'],
+};
+
+/**
  * The incident key of an alert: its event group and the request, release and site it is about
- * (`release.failed:<release id>`, `delivery.retries_exhausted:<release id>:<site id>`). An alert
- * naming none of them is keyed by its tenant, or by the event alone for a platform alert. At most
- * 200 characters of [a-z0-9_.:-], as api.worker_claim_alert_email requires.
+ * (`release.failed:<release id>`, `delivery.retries_exhausted:<release id>:<site id>`), or the
+ * event's own keys (INCIDENT_KEYS: `worker.step_failed:<step>:<hour>`). An alert naming none of them
+ * is keyed by its tenant, or by the event alone for a platform alert. At most 200 characters of
+ * [a-z0-9_.:-], as api.worker_claim_alert_email requires.
  */
 export function incidentOf(event: string, details: Record<string, unknown>): string {
   const group = INCIDENT_GROUP[event] ?? event;
-  let ids = INCIDENT_IDS.map((k) => idPart(details[k])).filter((v): v is string => v !== null);
+  let ids = (INCIDENT_KEYS[group] ?? INCIDENT_IDS).map((k) => idPart(details[k])).filter((v): v is string => v !== null);
   if (ids.length === 0) {
     const tenant = idPart(details.tenantId);
     ids = tenant ? [tenant] : [];

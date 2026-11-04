@@ -250,7 +250,7 @@ describe('apps/cms/e2e/demo-site-server.ts', () => {
     expect(env).toMatchObject({ NEXT_TELEMETRY_DISABLED: '1', NODE_ENV: 'production', CMS_TENANT: 'demo' });
     expect(env.CMS_DELIVERY_BASE_URL).toBe('http://127.0.0.1:54321/storage/v1/object/public/delivery');
     // Preview (M3-12): the seeded preview secret and the loopback CMS.
-    expect(env).toMatchObject({ CMS_PREVIEW_SECRETS: 'demo-preview-s3cr3t', CMS_PREVIEW_BASE_URL: 'http://localhost:3100' });
+    expect(env).toMatchObject({ CMS_PREVIEW_SECRETS: 'demo-preview-s3cr3t-local-test-value-0123', CMS_PREVIEW_BASE_URL: 'http://localhost:3100' });
   });
 
   // Task 25 security r1: the site gets an allowlisted environment, not the whole parent one.

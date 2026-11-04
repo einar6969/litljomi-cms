@@ -8,6 +8,8 @@
 -- and e972 (in no release), demo entry c973 with a committed request e973 (in no release); labak
 -- releases 1 and 2 delivered and 3 building; labak sites (active s1, s2, s3; inactive s4), a demo
 -- site s5 and a demo release 1 delivered.
+-- The labak requests are publishes: an unpublish linked to labak's latest delivered release would
+-- list labak for a housekeeping release (20261104153000; tested in 109_housekeeping_release).
 begin;
 \ir _helpers.sql
 select plan(31);
@@ -37,9 +39,9 @@ insert into cms.releases (id, tenant_id, number, status, bundle_path, delivered_
   (tests.k('a974'), tests.tenant('demo'), 1, 'delivered', 'demo/releases/1.json', now() - interval '1 hour');
 insert into cms.publish_requests (id, tenant_id, entry_id, action, draft_version, requested_by, status, release_id)
 values
-  (tests.k('e971'), tests.tenant('labak'), tests.entry('c971'), 'unpublish', null, tests.persona('editor_labak'), 'committed', tests.k('a972')),
-  (tests.k('e972'), tests.tenant('labak'), tests.entry('c972'), 'unpublish', null, tests.persona('editor_labak'), 'committed', null),
-  (tests.k('e974'), tests.tenant('labak'), tests.entry('c972'), 'unpublish', null, tests.persona('editor_labak'), 'pending', null),
+  (tests.k('e971'), tests.tenant('labak'), tests.entry('c971'), 'publish', 1, tests.persona('editor_labak'), 'committed', tests.k('a972')),
+  (tests.k('e972'), tests.tenant('labak'), tests.entry('c972'), 'publish', 1, tests.persona('editor_labak'), 'committed', null),
+  (tests.k('e974'), tests.tenant('labak'), tests.entry('c972'), 'publish', 1, tests.persona('editor_labak'), 'pending', null),
   (tests.k('e973'), tests.tenant('demo'), tests.entry('c973'), 'unpublish', null, tests.persona('editor_demo'), 'committed', null);
 insert into cms.sites (id, tenant_id, base_url, revalidate_url, webhook_secret_ref, active) values
   (tests.k('b971'), tests.tenant('labak'), 'http://s1', 'http://s1/r', gen_random_uuid(), true),
@@ -124,8 +126,8 @@ select is((select row(tenant_id, tenant_slug, release_number, bundle_path, previ
   'the row names the tenant, the release, its bundle and the previous delivered release''s bundle');
 select is((select requests from api.worker_deliveries_to_retry(now())),
   jsonb_build_array(
-    jsonb_build_object('id', tests.k('e971'), 'entry_id', tests.entry('c971'), 'action', 'unpublish'),
-    jsonb_build_object('id', tests.k('e972'), 'entry_id', tests.entry('c972'), 'action', 'unpublish')),
+    jsonb_build_object('id', tests.k('e971'), 'entry_id', tests.entry('c971'), 'action', 'publish'),
+    jsonb_build_object('id', tests.k('e972'), 'entry_id', tests.entry('c972'), 'action', 'publish')),
   'with the requests linked to the release, in request order');
 
 -- The schedule (M3-02): a failed notification is returned once its next attempt is due at p_now.

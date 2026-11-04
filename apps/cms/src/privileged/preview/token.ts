@@ -1,7 +1,7 @@
 import 'server-only';
 import { z } from 'zod';
 import { canonicalUuid } from '@litljomi/rich-text';
-import { PREVIEW_PATH_PARAM, PREVIEW_TOKEN_TTL_SECONDS, safePreviewPath, signPreviewToken } from '@litljomi/cms-sdk';
+import { PREVIEW_PATH_PARAM, PREVIEW_TOKEN_TTL_SECONDS, isUsablePreviewSecret, safePreviewPath, signPreviewToken } from '@litljomi/cms-sdk';
 import { getModule } from '@/modules/registry';
 // Not '@/lib/tenant': that module loads the editor's cookie-bound client (next/headers).
 import { isActive } from '@/lib/tenant-status';
@@ -65,7 +65,17 @@ function entryPath(tenant: string, e: EntryRow): string {
 
 const fail = (failure: MintFailure): MintResult => ({ ok: false, failure });
 
-const PREVIEW_URL_PROTOCOLS = new Set(['https:', 'http:']);
+// IPv4 loopback (127.0.0.0/8) as the URL parser normalises it, `localhost` and IPv6 `[::1]`.
+const LOOPBACK_IPV4 = /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+const isLoopback = (hostname: string): boolean => hostname === 'localhost' || hostname === '[::1]' || LOOPBACK_IPV4.test(hostname);
+
+/**
+ * The token travels in the preview URL's query, so the URL is https, or plain http only to a
+ * loopback host (local development and the local test stack). Anything else cannot preview
+ * (security review B4).
+ */
+const isAllowedPreviewUrl = (url: URL): boolean =>
+  url.protocol === 'https:' || (url.protocol === 'http:' && isLoopback(url.hostname));
 
 export async function mintPreviewToken(deps: MintDeps, input: MintInput): Promise<MintResult> {
   let user: unknown;
@@ -109,6 +119,8 @@ export async function mintPreviewToken(deps: MintDeps, input: MintInput): Promis
     site = all[0];
   }
   if (!site) return fail('preview_unavailable');
+  // A secret shorter than 32 characters signs nothing (security review B5).
+  if (!isUsablePreviewSecret(site.preview_secret)) return fail('preview_unavailable');
 
   let url: URL;
   try {
@@ -116,7 +128,7 @@ export async function mintPreviewToken(deps: MintDeps, input: MintInput): Promis
   } catch {
     return fail('preview_unavailable');
   }
-  if (!PREVIEW_URL_PROTOCOLS.has(url.protocol)) return fail('preview_unavailable');
+  if (!isAllowedPreviewUrl(url)) return fail('preview_unavailable');
 
   const exp = Math.floor(deps.nowSeconds()) + PREVIEW_TOKEN_TTL_SECONDS;
   const token = signPreviewToken({ tenant: slug, entry_id: input.entryId, draft_version: draftVersion, exp }, site.preview_secret);

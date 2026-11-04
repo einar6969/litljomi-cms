@@ -13,13 +13,16 @@ import {
 } from '../index.ts';
 
 const NOW = 1_800_000_000;
+// Test values only, each 32 characters or more (MIN_PREVIEW_SECRET_LENGTH).
+const P1 = 'preview-1-test-secret-0123456789abcdef';
+const P2 = 'preview-2-test-secret-0123456789abcdef';
 const ENTRY = '0b1c2d3e-4f50-4617-8899-aabbccddeeff';
 const claims = (o: Partial<PreviewClaims> = {}): PreviewClaims => ({ tenant: 'demo', entry_id: ENTRY, draft_version: 3, exp: NOW + 600, ...o });
-const token = (o: Partial<PreviewClaims> = {}, secret = 'preview-1') => signPreviewToken(claims(o), secret);
+const token = (o: Partial<PreviewClaims> = {}, secret = P1) => signPreviewToken(claims(o), secret);
 
 function setup(o: { secrets?: () => string[] } = {}) {
   const enableDraftMode = vi.fn();
-  const handler = createPreviewHandler({ tenant: 'demo', secrets: o.secrets ?? (() => ['preview-1', 'preview-2']), enableDraftMode, now: () => NOW * 1000 });
+  const handler = createPreviewHandler({ tenant: 'demo', secrets: o.secrets ?? (() => [P1, P2]), enableDraftMode, now: () => NOW * 1000 });
   const get = (query: Record<string, string>, origin = 'https://site.example') =>
     handler(new Request(`${origin}/api/cms/preview?${new URLSearchParams(query).toString()}`));
   return { enableDraftMode, get };
@@ -40,7 +43,7 @@ describe('createPreviewHandler', () => {
   });
   it('accepts the second secret during rotation, and leaves Secure off on plain http', async () => {
     const { get } = setup();
-    const res = await get({ token: token({}, 'preview-2'), path: '/' }, 'http://localhost:3101');
+    const res = await get({ token: token({}, P2), path: '/' }, 'http://localhost:3101');
     expect(res.status).toBe(307);
     expect(res.headers.get('set-cookie')).not.toMatch(/Secure/);
   });
@@ -53,7 +56,7 @@ describe('createPreviewHandler', () => {
       { token: '' },
       { token: 'not-a-token' },
       { token: tampered },
-      { token: token({}, 'another-site-secret') },
+      { token: token({}, 'another-site-secret-0123456789abcdef') },
       { token: token({ exp: NOW }) },
       { token: token({ exp: NOW + 3600 }) },
       { token: token({ tenant: 'labak' }) },
@@ -68,14 +71,25 @@ describe('createPreviewHandler', () => {
   });
   it('refuses a path that is not on the site with 400, before draft mode', async () => {
     const { enableDraftMode, get } = setup();
-    for (const path of ['', 'events/x', '//evil.example/x', '/\\evil.example', 'https://evil.example/', '/a\nb', 'javascript:alert(1)']) {
+    for (const path of [
+      '', 'events/x', '//evil.example/x', '/\\evil.example', 'https://evil.example/', '/a\nb', 'javascript:alert(1)',
+      // Dot segments that normalise to a protocol-relative path (security review B1).
+      '/.//evil.example', '/%2e//evil.example', '/%2E//evil.example', '/a/..//evil.example', '/./%2e//evil.example',
+    ]) {
       expect((await get({ token: token(), path })).status, path).toBe(400);
     }
     expect((await get({ token: token() })).status).toBe(400);
     expect(enableDraftMode).not.toHaveBeenCalled();
   });
   it('a broken secret list gives a plain 500 and no draft mode', async () => {
-    for (const secrets of [() => [], () => ['a', ' '], () => { throw new Error('CMS_PREVIEW_SECRETS is not set'); }]) {
+    for (const secrets of [
+      () => [],
+      () => [P1, ' '],
+      () => { throw new Error('CMS_PREVIEW_SECRETS is not set'); },
+      // Security review B5: a secret under 32 characters is a broken list, not a usable one.
+      () => [P1, 'x'.repeat(31)],
+      () => ['preview-1'],
+    ]) {
       const { enableDraftMode, get } = setup({ secrets });
       const res = await get({ token: token(), path: '/' });
       expect(res.status).toBe(500);
@@ -84,7 +98,7 @@ describe('createPreviewHandler', () => {
     }
   });
   it('trims the secrets', async () => {
-    const { get } = setup({ secrets: () => [' preview-1 '] });
+    const { get } = setup({ secrets: () => [` ${P1} `] });
     expect((await get({ token: token(), path: '/' })).status).toBe(307);
   });
 });
@@ -96,10 +110,24 @@ describe('safePreviewPath and parsePreviewSecrets', () => {
     expect(safePreviewPath(null)).toBeNull();
     expect(safePreviewPath('/' + 'a'.repeat(3000))).toBeNull();
   });
+  it('refuses a path whose normalised form is protocol-relative (security review B1)', () => {
+    for (const path of ['/.//evil.example', '/%2e//evil.example', '/%2E//evil.example', '/a/..//evil.example', '/././/evil.example/x?y#z']) {
+      expect(safePreviewPath(path), path).toBeNull();
+    }
+    // A double slash later in the path stays a path on the site.
+    expect(safePreviewPath('/a//b')).toBe('/a//b');
+  });
   it('parses a comma-separated list and refuses an empty entry', () => {
-    expect(parsePreviewSecrets(' a , b ')).toEqual(['a', 'b']);
-    expect(() => parsePreviewSecrets('a,')).toThrow(/entry 2 of 2/);
+    expect(parsePreviewSecrets(` ${P1} , ${P2} `)).toEqual([P1, P2]);
+    expect(() => parsePreviewSecrets(`${P1},`)).toThrow(/entry 2 of 2/);
     expect(() => parsePreviewSecrets('')).toThrow(/empty/);
+  });
+  it('refuses an entry shorter than 32 characters, naming no secret (security review B5)', () => {
+    const short = 'y'.repeat(31);
+    expect(() => parsePreviewSecrets(`${P1},${short}`)).toThrow(/entry 2 of 2 is shorter than 32 characters/);
+    expect(() => parsePreviewSecrets(short)).not.toThrow(short);
+    expect(() => parsePreviewSecrets(short)).toThrow(/entry 1 of 1/);
+    expect(parsePreviewSecrets('z'.repeat(32))).toEqual(['z'.repeat(32)]);
   });
 });
 

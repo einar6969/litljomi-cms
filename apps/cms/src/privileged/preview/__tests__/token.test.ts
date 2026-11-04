@@ -11,7 +11,10 @@ const ENTRY = '0b5d4c1e-2f3a-4b5c-8d7e-9f0a1b2c3d4e';
 const TENANT = '00000000-0000-4000-8000-00000000a002';
 const SITE = '00000000-0000-4000-8000-00000000c001';
 const SITE2 = '00000000-0000-4000-8000-00000000c002';
-const SECRET = 'preview-secret-of-the-site';
+// Test values only, each 32 characters or more (MIN_PREVIEW_SECRET_LENGTH).
+const SECRET = 'preview-secret-of-the-site-0123456789';
+const A_SECRET = 'a-secret-of-the-first-site-0123456789';
+const B_SECRET = 'b-secret-of-the-second-site-0123456789';
 
 type Row = Record<string, unknown> | null;
 type State = {
@@ -136,14 +139,14 @@ describe('mintPreviewToken', () => {
     state.sites.data = [];
     expect(await mintPreviewToken(fakes(), { entryId: ENTRY })).toEqual({ ok: false, failure: 'preview_unavailable' });
     const two = [
-      { id: SITE, preview_url: 'https://a.example/p', preview_secret: 'a-secret' },
-      { id: SITE2, preview_url: 'https://b.example/p', preview_secret: 'b-secret' },
+      { id: SITE, preview_url: 'https://a.example/p', preview_secret: A_SECRET },
+      { id: SITE2, preview_url: 'https://b.example/p', preview_secret: B_SECRET },
     ];
     state.sites.data = two;
     expect(await mintPreviewToken(fakes(), { entryId: ENTRY })).toEqual({ ok: false, failure: 'site_required' });
     const r = await mintPreviewToken(fakes(), { entryId: ENTRY, siteId: SITE2 });
     expect(r.ok && new URL(r.url).host).toBe('b.example');
-    expect(r.ok && verifyPreviewToken({ token: r.token, secrets: ['b-secret'], nowSeconds: NOW })).toBeTruthy();
+    expect(r.ok && verifyPreviewToken({ token: r.token, secrets: [B_SECRET], nowSeconds: NOW })).toBeTruthy();
     expect(await mintPreviewToken(fakes(), { entryId: ENTRY, siteId: '00000000-0000-4000-8000-00000000c009' })).toEqual({ ok: false, failure: 'not_found' });
   });
 
@@ -152,6 +155,43 @@ describe('mintPreviewToken', () => {
       state.sites.data = [{ id: SITE, preview_url, preview_secret: SECRET }];
       expect(await mintPreviewToken(fakes(), { entryId: ENTRY })).toEqual({ ok: false, failure: 'preview_unavailable' });
     }
+  });
+
+  // Security review B4: the token travels in the preview URL's query, so never over plain http
+  // to anything but the editor's own machine.
+  it('refuses a plain-http preview URL outside loopback, and mints for https or loopback http', async () => {
+    for (const preview_url of [
+      'http://demo.example/api/cms/preview',
+      'http://localhost.evil.example/p',
+      'http://127.0.0.1.evil.example/p',
+      'http://10.0.0.1/p',
+      'http://0.0.0.0/p',
+      'http://[::ffff:7f00:1]/p',
+    ]) {
+      state.sites.data = [{ id: SITE, preview_url, preview_secret: SECRET }];
+      expect(await mintPreviewToken(fakes(), { entryId: ENTRY }), preview_url).toEqual({ ok: false, failure: 'preview_unavailable' });
+    }
+    for (const preview_url of [
+      'https://demo.example/api/cms/preview',
+      'http://localhost:3101/api/cms/preview',
+      'http://127.0.0.1:3197/p',
+      'http://127.1.2.3/p',
+      'http://[::1]:3101/p',
+    ]) {
+      state.sites.data = [{ id: SITE, preview_url, preview_secret: SECRET }];
+      expect((await mintPreviewToken(fakes(), { entryId: ENTRY })).ok, preview_url).toBe(true);
+    }
+  });
+
+  // Security review B5: a secret shorter than 32 characters never signs a token.
+  it('refuses a site whose preview secret is shorter than 32 characters', async () => {
+    for (const preview_secret of ['x'.repeat(31), 'short', '']) {
+      state.sites.data = [{ id: SITE, preview_url: 'https://demo.example/p', preview_secret }];
+      expect(await mintPreviewToken(fakes(), { entryId: ENTRY })).toEqual({ ok: false, failure: 'preview_unavailable' });
+      expect(await mintPreviewToken(fakes(), { entryId: ENTRY, siteId: SITE })).toEqual({ ok: false, failure: 'preview_unavailable' });
+    }
+    state.sites.data = [{ id: SITE, preview_url: 'https://demo.example/p', preview_secret: 'x'.repeat(32) }];
+    expect((await mintPreviewToken(fakes(), { entryId: ENTRY })).ok).toBe(true);
   });
 
   it('throws on a database error, with the code only', async () => {

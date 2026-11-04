@@ -61,7 +61,10 @@ export type DeliveredRelease = {
 export type LiveTarget = {
   entryId: string;
   requestIds: string[];
-  /** `delivery_failed` (left out of the release, §7.1) or `checks_failed` (the module threw). */
+  /**
+   * `delivery_failed` (left out of the release, §7.1), `still_published` (withdrawn, but the entry is
+   * in the release) or `checks_failed` (the module threw).
+   */
   failure: string | null;
   checks: LiveCheck[];
   ownPath: string;
@@ -118,7 +121,10 @@ function mediaUrlsIn(data: unknown, mediaPrefix: string): string[] {
  * - not in the release, with a publish as its last request: left out of the build (omitted), so
  *   `delivery_failed` (§7.1: never live);
  * - not in the release after an unpublish: the checks for the record the previous release had
- *   (no hash, no media); nothing to check when no delivered release contained it.
+ *   (no hash, no media); nothing to check when no delivered release contained it;
+ * - in the release, with an unpublish as its last request: `still_published`. The withdrawal is not
+ *   what the release delivered (an older publish committed after it, say), so it is never confirmed:
+ *   the entry's own present checks would pass and show it removed (§7.1: withdrawal always wins).
  */
 export function liveTargets(
   module: ModuleManifest,
@@ -135,6 +141,7 @@ export function liveTargets(
     const inRelease = find(release.bundle, entryId);
     const last = requests[requests.length - 1]!;
     if (!inRelease && last.action === 'publish') return { ...base, failure: 'delivery_failed' };
+    if (inRelease && last.action === 'unpublish') return { ...base, failure: 'still_published' };
     const record = inRelease ?? find(release.previousBundle, entryId);
     if (!record) return base;
     const own = inRelease ? { contentHash: inRelease.entry.contentHash, mediaUrls: mediaUrlsIn(inRelease.entry.data, mediaPrefix) } : {};

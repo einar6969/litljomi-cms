@@ -24,6 +24,12 @@ describe('safeRedirectPath (no open redirect)', () => {
     '/t/acme\u007f',
     '/t/acme ',
     '/ /evil.example',
+    // Dot segments that resolve to a protocol-relative path (security review B2).
+    '/.//evil.example',
+    '/%2e//evil.example',
+    '/%2E//evil.example',
+    '/a/..//evil.example',
+    '/././/evil.example/t/acme',
   ])('falls back to / for %j', (value) => {
     expect(safeRedirectPath(value)).toBe('/');
   });

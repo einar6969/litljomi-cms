@@ -15,8 +15,8 @@ import type { SupabaseClient as AppClient } from '@/lib/supabase/types';
 import { handlePreviewTokenRequest, mintPreviewToken, type MintDeps } from '../token';
 
 const SITES = {
-  demo: { baseUrl: 'http://127.0.0.1:3197', previewSecret: 'preview-token-test-demo-secret' },
-  labak: { baseUrl: 'http://127.0.0.1:3196', previewSecret: 'preview-token-test-labak-secret' },
+  demo: { baseUrl: 'http://127.0.0.1:3197', previewSecret: 'preview-token-test-demo-secret-0123456789' },
+  labak: { baseUrl: 'http://127.0.0.1:3196', previewSecret: 'preview-token-test-labak-secret-0123456789' },
 } as const;
 
 // The app's clients default to the api schema; the code under test names it on every call anyway.

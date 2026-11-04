@@ -133,6 +133,26 @@ describe('liveTargets', () => {
     ]);
   });
 
+  // Security fix, Thread A: an older publish committed after the withdrawal puts the entry back in
+  // the release; its present checks would pass, and the unpublish would show removed.
+  it('an entry still in the release after an unpublish (its last request) is a failure, never checked', () => {
+    const [t] = liveTargets(
+      module,
+      {
+        bundle: current,
+        previousBundle: previous,
+        requests: [
+          { id: 'q10', entryId: E1, action: 'publish' },
+          { id: 'q11', entryId: E1, action: 'unpublish' },
+        ],
+      },
+      MEDIA,
+    );
+    expect(t).toMatchObject({ entryId: E1, requestIds: ['q10', 'q11'], failure: 'still_published', checks: [], contentHash: null, mediaUrls: [] });
+    const [only] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q12', entryId: E1, action: 'unpublish' }] }, MEDIA);
+    expect(only).toMatchObject({ failure: 'still_published', checks: [] });
+  });
+
   it('a type without site pages has no checks, but its media is still checked', () => {
     const other = bundle(3, []);
     other.entries['page'] = [{ ...entry(E1, 'a', null, { image }) }];
