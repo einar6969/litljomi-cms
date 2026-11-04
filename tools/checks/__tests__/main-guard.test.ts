@@ -5,11 +5,12 @@ import { describe, expect, it } from 'vitest';
 import { evaluatePush, runGuard, type PullSummary, type PushEvent } from '../main-guard.ts';
 
 // The `main` guard (decision 50.3): a push to `main` passes only when every new commit belongs to a
-// pull request merged into `main`, or when Einar pushed it. A failure is the alert; nothing is reverted.
+// pull request merged into `main`, whoever pushed it; a force-push or deletion always fails. A failure
+// is the alert; nothing is reverted. There is no trusted pusher: every cloud thread acts as einar6969.
 const here = dirname(fileURLToPath(import.meta.url));
 const fixture = <T>(name: string): T => JSON.parse(readFileSync(join(here, 'fixtures', 'main-guard', name), 'utf8')) as T;
 
-const TRUSTED = 'einar6969';
+const EINAR = 'einar6969';
 const SHA_A = '2222222222222222222222222222222222222222';
 const SHA_B = '3333333333333333333333333333333333333333';
 
@@ -18,8 +19,7 @@ function push(overrides: Partial<PushEvent> = {}): PushEvent {
   return { ...fixture<PushEvent>('push-event.json'), ...overrides };
 }
 const mergedPulls = () => fixture<Record<string, PullSummary[]>>('pulls.json');
-const evaluate = (event: PushEvent, shas: string[], pulls: Record<string, PullSummary[]>) =>
-  evaluatePush({ event, shas, pulls, trustedPusher: TRUSTED });
+const evaluate = (event: PushEvent, shas: string[], pulls: Record<string, PullSummary[]>) => evaluatePush({ event, shas, pulls });
 
 describe('evaluatePush', () => {
   it('passes when every new commit belongs to a pull request merged into main', () => {
@@ -28,10 +28,12 @@ describe('evaluatePush', () => {
     expect(verdict.lines).toEqual([`${SHA_A} pull request #7`, `${SHA_B} pull request #7`]);
   });
 
-  it('passes any push by the trusted account without looking at pull requests', () => {
-    const verdict = evaluate(push({ sender: { login: TRUSTED } }), [SHA_A, SHA_B], {});
-    expect(verdict.ok).toBe(true);
-    expect(verdict.lines).toEqual([`pushed by ${TRUSTED}`]);
+  it("judges einar6969's push like anyone else's: merged commits pass, a direct commit fails", () => {
+    const einar = push({ sender: { login: EINAR } });
+    expect(evaluate(einar, [SHA_A, SHA_B], mergedPulls()).ok).toBe(true);
+    const verdict = evaluate(einar, [SHA_A, SHA_B], { ...mergedPulls(), [SHA_B]: [] });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.lines).toContain(`${SHA_B} FAIL: no pull request merged into main`);
   });
 
   it('fails a commit that belongs to no pull request, naming it', () => {
@@ -56,10 +58,15 @@ describe('evaluatePush', () => {
     expect(evaluate(push(), [SHA_A, SHA_B], pulls).ok).toBe(false);
   });
 
-  it('fails a force-push or a deletion of main by anyone but the trusted account', () => {
-    expect(evaluate(push({ forced: true }), [SHA_A, SHA_B], mergedPulls()).ok).toBe(false);
-    expect(evaluate(push({ deleted: true, commits: [] }), [], {}).ok).toBe(false);
-    expect(evaluate(push({ forced: true, sender: { login: TRUSTED } }), [SHA_A, SHA_B], {}).ok).toBe(true);
+  it('always fails a force-push or a deletion of main, einar6969 included', () => {
+    for (const login of ['some-bot', EINAR]) {
+      const sender = { login };
+      expect(evaluate(push({ forced: true, sender }), [SHA_A, SHA_B], mergedPulls()).ok).toBe(false);
+      expect(evaluate(push({ deleted: true, commits: [], sender }), [], {}).ok).toBe(false);
+    }
+    expect(evaluate(push({ forced: true, sender: { login: EINAR } }), [SHA_A, SHA_B], mergedPulls()).lines).toContain(
+      `FAIL: main force-pushed by ${EINAR}`,
+    );
   });
 
   it('ignores a push to another branch', () => {
@@ -84,7 +91,7 @@ describe('runGuard', () => {
     return { gh, calls };
   }
   const run = (event: PushEvent, gh: (args: string[]) => Promise<string>) =>
-    runGuard({ event, gh, trustedPusher: TRUSTED, retryDelaysMs: [0, 0], sleep: async () => {} });
+    runGuard({ event, gh, retryDelaysMs: [0, 0], sleep: async () => {} });
 
   it('lists the new commits with the compare API and passes merged ones', async () => {
     const { gh, calls } = fakeGh(mergedPulls());
@@ -130,11 +137,20 @@ describe('runGuard', () => {
     expect(result.output).toContain(`::error::main guard: ${SHA_B} FAIL: no pull request merged into main`);
   });
 
-  it('makes no API call for a push by the trusted account', async () => {
+  it("looks up einar6969's push like anyone else's and fails a commit with no merged pull request", async () => {
+    const { gh, calls } = fakeGh({ ...mergedPulls(), [SHA_B]: [] });
+    const result = await run(push({ sender: { login: EINAR } }), gh);
+    expect(result.exitCode).toBe(1);
+    expect(calls.some((c) => c.some((arg) => arg.includes('/compare/')))).toBe(true);
+    expect(result.output).toContain(`::error::main guard: ${SHA_B} FAIL: no pull request merged into main`);
+  });
+
+  it('makes no API call for a deletion of main, and fails it', async () => {
     const { gh, calls } = fakeGh({});
-    const result = await run(push({ sender: { login: TRUSTED } }), gh);
-    expect(result.exitCode).toBe(0);
+    const result = await run(push({ deleted: true, commits: [], after: '0'.repeat(40), sender: { login: EINAR } }), gh);
+    expect(result.exitCode).toBe(1);
     expect(calls).toEqual([]);
+    expect(result.output).toContain(`::error::main guard: FAIL: main deleted by ${EINAR}`);
   });
 
   it('fails closed when the GitHub API call fails', async () => {
@@ -144,5 +160,13 @@ describe('runGuard', () => {
     const result = await run(push(), gh);
     expect(result.exitCode).toBe(1);
     expect(result.output).toContain('::error::main guard: GitHub API call failed: HTTP 502');
+  });
+});
+
+describe('main-guard.yml', () => {
+  const root = join(here, '..', '..', '..');
+  it('gives the guard no trusted pusher: every cloud thread acts as einar6969', () => {
+    expect(readFileSync(join(root, '.github', 'workflows', 'main-guard.yml'), 'utf8')).not.toMatch(/TRUSTED_PUSHER|trusted/i);
+    expect(readFileSync(join(root, 'tools', 'checks', 'main-guard.ts'), 'utf8')).not.toMatch(/TRUSTED_PUSHER|trustedPusher/);
   });
 });

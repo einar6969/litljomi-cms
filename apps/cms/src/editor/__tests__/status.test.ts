@@ -159,10 +159,21 @@ describe('displayState: failures', () => {
   it('live not confirmed and retried (M3-03): "Ekki enn staðfest á vef, reynt aftur…", pending (it changes on its own)', () => {
     for (const action of ['publish', 'unpublish'] as const) {
       const state = displayState(row({ action, sites_live_ok: 1, sites_not_confirmed: 1, live_retrying: true }));
-      expect(state).toEqual({ label: t.publish.notConfirmedRetrying, tone: 'pending', detail: t.publish.notConfirmedRetryingDetail });
+      expect(state).toMatchObject({ label: t.publish.notConfirmedRetrying, tone: 'pending' });
       expect(state.label).toBe('Ekki enn staðfest á vef, reynt aftur…');
       expect(isFinal(state)).toBe(false);
     }
+  });
+
+  it('a retried publish says the entry has not been seen yet', () => {
+    const state = displayState(row({ sites_live_ok: 1, sites_not_confirmed: 1, live_retrying: true }));
+    expect(state.detail).toBe(t.publish.notConfirmedRetryingDetail);
+  });
+
+  it('a retried unpublish says the entry has not left the site yet (approved text)', () => {
+    const state = displayState(unpublish({ sites_live_ok: 1, sites_not_confirmed: 1, live_retrying: true }));
+    expect(state).toEqual({ label: t.publish.notConfirmedRetrying, tone: 'pending', detail: t.publish.notConfirmedRetryingUnpublishDetail });
+    expect(state.detail).toBe('Beiðnin var send á vefinn en færslan hefur ekki enn horfið þaðan. Kerfið reynir aftur sjálfkrafa.');
   });
 
   it('live not confirmed with its retries exhausted (M3-03: 24 hours) is "Birting á vef mistókst", final', () => {
