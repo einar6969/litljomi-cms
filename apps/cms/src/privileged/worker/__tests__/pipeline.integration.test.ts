@@ -19,10 +19,12 @@ import { editorClient, publicUrl, secretClient } from '../../../../../../tests/i
 import { env } from '../../../../../../tests/integration/src/env.ts';
 import { TENANT } from '../../../../../../tests/integration/src/fixtures.ts';
 import { closeAll, ownerQuery, withTx } from '../../../../../../tests/integration/src/sql.ts';
+import { createAdminClient } from '../../admin-client';
 import { buildRelease } from '../build-release';
 import { processAndDeliver, sweep } from '../pipeline';
 import { STALE_RELEASE_SECONDS } from '../sweep';
 import { processPendingRequests } from '../process-request';
+import { removeExpiredReleaseFiles } from '../retention';
 import { entryMarker, html, releaseMeta, startFakeSite, type FakeSite } from './fake-site';
 import { prepareLabak } from './labak-setup';
 import { TEST_JPEG, TEST_JPEG_METADATA } from './test-image';
@@ -521,4 +523,165 @@ describe('sweep', () => {
     const d = await deliveryOf(r.requestId);
     expect(d).toMatchObject({ status: 'committed', number: stale.number + 1, notify_status: 'ok', live_status: 'ok' });
   });
+});
+
+// Thread E (spec §7.2 "Housekeeping release", §7.4; migration 20261104160000): a withdrawal whose
+// first live check missed keeps M3-03's retry. The housekeeping release waits while the withdrawing
+// release D has a site with a retry scheduled, for at most an hour after D's delivery; when the hour
+// runs out with the site still unconfirmed, the housekeeping release is built and one alert names
+// D and the site. Both kinds of withdrawal: an unpublish, and a publish that replaces the image.
+describe('housekeeping hold: a withdrawal whose first live check missed', () => {
+  type Kind = 'unpublish' | 'image';
+  const SLOW = { pollMs: 100, timeoutMs: 1_500 };
+
+  /** Whether the sweep's build selection lists labak at `now` (epoch ms), with its unconfirmed sites. */
+  async function labakListed(now: number): Promise<{ listed: boolean; unconfirmed: string[] | null }> {
+    const rows = await withTx('service', async (w) =>
+      (await w.query('select * from api.worker_tenants_to_release($1) where tenant_id = $2', [new Date(now).toISOString(), TENANT.labak])).rows,
+    );
+    return { listed: rows.length > 0, unconfirmed: (rows[0]?.unconfirmed_site_ids as string[] | null | undefined) ?? null };
+  }
+
+  const latestRelease = async () =>
+    (await ownerQuery<{ id: string; number: number; status: string }>(
+      'select id, number, status from cms.releases where tenant_id = $1 order by number desc limit 1',
+      [TENANT.labak],
+    ))[0]!;
+
+  const linkedRequests = async (releaseId: string) =>
+    Number((await ownerQuery<{ n: string }>('select count(*) as n from cms.publish_requests where release_id = $1', [releaseId]))[0]!.n);
+
+  const withdrawalAlerts = (releaseId: string) =>
+    ownerQuery<{ details: Record<string, unknown> }>('select details from cms.audit_log where action = $1 and details ->> $2 = $3', [
+      'system.alert.delivery.withdrawal_unconfirmed',
+      'releaseId',
+      releaseId,
+    ]);
+
+  /** The public path of the image the entry's published revision references. */
+  const publishedImage = async (entryId: string) =>
+    (await ownerQuery<{ id: string; public_path: string | null }>(
+      `select a.id, a.public_path from cms.assets a
+       join cms.revision_refs rr on rr.tenant_id = a.tenant_id and rr.target_asset_id = a.id
+       join cms.entries e on e.tenant_id = rr.tenant_id and e.published_rev_id = rr.revision_id
+       where e.id = $1`,
+      [entryId],
+    ))[0]!;
+
+  /** The status of a public object; the local Storage API's missing-object answer is reported as 404. */
+  async function statusOf(bucket: 'delivery' | 'media-public', path: string): Promise<number> {
+    const res = await fetch(publicUrl(bucket, path));
+    if (res.status !== 400) {
+      await res.body?.cancel();
+      return res.status;
+    }
+    const body = (await res.json()) as { statusCode?: string; code?: string };
+    return body.statusCode === '404' && body.code === 'NoSuchKey' ? 404 : 400;
+  }
+
+  /**
+   * A published, confirmed news item, then its withdrawal delivered at `t0` to a site that does not
+   * revalidate, so the first live check misses (not_confirmed, retry 1 minute later).
+   */
+  async function missedWithdrawal(kind: Kind, t0: number) {
+    const r = await requested(kind === 'unpublish' ? 'Dregin til baka' : 'Mynd skipt út');
+    await processAndDeliver(r.requestId, fast);
+    expect(await deliveryOf(r.requestId)).toMatchObject({ live_status: 'ok' });
+    const image = await publishedImage(r.entryId);
+    expect(image.public_path).not.toBeNull();
+    revalidates = false;
+    let requestId: string;
+    try {
+      requestId =
+        kind === 'unpublish'
+          ? await rpc<string>('request_unpublish', { p_entry_id: r.entryId })
+          : await rerequested(r.entryId, r.version, 'Ný mynd');
+      await processAndDeliver(requestId, { ...SLOW, now: () => t0 });
+    } catch (error) {
+      revalidates = true;
+      throw error;
+    }
+    const d = await deliveryOf(requestId);
+    expect(d).toMatchObject({ notify_status: 'ok', notify_attempts: 1, live_status: 'not_confirmed', last_error: { code: 'live_not_confirmed' } });
+    expect(await scheduleOf(requestId)).toEqual({ first_failed_at: t0, next_attempt_at: t0 + MINUTE });
+    const withdrawing = await latestRelease();
+    expect(withdrawing).toMatchObject({ status: 'delivered', number: d.number });
+    return { entryId: r.entryId, requestId, release: withdrawing, image: image.public_path! };
+  }
+
+  for (const kind of ['unpublish', 'image'] as const) {
+    it(`${kind}: the housekeeping release waits, the retry runs and confirms, then the housekeeping release is built`, async () => {
+      const t0 = Date.now();
+      const w = await missedWithdrawal(kind, t0);
+      try {
+        // Held: without the hold, labak was listed at once and the next sweep superseded the delivery.
+        expect(await labakListed(t0 + 30_000)).toEqual({ listed: false, unconfirmed: null });
+
+        // The retry is due: the site is notified again, now reloads, and the full live check passes.
+        revalidates = true;
+        const before = webhooks().length;
+        await sweep({ ...fast, now: () => t0 + MINUTE });
+        expect(webhooks().length - before).toBe(1);
+        expect(await deliveryOf(w.requestId)).toMatchObject({ notify_attempts: 2, live_status: 'ok', last_error: null });
+        expect(await latestRelease()).toMatchObject({ id: w.release.id });
+        const status = await editor.schema('api').from('publication_status').select('sites_live_ok, site_count, live_retrying').eq('entry_id', w.entryId).single();
+        expect(status.data).toEqual({ sites_live_ok: 1, site_count: 1, live_retrying: false });
+        if (kind === 'unpublish') expect(news().some((e) => e.id === w.entryId)).toBe(false);
+
+        // Settled: the next sweep builds the housekeeping release, with nothing to alert.
+        expect(await labakListed(t0 + MINUTE + 1_000)).toEqual({ listed: true, unconfirmed: null });
+        await sweep({ ...fast, now: () => t0 + MINUTE + 1_000 });
+        const h = await latestRelease();
+        expect(h).toMatchObject({ status: 'delivered', number: w.release.number + 1 });
+        expect(await linkedRequests(h.id)).toBe(0);
+        expect(await withdrawalAlerts(w.release.id)).toEqual([]);
+      } finally {
+        revalidates = true;
+        rendered = await loadBundle();
+      }
+    });
+
+    it(`${kind}: a miss lasting past the hour builds the housekeeping release, alerts once, and the withdrawn image still leaves`, async () => {
+      const t0 = Date.now();
+      const w = await missedWithdrawal(kind, t0);
+      revalidates = false;
+      try {
+        // Within the hour the retries keep running and missing; nothing supersedes the release.
+        await sweep({ ...SLOW, now: () => t0 + 59 * MINUTE });
+        expect(await deliveryOf(w.requestId)).toMatchObject({ notify_attempts: 2, live_status: 'not_confirmed' });
+        expect(await latestRelease()).toMatchObject({ id: w.release.id });
+        expect((await labakListed(t0 + 59 * MINUTE)).listed).toBe(false);
+
+        // An hour after the delivery (recorded a few seconds after t0) the hold ends: listed,
+        // naming the unconfirmed site.
+        const hourLater = t0 + 60 * MINUTE + 30_000;
+        expect(await labakListed(hourLater)).toEqual({ listed: true, unconfirmed: [siteId] });
+        await sweep({ ...SLOW, now: () => hourLater });
+        const h = await latestRelease();
+        expect(h).toMatchObject({ status: 'delivered', number: w.release.number + 1 });
+        expect(await linkedRequests(h.id)).toBe(0);
+        const alerts = await withdrawalAlerts(w.release.id);
+        expect(alerts.map((a) => a.details)).toEqual([
+          { tenantId: TENANT.labak, releaseId: w.release.id, number: w.release.number, siteId },
+        ]);
+        // The withdrawal is superseded: final "not confirmed", no retry left, no second alert.
+        const status = await editor.schema('api').from('publication_status').select('sites_not_confirmed, live_retrying').eq('entry_id', w.entryId).single();
+        expect(status.data).toEqual({ sites_not_confirmed: 1, live_retrying: false });
+        await sweep({ ...SLOW, now: () => t0 + 62 * MINUTE });
+        expect(await withdrawalAlerts(w.release.id)).toHaveLength(1);
+        expect((await latestRelease()).id).toBe(h.id);
+      } finally {
+        revalidates = true;
+        rendered = await loadBundle();
+      }
+
+      // The tenant never publishes again; an hour after the housekeeping release, the withdrawn
+      // image leaves public storage (about two hours after the withdrawal).
+      const db = createAdminClient();
+      const later = new Date(Date.now() + 61 * MINUTE);
+      for (let i = 0; i < 100 && (await removeExpiredReleaseFiles(db, { now: () => later })).releaseIds.length > 0; i++);
+      expect(await statusOf('media-public', w.image)).toBe(404);
+      expect(await statusOf('delivery', `labak/releases/${w.release.number}.json`)).toBe(200);
+    });
+  }
 });

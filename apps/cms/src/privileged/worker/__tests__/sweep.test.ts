@@ -318,6 +318,48 @@ describe('runSweep', () => {
     });
   });
 
+  describe('a withdrawal whose housekeeping hold ended unconfirmed (Thread E)', () => {
+    const row = (over: Record<string, unknown> = {}) => ({
+      tenant_id: 'prufa',
+      unconfirmed_release_id: null,
+      unconfirmed_release_number: null,
+      unconfirmed_site_ids: null,
+      ...over,
+    });
+
+    it('raises one delivery.withdrawal_unconfirmed alert per site the hold left unconfirmed, then builds', async () => {
+      handlers.worker_fail_stale_releases = () => ({ data: [] });
+      handlers.worker_tenants_to_release = () => ({
+        data: [row({ unconfirmed_release_id: 'rel-7', unconfirmed_release_number: 7, unconfirmed_site_ids: ['s1', 's2'] })],
+      });
+      alertMock.mockImplementation(async (event: string) => {
+        order.push(`alert ${event}`);
+      });
+
+      await runSweep(clock);
+
+      expect(alertMock.mock.calls).toEqual([
+        ['delivery.withdrawal_unconfirmed', { tenantId: 'prufa', releaseId: 'rel-7', number: 7, siteId: 's1' }],
+        ['delivery.withdrawal_unconfirmed', { tenantId: 'prufa', releaseId: 'rel-7', number: 7, siteId: 's2' }],
+      ]);
+      // The alerts come first; the housekeeping release is built either way.
+      const at = (step: string) => order.indexOf(step);
+      expect(at('alert delivery.withdrawal_unconfirmed')).toBeGreaterThan(-1);
+      expect(at('alert delivery.withdrawal_unconfirmed')).toBeLessThan(at('deliverTenant prufa'));
+      alertMock.mockImplementation(async () => {});
+    });
+
+    it('raises nothing for a tenant listed without unconfirmed sites', async () => {
+      handlers.worker_fail_stale_releases = () => ({ data: [] });
+      handlers.worker_tenants_to_release = () => ({ data: [row(), row({ tenant_id: 'labak', unconfirmed_site_ids: [] })] });
+
+      await runSweep(clock);
+
+      expect(alertMock).not.toHaveBeenCalled();
+      expect(deliverTenantMock.mock.calls.map((c) => c[0]).sort()).toEqual(['labak', 'prufa']);
+    });
+  });
+
   it('one tenant’s failing release does not stop the others', async () => {
     handlers.worker_tenants_to_release = () => ({ data: [{ tenant_id: 't1' }, { tenant_id: 't2' }] });
     deliverTenantMock.mockRejectedValueOnce(new Error('t1 broke'));

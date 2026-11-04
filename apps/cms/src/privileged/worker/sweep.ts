@@ -11,7 +11,12 @@
 //      and the next build attempt is not due yet. A tenant whose latest delivered release withdrew
 //      something (an unpublish, or media the release before it referenced) is listed too, with
 //      nothing committed: its build is the housekeeping release (§7.2), so the release before the
-//      withdrawal expires in step 5 an hour later even if the tenant never publishes again.
+//      withdrawal expires in step 5 an hour later even if the tenant never publishes again. The
+//      housekeeping release waits while a site's delivery of the withdrawing release is unsettled
+//      (its first live check not recorded yet, or a retry scheduled), for at most an hour after
+//      that delivery, so step 3's retries of it run (Thread E). When the hour ends with sites still
+//      unsettled, the selection names them, and the sweep raises one alert per release and site
+//      (`delivery.withdrawal_unconfirmed`) before it builds the housekeeping release.
 //   3. Deliveries of each tenant's latest delivered release that still need a notification or a
 //      live check, or whose live check missed (not_confirmed, M3-03), are retried when their next
 //      attempt is due (api.worker_deliveries_to_retry): the site is notified again and the full
@@ -92,6 +97,35 @@ type RetryRow = {
   requests: Array<{ id: string; entry_id: string; action: 'publish' | 'unpublish' }>;
 };
 
+/**
+ * A row of api.worker_tenants_to_release: a tenant to build. The `unconfirmed_*` columns are set
+ * when the housekeeping hold ended by its hour with sites whose delivery of the withdrawing release
+ * was never settled; otherwise they are null.
+ */
+export type TenantToRelease = {
+  tenant_id: string;
+  unconfirmed_release_id: string | null;
+  unconfirmed_release_number: number | null;
+  unconfirmed_site_ids: string[] | null;
+};
+
+/**
+ * One alert per release and site whose withdrawal the hold ended without confirming (§7.2, §7.4).
+ * The incident is the release and the site (incidentOf), so the email goes out once however often
+ * the tenant is listed (a housekeeping build that fails is listed again on its retry schedule).
+ */
+export async function alertUnconfirmedWithdrawal(row: TenantToRelease): Promise<void> {
+  if (!row.unconfirmed_release_id) return;
+  for (const siteId of row.unconfirmed_site_ids ?? []) {
+    await alert('delivery.withdrawal_unconfirmed', {
+      tenantId: row.tenant_id,
+      releaseId: row.unconfirmed_release_id,
+      number: row.unconfirmed_release_number,
+      siteId,
+    });
+  }
+}
+
 /** The sweep's steps as `worker.step_failed` names them, with the wording of the log line. */
 const STEP_LABELS = {
   stale_releases: 'failing stale releases',
@@ -132,11 +166,9 @@ export async function runSweep(options: DeliveryOptions = {}): Promise<void> {
   // security r1, Minor 1). A tenant with a build waits for it: when it delivered a release, that
   // release superseded the retried one, which is dropped; when the build threw, the retries wait
   // for the next sweep, which reads again what is latest.
-  let tenants: string[] = [];
+  let listed: TenantToRelease[] = [];
   try {
-    tenants = ((await callRpc<Array<{ tenant_id: string }> | null>(db, 'worker_tenants_to_release', { p_now: clockOf(options) })) ?? []).map(
-      (t) => t.tenant_id,
-    );
+    listed = (await callRpc<TenantToRelease[] | null>(db, 'worker_tenants_to_release', { p_now: clockOf(options) })) ?? [];
   } catch (error) {
     failed('tenants_to_release')(error);
   }
@@ -146,9 +178,12 @@ export async function runSweep(options: DeliveryOptions = {}): Promise<void> {
   } catch (error) {
     failed('deliveries_to_retry')(error);
   }
-  const building = new Set(tenants);
+  const building = new Set(listed.map((t) => t.tenant_id));
   await Promise.all([
-    ...tenants.map(async (tenantId) => {
+    ...listed.map(async (row) => {
+      const tenantId = row.tenant_id;
+      // alert() never rejects.
+      await alertUnconfirmedWithdrawal(row);
       let result: Awaited<ReturnType<typeof deliverTenant>>;
       try {
         result = await deliverTenant(tenantId, { ...options, db });
