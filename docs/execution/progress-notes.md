@@ -246,3 +246,4 @@ Einar in chat: "1. Turn off “Automatically expose new tables” in sitting 2, 
 - **Pointer lag:** 22 releases, 43.5–53.7 s, all fresh. **Local:** `pnpm test:delivery` 6 passed (30 outside its filter).
 - **Tidy PR:** from side session `acceptance-tidy-preview`, commits `5b3fb24`, `ad30fc1`; not merged at last read.
 - **Close (22:10 UTC):** A10 pass; A12 pass, release 33 live on both sites; bundle 16 gone 22:05:04; pointer lag now 27 releases, 35.0–53.7 s. C5 written. Retry times corrected from "1, 2, 4": see C5. M2 and M3 not marked accepted.
+- **M2 and M3 accepted by Einar (decision 51.5): "accepted."** Gate approvals of decision 51 closed in `gates.json`. A10 and A12 pass in `state.json`. C5's four questions stay open.

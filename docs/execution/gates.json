@@ -166,6 +166,11 @@
           "at": "2026-11-04",
           "scope": "Decision 51.1: the image-unpublish and image-replacing checks run on labak with a new test news item that ends unpublished; nothing already published on labak is touched. Ends when this acceptance ends.",
           "note": "Einar in chat, 2026-11-04: \"1. Run the image-unpublish and image-replacing checks on `labak`, with a new test news item that ends unpublished. Don’t touch anything already published on `labak`.\""
+        },
+        {
+          "at": "2026-11-04",
+          "scope": "Closed: every approval of decision 51 (51.1 to 51.4) ended with this acceptance. A later hosted action needs a new approval.",
+          "note": "Einar in chat, 2026-11-04, answering \"Do you accept M2 and M3?\": \"accepted.\" The approvals themselves said: \"These approvals end when this acceptance ends.\""
         }
       ],
       "amendments": [
@@ -276,6 +281,11 @@
           "at": "2026-11-04",
           "scope": "Decision 51.4: the controller creates Vercel project demo-next15-staging through the connector: root apps/demo-site-next15, build command, Production Branch staging, Node 22, Ignored Build Step, protection, the three non-secret variables, domain demo-next15-staging.litljomi.is, and the final deploy. Einar keeps the CNAME, vercel link and provision site with the webhook secret. No new cost. Ends when this acceptance ends.",
           "note": "Einar in chat, 2026-11-04, answering the controller's offer to create the project through the connector: \"do the Vercel side!\""
+        },
+        {
+          "at": "2026-11-04",
+          "scope": "Closed: every approval of decision 51 (51.1 to 51.4) ended with this acceptance. A later hosted action needs a new approval.",
+          "note": "Einar in chat, 2026-11-04, answering \"Do you accept M2 and M3?\": \"accepted.\" The approvals themselves said: \"These approvals end when this acceptance ends.\""
         }
       ]
     },
