@@ -171,6 +171,11 @@
           "at": "2026-11-04",
           "scope": "Closed: every approval of decision 51 (51.1 to 51.4) ended with this acceptance. A later hosted action needs a new approval.",
           "note": "Einar in chat, 2026-11-04, answering \"Do you accept M2 and M3?\": \"accepted.\" The approvals themselves said: \"These approvals end when this acceptance ends.\""
+        },
+        {
+          "at": "2026-11-04",
+          "scope": "Decision 52, ruling 2: one direct update on Supabase rwpgpfsmhhtimauvpoyt, cms.sites.active = false for site 280f4415-1c17-46ab-b1f3-d6da151e5d99 (demo-next15-staging). Done, read back, and closed: the approval ended with that action.",
+          "note": "Einar in chat, 2026-11-04: \"New approval, for this one action only: on Supabase `rwpgpfsmhhtimauvpoyt`, set `cms.sites.active = false` for site `280f4415-1c17-46ab-b1f3-d6da151e5d99` (`demo-next15-staging`) with one direct update, and change nothing else. Read the row back and confirm that `demo-staging` is the only active `demo` site. Don't publish anything, and don't touch the Vercel project. The approval ends when that's done.\" Read back: 8cead364 active on demo; 280f4415 and 8b4bc4d0 inactive; e5b6dbba active on labak, unchanged."
         }
       ],
       "amendments": [
