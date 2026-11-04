@@ -267,7 +267,8 @@ Column lists are the v1 minimum; implementation may add timestamps and indexes.
 | `assets` | `SELECT`; `INSERT (id, tenant_id, original_path, filename, mime, bytes, width, height, sha256, default_alt, created_by)`; `UPDATE (focal_x, focal_y, default_alt, archived_at)` |
 | `publish_requests` | `SELECT`; `INSERT (tenant_id, entry_id, action, draft_version, requested_by)`. `status` defaults to `pending` |
 | `memberships`, `platform_admins` | `SELECT` (policies restrict to own rows) |
-| `tenants`, `releases`, `site_deliveries` | `SELECT` (own tenants; console policies for platform admins) |
+| `tenants` | `SELECT` (own tenants; console policies for platform admins); `UPDATE (name)` as a **lock-only** grant: the `tenants_lock_member` policy admits the editor's own tenants with `WITH CHECK (false)`, so every update an editor attempts fails and the grant only lets `register_asset` and `update_asset` lock the tenant row `FOR SHARE` while they read its status (M3-07) |
+| `releases`, `site_deliveries` | `SELECT` (own tenants; console policies for platform admins) |
 | `sites` | `SELECT (id, tenant_id, base_url, preview_url, active)` only. Secret references are never readable by `authenticated` |
 | `audit_log` | `INSERT` only, through the audit triggers (§4.7); `SELECT` for platform admins with `aal2` |
 | everything else | none |
@@ -283,6 +284,7 @@ Column lists are the v1 minimum; implementation may add timestamps and indexes.
 | Function | Callable by | Does |
 |---|---|---|
 | `create_entry(tenant_id, type, slug?)` | `authenticated` | Inserts entry and empty draft |
+| `create_singleton_entry(tenant_id, type, schema_version?)` | `authenticated` | Opens a singleton type (§3.2 `structure`): returns the type's one live entry, creating it and its empty draft on first open |
 | `save_draft(entry_id, expected_version, data, schema_version, title, sort_at)` | `authenticated` | Updates the draft only if `version = expected_version`; otherwise returns a conflict |
 | `set_slug(entry_id, slug)` | `authenticated` | Changes the slug before first publish |
 | `archive_entry(entry_id)` | `authenticated` | Allowed only when not published |
@@ -380,7 +382,7 @@ defineType({
 - **Editing:** focal point and default alt text per asset; alt text per use. No per-use cropping.
 - **In the editor and in preview,** originals are shown through short-lived signed URLs.
 - **Publication:** when building a release, the worker copies every asset referenced by that release from `media-private` to `media-public` (server-side copy, no download) and sets `public_path`. Public files never change: replacing an image creates a new asset.
-- **Withdrawal:** a public file is deleted once neither the current nor the previous release references it (§7.2). In practice, media that leaves the site is removed from public storage within about an hour of the next release. Content that was public may persist in third-party caches; this cannot be prevented.
+- **Withdrawal:** a public file is deleted once neither the current nor the previous release references it (§7.2). A release that withdraws something (an unpublished entry, or media the release before it referenced) is followed at once by a **housekeeping release** (§7.2), so media that leaves the site is removed from public storage within about an hour of the release that removes it, even if the tenant never publishes again. Content that was public may persist in third-party caches; this cannot be prevented.
 - Assets referenced by a currently published revision cannot be archived (`archive_asset` refuses).
 
 ---
@@ -464,7 +466,8 @@ current.json
 - Bundles: `cache-control: public, max-age=31536000, immutable`.
 - Pointer: `cache-control: public, max-age=30` (CDN freshness is an assumption to test, §11).
 - **Format evolution:** additive changes within `format: 1`. A breaking change writes `format: 2` in parallel (separate path) until every site has moved.
-- **Retention:** only the **current and previous** release stay in the public `delivery` bucket (the previous one serves sites still regenerating from it). An hour after a release is delivered, the release before the previous one is deleted, along with public media referenced only by deleted releases. Unpublished content therefore stops being publicly reachable within about an hour of the next release. Release history is kept in the database (`releases`, `revisions`), not as public files.
+- **Retention:** only the **current and previous** release stay in the public `delivery` bucket (the previous one serves sites still regenerating from it). An hour after a release is delivered, the release before the previous one is deleted, along with public media referenced only by deleted releases. Release history is kept in the database (`releases`, `revisions`), not as public files.
+- **Housekeeping release:** when the tenant's latest delivered release withdrew something from the delivered release before it (an unpublish request is linked to it, or the earlier release referenced media it does not), the sweep builds the next release at once, from the published state like any other release (§7.1), with no linked requests unless something else was committed meanwhile. It withdraws nothing itself, so there is one. The release before the withdrawal is then older than the previous release, and is deleted an hour after the housekeeping release is delivered. Unpublished content therefore stops being publicly reachable within about an hour of the release that withdraws it, whether or not the tenant publishes again.
 - One bundle per tenant is adequate while a tenant has up to a few hundred entries. Splitting by type is a future format version.
 
 ### 7.3 Site integration (SDK)
@@ -550,7 +553,7 @@ Secrets are rotatable: the SDK accepts two webhook secrets during rotation.
 - **Backups:** Supabase daily backups (Pro), plus a **nightly per-tenant export** (all drafts, revisions, assets metadata and media files) to storage outside the Supabase account. The export target provider is decided at M4.
 - **Restore:** a single tenant is restored from its export into staging, verified, then into production with the CLI. Whole-project restore uses Supabase backups.
 - **Monitoring and alerts:** worker failures and exhausted retries alert the platform admin (in M1 through the audit log and the server log; by email from M3). The console shows per-tenant request, release and delivery status.
-- **Incidents:** suspend a tenant (`status = suspended` stops publishing); revoke an editor (delete membership; immediate); roll back an entry (restore an older revision and publish); remove content urgently (unpublish; it leaves public storage within about an hour of the release, §7.2); rotate secrets.
+- **Incidents:** suspend a tenant (`status = suspended` stops publishing); revoke an editor (delete membership; immediate); roll back an entry (restore an older revision and publish); remove content urgently (unpublish; the sweep follows the withdrawing release with a housekeeping release at once, and the content leaves public storage within about an hour, §7.2); rotate secrets.
 - **Upgrades:** dependency updates monthly; database migrations applied to staging first, with the full test suite, then production.
 - **Expected platform cost** (indicative): Supabase Pro organisation with a production and a staging project, roughly $35 a month; Vercel Pro per seat; SMTP and export storage on low tiers.
 
