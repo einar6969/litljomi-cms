@@ -6,9 +6,23 @@
 // would otherwise become "//evil.com".
 const UNSAFE_CHARS = /[\u0000- \u007f]/;
 
-/** A path on the same site: starts with a single `/`, not `//` or `/\`, no whitespace or control characters. */
+const BASE = 'http://site.invalid';
+
+/**
+ * A path on the same site: starts with a single `/`, not `//` or `/\`, no whitespace or control
+ * characters, and still a path on the same site once dot segments are resolved: `/.//evil.com` and
+ * `/%2e//evil.com` resolve to the path `//evil.com`, which a site that re-emits the resolved path
+ * would turn into a protocol-relative URL.
+ */
 export function isRootRelativePath(s: string): boolean {
-  return s.startsWith('/') && s[1] !== '/' && s[1] !== '\\' && !UNSAFE_CHARS.test(s);
+  if (!s.startsWith('/') || s[1] === '/' || s[1] === '\\' || UNSAFE_CHARS.test(s)) return false;
+  let url: URL;
+  try {
+    url = new URL(s, BASE);
+  } catch {
+    return false;
+  }
+  return url.origin === BASE && !url.pathname.startsWith('//');
 }
 
 /**

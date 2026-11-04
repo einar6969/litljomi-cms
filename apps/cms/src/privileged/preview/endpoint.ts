@@ -6,7 +6,7 @@ import {
   projectEntry,
   type ContentType,
 } from '@litljomi/cms-schema';
-import { verifyPreviewToken, type Bundle, type BundleEntry } from '@litljomi/cms-sdk';
+import { readUnverifiedPreviewClaims, verifyPreviewToken, type Bundle, type BundleEntry } from '@litljomi/cms-sdk';
 import { getModule } from '@/modules/registry';
 import type { SupabaseClient } from '@/lib/supabase/types';
 import { supabaseReleaseStorage, type ReleaseStorage } from '../worker/build-release';
@@ -19,7 +19,8 @@ import { MEDIA_PRIVATE, privateMediaPath } from '../worker/storage-paths';
  * token from the token route (M3-10) as `Authorization: Bearer <token>`. In draft mode the site's
  * SDK fetches its content here (M3-12).
  *
- * The token is verified first, with the preview secrets of the path's tenant's sites: a token of
+ * The token's shape, expiry and tenant claim are checked before any RPC; then the token is
+ * verified with the preview secrets of the path's tenant's sites: a token of
  * another tenant is signed with another secret and is refused, and so is one whose `tenant` claim
  * is not the path's. Nothing about a draft is read before that. Token minting is the
  * authorization check for preview (§7.5): the endpoint returns what a valid token names and nothing
@@ -29,11 +30,12 @@ import { MEDIA_PRIVATE, privateMediaPath } from '../worker/storage-paths';
  * is in the delivery bucket) with the token's entry overlaid: its draft, at exactly the token's
  * draft version, upcast and projected like a release (§7.1, §7.2), replacing the entry's published
  * record or added to its type. The other entries are the release's records unchanged. The draft's
- * media are short-lived signed URLs of the private originals, since they may not be public yet.
+ * media are short-lived signed URLs of the private originals, since they may not be public yet,
+ * valid no longer than the token.
  * Never cached (`private, no-store`).
  */
 
-/** How long the signed media URLs of a preview stay valid. */
+/** How long the signed media URLs of a preview stay valid at most: never past the token's `exp`. */
 export const PREVIEW_MEDIA_TTL_SECONDS = 600;
 
 /** A bundle (format 1) with one entry overlaid by its draft. `release` is 0 when nothing is delivered yet. */
@@ -90,12 +92,19 @@ export async function readPreview(deps: PreviewDeps, input: { tenant: string; to
   const slug = input.tenant;
   if (!SLUG_RE.test(slug) || slug.length > 63) return fail('invalid_token');
 
+  // 0. Before any RPC: the token must have its shape, be in its lifetime and name the path's
+  // tenant. Not an authorization (the signature is not checked yet), only a refusal of what can
+  // never be valid, so a malformed or expired token costs no database read (security review B6).
+  const now = deps.nowSeconds();
+  const unverified = readUnverifiedPreviewClaims({ token: input.token, nowSeconds: now });
+  if (unverified === null || unverified.tenant !== slug) return fail('invalid_token');
+
   // 1. The token, verified with the path's tenant's preview secrets before anything else is read.
   const tenantId = await callRpc<string | null>(db, 'worker_preview_tenant', { p_slug: slug });
   if (tenantId === null) return fail('invalid_token');
   const sites = ((await callRpc<PreviewSite[] | null>(db, 'worker_preview_sites', { p_tenant_id: tenantId })) ?? []) as PreviewSite[];
+  // verifyPreviewToken never uses a secret shorter than 32 characters (security review B5).
   const secrets = sites.map((s) => s.preview_secret);
-  const now = deps.nowSeconds();
   const claims = secrets.length === 0 ? null : verifyPreviewToken({ token: input.token, secrets, nowSeconds: now });
   if (claims === null || claims.tenant !== slug) return fail('invalid_token');
 
@@ -115,7 +124,9 @@ export async function readPreview(deps: PreviewDeps, input: { tenant: string; to
 
   // 4. The draft's media: signed URLs of the originals (not archived, valid paths only).
   const usable = read.assets.filter((a) => !a.archived && validOriginal(tenantId, a));
-  const ttl = deps.mediaTtlSeconds ?? PREVIEW_MEDIA_TTL_SECONDS;
+  // Never longer than the token has left (security review B3), in whole seconds, rounded down:
+  // claims.exp > now, so at least 1 s.
+  const ttl = Math.max(1, Math.min(deps.mediaTtlSeconds ?? PREVIEW_MEDIA_TTL_SECONDS, Math.floor(claims.exp - now)));
   const sign = deps.signMedia ?? signWith(db);
   const signed = usable.length === 0 ? new Map<string, string>() : await sign(usable.map((a) => a.original_path), ttl);
   const contextAssets: ContextAsset[] = usable

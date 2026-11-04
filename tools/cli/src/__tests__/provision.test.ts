@@ -105,6 +105,8 @@ const siteArgs = [
   'provision', 'site', '--tenant-id', TENANT_A, '--base-url', 'https://site.example.is',
   '--revalidate-path', '/api/cms/revalidate', ...common,
 ];
+const previewArgs = ['provision', 'preview-secret', '--site-id', SITE_ID, ...common];
+const PREVIEW_SECRET = 'TestOnlyPreviewSecret+0123456789/abcdefgh=';
 const editorArgs = ['provision', 'editor', '--email', 'editor@example.is', '--tenant-id', TENANT_A, '--tenant-id', TENANT_B, ...common];
 
 const path = (c: Call) => new URL(c.url).pathname + new URL(c.url).search;
@@ -132,6 +134,10 @@ describe('provision: argument parsing', () => {
     ['a revalidate path without a leading slash', ['provision', 'site', '--tenant-id', TENANT_A, '--base-url', 'https://a.is', '--revalidate-path', 'api/r', ...common]],
     ['a revalidate path with a query', ['provision', 'site', '--tenant-id', TENANT_A, '--base-url', 'https://a.is', '--revalidate-path', '/r?x=1', ...common]],
     ['site without --revalidate-path', ['provision', 'site', '--tenant-id', TENANT_A, '--base-url', 'https://a.is', ...common]],
+    ['preview-secret without --site-id', ['provision', 'preview-secret', ...common]],
+    ['preview-secret with a malformed site id', ['provision', 'preview-secret', '--site-id', 'nope', ...common]],
+    ['the preview secret as an argument', [...previewArgs, '--preview-secret', PREVIEW_SECRET]],
+    ['the preview secret as a positional argument', [...previewArgs, PREVIEW_SECRET]],
     ['editor with both --email and --user-id', [...editorArgs, '--user-id', USER_ID]],
     ['editor with neither --email nor --user-id', ['provision', 'editor', '--tenant-id', TENANT_A, ...common]],
     ['editor without --tenant-id', ['provision', 'editor', '--email', 'editor@example.is', ...common]],
@@ -364,6 +370,58 @@ describe('provision site', () => {
     });
     expect(r.code).toBe(1);
     expect(r.err.join('\n')).toContain('[redacted]');
+  });
+});
+
+// Security review B5: a site's preview secret is set from standard input only, 32 characters or more.
+describe('provision preview-secret', () => {
+  const handler: Handler = (c) => (path(c) === '/rest/v1/rpc/admin_set_preview_secret' ? new Response(null, { status: 204 }) : json(404, {}));
+
+  it('sets the site\'s preview secret through api.admin_set_preview_secret with the secret from stdin', async () => {
+    const r = await run(previewArgs, { stdin: `${PREVIEW_SECRET}\n`, handler });
+    expect(r.code).toBe(0);
+    expect(r.out).toEqual([`target: ${REF}.supabase.co`, `site ${SITE_ID}: preview secret set`]);
+    expect(r.calls.map(path)).toEqual(['/rest/v1/rpc/admin_set_preview_secret']);
+    const [call] = r.calls as [Call];
+    expect(call.body).toEqual({ p_site_id: SITE_ID, p_preview_secret: PREVIEW_SECRET });
+    expect(header(call, 'Content-Profile')).toBe('api');
+    expect(header(call, 'apikey')).toBe(KEY);
+    expect(r.lines.join('\n')).not.toContain(PREVIEW_SECRET);
+  });
+
+  it('refuses a terminal on stdin, sending nothing', async () => {
+    const r = await run(previewArgs, { stdin: null, handler });
+    expect(r.code).toBe(1);
+    expect(r.err.join('\n')).toContain('standard input is a terminal; pipe the preview secret in');
+    expect(r.calls).toHaveLength(0);
+  });
+
+  it.each([
+    ['empty', ''],
+    ['fewer than 32 characters', 'x'.repeat(31)],
+    ['a comma (it would split CMS_PREVIEW_SECRETS)', `${PREVIEW_SECRET},x`],
+    ['a space', `${PREVIEW_SECRET} x`],
+    ['two trailing newlines', `${PREVIEW_SECRET}\n\n`],
+  ])('refuses a secret that is %s, sending nothing', async (_name, stdin) => {
+    const r = await run(previewArgs, { stdin, handler });
+    expect(r.code).toBe(1);
+    expect(r.err.join('\n')).toMatch(/standard input is empty|the preview secret on standard input has an unexpected form \(value not shown\)/);
+    expect(r.calls).toHaveLength(0);
+  });
+
+  it('accepts exactly 32 characters', async () => {
+    const r = await run(previewArgs, { stdin: 'y'.repeat(32), handler });
+    expect(r.code).toBe(0);
+  });
+
+  it('reports an unknown site, and never prints the secret even when the server echoes it', async () => {
+    let r = await run(previewArgs, { stdin: PREVIEW_SECRET, handler: () => json(400, { code: 'P0001', message: 'not_found' }) });
+    expect(r.code).toBe(1);
+    expect(r.err.join('\n')).toContain(`FAILED: setting the preview secret of site ${SITE_ID}: HTTP 400 P0001 not_found`);
+    r = await run(previewArgs, { stdin: PREVIEW_SECRET, handler: () => json(400, { code: 'XX000', message: `bad ${PREVIEW_SECRET} ${KEY}` }) });
+    expect(r.code).toBe(1);
+    expect(r.err.join('\n')).toContain('[redacted]');
+    expect(r.lines.join('\n')).not.toContain(PREVIEW_SECRET);
   });
 });
 
