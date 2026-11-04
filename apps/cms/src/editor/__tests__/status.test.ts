@@ -180,6 +180,15 @@ describe('displayState: failures', () => {
     }
   });
 
+  it('live not confirmed: the detail says the entry did not show for a publish, and that it is not proven gone for an unpublish', () => {
+    expect(displayState(row({ action: 'publish', sites_live_ok: 1, sites_not_confirmed: 1 })).detail).toBe(
+      'Færslan var send á vefinn en ekki tókst að staðfesta að hún birtist þar.',
+    );
+    const unpublish = displayState(row({ action: 'unpublish', sites_live_ok: 1, sites_not_confirmed: 1 }));
+    expect(unpublish.detail).toBe('Beiðnin var send á vefinn en ekki tókst að staðfesta að færslan sé horfin þaðan.');
+    expect(unpublish.detail).not.toContain('birtist');
+  });
+
   it('superseded: "Færslunni var breytt eftir að þú ýttir á Birta. Birtu aftur."', () => {
     const state = displayState(row({ status: 'superseded', error: { code: 'superseded' }, release_status: null }));
     expect(state).toMatchObject({ label: 'Færslunni var breytt eftir að þú ýttir á Birta. Birtu aftur.', tone: 'error' });

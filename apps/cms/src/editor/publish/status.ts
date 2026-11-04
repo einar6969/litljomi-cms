@@ -119,7 +119,8 @@ function deliveryState(row: PublicationStatusRow): DisplayState {
   if (row.sites_live_ok + row.sites_not_confirmed === sites) {
     // M3-03: the sweep notifies the site again and re-runs the live check on M3-02's schedule.
     if (row.live_retrying) return { label: t.publish.notConfirmedRetrying, tone: 'pending', detail: t.publish.notConfirmedRetryingDetail };
-    return { label: t.publish.notConfirmed, tone: 'error', detail: t.publish.notConfirmedDetail };
+    const detail = row.action === 'unpublish' ? t.publish.notConfirmedUnpublishDetail : t.publish.notConfirmedDetail;
+    return { label: t.publish.notConfirmed, tone: 'error', detail };
   }
   if (row.sites_notified === sites) return { label: t.publish.revalidated, tone: 'pending' };
   return IN_PROGRESS;
