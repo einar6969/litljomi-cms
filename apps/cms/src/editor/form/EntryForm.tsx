@@ -1,16 +1,16 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { loadDraftAction, saveDraftAction, setSlugAction } from '@/app/(editor)/t/[tenant]/actions';
 import { t } from '@/i18n/is';
 import { createBrowserEditorClient } from '@/lib/supabase/browser';
 import { Button } from '@/ui/Button';
 import { Notice } from '@/ui/Notice';
-import { useAutosave, type TheirVersion } from '../autosave';
+import { useAutosave, type SaveDraft, type TheirVersion } from '../autosave';
 import { PreviewButton } from '../publish/PreviewButton';
 import { PublishPanel } from '../publish/PublishPanel';
 import type { RevisionSummary } from '../revisions';
-import { unsavedStore } from '../unsaved';
+import { onSignOut, unsavedStore } from '../unsaved';
 import { changedFields } from './conflict';
 import type { FieldDescriptor } from './descriptors';
 import { FieldInput } from './FieldInput';
@@ -21,6 +21,8 @@ import { EditorTenantProvider, type EditorTenant } from './tenant-context';
 type Props = {
   /** The entry's tenant, as the page resolved it through `api.my_tenants`. */
   tenant: EditorTenant;
+  /** The signed-in user the page was rendered for, as Supabase Auth verified it. */
+  userId: string;
   entryId: string;
   fields: FieldDescriptor[];
   /** The field the slug suggestion and the list title come from. */
@@ -37,10 +39,13 @@ type Props = {
   restored?: boolean;
 };
 
-/** False only when Supabase Auth says the browser has no valid session (not on a network failure). */
-async function sessionIsValid(): Promise<boolean> {
+/**
+ * False when Supabase Auth says the browser has no valid session, or a session of another user than
+ * `userId` (not on a network failure: the save itself is then refused by the server if the user differs).
+ */
+async function sessionIsUser(userId: string): Promise<boolean> {
   const { data, error } = await createBrowserEditorClient().auth.getUser();
-  if (data.user) return true;
+  if (data.user) return data.user.id === userId;
   return !(error && (error.name === 'AuthSessionMissingError' || error.status === 401 || error.status === 403));
 }
 
@@ -49,10 +54,12 @@ async function sessionIsValid(): Promise<boolean> {
  * edit yet is never touched, so it is sent back exactly as it was loaded. Every edit schedules an
  * autosave; local values stay on the screen whatever the save answers. A stale save shows the
  * conflict view (M2-11): only "reload theirs" replaces the form's values. Unsaved changes are also
- * kept in the tab (M2-17): after the session expires, a reload of the tab brings them back, and the
- * save goes through by itself once the editor has signed in again.
+ * kept in the tab (M2-17), under the user's own key: after the session expires, the save goes
+ * through by itself once the same editor has signed in again, and a reload of the tab brings them
+ * back with a notice, saved only when the editor chooses to. Every save names the user, so another
+ * account's session never saves them. Signing out, in this tab or another, drops them.
  */
-export function EntryForm({ tenant, entryId, fields, titleKey, initialData, initialVersion, initialSlug, slugLocked, published = false, revisions = [], restored = false }: Props) {
+export function EntryForm({ tenant, userId, entryId, fields, titleKey, initialData, initialVersion, initialSlug, slugLocked, published = false, revisions = [], restored = false }: Props) {
   const [data, setData] = useState<Record<string, unknown>>(initialData);
   const latest = useRef(data);
   // Bumped when "reload theirs" replaces the values, so every field remounts with them (a field may
@@ -65,9 +72,17 @@ export function EntryForm({ tenant, entryId, fields, titleKey, initialData, init
     setData(values);
     setGeneration((g) => g + 1);
   }, []);
-  const [store] = useState(() => unsavedStore());
-  const autosave = useAutosave({ entryId, initialVersion, save: saveDraftAction, sessionIsValid, loadLatest: loadDraftAction, store, onRestore: replaceValues });
-  const { schedule, takeTheirs, pendingData } = autosave;
+  const [store] = useState(() => unsavedStore(userId));
+  const [save] = useState<SaveDraft>(() => (id: string, version: number, values: unknown) => saveDraftAction(id, version, values, userId));
+  const [sessionIsValid] = useState(() => () => sessionIsUser(userId));
+  const autosave = useAutosave({ entryId, initialVersion, save, sessionIsValid, loadLatest: loadDraftAction, store, onRestore: replaceValues });
+  const { schedule, takeTheirs, pendingData, close, discardRestored } = autosave;
+  useEffect(() => onSignOut(close), [close]);
+  const discardCopy = useCallback(() => {
+    discardRestored();
+    replaceValues(initialData);
+  }, [discardRestored, replaceValues, initialData]);
+  const blocked = autosave.state === 'conflict' || autosave.state === 'signed_out' || autosave.state === 'restored';
   const hasUnsaved = useCallback(() => pendingData() !== null, [pendingData]);
   const reloadTheirs = useCallback(() => {
     const theirs = takeTheirs();
@@ -109,6 +124,8 @@ export function EntryForm({ tenant, entryId, fields, titleKey, initialData, init
           <SlugField entryId={entryId} initialSlug={initialSlug} title={title} locked={slugLocked} setSlug={setSlugAction} />
           {autosave.state === 'conflict' ? (
             <ConflictNotice theirs={autosave.theirs} fields={fields} mine={data} retry={autosave.retry} keepMine={autosave.keepMine} reloadTheirs={reloadTheirs} />
+          ) : autosave.state === 'restored' ? (
+            <RestoredNotice save={autosave.saveRestored} discard={discardCopy} />
           ) : (
             <SaveStatus state={autosave.state} retry={autosave.retry} />
           )}
@@ -119,14 +136,14 @@ export function EntryForm({ tenant, entryId, fields, titleKey, initialData, init
             <PublishPanel
               entryId={entryId}
               version={autosave.version}
-              disabled={autosave.state === 'conflict' || autosave.state === 'signed_out'}
+              disabled={blocked}
               initiallyPublished={published}
               fieldLabels={fieldLabels}
             />
             {/* Preview shows the saved draft (spec §7.5, M3-12). */}
             <PreviewButton
               entryId={entryId}
-              disabled={autosave.state === 'conflict' || autosave.state === 'signed_out'}
+              disabled={blocked}
               unsaved={() => autosave.state === 'saving' || autosave.pendingData() !== null}
             />
           </div>
@@ -134,7 +151,7 @@ export function EntryForm({ tenant, entryId, fields, titleKey, initialData, init
             entryId={entryId}
             revisions={revisions}
             version={autosave.version}
-            disabled={autosave.state === 'conflict' || autosave.state === 'signed_out'}
+            disabled={blocked}
             hasUnsaved={hasUnsaved}
           />
         </div>
@@ -217,7 +234,24 @@ function ConflictNotice({ theirs, fields, mine, retry, keepMine, reloadTheirs }:
   );
 }
 
-function SaveStatus({ state, retry }: { state: Exclude<ReturnType<typeof useAutosave>['state'], 'conflict'>; retry: () => void }) {
+/**
+ * Unsaved changes this tab kept from before a reload (M2-17): they are in the form but not saved
+ * until the editor chooses to save them, or to drop them and go back to the saved draft.
+ */
+function RestoredNotice({ save, discard }: { save: () => void; discard: () => void }) {
+  return (
+    <Notice as="div" tone="info" role="alert" className={NOTICE_COLUMN}>
+      <strong>{t.editor.restoredCopy}</strong>
+      <p>{t.editor.restoredCopyBody}</p>
+      <div className="flex flex-wrap gap-3">
+        <Button onClick={save}>{t.editor.restoredCopySave}</Button>
+        <Button onClick={discard}>{t.editor.restoredCopyDiscard}</Button>
+      </div>
+    </Notice>
+  );
+}
+
+function SaveStatus({ state, retry }: { state: Exclude<ReturnType<typeof useAutosave>['state'], 'conflict' | 'restored'>; retry: () => void }) {
   switch (state) {
     case 'signed_out':
       return (

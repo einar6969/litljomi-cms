@@ -8,6 +8,9 @@ vi.mock('next/navigation', () => ({
 }));
 const auth = vi.hoisted(() => ({ signInWithOtp: vi.fn(), signOut: vi.fn() }));
 vi.mock('@/lib/supabase/server', () => ({ createEditorClient: vi.fn(async () => ({ auth })) }));
+// The pending session a magic link left for the confirm page's question (M3-14).
+const revoke = vi.hoisted(() => ({ discardPending: vi.fn() }));
+vi.mock('@/app/auth/confirm/revoke', () => revoke);
 
 const { createEditorClient } = await import('@/lib/supabase/server');
 const { requestMagicLink, signOut } = await import('../actions');
@@ -102,5 +105,21 @@ describe('signOut', () => {
     auth.signOut.mockResolvedValue({ error: null });
     await expect(signOut()).rejects.toThrow('REDIRECT /login');
     expect(auth.signOut).toHaveBeenCalledOnce();
+  });
+
+  it('discards a pending session from the confirm page before ending the session', async () => {
+    const order: string[] = [];
+    revoke.discardPending.mockImplementation(async () => void order.push('discardPending'));
+    auth.signOut.mockImplementation(async () => (order.push('signOut'), { error: null }));
+    await expect(signOut()).rejects.toThrow('REDIRECT /login');
+    expect(order).toEqual(['discardPending', 'signOut']);
+  });
+
+  it('still signs out when discarding the pending session fails, logging no detail', async () => {
+    revoke.discardPending.mockRejectedValue(new Error('cookie store refused eyJsecret'));
+    auth.signOut.mockResolvedValue({ error: null });
+    await expect(signOut()).rejects.toThrow('REDIRECT /login');
+    expect(auth.signOut).toHaveBeenCalledOnce();
+    expect(consoleText()).not.toContain('eyJsecret');
   });
 });

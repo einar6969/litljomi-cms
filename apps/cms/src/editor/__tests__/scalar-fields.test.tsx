@@ -31,6 +31,8 @@ const { getType } = await import('@/modules/registry');
 
 const TENANT = { id: '00000000-0000-4000-8000-0000000000f1', slug: 'demo' };
 const ENTRY = '00000000-0000-4000-8000-0000000000e1';
+/** The signed-in editor the page was rendered for (M2-17). */
+const USER = '00000000-0000-4000-8000-0000000000b1';
 
 let container: HTMLDivElement;
 let root: Root;
@@ -367,6 +369,7 @@ describe('EntryForm with the scalar kinds', () => {
     await render(
       <EntryForm
         tenant={TENANT}
+        userId={USER}
         entryId={ENTRY}
         fields={describeFields(getType('demo', 'event')!)}
         titleKey="title"
@@ -388,7 +391,7 @@ describe('EntryForm with the scalar kinds', () => {
       freeEntry: false,
       category: 'workshop',
       doorsOpen: '2026-11-14T19:30+00:00',
-    });
+    }, USER);
     // The event type's own draft validator accepts exactly what was sent.
     expect(getType('demo', 'event')!.draftValidator().safeParse(saveDraftAction.mock.calls[0]![2]).success).toBe(true);
   });

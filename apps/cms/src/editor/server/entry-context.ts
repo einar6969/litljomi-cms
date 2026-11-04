@@ -42,6 +42,16 @@ export function failureAmong<C extends Exclude<ApiFailure, 'auth' | 'error'>>(re
 /** A failed `api` call for an action whose only own code is `auth`: everything else is the generic error. */
 export const authOrError = (result: ApiResult & { error: ApiError }): 'auth' | 'error' => failureAmong(result, []);
 
+/** The signed-in user's ID as Supabase Auth verifies it with the editor's session, or null. */
+export async function sessionUserId(client: SupabaseClient): Promise<string | null> {
+  try {
+    const { data, error } = await client.auth.getUser();
+    return error ? null : (data.user?.id ?? null);
+  } catch {
+    return null;
+  }
+}
+
 /** True when Supabase Auth, asked with the editor's session, says there is a signed-in user. */
 export async function hasSession(client: SupabaseClient): Promise<boolean> {
   try {

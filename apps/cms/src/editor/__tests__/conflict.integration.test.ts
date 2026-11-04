@@ -35,7 +35,9 @@ function tab(client: EditorSession, initialVersion: number): Controller {
     session.current = client;
     return fn(...args);
   };
-  return new AutosaveController({ entryId, initialVersion, save: as(saveDraftAction), loadLatest: as(loadDraftAction), debounceMs: 0 });
+  // Both tabs are the same editor: every save names them (M2-17).
+  const save = (id: string, version: number, data: unknown) => saveDraftAction(id, version, data, PERSONAS.editor_labak.id);
+  return new AutosaveController({ entryId, initialVersion, save: as(save), loadLatest: as(loadDraftAction), debounceMs: 0 });
 }
 
 const settled = (c: Controller, state: string) =>

@@ -2,7 +2,8 @@
 // session is revoked mid-edit (its refresh token and session are gone, as when it expires). The
 // real autosave controller and server actions keep every edit in the tab while signed out; after
 // signing in again the save lands at the expected version with all of them. A reload of the tab
-// while signed out loses nothing either. Signing out removes the tab's copy.
+// while signed out loses nothing either: the copy comes back and is saved when the editor chooses.
+// Another account's session never saves them. Signing out removes the tab's copy for good.
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { anonClient, retryRateLimited, secretClient } from '../../../../../tests/integration/src/clients.ts';
 import { PERSONAS, TENANT } from '../../../../../tests/integration/src/fixtures.ts';
@@ -15,7 +16,7 @@ const session = vi.hoisted(() => ((globalThis as { editorSession?: { current: un
 vi.mock('@/lib/supabase/server', () => ({ createEditorClient: async () => session.current }));
 
 const { saveDraftAction, loadDraftAction } = await import('@/app/(editor)/t/[tenant]/actions');
-const { hasSession } = await import('../server/entry-context');
+const { hasSession, sessionUserId } = await import('../server/entry-context');
 const { AutosaveController } = await import('../autosave');
 const { clearUnsavedCopies, unsavedStore } = await import('../unsaved');
 const { getType } = await import('@/modules/registry');
@@ -48,8 +49,8 @@ class TabStorage implements Storage {
 }
 
 /** A sign-in through the real OTP path, with the `api` schema the CMS's editor client uses. */
-async function signIn(): Promise<EditorSession> {
-  const link = await secretClient().auth.admin.generateLink({ type: 'magiclink', email: PERSONAS.editor_labak.email });
+async function signIn(persona: keyof typeof PERSONAS = 'editor_labak'): Promise<EditorSession> {
+  const link = await secretClient().auth.admin.generateLink({ type: 'magiclink', email: PERSONAS[persona].email });
   if (link.error) throw new Error(`generateLink: ${link.error.message}`);
   const client = anonClient();
   const verified = await retryRateLimited(() => client.auth.verifyOtp({ type: 'magiclink', token_hash: link.data.properties.hashed_token }));
@@ -63,15 +64,19 @@ async function revoke(s: EditorSession): Promise<void> {
   if (error) throw new Error(`signOut: ${error.message}`);
 }
 
+/** The editor the form was opened for. */
+const USER = PERSONAS.editor_labak.id;
+
 /** A tab of the editor: the browser's current session for every call, and the tab's storage. */
 function tab(storage: Storage, entryId: string, initialVersion: number, onRestore?: (data: Record<string, unknown>) => void): Controller {
   return new AutosaveController({
     entryId,
     initialVersion,
-    save: saveDraftAction,
+    save: (id, version, data) => saveDraftAction(id, version, data, USER),
     loadLatest: loadDraftAction,
-    sessionIsValid: () => hasSession(session.current as never),
-    store: unsavedStore(storage),
+    // What EntryForm asks: is the browser's session this editor's?
+    sessionIsValid: async () => (await sessionUserId(session.current as never)) === USER,
+    store: unsavedStore(USER, storage),
     onRestore,
     debounceMs: 0,
   });
@@ -79,7 +84,7 @@ function tab(storage: Storage, entryId: string, initialVersion: number, onRestor
 
 const settled = (c: Controller, state: string) => vi.waitFor(() => expect(c.getSnapshot().state).toBe(state), { timeout: 15_000 });
 const draftData = async (entryId: string) => (await ownerQuery<{ data: Record<string, unknown> }>('select data from cms.drafts where entry_id = $1', [entryId]))[0]!.data;
-const storedCopy = (storage: Storage, entryId: string) => unsavedStore(storage).read(entryId);
+const storedCopy = (storage: Storage, entryId: string) => unsavedStore(USER, storage).read(entryId);
 
 async function newEntry(): Promise<string> {
   const created = await (session.current as EditorSession).rpc('create_entry', { p_tenant_id: TENANT.labak, p_type: 'news', p_slug: null, p_schema_version: getType('labak', 'news')!.version });
@@ -129,7 +134,7 @@ describe('session expiry loses no work (M2-17)', () => {
     expect(storedCopy(storage, entryId)).toBeNull();
   });
 
-  it('a reload of the tab while signed out loses nothing: the copy is saved after signing in again', async () => {
+  it('a reload of the tab while signed out loses nothing: the copy comes back and is saved when the editor chooses', async () => {
     const entryId = await newEntry();
     const start = (await draftVersion(entryId))!;
     const storage = new TabStorage();
@@ -145,31 +150,72 @@ describe('session expiry loses no work (M2-17)', () => {
     const after = tab(storage, entryId, start, (data) => restored.push(data));
     after.start();
     expect(restored).toEqual([{ title: 'Óvistað fyrir endurhleðslu' }]);
-    await settled(after, 'signed_out');
+    expect(after.getSnapshot().state).toBe('restored');
 
+    // Signed in again: nothing is saved until the editor chooses to save the restored copy.
     session.current = await signIn();
     await after.resume();
+    expect(after.getSnapshot().state).toBe('restored');
+    expect(await draftVersion(entryId)).toBe(start);
+    after.saveRestored();
     await settled(after, 'saved');
     expect(await draftVersion(entryId)).toBe(start + 1);
     expect(await draftData(entryId)).toEqual({ title: 'Óvistað fyrir endurhleðslu' });
     expect(storedCopy(storage, entryId)).toBeNull();
   });
 
-  it('signing out removes the tab\'s copy', async () => {
+  it('another account signed in in the browser never saves the editor\'s edits', async () => {
+    const entryId = await newEntry();
+    const start = (await draftVersion(entryId))!;
+    const storage = new TabStorage();
+    const c = tab(storage, entryId, start);
+    c.start();
+    await revoke(session.current as EditorSession);
+    c.schedule({ title: 'Breyting ritstjórans' });
+    await settled(c, 'signed_out');
+
+    // Someone else signs in in another tab: the check says no, and a save the editor forces is refused.
+    session.current = await signIn('editor_demo');
+    await c.resume();
+    expect(c.getSnapshot().state).toBe('signed_out');
+    c.retry();
+    await settled(c, 'signed_out');
+    expect(await draftVersion(entryId)).toBe(start);
+    expect(storedCopy(storage, entryId)).toEqual({ version: start, data: { title: 'Breyting ritstjórans' } });
+    expect(unsavedStore(PERSONAS.editor_demo.id, storage).read(entryId)).toBeNull();
+    session.current = await signIn();
+  });
+
+  it('signing out removes the tab\'s copy, and a save in flight does not bring it back', async () => {
     const entryId = await newEntry();
     const storage = new TabStorage();
     storage.setItem('something-else', 'kept');
-    const c = tab(storage, entryId, (await draftVersion(entryId))!);
+    // The save is held until the editor has signed out, so it is in flight when they do.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const c = new AutosaveController({
+      entryId,
+      initialVersion: (await draftVersion(entryId))!,
+      save: async (id, version, data) => (await held, saveDraftAction(id, version, data, USER)),
+      store: unsavedStore(USER, storage),
+      debounceMs: 0,
+    });
     c.start();
-    await revoke(session.current as EditorSession);
-    c.schedule({ title: 'Óvistað' });
-    await settled(c, 'signed_out');
+    c.schedule({ title: 'Á leiðinni' });
+    await vi.waitFor(() => expect(c.getSnapshot().state).toBe('saving'));
+    c.schedule({ title: 'Á leiðinni', excerpt: 'Skrifað á meðan' });
     expect(storedCopy(storage, entryId)).not.toBeNull();
 
     // What "Skrá út" does in the tab before its server action ends the session (SignOutForm).
     clearUnsavedCopies(storage);
+    c.close();
     expect(storedCopy(storage, entryId)).toBeNull();
     expect(storage.getItem('something-else')).toBe('kept');
-    session.current = await signIn();
+    // The save in flight answers; nothing is stored again and nothing more is saved.
+    release();
+    await vi.waitFor(async () => expect(await draftData(entryId)).toEqual({ title: 'Á leiðinni' }), { timeout: 15_000 });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(storedCopy(storage, entryId)).toBeNull();
+    expect(c.getSnapshot().state).toBe('signed_out');
   });
 });

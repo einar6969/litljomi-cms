@@ -21,6 +21,8 @@ const { getType } = await import('@/modules/registry');
 
 const TENANT = { id: '00000000-0000-4000-8000-0000000000f1', slug: 'acme' };
 const ENTRY = '00000000-0000-4000-8000-0000000000e1';
+/** The signed-in editor the page was rendered for (M2-17). */
+const USER = '00000000-0000-4000-8000-0000000000b1';
 const A = '00000000-0000-4000-8000-0000000000a1';
 const B = '00000000-0000-4000-8000-0000000000a2';
 const GONE = '00000000-0000-4000-8000-0000000000a9';
@@ -169,6 +171,7 @@ describe('EntryForm with a reference field', () => {
     await render(
       <EntryForm
         tenant={TENANT}
+        userId={USER}
         entryId={ENTRY}
         fields={fields}
         titleKey="title"

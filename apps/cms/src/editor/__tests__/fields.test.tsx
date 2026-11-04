@@ -35,6 +35,8 @@ const { richTextDocSchema } = await import('@litljomi/rich-text');
 const TENANT = { id: '00000000-0000-4000-8000-0000000000f1', slug: 'acme' };
 const ASSET = '00000000-0000-4000-8000-0000000000a1';
 const ENTRY = '00000000-0000-4000-8000-0000000000e1';
+/** The signed-in editor the page was rendered for (M2-17). */
+const USER = '00000000-0000-4000-8000-0000000000b1';
 
 let container: HTMLDivElement;
 let root: Root;
@@ -424,6 +426,7 @@ describe('EntryForm', () => {
     await render(
       <EntryForm
         tenant={TENANT}
+        userId={USER}
         entryId={ENTRY}
         fields={[
           { key: 'title', kind: 'text', label: 'Titill', required: true },
@@ -445,6 +448,7 @@ describe('EntryForm', () => {
     await render(
       <EntryForm
         tenant={TENANT}
+        userId={USER}
         entryId={ENTRY}
         fields={describeFields(getType('labak', 'news')!)}
         titleKey="title"

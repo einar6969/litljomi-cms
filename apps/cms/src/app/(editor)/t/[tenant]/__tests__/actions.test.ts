@@ -2,8 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Answer = { data?: unknown; error?: { code?: string; message?: string } | null; status?: number };
 
+const USER = '00000000-0000-4000-8000-0000000000b1';
+const OTHER_USER = '00000000-0000-4000-8000-0000000000b2';
+
 const state = vi.hoisted(() => ({
-  user: { id: 'u1' } as { id: string } | null,
+  user: null as { id: string } | null,
   tables: {} as Record<string, Answer>,
   rpc: {} as Record<string, Answer>,
   calls: [] as { name: string; args: unknown }[],
@@ -29,7 +32,9 @@ const fake = {
 };
 vi.mock('@/lib/supabase/server', () => ({ createEditorClient: vi.fn(async () => fake) }));
 
-const { createEntryAction, loadDraftAction, openSingletonAction, saveDraftAction, setSlugAction } = await import('../actions');
+const { createEntryAction, loadDraftAction, openSingletonAction, saveDraftAction: saveDraftAs, setSlugAction } = await import('../actions');
+/** A save by the signed-in editor the form was opened for (M2-17: every save names its user). */
+const saveDraftAction = (id: string, expectedVersion: number, data: unknown) => saveDraftAs(id, expectedVersion, data, USER);
 
 const ENTRY = '00000000-0000-4000-8000-0000000000e1';
 const TENANT_ID = '00000000-0000-4000-8000-0000000000f1';
@@ -45,7 +50,7 @@ const SINGLETON = singletonModule.types.find((t) => isSingleton(singletonModule,
 const ORDINARY = singletonModule.types.find((t) => !isSingleton(singletonModule, t.name))!;
 
 beforeEach(() => {
-  state.user = { id: 'u1' };
+  state.user = { id: USER };
   state.calls = [];
   state.queries = [];
   state.tables = {
@@ -124,7 +129,7 @@ describe('openSingletonAction (M2-09)', () => {
     state.user = null;
     await expect(openSingletonAction(singletonModule.tenant, SINGLETON.name)).resolves.toEqual({ ok: false, code: 'auth' });
     expect(state.calls).toEqual([]);
-    state.user = { id: 'u1' };
+    state.user = { id: USER };
     state.rpc.create_singleton_entry = { error: { code: 'PGRST303', message: 'JWT expired' }, status: 401 };
     await expect(openSingletonAction(singletonModule.tenant, SINGLETON.name)).resolves.toEqual({ ok: false, code: 'auth' });
     for (const error of [{ code: 'P0001', message: 'singleton_mismatch' }, { code: 'P0001', message: 'not_found' }, { code: '23505', message: 'dup' }]) {
@@ -166,6 +171,21 @@ describe('saveDraftAction', () => {
     expect(state.queries).toEqual([]);
   });
 
+  it('M2-17: a session of another user than the one named is auth, before any database call', async () => {
+    state.user = { id: OTHER_USER };
+    await expect(saveDraftAction(ENTRY, 3, {})).resolves.toEqual({ ok: false, code: 'auth' });
+    expect(state.queries).toEqual([]);
+    expect(state.calls).toEqual([]);
+  });
+
+  it('M2-17: a missing or malformed user is invalid, before any database call', async () => {
+    for (const user of [undefined, '', 'u1', 'not-a-uuid-at-all', 42, null]) {
+      await expect(saveDraftAs(ENTRY, 3, {}, user as string)).resolves.toEqual({ ok: false, code: 'invalid' });
+    }
+    expect(state.queries).toEqual([]);
+    expect(state.calls).toEqual([]);
+  });
+
   it('maps version_conflict', async () => {
     state.rpc.save_draft = { error: { code: 'P0001', message: 'version_conflict' } };
     await expect(saveDraftAction(ENTRY, 3, {})).resolves.toEqual({ ok: false, code: 'version_conflict' });
@@ -175,7 +195,7 @@ describe('saveDraftAction', () => {
     state.user = null;
     await expect(saveDraftAction(ENTRY, 3, {})).resolves.toEqual({ ok: false, code: 'auth' });
     expect(state.calls).toEqual([]);
-    state.user = { id: 'u1' };
+    state.user = { id: USER };
     state.rpc.save_draft = { error: { code: 'PGRST303', message: 'JWT expired' }, status: 401 };
     await expect(saveDraftAction(ENTRY, 3, {})).resolves.toEqual({ ok: false, code: 'auth' });
     state.rpc.save_draft = { error: { code: '42501', message: 'permission denied' }, status: 401 };
@@ -242,7 +262,7 @@ describe('loadDraftAction (M2-11: the newer version after a conflict)', () => {
     state.user = null;
     await expect(loadDraftAction(ENTRY)).resolves.toEqual({ ok: false, code: 'auth' });
     expect(state.queries).toEqual([]);
-    state.user = { id: 'u1' };
+    state.user = { id: USER };
     state.tables.entry_detail = { data: null };
     await expect(loadDraftAction(ENTRY)).resolves.toEqual({ ok: false, code: 'error' });
     state.tables.entry_detail = { data: { data: {}, draft_version: 'x' } };
