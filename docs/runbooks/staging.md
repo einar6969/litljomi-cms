@@ -1052,7 +1052,7 @@ The full list is decision 18's (plan, "Implementation-level decisions") and deci
 
 | Item | Owner | When |
 |---|---|---|
-| Per-site preview secret: decision 43.1 asks for one, but M1 has no consumer (preview is M3; `api.admin_create_site` stores none and no variable reads one), so this runbook creates none (section 12). Einar decides whether one is created now anyway, and where it would go | Controller raises with Einar | Before G6.2 |
+| Per-site preview secret: **resolved by M3**. Decision 43.1 asks for one; it is created with `provision preview-secret` and stored in Vault and in the site's `CMS_PREVIEW_SECRETS` (sections 12 and 13) | Controller | Done |
 | Who enters secret values: Einar, so no secret passes through an agent session (sections 1 and 12) | Einar confirms | G3, G6 |
 | Steps that need the secret key or another secret value are Einar's (section 1), including the section 7.2 and G3.2c scripts, every `provision` command, the secrets of section 12 and section 6's Management API route | Einar confirms | G3 |
 | Task 29's re-run of A1–A4 against hosted Supabase: the integration suite (`tests/integration/src/env.ts`) refuses any non-loopback stack. **Decided** (decision 46): `boundary-check` in `tools/cli` (section 14), run by Einar in his own terminal | Einar approved ("Approve adapter") | Done; run before Task 29's report |
