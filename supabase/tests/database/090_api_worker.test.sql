@@ -116,8 +116,8 @@ select set_eq($$ select p.proname::text, pg_catalog.pg_get_function_result(p.oid
             -- M3-11 (107_preview_endpoint).
             ('worker_preview_tenant', 'uuid'),
             ('worker_preview_draft', 'jsonb'),
-            -- Task 21 (097_worker_sweep).
-            ('worker_tenants_to_release', 'TABLE(tenant_id uuid)'),
+            -- Task 21 (097_worker_sweep); its unconfirmed_* columns from Thread E (110_housekeeping_retry_hold).
+            ('worker_tenants_to_release', 'TABLE(tenant_id uuid, unconfirmed_release_id uuid, unconfirmed_release_number integer, unconfirmed_site_ids uuid[])'),
             -- M3-02 (102_retry_backoff).
             ('worker_next_attempt_at', 'timestamp with time zone'),
             ('worker_release_retry', 'TABLE(status text, next_attempt_at timestamp with time zone, retries_exhausted boolean)'),
