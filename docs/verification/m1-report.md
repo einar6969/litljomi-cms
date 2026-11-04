@@ -6,7 +6,7 @@ Results only: no secret, key or token value is ever written here. Created resour
 
 ### G3 Supabase staging (2026-11-03)
 
-- **Project:** organisation "Litljómi" (Free), project "staging", reference `rwpgpfsmhhtimauvpoyt`, Central EU (Frankfurt). Created by Einar.
+- **Project:** organisation "Litljómi" (Free), project "staging", reference `rwpgpfsmhhtimauvpoyt`, `eu-west-1` (corrected in C5; recorded earlier as Central EU Frankfurt). Created by Einar.
 - **G3.4 Auth settings** (controller in the browser pane, Einar signed in; each value read back after save and reload): sign-up **off**; confirm email on; anonymous sign-ins and manual linking off; Email the only provider (Phone, SAML, Web3 and all OAuth providers disabled); secure email change on; secure password change **on** (was off); Email OTP expiration 3600 s; TOTP enrol and verify enabled, SMS MFA off; access token (JWT) expiry 3600 s. Not in the runbook, left at defaults: Email OTP length 8 (the mail carries no code); "Require current password when updating" off.
 - **G3.2a (decision 36.7, before `db push`):** `alter role service_role set statement_timeout = '10s';` accepted; `rolconfig` = `{statement_timeout=10s}`.
 - **G3.2b:** Einar ran `supabase login`, `supabase link --project-ref rwpgpfsmhhtimauvpoyt`, `supabase db push` (17 migrations applied); `supabase migration list`: all 17 versions in Local and Remote. `to_regprocedure('private.passwordless_access_token(jsonb)') is not null` → `true`.

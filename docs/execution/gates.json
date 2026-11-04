@@ -156,6 +156,21 @@
           "at": "2026-11-03",
           "scope": "Decision 46: the A1–A4 boundary check against staging, run by Einar only from his terminal with .env.staging.local and --expect-ref. It may create two never-invited, pre-confirmed test editors (einsi+a-labak@litljomi.is, einsi+a-demo@litljomi.is) through the Auth admin API with one membership each, two draft entries and two small test objects in media-private; nothing is deleted; they stay until production. HTTP to https://<ref>.supabase.co only. Security review only.",
           "note": "Einar in chat, 2026-11-03: \"Approve adapter\" (C4 question 1)."
+        },
+        {
+          "at": "2026-11-04",
+          "scope": "Decision 51, M2 and M3 hosted acceptance: apply the migrations on main to Supabase rwpgpfsmhhtimauvpoyt (hosted staging only), run by Einar with supabase db push; the Supabase connector may be used on that project; publishing test content to tenants demo and labak (labak left with nothing published by this acceptance). No secret value read or written. Ends when this acceptance ends (checkpoint C5).",
+          "note": "Einar in chat, 2026-11-04: \"Approvals. Record these in `gates.json`, quoting this paragraph: I approve, for hosted staging only: G3, applying the migrations on `main` to Supabase `rwpgpfsmhhtimauvpoyt`; G6, deploying `vefumsjon-staging` and `demo-staging` by advancing the `staging` branch to the `main` merge commit, plus the environment changes this acceptance needs; and publishing test content to tenants `demo` and `labak`. You may use the Supabase and Vercel connectors on those staging projects. These approvals end when this acceptance ends.\" and \"Hands off: `labak.is`, its DNS, FILMÍS, ISNIC, the LABAK repository, `landssamband-bakarameistara`, labak.litljomi.is, and any production project. `labak-hub` stays at `376402b`; LABAK adopts preview in M6. No new cost beyond what I’ve approved. Don’t read or write any secret values. I do every login and enter every key, and no secret goes in chat. The sandbox can’t push to GitHub, so give me exact commands to run.\""
+        },
+        {
+          "at": "2026-11-04",
+          "scope": "Decision 51.1: the image-unpublish and image-replacing checks run on labak with a new test news item that ends unpublished; nothing already published on labak is touched. Ends when this acceptance ends.",
+          "note": "Einar in chat, 2026-11-04: \"1. Run the image-unpublish and image-replacing checks on `labak`, with a new test news item that ends unpublished. Don’t touch anything already published on `labak`.\""
+        },
+        {
+          "at": "2026-11-04",
+          "scope": "Closed: every approval of decision 51 (51.1 to 51.4) ended with this acceptance. A later hosted action needs a new approval.",
+          "note": "Einar in chat, 2026-11-04, answering \"Do you accept M2 and M3?\": \"accepted.\" The approvals themselves said: \"These approvals end when this acceptance ends.\""
         }
       ],
       "amendments": [
@@ -250,7 +265,29 @@
         "at": "2026-11-03",
         "diffSha256": "236a63860f70ec5c88af9404589bffc61a853763c697bc2e3fe0a0d3d8e49fc0",
         "note": "Einar in chat, 2026-11-03: \"Approve removal\". api.vercel.com was unused (G6 ran through the Vercel connector)."
-      }
+      },
+      "extensions": [
+        {
+          "at": "2026-11-04",
+          "scope": "Decision 51, M2 and M3 hosted acceptance: deploy vefumsjon-staging and demo-staging by advancing the staging branch to the main merge commit (Einar pushes), plus the environment changes this acceptance needs (Einar enters every key); the Vercel connector may be used on those staging projects. labak-hub stays at 376402b. No new cost. Ends when this acceptance ends (checkpoint C5).",
+          "note": "Einar in chat, 2026-11-04: \"Approvals. Record these in `gates.json`, quoting this paragraph: I approve, for hosted staging only: G3, applying the migrations on `main` to Supabase `rwpgpfsmhhtimauvpoyt`; G6, deploying `vefumsjon-staging` and `demo-staging` by advancing the `staging` branch to the `main` merge commit, plus the environment changes this acceptance needs; and publishing test content to tenants `demo` and `labak`. You may use the Supabase and Vercel connectors on those staging projects. These approvals end when this acceptance ends.\" and \"Hands off: `labak.is`, its DNS, FILMÍS, ISNIC, the LABAK repository, `landssamband-bakarameistara`, labak.litljomi.is, and any production project. `labak-hub` stays at `376402b`; LABAK adopts preview in M6. No new cost beyond what I’ve approved. Don’t read or write any secret values. I do every login and enter every key, and no secret goes in chat. The sandbox can’t push to GitHub, so give me exact commands to run.\""
+        },
+        {
+          "at": "2026-11-04",
+          "scope": "Decision 51.1: one temporary Vercel Firewall rule on demo-staging, limited to the test entry’s path; cost confirmed none first; recorded; removed when the checks finish; confirmed gone in C5. No firewall rule or other change on labak-hub. Ends when this acceptance ends.",
+          "note": "Einar in chat, 2026-11-04: \"2. The temporary Vercel Firewall rule on `demo-staging` is approved, limited to the test entry’s path. Confirm it adds no cost first, record it, remove it when the checks finish, and confirm it’s gone in C5. No firewall rule or other change on `labak-hub`.\""
+        },
+        {
+          "at": "2026-11-04",
+          "scope": "Decision 51.4: the controller creates Vercel project demo-next15-staging through the connector: root apps/demo-site-next15, build command, Production Branch staging, Node 22, Ignored Build Step, protection, the three non-secret variables, domain demo-next15-staging.litljomi.is, and the final deploy. Einar keeps the CNAME, vercel link and provision site with the webhook secret. No new cost. Ends when this acceptance ends.",
+          "note": "Einar in chat, 2026-11-04, answering the controller's offer to create the project through the connector: \"do the Vercel side!\""
+        },
+        {
+          "at": "2026-11-04",
+          "scope": "Closed: every approval of decision 51 (51.1 to 51.4) ended with this acceptance. A later hosted action needs a new approval.",
+          "note": "Einar in chat, 2026-11-04, answering \"Do you accept M2 and M3?\": \"accepted.\" The approvals themselves said: \"These approvals end when this acceptance ends.\""
+        }
+      ]
     },
     "G7": {
       "status": "approved",
@@ -261,7 +298,9 @@
       "params": {
         "branch": "hub-integration",
         "push": true,
-        "pushBranches": ["hub-integration"],
+        "pushBranches": [
+          "hub-integration"
+        ],
         "base": "aec9f95"
       },
       "extensions": [
