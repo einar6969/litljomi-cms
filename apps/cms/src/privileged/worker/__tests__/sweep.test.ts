@@ -42,9 +42,16 @@ const deliverTenantMock = vi.fn(async (tenantId: string): Promise<{ status: stri
 const confirmReleaseMock = vi.fn(async (_db: unknown, release: { tenantId: string; number: number }, _o: unknown, retry?: ReadonlySet<string>) => {
   order.push(`confirmRelease ${release.tenantId} #${release.number} [${[...(retry ?? [])].join(',')}]`);
 });
+const confirmWithdrawalRetryMock = vi.fn(
+  async (_db: unknown, release: { tenantId: string; number: number; notifyRelease: number }, states: ReadonlyMap<string, unknown>, _o: unknown) => {
+    order.push(`confirmWithdrawalRetry ${release.tenantId} #${release.number}→#${release.notifyRelease} [${[...states.keys()].join(',')}]`);
+  },
+);
 vi.mock('../deliver', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../deliver')>()),
   deliverTenant: (tenantId: string) => deliverTenantMock(tenantId),
+  confirmWithdrawalRetry: (db: unknown, release: { tenantId: string; number: number; notifyRelease: number }, states: ReadonlyMap<string, unknown>, o: unknown) =>
+    confirmWithdrawalRetryMock(db, release, states, o),
   confirmRelease: (db: unknown, release: { tenantId: string; number: number }, o: unknown, retry?: ReadonlySet<string>) =>
     confirmReleaseMock(db, release, o, retry),
 }));
@@ -66,6 +73,7 @@ beforeEach(() => {
   processPendingMock.mockClear();
   deliverTenantMock.mockClear();
   confirmReleaseMock.mockClear();
+  confirmWithdrawalRetryMock.mockClear();
   bundles.clear();
   vi.spyOn(console, 'error').mockImplementation(() => {});
   handlers = {
@@ -308,6 +316,45 @@ describe('runSweep', () => {
       expect(confirmReleaseMock.mock.calls.map((c) => c[1].tenantId)).toEqual(['demo']);
     });
 
+    // W1: a superseded release's unconfirmed withdrawals.
+    const withdrawalRow = (tenant: string, release: number, site: string, latest: number) => ({
+      ...row(tenant, release, site),
+      bundle_path: null,
+      notify_status: 'ok',
+      live_status: 'not_confirmed',
+      notify_release_number: latest,
+      withdrawal: { pending: [{ entryId: 'e1', requestIds: ['u1'], checks: [{ path: '/x', expect: 'absent' }], ownPath: '/x' }], withdrawn: [], others: false, alerted: false, hourOver: false },
+    });
+
+    it('checks a superseded release\'s withdrawals per site, without reading its bundles, while the tenant builds', async () => {
+      handlers.worker_tenants_to_release = () => ({ data: [{ tenant_id: 'prufa' }] });
+      handlers.worker_deliveries_to_retry = () => ({ data: [withdrawalRow('prufa', 2, 'sp1', 3), withdrawalRow('prufa', 2, 'sp2', 3), row('prufa', 3, 'sp1')] });
+
+      await runSweep();
+
+      expect(order).toContain('confirmWithdrawalRetry prufa #2→#3 [sp1,sp2]');
+      const [, release, states] = confirmWithdrawalRetryMock.mock.calls[0]!;
+      expect(release).toMatchObject({ tenantId: 'prufa', tenantSlug: 'prufa', releaseId: 'rel-prufa-2', number: 2, notifyRelease: 3 });
+      expect(states.get('sp1')).toEqual(withdrawalRow('prufa', 2, 'sp1', 3).withdrawal);
+      // The build delivered, so the latest release's own retry is dropped as before; the
+      // withdrawal check is not (it is about an older release the build does not re-check).
+      expect(confirmReleaseMock).not.toHaveBeenCalled();
+      expect(order.filter((o) => o.startsWith('storage'))).toEqual([]);
+    });
+
+    it('a withdrawal check failing is reported like any other retry', async () => {
+      handlers.worker_tenants_to_release = () => ({ data: [] });
+      handlers.worker_deliveries_to_retry = () => ({ data: [withdrawalRow('demo', 7, 'sd1', 9)] });
+      confirmWithdrawalRetryMock.mockRejectedValueOnce(new Error('demo site broke'));
+
+      const error = await runSweep().then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect((error as AggregateError).errors.map((e: Error) => e.message)).toEqual(['demo site broke']);
+      expect(alertMock).toHaveBeenCalledWith('worker.step_failed', expect.objectContaining({ step: 'delivery_retry' }));
+    });
+
     it('when the tenants cannot be listed, the retries still run', async () => {
       handlers.worker_tenants_to_release = () => ({ error: { code: '08006', message: 'connection failure' } });
       handlers.worker_deliveries_to_retry = () => ({ data: [row('prufa', 3, 'sp1')] });
@@ -347,6 +394,27 @@ describe('runSweep', () => {
       expect(at('alert delivery.withdrawal_unconfirmed')).toBeGreaterThan(-1);
       expect(at('alert delivery.withdrawal_unconfirmed')).toBeLessThan(at('deliverTenant prufa'));
       alertMock.mockImplementation(async () => {});
+    });
+
+    it('marks each alerted site on its delivery, so the alert is not raised again (W1)', async () => {
+      handlers.worker_fail_stale_releases = () => ({ data: [] });
+      handlers.worker_tenants_to_release = () => ({
+        data: [row({ unconfirmed_release_id: 'rel-7', unconfirmed_release_number: 7, unconfirmed_site_ids: ['s1', 's2'] })],
+      });
+      handlers.worker_record_delivery = () => ({ data: [] });
+
+      await runSweep(clock);
+
+      expect(args.filter((a) => a.fn === 'worker_record_delivery').map((a) => a.args)).toEqual(
+        ['s1', 's2'].map((siteId) => ({
+          p_release_id: 'rel-7',
+          p_site_id: siteId,
+          p_notify_status: null,
+          p_live_status: null,
+          p_error: { withdrawal_alerted: '2026-11-03T12:00:00.000Z' },
+          p_now: '2026-11-03T12:00:00.000Z',
+        })),
+      );
     });
 
     it('raises nothing for a tenant listed without unconfirmed sites', async () => {

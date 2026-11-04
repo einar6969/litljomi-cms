@@ -12,8 +12,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../alerts', () => ({ alert: (event: string, details: Record<string, unknown>) => mocks.alert(event, details) }));
 vi.mock('@/modules/registry', () => ({ getModule: (slug: string) => (slug === 'prufa' ? mocks.module.current : undefined) }));
 
-const { clockOf, confirmRelease, confirmSite, liveTargets, releaseView } = await import('../deliver');
+const { clockOf, confirmRelease, confirmSite, confirmWithdrawals, liveTargets, markWithdrawalAlerted, releaseView } = await import('../deliver');
 type DeliveredRelease = import('../deliver').DeliveredRelease;
+type StoredWithdrawal = import('../deliver').StoredWithdrawal;
+type WithdrawalState = import('../deliver').WithdrawalState;
 type LiveTarget = import('../deliver').LiveTarget;
 type WorkerSite = import('../deliver').WorkerSite;
 
@@ -793,6 +795,182 @@ describe('confirmSite: retries after not_confirmed (M3-03)', () => {
     );
     expect(mocks.alert.mock.calls).toEqual([
       ['delivery.retries_exhausted', { tenantId: 't', releaseId: 'rel', number: 2, siteId: 's', attempts: 12, code: 'live_not_confirmed', failures: 1 }],
+    ]);
+  });
+});
+
+// W1 (spec §5.6, §7.2, §7.4): an unconfirmed withdrawal is checked again after its release is
+// superseded. The delivery stores the withdrawal checks it could not confirm, computed while the
+// bundles exist; the retry runs only those, against the stored paths.
+describe('withdrawal state (W1)', () => {
+  let site: FakeSite;
+  const recorded: Array<Record<string, unknown>> = [];
+  let schedule: unknown = [{ notify_attempts: 2, next_attempt_at: '2026-11-03T12:02:00.000Z', retries_exhausted: false }];
+  const db = {
+    rpc: async (fn: string, args: Record<string, unknown>) => {
+      if (fn === 'worker_record_delivery') recorded.push(args);
+      return { data: fn === 'worker_record_delivery' ? schedule : null, error: null };
+    },
+  } as unknown as SupabaseClient;
+  const clock = { now: () => Date.UTC(2026, 10, 3, 12, 0, 0), pollMs: 20, timeoutMs: 300 };
+  const workerSite = (): WorkerSite => ({ id: 's', base_url: site.origin, revalidate_url: `${site.origin}/api/revalidate`, webhook_secrets: ['leyndo'] });
+  const gone = (id: string): StoredWithdrawal => ({ entryId: id, requestIds: ['u-' + id], checks: [{ path: `/n/${id}`, expect: 'absent' }, { path: '/n', expect: 'absent' }], ownPath: `/n/${id}` });
+  const release = { tenantId: 't', tenantSlug: 'prufa', releaseId: 'rel-17', number: 17, notifyRelease: 18 };
+  const state = (over: Partial<WithdrawalState> = {}): WithdrawalState => ({ pending: [gone(E1)], withdrawn: [], others: false, alerted: false, hourOver: false, ...over });
+  const errors = () => recorded.map((r) => r.p_error as Record<string, unknown> | null);
+
+  beforeEach(async () => {
+    recorded.length = 0;
+    schedule = [{ notify_attempts: 2, next_attempt_at: '2026-11-03T12:02:00.000Z', retries_exhausted: false }];
+    mocks.alert.mockClear();
+    site = await startFakeSite();
+    site.pages.set('/api/revalidate', { status: 200 });
+    site.pages.set('/n', { status: 200, html: html(releaseMeta(18), '<ul></ul>') });
+  });
+  afterEach(async () => {
+    await site.close();
+  });
+
+  const current = bundle(3, [entry(E1, 'a', '2026-03-01T00:00:00.000Z')]);
+  const previous = bundle(2, [entry(E1, 'a', '2026-03-01T00:00:00.000Z'), entry(E2, 'b', '2026-02-01T00:00:00.000Z')]);
+
+  it('liveTargets marks a withdrawal it can check, and nothing else', () => {
+    const targets = liveTargets(
+      module,
+      {
+        bundle: current,
+        previousBundle: previous,
+        requests: [
+          { id: 'q1', entryId: E1, action: 'publish' },
+          { id: 'q2', entryId: E2, action: 'unpublish' },
+          { id: 'q3', entryId: E3, action: 'unpublish' },
+        ],
+      },
+      MEDIA,
+    );
+    expect(targets.map((t) => [t.entryId, t.withdrawal ?? false])).toEqual([
+      [E1, false],
+      [E2, true],
+      [E3, true],
+    ]);
+    const still = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q4', entryId: E1, action: 'unpublish' }] }, MEDIA);
+    expect(still[0]).toMatchObject({ failure: 'still_published' });
+    expect(still[0]!.withdrawal ?? false).toBe(false);
+  });
+
+  it('a miss stores the withdrawals the site did not confirm, those it did, and whether anything else missed', async () => {
+    const targets = liveTargets(
+      module,
+      {
+        bundle: bundle(3, []),
+        previousBundle: bundle(2, [entry(E1, 'a', null), entry(E2, 'b', null)]),
+        requests: [
+          { id: 'u1', entryId: E1, action: 'unpublish' },
+          { id: 'u2', entryId: E2, action: 'unpublish' },
+        ],
+      },
+      MEDIA,
+    );
+    site.pages.set('/n/a', { status: 200, html: entryMarker(E1, 'h') }); // E1 still on the site; E2's page is gone
+
+    expect(await confirmSite(db, { ...release, bundle: bundle(3, []), previousBundle: null, requests: [] }, workerSite(), targets, clock)).toBe('not_confirmed');
+
+    expect(errors().at(-1)).toMatchObject({
+      code: 'live_not_confirmed',
+      withdrawals: [{ entryId: E1, requestIds: ['u1'], checks: [{ path: '/n/a', expect: 'absent' }, { path: '/n', expect: 'absent' }], ownPath: '/n/a' }],
+      withdrawn: [E2],
+      withdrawals_others: false,
+    });
+  });
+
+  it('a publish that missed beside a confirmed withdrawal: nothing left to check, the others flagged', async () => {
+    const targets: LiveTarget[] = [
+      { entryId: E1, requestIds: ['p1'], failure: 'delivery_failed', checks: [], ownPath: '', contentHash: null, mediaUrls: [] },
+      { entryId: E2, requestIds: ['u2'], failure: null, checks: [{ path: '/n/b', expect: 'absent' }], ownPath: '/n/b', contentHash: null, mediaUrls: [], withdrawal: true },
+    ];
+    await confirmSite(db, { ...release, bundle: bundle(3, []), previousBundle: null, requests: [] }, workerSite(), targets, clock);
+    expect(errors().at(-1)).toMatchObject({ withdrawals: [], withdrawn: [E2], withdrawals_others: true });
+  });
+
+  it('a failed notification stores every withdrawal as unconfirmed', async () => {
+    site.pages.set('/api/revalidate', { status: 500 });
+    const targets: LiveTarget[] = [{ ...gone(E2), failure: null, contentHash: null, mediaUrls: [], withdrawal: true }];
+    await confirmSite(db, { ...release, bundle: bundle(3, []), previousBundle: null, requests: [] }, workerSite(), targets, clock);
+    expect(errors()).toEqual([{ code: 'notify_failed', status: 500, withdrawals: [gone(E2)], withdrawals_others: false }]);
+  });
+
+  it('a release without withdrawals keeps the error as it was', async () => {
+    site.pages.set('/api/revalidate', { status: 500 });
+    await confirmSite(db, { ...release, bundle: bundle(3, []), previousBundle: null, requests: [] }, workerSite(), [], clock);
+    expect(errors()).toEqual([{ code: 'notify_failed', status: 500 }]);
+  });
+
+  it('confirmWithdrawals: tells the site about the latest release, checks only the stored paths, and records live ok', async () => {
+    expect(await confirmWithdrawals(db, release, workerSite(), state(), clock)).toBe('ok');
+
+    const webhook = site.requests.find((r) => r.path === '/api/revalidate')!;
+    expect(JSON.parse(webhook.body.toString())).toEqual({ tenant: 'prufa', release: 18 });
+    expect(new Set(site.requests.filter((r) => r.method === 'GET').map((r) => r.path))).toEqual(new Set([`/n/${E1}`, '/n']));
+    expect(recorded.map((r) => [r.p_release_id, r.p_notify_status, r.p_live_status, r.p_error])).toEqual([
+      ['rel-17', 'ok', null, null],
+      ['rel-17', null, 'ok', null],
+    ]);
+    expect(mocks.alert).not.toHaveBeenCalled();
+  });
+
+  it('confirmWithdrawals: every withdrawal confirmed but a publish of the release missed: not recorded live, nothing left to check', async () => {
+    expect(await confirmWithdrawals(db, release, workerSite(), state({ others: true, withdrawn: [E3] }), clock)).toBe('not_confirmed');
+    expect(errors().at(-1)).toEqual({ code: 'live_not_confirmed', failures: [], withdrawals: [], withdrawn: [E3, E1] });
+    expect(recorded.at(-1)).toMatchObject({ p_live_status: 'not_confirmed' });
+    expect(mocks.alert).not.toHaveBeenCalled();
+  });
+
+  it('confirmWithdrawals: a miss within the hour keeps the entry pending and raises nothing', async () => {
+    site.pages.set(`/n/${E1}`, { status: 200, html: entryMarker(E1, 'h') });
+    expect(await confirmWithdrawals(db, release, workerSite(), state({ pending: [gone(E1), gone(E2)] }), clock)).toBe('not_confirmed');
+    expect(errors().at(-1)).toMatchObject({ code: 'live_not_confirmed', withdrawals: [gone(E1)], withdrawn: [E2] });
+    expect(errors().at(-1)).not.toHaveProperty('withdrawal_alerted');
+    expect(mocks.alert).not.toHaveBeenCalled();
+  });
+
+  it('confirmWithdrawals: a miss after the hour raises the alert once and marks it on the delivery', async () => {
+    site.pages.set(`/n/${E1}`, { status: 200, html: entryMarker(E1, 'h') });
+    await confirmWithdrawals(db, release, workerSite(), state({ hourOver: true }), clock);
+    expect(errors().at(-1)).toMatchObject({ withdrawals: [gone(E1)], withdrawal_alerted: '2026-11-03T12:00:00.000Z' });
+    expect(mocks.alert.mock.calls).toEqual([['delivery.withdrawal_unconfirmed', { tenantId: 't', releaseId: 'rel-17', number: 17, siteId: 's' }]]);
+
+    mocks.alert.mockClear();
+    await confirmWithdrawals(db, release, workerSite(), state({ hourOver: true, alerted: true }), clock);
+    expect(mocks.alert).not.toHaveBeenCalled();
+  });
+
+  it('confirmWithdrawals: the check passing after the hour raises nothing', async () => {
+    expect(await confirmWithdrawals(db, release, workerSite(), state({ hourOver: true }), clock)).toBe('ok');
+    expect(mocks.alert).not.toHaveBeenCalled();
+  });
+
+  it('confirmWithdrawals: retries that run out raise the withdrawal alert unless it was raised already', async () => {
+    site.pages.set(`/n/${E1}`, { status: 200, html: entryMarker(E1, 'h') });
+    schedule = [{ notify_attempts: 12, next_attempt_at: null, retries_exhausted: true }];
+    await confirmWithdrawals(db, release, workerSite(), state({ hourOver: true, alerted: true }), clock);
+    expect(mocks.alert).not.toHaveBeenCalled();
+    // A delivery never alerted (its marker could not be written): the exhaustion raises it.
+    await confirmWithdrawals(db, release, workerSite(), state({ hourOver: false }), clock);
+    expect(mocks.alert.mock.calls).toEqual([['delivery.withdrawal_unconfirmed', { tenantId: 't', releaseId: 'rel-17', number: 17, siteId: 's' }]]);
+    expect(mocks.alert.mock.calls.flat()).not.toContain('delivery.retries_exhausted');
+  });
+
+  it('confirmWithdrawals: a failed notification after the hour is unconfirmed too: one alert', async () => {
+    site.pages.set('/api/revalidate', { status: 503 });
+    expect(await confirmWithdrawals(db, release, workerSite(), state({ hourOver: true }), clock)).toBe('notify_failed');
+    expect(errors()).toEqual([{ code: 'notify_failed', status: 503, withdrawals: [gone(E1)], withdrawal_alerted: '2026-11-03T12:00:00.000Z' }]);
+    expect(mocks.alert).toHaveBeenCalledTimes(1);
+  });
+
+  it('markWithdrawalAlerted: an annotation, with neither status', async () => {
+    await markWithdrawalAlerted(db, 'rel-17', 's', clock);
+    expect(recorded).toEqual([
+      { p_release_id: 'rel-17', p_site_id: 's', p_notify_status: null, p_live_status: null, p_error: { withdrawal_alerted: '2026-11-03T12:00:00.000Z' }, p_now: '2026-11-03T12:00:00.000Z' },
     ]);
   });
 });
