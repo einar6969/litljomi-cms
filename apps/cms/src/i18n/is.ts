@@ -261,6 +261,8 @@ export const is = {
     // M3-03 (drafts for Einar): "live not confirmed, retrying", while the sweep retries the live check.
     notConfirmedRetrying: 'Ekki enn staðfest á vef, reynt aftur…',
     notConfirmedRetryingDetail: 'Færslan var send á vefinn en hefur ekki enn sést þar. Kerfið reynir aftur sjálfkrafa.',
+    // Approved by Einar 2026-11-04 (not a draft): the same, for an unpublish (the entry must leave the site).
+    notConfirmedRetryingUnpublishDetail: 'Beiðnin var send á vefinn en færslan hefur ekki enn horfið þaðan. Kerfið reynir aftur sjálfkrafa.',
     noSite: 'Enginn vefur tengdur',
     requestFailed: 'Ekki tókst að senda beiðnina. Reyndu aftur.',
     statusUnavailable: 'Ekki tókst að sækja stöðu birtingar.',

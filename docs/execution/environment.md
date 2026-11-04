@@ -204,9 +204,9 @@ Playwright (decisions 50.5, 50.6): Playwright 1.64.1 downloads browsers from `cd
 
 ### Gate for cloud work
 
-No GitHub Pro, so `main` has no branch protection. The gate is: the Project instructions below, **Einar merges every pull request**, and the advisor checks each one. Backed by the `main` guard (`.github/workflows/main-guard.yml`, decision 50.3): on every push to `main` it fails unless each new commit belongs to a pull request merged into `main` or the push came from `einar6969`; a force-push or deletion by anyone else also fails. A failure is the alert; it reverts nothing. Permissions `contents: read` and `pull-requests: read`, only the default `GITHUB_TOKEN`, actions pinned to the same SHAs as `ci.yml`.
+No GitHub Pro, so `main` has no branch protection. The gate (Einar, 2026-11-04) is the Project instructions below and this merge rule: implementing threads never merge; a separate review thread posts `Review: PASS <full sha>`; the coordinator merges one pull request at a time, as a merge commit, when the branch is up to date with `main`, CI is green on that commit, and the PASS names that exact commit. Backed by the `main` guard (`.github/workflows/main-guard.yml`, decision 50.3): on every push to `main` it fails unless each new commit belongs to a pull request merged into `main`, whoever pushed it; a force-push or deletion of `main` always fails. No pusher is exempt (the `einar6969` exemption was removed on 2026-11-04, because every cloud thread acts as `einar6969`). A failure is the alert; it reverts nothing. Permissions `contents: read` and `pull-requests: read`, only the default `GITHUB_TOKEN`, actions pinned to the same SHAs as `ci.yml`.
 
-Known limits of the guard: it runs the workflow and script from the pushed commit, so a push that also changes `.github/` or `tools/checks/main-guard.ts` could disable it (the instructions forbid such changes, and Einar reviews every pull request); it identifies the pusher by the event's `sender.login`, so a cloud thread pushing with Einar's own GitHub identity would pass as Einar.
+Known limits of the guard: it runs the workflow and script from the pushed commit, so a push that also changes `.github/` or `tools/checks/main-guard.ts` could disable it (the instructions forbid such changes, and every pull request is reviewed). It checks only that each commit belongs to a pull request merged into `main`: it cannot tell the coordinator's merge from anyone else's, nor see the review PASS or CI, because every cloud thread acts as `einar6969`. Pushing a pull request's own commits straight to `main` makes GitHub mark that pull request merged, so such a push passes. Einar's own direct pushes to `main` now fail too; he merges through pull requests like everyone else.
 
 ### Project instructions (Project "CMS" → General → instructions), verbatim as Einar gave them
 
@@ -239,3 +239,7 @@ Known limits of the guard: it runs the workflow and script from the pushed commi
 > * If the task can’t be done within these rules, or the spec and the plan disagree, stop and say so in the thread. Don’t choose for yourself.
 >
 > Finish: the pull request is open with CI green. Report in at most 10 lines: the pull request link, what’s done, the test counts, and anything open. Then stop.
+>
+> _Added by Einar, 2026-11-04:_
+>
+> Implementing threads never merge. Only the coordinator merges, one pull request at a time, when the branch is up to date with `main`, CI is green on that commit, and any `security` pull request has a review PASS from a separate thread for that exact commit. Nobody force-pushes, touches the `staging` branch or deploys.

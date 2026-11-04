@@ -5,7 +5,9 @@ import { promisify } from 'node:util';
 
 // The `main` guard (decision 50.3), run by .github/workflows/main-guard.yml on every push to `main`.
 // `main` has no branch protection, so this check is the alert: it fails unless each new commit belongs
-// to a pull request merged into `main`, or the push came from the trusted account. It reverts nothing.
+// to a pull request merged into `main`, and a force-push or deletion of `main` always fails. There is no
+// trusted pusher: every cloud thread acts as einar6969, so a pusher exemption would exempt them all.
+// It reverts nothing.
 // It needs only Node's standard library and the runner's `gh`, so the workflow installs no packages.
 
 export type PushEvent = {
@@ -34,18 +36,12 @@ function mergedIntoMain(pulls: PullSummary[] | undefined): PullSummary | undefin
 
 /**
  * Judges a push from its event, the new commits and each commit's pull requests. Pure.
- * A force-push or deletion of `main` fails unless the trusted account made it; a commit missing from
- * `pulls` counts as having no pull request (fails closed).
+ * A force-push or deletion of `main` always fails, whoever made it; a commit missing from `pulls`
+ * counts as having no pull request (fails closed).
  */
-export function evaluatePush(input: {
-  event: PushEvent;
-  shas: string[];
-  pulls: Record<string, PullSummary[]>;
-  trustedPusher: string;
-}): Verdict {
-  const { event, shas, pulls, trustedPusher } = input;
+export function evaluatePush(input: { event: PushEvent; shas: string[]; pulls: Record<string, PullSummary[]> }): Verdict {
+  const { event, shas, pulls } = input;
   if (event.ref !== MAIN) return { ok: true, lines: ['not main: nothing to check'] };
-  if (event.sender.login === trustedPusher) return { ok: true, lines: [`pushed by ${trustedPusher}`] };
 
   const lines: string[] = [];
   if (event.deleted) lines.push(`FAIL: main deleted by ${event.sender.login}`);
@@ -79,16 +75,14 @@ async function pullsOf(repo: string, sha: string, gh: Gh): Promise<PullSummary[]
 export async function runGuard(input: {
   event: PushEvent;
   gh: Gh;
-  trustedPusher: string;
   retryDelaysMs: number[];
   sleep: (ms: number) => Promise<void>;
 }): Promise<{ exitCode: number; output: string }> {
-  const { event, gh, trustedPusher, retryDelaysMs, sleep } = input;
+  const { event, gh, retryDelaysMs, sleep } = input;
   const repo = event.repository.full_name;
   let verdict: Verdict;
   try {
-    const needsLookup = event.ref === MAIN && event.sender.login !== trustedPusher;
-    const shas = needsLookup ? await newCommitShas(event, gh) : [];
+    const shas = event.ref === MAIN ? await newCommitShas(event, gh) : [];
     const pulls: Record<string, PullSummary[]> = {};
     for (const sha of shas) {
       pulls[sha] = await pullsOf(repo, sha, gh);
@@ -98,7 +92,7 @@ export async function runGuard(input: {
         pulls[sha] = await pullsOf(repo, sha, gh);
       }
     }
-    verdict = evaluatePush({ event, shas, pulls, trustedPusher });
+    verdict = evaluatePush({ event, shas, pulls });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     return { exitCode: 1, output: `::error::main guard: GitHub API call failed: ${reason}` };
@@ -118,16 +112,14 @@ function isEntryPoint(): boolean {
 
 if (isEntryPoint()) {
   const eventPath = process.env.GITHUB_EVENT_PATH;
-  const trustedPusher = process.env.MAIN_GUARD_TRUSTED_PUSHER;
-  if (!eventPath || !trustedPusher) {
-    console.error('::error::main guard: GITHUB_EVENT_PATH and MAIN_GUARD_TRUSTED_PUSHER must be set');
+  if (!eventPath) {
+    console.error('::error::main guard: GITHUB_EVENT_PATH must be set');
     process.exitCode = 1;
   } else {
     const run = promisify(execFile);
     const { exitCode, output } = await runGuard({
       event: JSON.parse(readFileSync(eventPath, 'utf8')) as PushEvent,
       gh: async (args) => (await run('gh', args, { maxBuffer: 16 * 1024 * 1024 })).stdout,
-      trustedPusher,
       retryDelaysMs: [10_000, 20_000],
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     });
