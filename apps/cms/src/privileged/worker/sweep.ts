@@ -8,7 +8,10 @@
 //   1. Pending requests (and validating ones whose claim is older than 5 minutes) are processed.
 //   2. Every active tenant with committed requests in no release gets a release built, delivered
 //      and confirmed on its sites (api.worker_tenants_to_release), unless its latest build failed
-//      and the next build attempt is not due yet.
+//      and the next build attempt is not due yet. A tenant whose latest delivered release withdrew
+//      something (an unpublish, or media the release before it referenced) is listed too, with
+//      nothing committed: its build is the housekeeping release (§7.2), so the release before the
+//      withdrawal expires in step 5 an hour later even if the tenant never publishes again.
 //   3. Deliveries of each tenant's latest delivered release that still need a notification or a
 //      live check, or whose live check missed (not_confirmed, M3-03), are retried when their next
 //      attempt is due (api.worker_deliveries_to_retry): the site is notified again and the full
