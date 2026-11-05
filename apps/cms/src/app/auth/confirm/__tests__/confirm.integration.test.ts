@@ -6,7 +6,7 @@
 // visitor answers the question.
 import { NextRequest } from 'next/server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { adminAuth, auth, brief, deleteThrowawayUsers, newUser, type TestUser } from '../../../../../../../tests/integration/src/auth-api.ts';
+import { adminAuth, auth, brief, deleteThrowawayUsers, generateLinkSession, newUser, tokenHashOf, waitMail, type TestUser } from '../../../../../../../tests/integration/src/auth-api.ts';
 import { env } from '../../../../../../../tests/integration/src/env.ts';
 import { closeAll } from '../../../../../../../tests/integration/src/sql.ts';
 
@@ -154,6 +154,28 @@ describe('the proxy on the confirm POST (C3 follow-up)', () => {
     await expect(confirmSignIn(form({ token_hash: await tokenHash(b.email), type: 'email' }))).rejects.toThrow(HOME);
     expect(jar.has(PENDING_COOKIE)).toBe(false);
     expect((await jarSession())?.user.id).toBe(b.id);
+  });
+});
+
+describe('an email change (spec §4.4, M5 finding 9)', () => {
+  const addressOf = async (user: TestUser) => (await adminAuth(`/admin/users/${user.id}`, { method: 'GET' })).json.email as string;
+
+  it('needs the POST of each address, and the second signs in with the new address', async () => {
+    const user = await newUser('m503-change');
+    const newAddress = `new-${user.email}`;
+    const session = await generateLinkSession(user.email, 'magiclink');
+    const put = await auth('/user', { method: 'PUT', token: session.json.access_token, body: { email: newAddress } });
+    expect(put.status, brief(put)).toBe(200);
+    const fromOld = tokenHashOf((await waitMail(user.email))[0]!);
+    const fromNew = tokenHashOf((await waitMail(newAddress))[0]!);
+
+    await expect(confirmSignIn(form({ token_hash: fromOld, type: 'email_change' }))).rejects.toThrow(/^REDIRECT \/login\?emailChange=waiting$/);
+    expect(await addressOf(user)).toBe(user.email);
+    expect(await jarSession()).toBeNull();
+
+    await expect(confirmSignIn(form({ token_hash: fromNew, type: 'email_change' }))).rejects.toThrow(HOME);
+    expect(await addressOf(user)).toBe(newAddress);
+    expect((await jarSession())?.user.id).toBe(user.id);
   });
 });
 

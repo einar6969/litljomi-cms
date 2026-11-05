@@ -1,4 +1,5 @@
-// The platform_admin persona's steps for apps/cms/e2e/console.spec.ts, on the LOCAL stack only
+// The platform_admin persona's steps for apps/cms/e2e/console.spec.ts, and a throwaway account's for
+// sign-in-sessions.spec.ts, on the LOCAL stack only
 // (env.ts refuses any host that is not loopback). They need the secret key, which the browser tests
 // never hold, so the spec starts this file with `node`. Each step prints one line of JSON and no
 // secret:
@@ -6,10 +7,11 @@
 //   factors           counts its verified and unverified factors;
 //   password-sign-in  gives it a random password, tries it on Auth and reports the answer.
 import { randomBytes } from 'node:crypto';
-import { adminAuth, auth } from '../src/auth-api.ts';
+import { adminAuth, auth, generateLinkSession } from '../src/auth-api.ts';
 import { PERSONAS } from '../src/fixtures.ts';
 import { closeAll, ownerQuery } from '../src/sql.ts';
-// Also: arrange-pages and clean-pages, the fixtures of console-pages.spec.ts (M4-05).
+// Also: arrange-pages and clean-pages, the fixtures of console-pages.spec.ts (M4-05);
+// arrange-email-change, address-of <id> and remove-user <id>, those of sign-in-sessions.spec.ts (M5-03).
 
 const { id, email } = PERSONAS.platform_admin;
 
@@ -21,7 +23,7 @@ async function listFactors(): Promise<Factor[]> {
   return (user.json.factors ?? []) as Factor[];
 }
 
-const steps: Record<string, () => Promise<unknown>> = {
+const steps: Record<string, (arg?: string) => Promise<unknown>> = {
   async reset() {
     for (const factor of await listFactors()) {
       const removed = await adminAuth(`/admin/users/${id}/factors/${factor.id}`, { method: 'DELETE' });
@@ -85,6 +87,31 @@ const steps: Record<string, () => Promise<unknown>> = {
     return { cleaned: true };
   },
 
+  // M5-03: a throwaway account, because an email change moves the address, with a change requested.
+  // Auth has mailed both addresses; the spec answers the mails. The session used here is not printed.
+  async 'arrange-email-change'() {
+    const stamp = randomBytes(6).toString('hex');
+    const [oldAddress, newAddress] = [`m503-old-${stamp}@test.local`, `m503-new-${stamp}@test.local`];
+    const created = await adminAuth('/admin/users', { body: { email: oldAddress, email_confirm: true } });
+    if (created.status !== 200) throw new Error(`creating the account answered ${created.status}`);
+    const session = await generateLinkSession(oldAddress, 'magiclink');
+    const change = await auth('/user', { method: 'PUT', token: session.json.access_token, body: { email: newAddress } });
+    if (change.status !== 200) throw new Error(`requesting the change answered ${change.status}`);
+    return { id: created.json.id as string, oldAddress, newAddress };
+  },
+
+  async 'address-of'(userId) {
+    const user = await adminAuth(`/admin/users/${userId}`, { method: 'GET' });
+    if (user.status !== 200) throw new Error(`reading the account answered ${user.status}`);
+    return { email: user.json.email as string };
+  },
+
+  async 'remove-user'(userId) {
+    const removed = await adminAuth(`/admin/users/${userId}`, { method: 'DELETE' });
+    if (removed.status !== 200) throw new Error(`removing the account answered ${removed.status}`);
+    return { removed: true };
+  },
+
   async 'password-sign-in'() {
     const password = randomBytes(24).toString('hex');
     const set = await adminAuth(`/admin/users/${id}`, { method: 'PUT', body: { password } });
@@ -97,7 +124,7 @@ const steps: Record<string, () => Promise<unknown>> = {
 try {
   const step = steps[process.argv[2] ?? ''];
   if (!step) throw new Error(`unknown step: ${process.argv[2]}`);
-  console.log(JSON.stringify(await step()));
+  console.log(JSON.stringify(await step(process.argv[3])));
 } catch (error) {
   console.error('console-admin failed:', error instanceof Error ? error.message : error);
   process.exitCode = 1;

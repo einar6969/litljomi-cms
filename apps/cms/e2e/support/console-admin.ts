@@ -9,8 +9,8 @@ import { NO_CLI_NETWORK_ENV } from './local';
 const repoRoot = join(import.meta.dirname, '..', '..', '..', '..');
 const script = join(repoRoot, 'tests', 'integration', 'scripts', 'console-admin.ts');
 
-async function run<T>(step: string): Promise<T> {
-  const child = spawn(process.execPath, [script, step], {
+async function run<T>(step: string, arg?: string): Promise<T> {
+  const child = spawn(process.execPath, [script, step, ...(arg === undefined ? [] : [arg])], {
     cwd: repoRoot,
     env: { ...process.env, ...NO_CLI_NETWORK_ENV },
     stdio: ['ignore', 'pipe', 'inherit'],
@@ -36,6 +36,15 @@ export const cleanPages = () => run<{ cleaned: true }>('clean-pages');
 
 /** How many verified and unverified factors the admin has. */
 export const adminFactors = () => run<{ verified: number; unverified: number }>('factors');
+
+/** A throwaway account with an email change requested: Auth has mailed both addresses (M5-03). */
+export const arrangeEmailChange = () => run<{ id: string; oldAddress: string; newAddress: string }>('arrange-email-change');
+
+/** The address Auth holds for an account. */
+export const addressOf = (id: string) => run<{ email: string }>('address-of', id);
+
+/** Removes a throwaway account. */
+export const removeUser = (id: string) => run<{ removed: true }>('remove-user', id);
 
 /** Gives the admin a password, tries it on Auth, and says what Auth answered. */
 export const adminPasswordSignIn = () => run<{ status: number; signedIn: boolean }>('password-sign-in');
