@@ -356,7 +356,7 @@ Expected: `signup_disabled` (HTTP 422), and `select count(*) from auth.users whe
 
 ```sh
 (
-  REF='<project-ref>'   # the dashboard value used for EXPECT_REF
+  REF='<project-ref>'
   printf '%s\n' "$REF" | grep -Eqx '[a-z0-9]{20}' \
     || { echo 'REF is not a 20-character project reference: stop' >&2; exit 1; }
   printf 'target project: %s\n' "$REF"
@@ -374,6 +374,7 @@ Expected: `signup_disabled` (HTTP 422), and `select count(*) from auth.users whe
   unset SUPABASE_PAT
 )
 ```
+  `REF`: the dashboard value used for EXPECT_REF.
 
 Expected: the target line, `PATCH: 200`, then `true`. Anything else: stop and report, and **revoke the token anyway** (the response body is never printed, since the Auth configuration can hold secret settings). The check prints the comparison `== true`, never the field's raw value, on purpose: a wrong field name could otherwise print a secret setting, and the PATCH would have overwritten it with `true`; do not paste the output into chat. Einar revokes the token whatever the outcome and confirms it is gone from the Access Tokens list. It is an Auth configuration change: if it is made after section 7.1, section 7.2 is run again (section 7.2, "When to run it").
 
@@ -923,11 +924,12 @@ This section records how the first two tenants were set up. **For a new tenant, 
   Each prints `tenant <slug>: <tenant-id>`; Einar keeps the two ids for P-2 and P-3 (`<labak-tenant-id>`, `<demo-tenant-id>`; not secret). A rerun with the same name prints the same line and creates nothing. Another name for an existing slug refuses (`FAILED: tenant <slug> already exists with a different name (slug_taken); nothing was created`). Verify: SQL editor `select slug from cms.tenants order by slug;` lists `demo` and `labak` (confirm the table and column names against the migrations at execution time).
 - **P-2 Sites.** Owner: Einar (the CLI and the webhook secret); the executor verifies. `provision site` once per staging site: base URL `https://demo-staging.litljomi.is` (tenant `demo`) or `https://labak-hub.litljomi.is` (tenant `labak`), and the site's revalidate route (`/api/cms/revalidate` on the demo site; the LABAK branch's route, confirm at execution time). The tool reads the webhook secret from **standard input only** (it refuses a terminal or empty input, and never takes the secret as an argument or environment variable; one trailing newline is removed; the secret must be 32–256 printable characters with no spaces or commas, since `CMS_WEBHOOK_SECRETS` is comma-separated), sets the revalidate URL to base URL plus route and the preview URL to the optional `--preview-url` (https, or http only to a loopback host; none when left out, and `provision preview-url --site-id <id> --preview-url (<url> | none)` sets, replaces or clears it later), and prints `site: <site-id>`. The secret is stored in Supabase Vault (`api.admin_create_site` keeps only its ID), and the same value becomes that site's `CMS_WEBHOOK_SECRETS` (set here, not in G6.2); the site is then redeployed. Before creating, the tool reads the tenant's active sites (`api.worker_sites`, id and base URL only). For a base URL the tenant already has, it exits `0` and prints `site <site-id>: already exists at <base-url>; nothing was created and the webhook secret was not changed (to change it, use provision webhook-secret)`, so a rerun creates no duplicate and never changes the stored secret. That line isn't the `site: <site-id>` result line. **Carrying the secret without a file, the clipboard or shell history**, in one terminal session per site, from the repository root:
   ```sh
-  SITE_PROJECT='<site-project>'   # set once per site, next to its base URL: demo-staging for https://demo-staging.litljomi.is, labak-hub for https://labak-hub.litljomi.is
-  WEBHOOK_SECRET="$(openssl rand -base64 32)"          # never echoed; the command lines hold only the variable's name
+  SITE_PROJECT='<site-project>'
+  WEBHOOK_SECRET="$(openssl rand -base64 32)"
   printf '%s' "$WEBHOOK_SECRET" \
     | pnpm --silent --filter @litljomi/cli cli provision site --tenant-id '<tenant-id>' --base-url 'https://'"$SITE_PROJECT"'.litljomi.is' --revalidate-path '<revalidate-route>' --expect-ref '<project-ref>'
   ```
+  `SITE_PROJECT`: set once per site, next to its base URL: demo-staging for https://demo-staging.litljomi.is, labak-hub for https://labak-hub.litljomi.is The secret is never echoed; the command lines hold only the variable's name.
   Read that output. Only if it printed `site: <site-id>`, run:
   ```sh
   printf '%s' "$WEBHOOK_SECRET" \
