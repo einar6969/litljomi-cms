@@ -226,11 +226,14 @@ function isDeclarationName(id: ts.Identifier): boolean {
 // ---------------------------------------------------------------------------------------------
 
 const files = sources(SRC).map(parse);
+// The platform console's copy is English (M4 plan, Global constraints): it has one reader and is
+// not the editor's interface, so it adds nothing to is.ts. The key checks below still read it.
+const CONSOLE = `${join(SRC, 'app', 'console')}/`;
 const e2eFiles = sources(join(APP, 'e2e')).map(parse);
 
 describe('Icelandic copy (M2-19)', () => {
   it('has no hard-coded text in JSX or in title, alt, placeholder and aria-* attributes', () => {
-    const found = files.filter((f) => f.fileName.endsWith('.tsx')).flatMap(hardCodedText);
+    const found = files.filter((f) => f.fileName.endsWith('.tsx') && !f.fileName.startsWith(CONSOLE)).flatMap(hardCodedText);
     expect(found).toEqual([]);
   });
 
