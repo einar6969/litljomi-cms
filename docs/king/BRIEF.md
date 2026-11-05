@@ -128,6 +128,7 @@ All numbered decisions are in `docs/plans/2026-11-01-m0-m1.md`, despite its name
 | 67 | Residual regex slowdown by an editor accepted |
 | 68 | M5 hosted verification approved |
 | 69 | M5 accepted |
+| 70 | One docs-only PR, #60, merged before CI finished. Merge rule otherwise unchanged |
 
 **Known not to be in the numbered decisions:**
 
