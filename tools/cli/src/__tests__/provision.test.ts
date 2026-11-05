@@ -85,13 +85,14 @@ async function run(
   return result;
 }
 
-// Every run, whatever its outcome: the key and the webhook secret appear in no output, and every
-// request went to the target origin only.
+// Every run, whatever its outcome: the key and both secrets appear in no output, and every request
+// went to the target origin only.
 afterEach(() => {
   for (const r of runs.splice(0)) {
     const text = r.lines.join('\n');
     expect(text).not.toContain(KEY);
     expect(text).not.toContain(SECRET);
+    expect(text).not.toContain(PREVIEW_SECRET);
     for (const c of r.calls) {
       expect(new URL(c.url).origin).toBe(ORIGIN);
       expect(c.init.redirect).toBe('error');
@@ -110,6 +111,9 @@ const PREVIEW_SECRET = 'TestOnlyPreviewSecret+0123456789/abcdefgh=';
 const PREVIEW_URL = 'https://site.example.is/api/cms/preview';
 const previewUrlArgs = (url: string) => ['provision', 'preview-url', '--site-id', SITE_ID, '--preview-url', url, ...common];
 const editorArgs = ['provision', 'editor', '--email', 'editor@example.is', '--tenant-id', TENANT_A, '--tenant-id', TENANT_B, ...common];
+const webhookArgs = ['provision', 'webhook-secret', '--site-id', SITE_ID, ...common];
+const statusArgs = (status: string) => ['provision', 'tenant-status', '--tenant-id', TENANT_A, '--status', status, ...common];
+const removeArgs = ['provision', 'remove-editor', '--user-id', USER_ID, '--tenant-id', TENANT_A, '--tenant-id', TENANT_B, ...common];
 
 const path = (c: Call) => new URL(c.url).pathname + new URL(c.url).search;
 const header = (c: Call, name: string) => new Headers(c.init.headers).get(name);
@@ -155,6 +159,23 @@ describe('provision: argument parsing', () => {
     ['editor without --tenant-id', ['provision', 'editor', '--email', 'editor@example.is', ...common]],
     ['editor with a malformed email', ['provision', 'editor', '--email', 'not-an-email', '--tenant-id', TENANT_A, ...common]],
     ['editor with a malformed user id', ['provision', 'editor', '--user-id', 'x', '--tenant-id', TENANT_A, ...common]],
+    ['webhook-secret without --site-id', ['provision', 'webhook-secret', ...common]],
+    ['webhook-secret with a malformed site id', ['provision', 'webhook-secret', '--site-id', 'nope', ...common]],
+    ['the rotated secret as an argument', [...webhookArgs, '--webhook-secret', SECRET]],
+    ['the rotated secret as a positional argument', [...webhookArgs, SECRET]],
+    ['tenant-status without --tenant-id', ['provision', 'tenant-status', '--status', 'active', ...common]],
+    ['tenant-status with a malformed tenant id', ['provision', 'tenant-status', '--tenant-id', 'nope', '--status', 'active', ...common]],
+    ['tenant-status without --status', ['provision', 'tenant-status', '--tenant-id', TENANT_A, ...common]],
+    ['tenant-status with another status', statusArgs('deleted')],
+    ['tenant-status with an uppercase status', statusArgs('ACTIVE')],
+    ['tenant-status with an empty status', ['provision', 'tenant-status', '--tenant-id', TENANT_A, '--status=', ...common]],
+    ['tenant-status for two tenants', [...statusArgs('active'), '--tenant-id', TENANT_B]],
+    ['remove-editor without --user-id', ['provision', 'remove-editor', '--tenant-id', TENANT_A, ...common]],
+    ['remove-editor with an empty user id (a null would be a silent no-op)', ['provision', 'remove-editor', '--user-id=', '--tenant-id', TENANT_A, ...common]],
+    ['remove-editor with a malformed user id', ['provision', 'remove-editor', '--user-id', 'x', '--tenant-id', TENANT_A, ...common]],
+    ['remove-editor with an email in place of a user id', ['provision', 'remove-editor', '--email', 'editor@example.is', '--tenant-id', TENANT_A, ...common]],
+    ['remove-editor without --tenant-id', ['provision', 'remove-editor', '--user-id', USER_ID, ...common]],
+    ['remove-editor with a malformed tenant id', ['provision', 'remove-editor', '--user-id', USER_ID, '--tenant-id', TENANT_A, '--tenant-id', 'nope', ...common]],
   ])('refuses %s with usage, before reading anything', async (_name, args) => {
     const r = await run(args);
     expect(r.code).toBe(2);
@@ -246,10 +267,17 @@ describe('provision tenant', () => {
     expect(c.url).not.toContain(KEY);
   });
 
-  it('refuses an existing slug cleanly (slug_taken)', async () => {
+  it('prints the existing id and exits 0 when the slug exists with the same name', async () => {
+    const r = await run(tenantArgs, { handler: () => json(200, TENANT_A) });
+    expect(r.code).toBe(0);
+    expect(r.out).toEqual([`target: ${REF}.supabase.co`, `tenant acme: ${TENANT_A}`]);
+    expect(r.err).toEqual([]);
+  });
+
+  it('refuses a slug that exists with a different name (slug_taken)', async () => {
     const r = await run(tenantArgs, { handler: () => json(400, { code: 'P0001', message: 'slug_taken', details: null, hint: null }) });
     expect(r.code).toBe(1);
-    expect(r.err.join('\n')).toContain('FAILED: tenant acme already exists (slug_taken); nothing was created');
+    expect(r.err.join('\n')).toContain('FAILED: tenant acme already exists with a different name (slug_taken); nothing was created');
     expect(r.calls).toHaveLength(1);
   });
 
@@ -349,13 +377,30 @@ describe('provision site', () => {
     expect(r.calls).toHaveLength(0);
   });
 
-  it('refuses a site the tenant already has, creating nothing', async () => {
+  it('on a base URL the tenant already has, prints the site id, says the secret was not changed and exits 0', async () => {
     const r = await run(siteArgs, { stdin: SECRET, handler: siteHandler([{ id: SITE_ID, base_url: 'https://site.example.is' }]) });
-    expect(r.code).toBe(1);
-    expect(r.err.join('\n')).toContain(
-      `FAILED: tenant ${TENANT_A} already has a site at https://site.example.is (site ${SITE_ID}); nothing was created`,
-    );
+    expect(r.code).toBe(0);
+    expect(r.out).toEqual([
+      `target: ${REF}.supabase.co`,
+      `site ${SITE_ID}: already exists at https://site.example.is; nothing was created and the webhook secret was not changed (to change it, use provision webhook-secret)`,
+    ]);
+    expect(r.err).toEqual([]);
+    // The piped secret is discarded: the only request carries the tenant id and nothing else.
     expect(r.calls.map(path)).toEqual(['/rest/v1/rpc/worker_sites?select=id,base_url']);
+    expect((r.calls[0] as Call).body).toEqual({ p_tenant_id: TENANT_A });
+  });
+
+  it.each([
+    ['not a string', 7],
+    ['not a uuid', 'abc'],
+  ])('refuses an existing site whose id is %s', async (_name, id) => {
+    const r = await run(siteArgs, {
+      stdin: SECRET,
+      handler: () => json(200, [{ id, base_url: 'https://site.example.is' }]),
+    });
+    expect(r.code).toBe(1);
+    expect(r.err.join('\n')).toContain('FAILED: unexpected response from worker_sites; nothing was created');
+    expect(r.calls).toHaveLength(1);
   });
 
   it('creates nothing when the existing-site check fails', async () => {
@@ -440,6 +485,179 @@ describe('provision preview-secret', () => {
     expect(r.code).toBe(1);
     expect(r.err.join('\n')).toContain('[redacted]');
     expect(r.lines.join('\n')).not.toContain(PREVIEW_SECRET);
+  });
+});
+
+// M4-02, spec §8.2: a site's webhook secret rotated in place, from standard input only.
+describe('provision webhook-secret', () => {
+  const handler: Handler = (c) => (path(c) === '/rest/v1/rpc/admin_set_webhook_secret' ? new Response(null, { status: 204 }) : json(404, {}));
+
+  it('sets the site\'s webhook secret through api.admin_set_webhook_secret with the secret from stdin', async () => {
+    const r = await run(webhookArgs, { stdin: `${SECRET}\n`, handler });
+    expect(r.code).toBe(0);
+    expect(r.out).toEqual([`target: ${REF}.supabase.co`, `site ${SITE_ID}: webhook secret set`]);
+    expect(r.calls.map(path)).toEqual(['/rest/v1/rpc/admin_set_webhook_secret']);
+    const [call] = r.calls as [Call];
+    expect(call.init.method).toBe('POST');
+    expect(call.body).toEqual({ p_site_id: SITE_ID, p_webhook_secret: SECRET });
+    expect(call.url).not.toContain(SECRET);
+    expect(header(call, 'Content-Profile')).toBe('api');
+    expect(header(call, 'apikey')).toBe(KEY);
+    expect(header(call, 'Authorization')).toBe(`Bearer ${KEY}`);
+  });
+
+  it('refuses a terminal on stdin, sending nothing', async () => {
+    const r = await run(webhookArgs, { stdin: null, handler });
+    expect(r.code).toBe(1);
+    expect(r.err.join('\n')).toContain('standard input is a terminal; pipe the webhook secret in');
+    expect(r.calls).toHaveLength(0);
+  });
+
+  it.each([
+    ['empty', ''],
+    ['fewer than 32 characters', 'x'.repeat(31)],
+    ['more than 256 characters', 'x'.repeat(257)],
+    ['a comma (it would split CMS_WEBHOOK_SECRETS)', `${SECRET},x`],
+    ['a space', `${SECRET} x`],
+    ['two trailing newlines', `${SECRET}\n\n`],
+    ['a carriage return', `${SECRET}\r\n`],
+  ])('refuses a secret that is %s, sending nothing', async (_name, stdin) => {
+    const r = await run(webhookArgs, { stdin, handler });
+    expect(r.code).toBe(1);
+    expect(r.err.join('\n')).toMatch(/standard input is empty|the webhook secret on standard input has an unexpected form \(value not shown\)/);
+    expect(r.calls).toHaveLength(0);
+  });
+
+  it('accepts exactly 32 characters', async () => {
+    const r = await run(webhookArgs, { stdin: 'y'.repeat(32), handler });
+    expect(r.code).toBe(0);
+  });
+
+  it('reports an unknown site, and never prints the secret even when the server echoes it', async () => {
+    let r = await run(webhookArgs, { stdin: SECRET, handler: () => json(400, { code: 'P0001', message: 'not_found' }) });
+    expect(r.code).toBe(1);
+    expect(r.err.join('\n')).toContain(`FAILED: setting the webhook secret of site ${SITE_ID}: HTTP 400 P0001 not_found`);
+    r = await run(webhookArgs, { stdin: SECRET, handler: () => json(400, { code: 'XX000', message: `bad ${SECRET} ${KEY}` }) });
+    expect(r.code).toBe(1);
+    expect(r.err.join('\n')).toContain('[redacted]');
+  });
+
+  it('reports a network failure without the error text', async () => {
+    const r = await run(webhookArgs, {
+      stdin: SECRET,
+      handler: () => {
+        throw Object.assign(new TypeError(`fetch failed ${SECRET}`), { cause: { code: 'ECONNRESET' } });
+      },
+    });
+    expect(r.code).toBe(1);
+    expect(r.err.join('\n')).toContain('network error (ECONNRESET)');
+  });
+});
+
+// M4-02, spec §8.4: an incident suspends a tenant; reactivating restores publishing.
+describe('provision tenant-status', () => {
+  const handler: Handler = (c) => (path(c) === '/rest/v1/rpc/admin_set_tenant_status' ? new Response(null, { status: 204 }) : json(404, {}));
+
+  it.each(['suspended', 'active'])('sets the status %s through api.admin_set_tenant_status', async (status) => {
+    const r = await run(statusArgs(status), { handler });
+    expect(r.code).toBe(0);
+    expect(r.out).toEqual([`target: ${REF}.supabase.co`, `tenant ${TENANT_A}: status ${status}`]);
+    expect(r.calls.map(path)).toEqual(['/rest/v1/rpc/admin_set_tenant_status']);
+    const [call] = r.calls as [Call];
+    expect(call.init.method).toBe('POST');
+    expect(call.body).toEqual({ p_tenant_id: TENANT_A, p_status: status });
+    expect(header(call, 'Content-Profile')).toBe('api');
+    expect(header(call, 'apikey')).toBe(KEY);
+    expect(r.stdinReads).toBe(0);
+  });
+
+  it('reports an unknown tenant as status, code and message', async () => {
+    const r = await run(statusArgs('suspended'), { handler: () => json(400, { code: 'P0001', message: 'not_found', details: 'echo' }) });
+    expect(r.code).toBe(1);
+    const text = r.err.join('\n');
+    expect(text).toContain(`FAILED: setting the status of tenant ${TENANT_A}: HTTP 400 P0001 not_found`);
+    expect(text).not.toContain('echo');
+  });
+
+  it('never prints the key, even when the server echoes it', async () => {
+    const r = await run(statusArgs('suspended'), { handler: () => json(500, { code: 'XX000', message: `bad ${KEY}` }) });
+    expect(r.code).toBe(1);
+    expect(r.err.join('\n')).toContain('[redacted]');
+  });
+});
+
+// M4-02, spec §8.4: revoking an editor; admin_remove_membership is a silent no-op on a null user id
+// and on an absent membership, so ids are validated and the output claims no more than it knows.
+describe('provision remove-editor', () => {
+  const removeHandler = (failTenant?: string): Handler => (c) => {
+    if (path(c) !== '/rest/v1/rpc/admin_remove_membership') return json(404, {});
+    const body = c.body as { p_tenant_id: string };
+    return body.p_tenant_id === failTenant ? json(400, { code: 'P0001', message: 'not_found' }) : new Response(null, { status: 204 });
+  };
+
+  it('removes one membership per tenant through api.admin_remove_membership', async () => {
+    const r = await run(removeArgs, { handler: removeHandler() });
+    expect(r.code).toBe(0);
+    expect(r.calls.map(path)).toEqual(['/rest/v1/rpc/admin_remove_membership', '/rest/v1/rpc/admin_remove_membership']);
+    const [a, b] = r.calls as [Call, Call];
+    expect(a.body).toEqual({ p_tenant_id: TENANT_A, p_user_id: USER_ID });
+    expect(b.body).toEqual({ p_tenant_id: TENANT_B, p_user_id: USER_ID });
+    expect(header(a, 'Content-Profile')).toBe('api');
+    expect(header(a, 'apikey')).toBe(KEY);
+    expect(r.out).toEqual([
+      `target: ${REF}.supabase.co`,
+      `user ${USER_ID}`,
+      `membership ${TENANT_A}: removed or already absent`,
+      `membership ${TENANT_B}: removed or already absent`,
+    ]);
+    expect(r.stdinReads).toBe(0);
+  });
+
+  it('removes each tenant once when it is given twice', async () => {
+    const r = await run([...removeArgs, '--tenant-id', TENANT_A], { handler: removeHandler() });
+    expect(r.code).toBe(0);
+    expect(r.calls).toHaveLength(2);
+  });
+
+  it('prints exactly the tenants still to do and the command that finishes them', async () => {
+    const r = await run(removeArgs, { handler: removeHandler(TENANT_A) });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain(`membership ${TENANT_B}: removed or already absent`);
+    const text = r.err.join('\n');
+    expect(text).toContain(`membership ${TENANT_A}: FAILED: HTTP 400 P0001 not_found`);
+    expect(text).toContain(`FAILED: user ${USER_ID} may still have memberships in: ${TENANT_A}`);
+    expect(text).toContain(
+      `finish with: pnpm --silent --filter @litljomi/cli cli provision remove-editor --user-id ${USER_ID} --tenant-id ${TENANT_A} --expect-ref ${REF} --env-file=${ENV_FILE}`,
+    );
+    expect(text).not.toContain(`--tenant-id ${TENANT_B}`);
+  });
+
+  it('leaves --env-file out of the finish command with the default env file', async () => {
+    const args = removeArgs.filter((a, i) => a !== '--env-file' && removeArgs[i - 1] !== '--env-file');
+    const r = await run(args, { handler: removeHandler(TENANT_B) });
+    expect(r.code).toBe(1);
+    expect(r.err.join('\n')).not.toContain('--env-file');
+  });
+
+  it('tries every tenant even when the connection drops on the first', async () => {
+    let calls = 0;
+    const r = await run(removeArgs, {
+      handler: () => {
+        calls += 1;
+        if (calls === 1) throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } });
+        return new Response(null, { status: 204 });
+      },
+    });
+    expect(r.code).toBe(1);
+    expect(r.calls).toHaveLength(2);
+    expect(r.err.join('\n')).toContain(`membership ${TENANT_A}: FAILED: network error (ECONNRESET)`);
+    expect(r.out).toContain(`membership ${TENANT_B}: removed or already absent`);
+  });
+
+  it('never prints the key, even when the server echoes it', async () => {
+    const r = await run(removeArgs, { handler: () => json(500, { code: 'XX000', message: `bad ${KEY}` }) });
+    expect(r.code).toBe(1);
+    expect(r.err.join('\n')).toContain('[redacted]');
   });
 });
 
@@ -634,16 +852,174 @@ describe('provision editor', () => {
     expect(r.err.join('\n')).not.toContain('--env-file');
   });
 
-  it.each([
-    ['email_exists', { code: 422, error_code: 'email_exists', msg: 'A user with this email address has already been registered' }],
-    ['user_already_exists', { code: 422, error_code: 'user_already_exists', msg: 'User already registered' }],
-  ])('refuses an existing user (%s) and changes nothing', async (_name, body) => {
-    const r = await run(editorArgs, { handler: () => json(422, body) });
-    expect(r.code).toBe(1);
-    const text = r.err.join('\n');
-    expect(text).toContain('FAILED: a user with email editor@example.is already exists; no invitation was sent and nothing was changed');
-    expect(text).toContain('--user-id <user-id>');
-    expect(r.calls.map(path)).toEqual(['/auth/v1/invite']);
+  describe('an existing user', () => {
+    const users = (...list: { id?: unknown; email?: unknown }[]) => json(200, { users: list, aud: 'authenticated' });
+    const other = (n: number) => ({ id: `66666666-6666-4666-8666-${String(n).padStart(12, '0')}`, email: `other${n}@example.is` });
+    const page = (c: Call) => Number(new URL(c.url).searchParams.get('page'));
+    const LIST = '/auth/v1/admin/users';
+    const exists = (list: (c: Call) => Response): Handler => (c) => {
+      if (path(c) === '/auth/v1/invite') return json(422, { code: 422, error_code: 'email_exists', msg: 'already registered' });
+      if (new URL(c.url).pathname === LIST) return list(c);
+      if (path(c) === '/rest/v1/rpc/admin_add_membership') return new Response(null, { status: 204 });
+      return json(404, {});
+    };
+    const noMemberships = (r: Run) => expect(r.calls.filter((c) => path(c).includes('admin_add_membership'))).toEqual([]);
+
+    it.each([
+      ['email_exists', { code: 422, error_code: 'email_exists', msg: 'A user with this email address has already been registered' }],
+      ['user_already_exists', { code: 422, error_code: 'user_already_exists', msg: 'User already registered' }],
+    ])('finds the id in the users list after %s, and adds the memberships', async (_name, body) => {
+      const r = await run(editorArgs, {
+        handler: (c) => {
+          if (path(c) === '/auth/v1/invite') return json(422, body);
+          if (new URL(c.url).pathname === LIST) return users({ id: USER_ID, email: 'editor@example.is' });
+          return new Response(null, { status: 204 });
+        },
+      });
+      expect(r.code).toBe(0);
+      expect(r.calls.map((c) => new URL(c.url).pathname)).toEqual([
+        '/auth/v1/invite',
+        LIST,
+        '/rest/v1/rpc/admin_add_membership',
+        '/rest/v1/rpc/admin_add_membership',
+      ]);
+      expect(r.calls[2]?.body).toEqual({ p_tenant_id: TENANT_A, p_user_id: USER_ID });
+      expect(r.calls[3]?.body).toEqual({ p_tenant_id: TENANT_B, p_user_id: USER_ID });
+      expect(r.out).toEqual([
+        `target: ${REF}.supabase.co`,
+        `existing user editor@example.is: user ${USER_ID}`,
+        `membership ${TENANT_A}: ok`,
+        `membership ${TENANT_B}: ok`,
+      ]);
+    });
+
+    it('reads the list with a GET, the key in headers only and no body', async () => {
+      const r = await run(editorArgs, { handler: exists(() => users({ id: USER_ID, email: 'editor@example.is' })) });
+      expect(r.code).toBe(0);
+      const list = r.calls[1] as Call;
+      expect(list.init.method).toBe('GET');
+      expect(list.init.body).toBeUndefined();
+      expect(path(list)).toBe('/auth/v1/admin/users?page=1&per_page=200');
+      expect(header(list, 'apikey')).toBe(KEY);
+      expect(header(list, 'Authorization')).toBe(`Bearer ${KEY}`);
+      expect(header(list, 'Content-Profile')).toBeNull();
+      expect(list.url).not.toContain(KEY);
+    });
+
+    it('matches the email case-insensitively, whichever side has the capitals', async () => {
+      let r = await run(editorArgs, { handler: exists(() => users(other(1), { id: USER_ID, email: 'Editor@Example.IS' })) });
+      expect(r.code).toBe(0);
+      expect((r.calls[2] as Call).body).toEqual({ p_tenant_id: TENANT_A, p_user_id: USER_ID });
+      const upper = editorArgs.map((a) => (a === 'editor@example.is' ? 'EDITOR@example.is' : a));
+      r = await run(upper, { handler: exists(() => users({ id: USER_ID, email: 'editor@example.is' })) });
+      expect(r.code).toBe(0);
+      expect((r.calls[2] as Call).body).toEqual({ p_tenant_id: TENANT_A, p_user_id: USER_ID });
+    });
+
+    it('matches only the whole email', async () => {
+      const r = await run(editorArgs, {
+        handler: exists((c) => (page(c) === 1 ? users({ id: USER_ID, email: 'not-editor@example.is.other' }, { id: USER_ID }, { id: USER_ID, email: null }) : users())),
+      });
+      expect(r.code).toBe(1);
+      noMemberships(r);
+    });
+
+    it('follows the pages until it finds the user, and stops there', async () => {
+      const r = await run(editorArgs, {
+        handler: exists((c) => {
+          if (page(c) === 1) return users(other(1), other(2));
+          if (page(c) === 2) return users(other(3));
+          if (page(c) === 3) return users(other(4), { id: USER_ID, email: 'editor@example.is' });
+          throw new Error('read past the page with the user');
+        }),
+      });
+      expect(r.code).toBe(0);
+      expect(r.calls.filter((c) => new URL(c.url).pathname === LIST).map(path)).toEqual([
+        '/auth/v1/admin/users?page=1&per_page=200',
+        '/auth/v1/admin/users?page=2&per_page=200',
+        '/auth/v1/admin/users?page=3&per_page=200',
+      ]);
+      expect((r.calls.at(-1) as Call).body).toEqual({ p_tenant_id: TENANT_B, p_user_id: USER_ID });
+    });
+
+    it('fails clearly and changes nothing when the list ends without the user', async () => {
+      const r = await run(editorArgs, { handler: exists((c) => (page(c) === 1 ? users(other(1)) : users())) });
+      expect(r.code).toBe(1);
+      expect(r.err.join('\n')).toContain(
+        'FAILED: a user with email editor@example.is already exists but was not found in the Auth users list (at most 100 pages of 200 are read); no invitation was sent and nothing was changed',
+      );
+      expect(r.calls.map((c) => new URL(c.url).pathname)).toEqual(['/auth/v1/invite', LIST, LIST]);
+      expect(r.out).toEqual([`target: ${REF}.supabase.co`]);
+    });
+
+    it('stops at the page limit when the list never ends', async () => {
+      const r = await run(editorArgs, { handler: exists(() => users(other(1))) });
+      expect(r.code).toBe(1);
+      expect(r.err.join('\n')).toContain('was not found in the Auth users list');
+      expect(r.calls.filter((c) => new URL(c.url).pathname === LIST)).toHaveLength(100);
+      noMemberships(r);
+    });
+
+    it('changes nothing when a page of the list fails, with status, code and message only', async () => {
+      const r = await run(editorArgs, {
+        handler: exists((c) => (page(c) === 1 ? users(other(1)) : json(500, { code: 500, error_code: 'unexpected_failure', msg: `bad ${KEY}`, users: [{ email: 'leak@example.is' }] }))),
+      });
+      expect(r.code).toBe(1);
+      const text = r.err.join('\n');
+      expect(text).toContain('FAILED: looking up the user with email editor@example.is: HTTP 500 unexpected_failure bad [redacted]; nothing was changed');
+      expect(text).not.toContain('leak@example.is');
+      noMemberships(r);
+    });
+
+    it('changes nothing when the connection drops during the lookup, without the error text', async () => {
+      const r = await run(editorArgs, {
+        handler: exists(() => {
+          throw Object.assign(new TypeError(`fetch failed ${KEY}`), { cause: { code: 'ECONNRESET' } });
+        }),
+      });
+      expect(r.code).toBe(1);
+      expect(r.err.join('\n')).toContain('looking up the user with email editor@example.is: network error (ECONNRESET); nothing was changed');
+      noMemberships(r);
+    });
+
+    it.each([
+      ['no users field', () => json(200, { aud: 'authenticated' })],
+      ['a list that is not one', () => json(200, { users: 'none' })],
+      ['a body that is not JSON', () => new Response('<html>', { status: 200 })],
+      ['a null body', () => json(200, null)],
+    ])('changes nothing on a response with %s', async (_name, list) => {
+      const r = await run(editorArgs, { handler: exists(list) });
+      expect(r.code).toBe(1);
+      expect(r.err.join('\n')).toContain('FAILED: unexpected response from the Auth users list; nothing was changed');
+      noMemberships(r);
+    });
+
+    it.each([
+      ['a user id that is not a uuid', { id: 'x', email: 'editor@example.is' }],
+      ['no user id', { email: 'editor@example.is' }],
+    ])('changes nothing on a matching user with %s', async (_name, user) => {
+      const r = await run(editorArgs, { handler: exists(() => users(user)) });
+      expect(r.code).toBe(1);
+      expect(r.err.join('\n')).toContain('FAILED: unexpected response from the Auth users list; nothing was changed');
+      noMemberships(r);
+    });
+
+    it('prints nothing else from the list', async () => {
+      const r = await run(editorArgs, { handler: exists(() => users(other(1), { id: USER_ID, email: 'editor@example.is' })) });
+      expect(r.code).toBe(0);
+      expect(r.lines.join('\n')).not.toContain('other1@example.is');
+    });
+
+    it('prints the command that finishes a failed membership, as after an invitation', async () => {
+      const r = await run(editorArgs, {
+        handler: (c) =>
+          (c.body as { p_tenant_id?: string } | undefined)?.p_tenant_id === TENANT_A
+            ? json(400, { code: 'P0001', message: 'not_found' })
+            : exists(() => users({ id: USER_ID, email: 'editor@example.is' }))(c),
+      });
+      expect(r.code).toBe(1);
+      expect(r.err.join('\n')).toContain(`provision editor --user-id ${USER_ID} --tenant-id ${TENANT_A} --expect-ref ${REF}`);
+    });
   });
 
   it('reports a failed invitation as status, code and message, and adds no membership', async () => {
@@ -665,6 +1041,174 @@ describe('provision editor', () => {
     expect(r.code).toBe(0);
     expect(r.calls.map(path)).toEqual(['/rest/v1/rpc/admin_add_membership']);
     expect(r.out).toEqual([`target: ${REF}.supabase.co`, `user ${USER_ID}`, `membership ${TENANT_B}: ok`]);
+  });
+});
+
+// Review focus 2: a rerun after a partial failure finishes the job and creates no duplicate. A small
+// stateful project: `dropReply` applies the next matching write and loses its answer, `dropCall`
+// loses the connection before the write. What each rerun sees comes from what the first run left.
+describe('provision: a rerun after a partial failure', () => {
+  const dropped = () => Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } });
+  const EMAIL = 'editor@example.is';
+
+  function project(options: { confirmed?: boolean } = {}) {
+    const state = {
+      dropReply: null as string | null,
+      dropCall: null as string | null,
+      tenants: new Map<string, { id: string; name: string }>(),
+      sites: [] as { id: string; base_url: string; secret: string }[],
+      users: new Map<string, string>(),
+      memberships: new Set<string>(),
+      invitations: 0,
+    };
+    const reply = (rpc: string, write: () => void, answer: Response): Response => {
+      if (state.dropCall === rpc) {
+        state.dropCall = null;
+        throw dropped();
+      }
+      write();
+      if (state.dropReply === rpc) {
+        state.dropReply = null;
+        throw dropped();
+      }
+      return answer;
+    };
+    const handler: Handler = (c) => {
+      const url = new URL(c.url);
+      const body = c.body as Record<string, string>;
+      if (url.pathname === '/auth/v1/invite') {
+        state.invitations += 1;
+        if (state.users.has(body['email'] as string) && options.confirmed) return json(422, { code: 422, error_code: 'email_exists', msg: 'already registered' });
+        const id = state.users.get(body['email'] as string) ?? USER_ID;
+        return reply('invite', () => state.users.set(body['email'] as string, id), json(200, { id, email: body['email'] }));
+      }
+      if (url.pathname === '/auth/v1/admin/users') {
+        const page = url.searchParams.get('page');
+        return json(200, { users: page === '1' ? [...state.users].map(([email, id]) => ({ id, email })) : [] });
+      }
+      if (url.pathname.endsWith('/admin_create_tenant')) {
+        const existing = state.tenants.get(body['p_slug'] as string);
+        if (existing && existing.name !== body['p_name']) return json(400, { code: 'P0001', message: 'slug_taken' });
+        const id = existing?.id ?? NEW_TENANT;
+        return reply('admin_create_tenant', () => state.tenants.set(body['p_slug'] as string, { id, name: body['p_name'] as string }), json(200, id));
+      }
+      if (url.pathname.endsWith('/worker_sites')) return json(200, state.sites.map(({ id, base_url }) => ({ id, base_url })));
+      if (url.pathname.endsWith('/admin_create_site')) {
+        return reply('admin_create_site', () => state.sites.push({ id: SITE_ID, base_url: body['p_base_url'] as string, secret: body['p_webhook_secret'] as string }), json(200, SITE_ID));
+      }
+      if (url.pathname.endsWith('/admin_add_membership')) {
+        return reply('admin_add_membership', () => state.memberships.add(`${body['p_tenant_id']}/${body['p_user_id']}`), new Response(null, { status: 204 }));
+      }
+      if (url.pathname.endsWith('/admin_remove_membership')) {
+        return reply('admin_remove_membership', () => state.memberships.delete(`${body['p_tenant_id']}/${body['p_user_id']}`), new Response(null, { status: 204 }));
+      }
+      if (url.pathname.endsWith('/admin_set_webhook_secret')) {
+        return reply('admin_set_webhook_secret', () => ((state.sites[0] as { secret: string }).secret = body['p_webhook_secret'] as string), new Response(null, { status: 204 }));
+      }
+      return json(404, {});
+    };
+    return { state, handler };
+  }
+
+  it('tenant: the answer was lost after the insert; the rerun prints the same id and creates no other', async () => {
+    const { state, handler } = project();
+    state.dropReply = 'admin_create_tenant';
+    expect((await run(tenantArgs, { handler })).code).toBe(1);
+    const r = await run(tenantArgs, { handler });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain(`tenant acme: ${NEW_TENANT}`);
+    expect(state.tenants.size).toBe(1);
+  });
+
+  it('site: the answer was lost after the insert; the rerun prints the site, and the first secret stays', async () => {
+    const { state, handler } = project();
+    state.dropReply = 'admin_create_site';
+    expect((await run(siteArgs, { stdin: SECRET, handler })).code).toBe(1);
+    const r = await run(siteArgs, { stdin: `second-${SECRET}`, handler });
+    expect(r.code).toBe(0);
+    expect(r.out.join('\n')).toContain(SITE_ID);
+    expect(r.out.join('\n')).toContain('the webhook secret was not changed');
+    expect(state.sites).toEqual([{ id: SITE_ID, base_url: 'https://site.example.is', secret: SECRET }]);
+  });
+
+  it('site: the connection dropped before the insert; the rerun creates the one site', async () => {
+    const { state, handler } = project();
+    state.dropCall = 'admin_create_site';
+    expect((await run(siteArgs, { stdin: SECRET, handler })).code).toBe(1);
+    expect(state.sites).toEqual([]);
+    const r = await run(siteArgs, { stdin: SECRET, handler });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain(`site: ${SITE_ID}`);
+    expect(state.sites).toHaveLength(1);
+  });
+
+  it.each([
+    ['who has confirmed', true],
+    ['who has not confirmed yet', false],
+  ])('editor: the connection dropped between the invitation and the membership, for a user %s', async (_name, confirmed) => {
+    const { state, handler } = project({ confirmed });
+    state.dropCall = 'admin_add_membership';
+    const first = await run(editorArgs, { handler });
+    expect(first.code).toBe(1);
+    expect(first.err.join('\n')).toContain(`is still missing memberships in: ${TENANT_A}`);
+    expect(state.memberships).toEqual(new Set([`${TENANT_B}/${USER_ID}`]));
+
+    const r = await run(editorArgs, { handler });
+    expect(r.code).toBe(0);
+    expect(state.users).toEqual(new Map([[EMAIL, USER_ID]]));
+    expect(state.memberships).toEqual(new Set([`${TENANT_A}/${USER_ID}`, `${TENANT_B}/${USER_ID}`]));
+  });
+
+  it('editor: the answer to the invitation was lost; the rerun finds the user and adds the memberships', async () => {
+    const { state, handler } = project({ confirmed: true });
+    state.dropReply = 'invite';
+    expect((await run(editorArgs, { handler })).code).toBe(1);
+    expect(state.memberships.size).toBe(0);
+    const r = await run(editorArgs, { handler });
+    expect(r.code).toBe(0);
+    expect(state.users.size).toBe(1);
+    expect(state.memberships.size).toBe(2);
+  });
+
+  it('editor: a third run changes nothing', async () => {
+    const { state, handler } = project({ confirmed: true });
+    expect((await run(editorArgs, { handler })).code).toBe(0);
+    expect((await run(editorArgs, { handler })).code).toBe(0);
+    expect((await run(editorArgs, { handler })).code).toBe(0);
+    expect(state.users.size).toBe(1);
+    expect(state.memberships.size).toBe(2);
+  });
+
+  it('remove-editor: the connection dropped on one tenant; the printed command finishes the job', async () => {
+    const { state, handler } = project();
+    state.memberships.add(`${TENANT_A}/${USER_ID}`).add(`${TENANT_B}/${USER_ID}`);
+    state.dropCall = 'admin_remove_membership';
+    const first = await run(removeArgs, { handler });
+    expect(first.code).toBe(1);
+    expect(state.memberships).toEqual(new Set([`${TENANT_A}/${USER_ID}`]));
+
+    const finish = (first.err.join('\n').match(/finish with: pnpm --silent --filter @litljomi\/cli cli (.*)$/m) as RegExpMatchArray)[1] as string;
+    const r = await run(finish.split(' '), { handler });
+    expect(r.code).toBe(0);
+    expect(state.memberships.size).toBe(0);
+  });
+
+  it('remove-editor: a rerun over what was removed already exits 0', async () => {
+    const { state, handler } = project();
+    state.dropReply = 'admin_remove_membership';
+    state.memberships.add(`${TENANT_A}/${USER_ID}`).add(`${TENANT_B}/${USER_ID}`);
+    expect((await run(removeArgs, { handler })).code).toBe(1);
+    expect((await run(removeArgs, { handler })).code).toBe(0);
+    expect(state.memberships.size).toBe(0);
+  });
+
+  it('webhook-secret: the answer was lost after the update; the rerun sets the same value', async () => {
+    const { state, handler } = project();
+    state.sites.push({ id: SITE_ID, base_url: 'https://site.example.is', secret: 'old' });
+    state.dropReply = 'admin_set_webhook_secret';
+    expect((await run(webhookArgs, { stdin: SECRET, handler })).code).toBe(1);
+    expect((await run(webhookArgs, { stdin: SECRET, handler })).code).toBe(0);
+    expect(state.sites).toEqual([{ id: SITE_ID, base_url: 'https://site.example.is', secret: SECRET }]);
   });
 });
 
