@@ -54,9 +54,10 @@ async function noticeAtVersion1(heading: string, body: string) {
 }
 
 const detail = async (id: string) => {
-  const { data, error } = await editor.from('entry_detail').select('data, schema_version, draft_version').eq('id', id).single();
-  if (error) throw new Error(`entry_detail: ${error.code}`);
-  return data as { data: unknown; schema_version: number; draft_version: number };
+  const { data, error } = await editor.rpc('entry_detail_by_id', { p_entry_id: id });
+  if (error) throw new Error(`entry_detail_by_id: ${error.code}`);
+  const { data: draft, schema_version, draft_version } = data as { data: unknown; schema_version: number; draft_version: number };
+  return { data: draft, schema_version, draft_version };
 };
 
 describe('an outdated draft in the editor (M2-14)', () => {

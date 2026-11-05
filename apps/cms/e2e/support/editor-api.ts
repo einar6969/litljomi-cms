@@ -25,3 +25,11 @@ export async function apiRows<T>(editor: EditorHeaders, query: string): Promise<
   if (!response.ok) throw new Error(`GET /rest/v1/${query} answered ${response.status}`);
   return (await response.json()) as T[];
 }
+
+/** One entry with its draft data, read by id with the editor's session (no view carries `data`). */
+export async function entryDetail<T>(editor: EditorHeaders, entryId: string): Promise<T> {
+  const path = `/rest/v1/rpc/entry_detail_by_id?p_entry_id=${entryId}`;
+  const response = await supabaseGet(path, { ...editor, 'accept-profile': 'api' });
+  if (!response.ok) throw new Error(`GET ${path} answered ${response.status}`);
+  return (await response.json()) as T;
+}

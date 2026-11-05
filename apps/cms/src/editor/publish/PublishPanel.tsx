@@ -18,7 +18,7 @@ type Props = {
   version: number;
   /** True while the form cannot publish what is on the screen (a save conflict, a lost session). */
   disabled?: boolean;
-  /** The entry has a published revision now (`entry_detail.status` published or changed). */
+  /** The entry has a published revision now (the entry's `status` is published or changed). */
   initiallyPublished: boolean;
   /** The type's field labels by key, to name the fields a validation failure is about. */
   fieldLabels: Readonly<Record<string, string>>;

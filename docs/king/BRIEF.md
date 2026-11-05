@@ -124,6 +124,8 @@ All numbered decisions are in `docs/plans/2026-11-01-m0-m1.md`, despite its name
 | 63 | M4 hosted acceptance approved, §8.2 names the operator's read of a webhook secret |
 | 64 | M4 accepted |
 | 65 | M5 fix plan approved. Agent access accepted as a risk: an agent can reach the secret key and `staging` |
+| 66 | Finding 7 parked until a later password system |
+| 67 | Residual regex slowdown by an editor accepted |
 
 **Known not to be in the numbered decisions:**
 

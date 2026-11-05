@@ -6,7 +6,7 @@
 import { expect as baseExpect } from '@playwright/test';
 import { t } from '../src/i18n/is';
 import { createEvent } from './support/editor';
-import { apiRows, editorHeadersOf, type EditorHeaders } from './support/editor-api';
+import { apiRows, editorHeadersOf, entryDetail, type EditorHeaders } from './support/editor-api';
 import { requireLoopback, SUPABASE_URL } from './support/local';
 import { sessionState } from './support/session';
 import { expect, test } from './support/test';
@@ -57,7 +57,10 @@ test('an outdated draft shows a notice instead of the form, and the update bring
   await expect(page.getByRole('button', { name: t.publish.publish })).toBeEnabled();
 
   type Detail = { data: unknown; schema_version: number; draft_version: number };
-  const detail = async () => (await apiRows<Detail>(editor, `entry_detail?select=data,schema_version,draft_version&id=eq.${id}`))[0];
+  const detail = async () => {
+    const { data, schema_version, draft_version } = await entryDetail<Detail>(editor, id);
+    return { data, schema_version, draft_version };
+  };
   baseExpect(await detail()).toEqual({ data: { title: heading }, schema_version: 2, draft_version: version + 1 });
 
   // An edit now autosaves at the current version.

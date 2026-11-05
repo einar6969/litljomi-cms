@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
   tables: {} as Record<string, Answer>,
   rpc: {} as Record<string, Answer>,
   calls: [] as { name: string; args: unknown }[],
+  reads: [] as { name: string; args: unknown }[],
   queries: [] as { table: string; filters: [string, unknown][] }[],
 }));
 
@@ -28,7 +29,7 @@ const fake = {
     return chain;
   },
   async rpc(name: string, args: unknown) {
-    state.calls.push({ name, args });
+    (name.endsWith('_by_id') ? state.reads : state.calls).push({ name, args });
     return { data: null, error: null, status: 200, ...state.rpc[name] };
   },
 };
@@ -82,13 +83,16 @@ const TENANT_ID = '00000000-0000-4000-8000-0000000000f1';
 beforeEach(() => {
   state.user = { id: 'u1' };
   state.calls = [];
+  state.reads = [];
   state.queries = [];
   state.tables = {
     my_tenants: { data: { id: TENANT_ID, slug: SLUG, name: 'T', status: 'active' } },
     entry_list: { data: { id: ENTRY, tenant_id: TENANT_ID, type: TYPE.name } },
-    revision_list: { data: { data: { heading: 'Lokað á morgun', body: 'Vegna veðurs', stray: 1 }, schema_version: 1 } },
   };
-  state.rpc = { save_draft: { data: 6 } };
+  state.rpc = {
+    save_draft: { data: 6 },
+    revision_detail_by_id: { data: { tenant_id: TENANT_ID, entry_id: ENTRY, data: { heading: 'Lokað á morgun', body: 'Vegna veðurs', stray: 1 }, schema_version: 1 } },
+  };
 });
 
 describe('restoreRevisionAction', () => {
@@ -109,20 +113,19 @@ describe('restoreRevisionAction', () => {
     ]);
   });
 
-  it("reads the revision from revision_list with the editor's session, as a revision of this entry in its own tenant", async () => {
+  it("reads the revision by id with the editor's session, and refuses another entry's or another tenant's", async () => {
     await restoreRevisionAction(ENTRY, REVISION, 5);
-    expect(state.queries.find((q) => q.table === 'revision_list')).toEqual({
-      table: 'revision_list',
-      filters: [
-        ['id', REVISION],
-        ['entry_id', ENTRY],
-        ['tenant_id', TENANT_ID],
-      ],
-    });
+    expect(state.reads).toEqual([{ name: 'revision_detail_by_id', args: { p_revision_id: REVISION } }]);
+    state.calls = [];
+    for (const row of [{ tenant_id: TENANT_ID, entry_id: 'another' }, { tenant_id: 'another', entry_id: ENTRY }]) {
+      state.rpc.revision_detail_by_id = { data: { ...row, data: { title: 'x' }, schema_version: 3 } };
+      await expect(restoreRevisionAction(ENTRY, REVISION, 5)).resolves.toEqual({ ok: false, code: 'error' });
+    }
+    expect(state.calls).toEqual([]);
   });
 
   it('a revision at the current version is saved as it is (minus unknown keys)', async () => {
-    state.tables.revision_list = { data: { data: { title: 'Opið', stray: true }, schema_version: 3 } };
+    state.rpc.revision_detail_by_id = { data: { tenant_id: TENANT_ID, entry_id: ENTRY, data: { title: 'Opið', stray: true }, schema_version: 3 } };
     await restoreRevisionAction(ENTRY, REVISION, 5);
     expect((state.calls[0]!.args as { p_data: unknown }).p_data).toEqual({ title: 'Opið' });
   });
@@ -136,9 +139,9 @@ describe('restoreRevisionAction', () => {
     state.tables.entry_list = { data: { id: ENTRY, tenant_id: TENANT_ID, type: BROKEN.name } };
     await expect(restoreRevisionAction(ENTRY, REVISION, 5)).resolves.toEqual({ ok: false, code: 'upcast_failed' });
     state.tables.entry_list = { data: { id: ENTRY, tenant_id: TENANT_ID, type: TYPE.name } };
-    state.tables.revision_list = { data: { data: {}, schema_version: 4 } };
+    state.rpc.revision_detail_by_id = { data: { tenant_id: TENANT_ID, entry_id: ENTRY, data: {}, schema_version: 4 } };
     await expect(restoreRevisionAction(ENTRY, REVISION, 5)).resolves.toEqual({ ok: false, code: 'upcast_failed' });
-    state.tables.revision_list = { data: { data: { heading: 12345 }, schema_version: 1 } };
+    state.rpc.revision_detail_by_id = { data: { tenant_id: TENANT_ID, entry_id: ENTRY, data: { heading: 12345 }, schema_version: 1 } };
     await expect(restoreRevisionAction(ENTRY, REVISION, 5)).resolves.toEqual({ ok: false, code: 'invalid' });
     expect(state.calls).toEqual([]);
   });
@@ -170,9 +173,9 @@ describe('restoreRevisionAction', () => {
     state.tables.entry_list = { data: null };
     await expect(restoreRevisionAction(ENTRY, REVISION, 5)).resolves.toEqual({ ok: false, code: 'error' });
     state.tables.entry_list = { data: { id: ENTRY, tenant_id: TENANT_ID, type: TYPE.name } };
-    state.tables.revision_list = { data: null };
+    state.rpc.revision_detail_by_id = { data: null };
     await expect(restoreRevisionAction(ENTRY, REVISION, 5)).resolves.toEqual({ ok: false, code: 'error' });
-    state.tables.revision_list = { error: { code: 'XX000', message: 'boom' } };
+    state.rpc.revision_detail_by_id = { error: { code: 'XX000', message: 'boom' } };
     const result = await restoreRevisionAction(ENTRY, REVISION, 5);
     expect(result).toEqual({ ok: false, code: 'error' });
     expect(JSON.stringify(result)).not.toContain('boom');

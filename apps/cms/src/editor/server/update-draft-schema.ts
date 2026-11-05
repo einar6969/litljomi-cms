@@ -2,12 +2,11 @@ import 'server-only';
 import { UpcastError } from '@litljomi/cms-schema';
 import type { SupabaseClient } from '@/lib/supabase/types';
 import { failureAmong, loadEntryContext, type EntryContext } from './entry-context';
+import { readEntryDetail } from './entry-detail';
 
 export type UpdateDraftSchemaResult =
   | { ok: true; version: number }
   | { ok: false; code: 'version_conflict' | 'upcast_failed' | 'invalid' | 'auth' | 'error' };
-
-type DraftRow = { data: unknown; schema_version: number; draft_version: number };
 
 /**
  * Brings an outdated draft to its type's current schema version (spec §5.3; plan M2-14): the
@@ -24,14 +23,9 @@ export async function updateDraftSchema(client: SupabaseClient, entryId: string,
   const context = await loadEntryContext(client, entryId);
   if (!context) return { ok: false, code: 'error' };
   const { type } = context;
-  const read = await client
-    .from('entry_detail')
-    .select('data, schema_version, draft_version')
-    .eq('id', context.entryId)
-    .eq('tenant_id', context.tenantId)
-    .maybeSingle();
-  if (read.error) throw new Error(`entry_detail: ${read.error.code}`);
-  const draft = read.data as DraftRow | null;
+  const read = await readEntryDetail(client, context.entryId, context.tenantId);
+  if (read.error) throw new Error(`entry_detail_by_id: ${read.error.code}`);
+  const draft = read.data;
   if (!draft) return { ok: false, code: 'error' };
   if (draft.schema_version === type.version) return { ok: true, version: draft.draft_version };
   if (draft.draft_version !== expectedVersion) return { ok: false, code: 'version_conflict' };

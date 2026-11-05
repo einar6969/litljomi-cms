@@ -45,8 +45,8 @@ test('number, boolean, select and datetime inputs are keyboard-operable and auto
     const category = page.getByLabel('Category');
     await expect(category.locator('option')).toHaveText([t.editor.select.placeholder, 'Concert', 'Workshop', 'Talk']);
     await category.focus();
-    await page.keyboard.press('ArrowDown');
-    await page.keyboard.press('ArrowDown');
+    // Typing, not an arrow key: an arrow key opens the native popup on macOS Chromium.
+    await page.keyboard.type('Workshop');
     await expect(category).toHaveValue('workshop');
   });
 

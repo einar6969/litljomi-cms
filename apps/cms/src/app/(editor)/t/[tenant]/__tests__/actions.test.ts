@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   tables: {} as Record<string, Answer>,
   rpc: {} as Record<string, Answer>,
   calls: [] as { name: string; args: unknown }[],
+  reads: [] as { name: string; args: unknown }[],
   queries: [] as { table: string; filters: [string, unknown][] }[],
 }));
 
@@ -26,7 +27,7 @@ const fake = {
     return chain;
   },
   async rpc(name: string, args: unknown) {
-    state.calls.push({ name, args });
+    (name.endsWith('_by_id') ? state.reads : state.calls).push({ name, args });
     return { data: null, error: null, status: 200, ...state.rpc[name] };
   },
 };
@@ -52,6 +53,7 @@ const ORDINARY = singletonModule.types.find((t) => !isSingleton(singletonModule,
 beforeEach(() => {
   state.user = { id: USER };
   state.calls = [];
+  state.reads = [];
   state.queries = [];
   state.tables = {
     my_tenants: { data: { id: TENANT_ID, slug: SLUG, name: 'T', status: 'active' } },
@@ -240,16 +242,18 @@ describe('saveDraftAction', () => {
 });
 
 describe('loadDraftAction (M2-11: the newer version after a conflict)', () => {
-  it('reads the draft and its version from entry_detail, in the tenant loadEntryContext found', async () => {
-    state.tables.entry_detail = { data: { data: { title: 'Þeirra' }, draft_version: 7 } };
+  it('reads the draft and its version by id, and only in the tenant loadEntryContext found', async () => {
+    state.rpc.entry_detail_by_id = { data: { tenant_id: TENANT_ID, data: { title: 'Þeirra' }, draft_version: 7 } };
     await expect(loadDraftAction(ENTRY)).resolves.toEqual({ ok: true, version: 7, data: { title: 'Þeirra' } });
-    expect(state.queries.map((q) => q.table)).toEqual(['entry_list', 'my_tenants', 'entry_detail']);
-    expect(state.queries[2]!.filters).toEqual([['id', ENTRY], ['tenant_id', TENANT_ID]]);
+    expect(state.queries.map((q) => q.table)).toEqual(['entry_list', 'my_tenants']);
+    expect(state.reads).toEqual([{ name: 'entry_detail_by_id', args: { p_entry_id: ENTRY } }]);
     expect(state.calls).toEqual([]);
+    state.rpc.entry_detail_by_id = { data: { tenant_id: 'another', data: { title: 'Þeirra' }, draft_version: 7 } };
+    await expect(loadDraftAction(ENTRY)).resolves.toEqual({ ok: false, code: 'error' });
   });
 
   it('reads a draft whose data is not an object as empty', async () => {
-    state.tables.entry_detail = { data: { data: [1], draft_version: 2 } };
+    state.rpc.entry_detail_by_id = { data: { tenant_id: TENANT_ID, data: [1], draft_version: 2 } };
     await expect(loadDraftAction(ENTRY)).resolves.toEqual({ ok: true, version: 2, data: {} });
   });
 
@@ -263,13 +267,13 @@ describe('loadDraftAction (M2-11: the newer version after a conflict)', () => {
     await expect(loadDraftAction(ENTRY)).resolves.toEqual({ ok: false, code: 'auth' });
     expect(state.queries).toEqual([]);
     state.user = { id: USER };
-    state.tables.entry_detail = { data: null };
+    state.rpc.entry_detail_by_id = { data: null };
     await expect(loadDraftAction(ENTRY)).resolves.toEqual({ ok: false, code: 'error' });
-    state.tables.entry_detail = { data: { data: {}, draft_version: 'x' } };
+    state.rpc.entry_detail_by_id = { data: { tenant_id: TENANT_ID, data: {}, draft_version: 'x' } };
     await expect(loadDraftAction(ENTRY)).resolves.toEqual({ ok: false, code: 'error' });
-    state.tables.entry_detail = { error: { code: 'PGRST303', message: 'JWT expired' }, status: 401 };
+    state.rpc.entry_detail_by_id = { error: { code: 'PGRST303', message: 'JWT expired' }, status: 401 };
     await expect(loadDraftAction(ENTRY)).resolves.toEqual({ ok: false, code: 'auth' });
-    state.tables.entry_detail = { error: { code: 'XX000', message: 'secret detail' } };
+    state.rpc.entry_detail_by_id = { error: { code: 'XX000', message: 'secret detail' } };
     await expect(loadDraftAction(ENTRY)).resolves.toEqual({ ok: false, code: 'error' });
     state.tables.entry_list = { data: null };
     await expect(loadDraftAction(ENTRY)).resolves.toEqual({ ok: false, code: 'error' });

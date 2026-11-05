@@ -117,7 +117,8 @@ insert into editor_views values
   ('my_tenants', array['id', 'slug', 'name', 'status']),
   ('entry_list', array['id', 'tenant_id', 'type', 'slug', 'title', 'sort_at', 'draft_version', 'published_draft_version',
                        'status', 'archived_at', 'updated_at', 'first_published_at']), -- M2-10 appended first_published_at
-  ('entry_detail', array['id', 'tenant_id', 'type', 'slug', 'data', 'schema_version', 'draft_version',
+  -- M5-02 removed data (20261105140100_view_data_removal.sql; 116_editor_limits).
+  ('entry_detail', array['id', 'tenant_id', 'type', 'slug', 'schema_version', 'draft_version',
                          'published_draft_version', 'first_published_at', 'status']),
   ('asset_list', array['id', 'tenant_id', 'filename', 'mime', 'width', 'height', 'focal_x', 'focal_y', 'default_alt',
                        'original_path', 'archived_at']),
@@ -128,7 +129,7 @@ insert into editor_views values
                                'live_retrying', 'latest_request_id', 'latest_action']), -- M3-03 appended live_retrying, M5-01 the last two
   ('tenant_sites', array['id', 'tenant_id', 'base_url', 'preview_url', 'active']),
   -- M2-16 added revision_list (20261103210500_revision_list.sql; 107_revision_list).
-  ('revision_list', array['id', 'tenant_id', 'entry_id', 'draft_version', 'schema_version', 'data', 'title',
+  ('revision_list', array['id', 'tenant_id', 'entry_id', 'draft_version', 'schema_version', 'title',
                           'requested_by', 'committed_at', 'is_published']);
 
 select is_empty($$ select v.name from editor_views v
@@ -246,9 +247,9 @@ select results_eq($$ select id, first_published_at is not null from api.entry_li
 select results_eq($$ select id, status from api.entry_detail order by id $$,
   $$ select id, status from api.entry_list order by id $$,
   'entry_detail derives the same status as entry_list');
-select results_eq($$ select id, tenant_id, type, slug, data, schema_version, draft_version, published_draft_version,
+select results_eq($$ select id, tenant_id, type, slug, schema_version, draft_version, published_draft_version,
             first_published_at, status from api.entry_detail where id = tests.entry('c803') $$,
-  $$ values (tests.entry('c803'), tests.tenant('labak'), 'news'::text, 'birt'::text, '{}'::jsonb, 1, 1, 1, now(),
+  $$ values (tests.entry('c803'), tests.tenant('labak'), 'news'::text, 'birt'::text, 1, 1, 1, now(),
              'published'::text) $$,
   'entry_detail columns for a published entry');
 select results_eq($$ select id from api.asset_list order by id $$,

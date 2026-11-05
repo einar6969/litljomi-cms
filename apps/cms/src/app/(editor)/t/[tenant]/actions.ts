@@ -3,6 +3,7 @@
 import { isSingleton } from '@litljomi/cms-schema';
 import { z } from 'zod';
 import { authOrError, failureAmong, hasSession, loadEntryContext, sessionUserId } from '@/editor/server/entry-context';
+import { readEntryDetail } from '@/editor/server/entry-detail';
 import { restoreRevision, type RestoreRevisionResult } from '@/editor/server/restore-revision';
 import { openSingleton, type OpenSingletonResult } from '@/editor/server/singleton';
 import { updateDraftSchema, type UpdateDraftSchemaResult } from '@/editor/server/update-draft-schema';
@@ -118,7 +119,7 @@ const isObject = (value: unknown): value is Record<string, unknown> => typeof va
 
 /**
  * The entry's current draft and its version, read after a stale save so the editor can compare it
- * with their own values (§5.5, M2-11). Read like the entry page reads it: `api.entry_detail` under
+ * with their own values (§5.5, M2-11). Read like the entry page reads it: `readEntryDetail` under
  * the editor's session, in the tenant `loadEntryContext` found; data that is not an object reads as
  * empty, as on the page.
  */
@@ -130,7 +131,7 @@ export async function loadDraftAction(id: string): Promise<LoadDraftResult> {
     if (!(await hasSession(client))) return { ok: false, code: 'auth' };
     const context = await loadEntryContext(client, args.data);
     if (!context) return { ok: false, code: 'error' };
-    const result = await client.from('entry_detail').select('data, draft_version').eq('id', context.entryId).eq('tenant_id', context.tenantId).maybeSingle();
+    const result = await readEntryDetail(client, context.entryId, context.tenantId);
     if (result.error) return { ok: false, code: authOrError({ error: result.error, status: result.status }) };
     const row = draftRow.safeParse(result.data);
     if (!row.success) return { ok: false, code: 'error' };
