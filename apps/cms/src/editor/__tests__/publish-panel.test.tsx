@@ -3,7 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { t } from '@/i18n/is';
-import type { PublicationStatusRow } from '../publish/status';
+import { displayState, type PublicationStatusRow } from '../publish/status';
 
 vi.mock('@/lib/supabase/browser', () => ({ createBrowserEditorClient: () => ({}) }));
 vi.mock('@/app/(editor)/t/[tenant]/publish-actions', () => ({ requestPublishAction: vi.fn(), requestUnpublishAction: vi.fn() }));
@@ -18,6 +18,8 @@ const OLD_REQUEST = '00000000-0000-4000-8000-0000000000d0';
 
 const row = (patch: Partial<PublicationStatusRow>): PublicationStatusRow => ({
   request_id: REQUEST,
+  latest_request_id: patch.request_id ?? REQUEST,
+  latest_action: 'publish',
   tenant_id: '00000000-0000-4000-8000-0000000000f1',
   entry_id: ENTRY,
   action: 'publish',
@@ -148,6 +150,40 @@ describe('PublishPanel', () => {
     const loadStatus = vi.fn(async () => row({ status: 'failed_validation', error: { code: 'invalid_data', issues: [{ path: ['title'] }] } }));
     await renderPanel({ loadStatus });
     expect(stateText()).toBe('Ekki hægt að birta: Titill');
+  });
+
+  // M5-01: a panel opened before the withdrawal still offers it. The refusal changes nothing else.
+  it('a repeat unpublish from a stale panel is a plain refusal, and the status stays as it was', async () => {
+    const shown = live();
+    const before = displayState(shown).label;
+    const loadStatus = vi.fn(async () => shown);
+    const unpublish = vi.fn(async () => ({ error: 'not_published' as const }));
+    await renderPanel({ loadStatus, unpublish, initiallyPublished: true });
+    expect(stateText()).toBe(before);
+
+    await act(async () => button(t.publish.unpublish)!.click());
+    await advance(0);
+
+    expect(unpublish).toHaveBeenCalledWith(ENTRY);
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(t.publish.notPublished);
+    expect(stateText()).toBe(before);
+  });
+
+  // M5-01: the view skips a superseded repeat, so the panel that sent it never sees its row.
+  it('a repeat that ended superseded shows the request the view shows, and does not wait for ever', async () => {
+    const REPEAT = '99999999-9999-4999-8999-999999999999';
+    const first = live({ action: 'unpublish', request_id: 'fyrsta', sites_live_ok: 0, sites_not_confirmed: 1 });
+    const loadStatus = vi.fn(async () => (unpublish.mock.calls.length > 0 ? { ...first, latest_request_id: REPEAT, latest_action: 'unpublish' as const } : live()));
+    const unpublish = vi.fn(async () => ({ requestId: REPEAT }));
+    await renderPanel({ loadStatus, unpublish, initiallyPublished: true });
+
+    await act(async () => button(t.publish.unpublish)!.click());
+    await advance(0);
+
+    expect(stateText()).toBe(displayState(first).label);
+    const calls = loadStatus.mock.calls.length;
+    await advance(POLL_MS * 2);
+    expect(loadStatus.mock.calls.length).toBe(calls);
   });
 
   it('shows a refused request\'s notice and keeps polling a status it could not read', async () => {

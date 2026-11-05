@@ -17,7 +17,7 @@ const entryId = z.uuid();
 const draftVersion = z.number().int().min(1).max(2_147_483_647);
 const requestId = z.uuid();
 
-export type PublishError = 'invalid' | 'auth' | 'version_conflict' | 'tenant_inactive' | 'error';
+export type PublishError = 'invalid' | 'auth' | 'version_conflict' | 'tenant_inactive' | 'not_published' | 'error';
 export type PublishActionResult = { requestId: string } | { error: PublishError };
 
 type RpcAnswer = { data: unknown; error: ApiError | null; status?: number };
@@ -25,6 +25,7 @@ type RpcAnswer = { data: unknown; error: ApiError | null; status?: number };
 /** A failed request call: the codes the panel has its own text for, else the generic error. */
 function errorOf(error: ApiError, status: number | undefined): PublishError {
   if (error.code === 'P0001' && error.message === 'tenant_inactive') return 'tenant_inactive';
+  if (error.code === 'P0001' && error.message === 'not_published') return 'not_published';
   return failureAmong({ error, status }, ['version_conflict']);
 }
 
@@ -70,7 +71,10 @@ export async function requestPublishAction(entryIdArg: string, expectedDraftVers
   );
 }
 
-/** Requests withdrawal of the entry from the tenant's sites (§6.2: never refused because of references). */
+/**
+ * Requests withdrawal of the entry from the tenant's sites (§6.2: never refused because of
+ * references). An entry that is not published, with no publish in flight, is `not_published` (M5-01).
+ */
 export async function requestUnpublishAction(entryIdArg: string): Promise<PublishActionResult> {
   const args = entryId.safeParse(entryIdArg);
   if (!args.success) return { error: 'invalid' };

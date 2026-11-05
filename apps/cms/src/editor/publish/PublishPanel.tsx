@@ -7,7 +7,7 @@ import { createBrowserEditorClient } from '@/lib/supabase/browser';
 import { Button } from '@/ui/Button';
 import { Notice } from '@/ui/Notice';
 import { StatusBadge } from '@/ui/StatusBadge';
-import { displayState, IN_PROGRESS, isFinal, PUBLICATION_STATUS_COLUMNS, type DisplayState, type PublicationStatusRow } from './status';
+import { answers, displayState, IN_PROGRESS, isFinal, PUBLICATION_STATUS_COLUMNS, type DisplayState, type PublicationStatusRow } from './status';
 
 /** The panel polls the entry's status this often while it is not final (plan Task 25). */
 export const POLL_MS = 2000;
@@ -46,6 +46,8 @@ const requestNotice = (result: Exclude<PublishActionResult, { requestId: string 
       return t.editor.signedOut;
     case 'tenant_inactive':
       return t.tenant.inactiveBody;
+    case 'not_published':
+      return t.publish.notPublished;
     default:
       return t.publish.requestFailed;
   }
@@ -95,7 +97,7 @@ export function PublishPanel({
       const settled =
         next === null
           ? waitingFor === null
-          : next !== undefined && (waitingFor === null || next.request_id === waitingFor) && isFinal(displayState(next, { fieldLabels: labelsRef.current }));
+          : next !== undefined && answers(next, waitingFor) && isFinal(displayState(next, { fieldLabels: labelsRef.current }));
       if (settled) {
         if (next && next.status === 'committed') setPublished(next.action === 'publish');
         return;
@@ -131,7 +133,7 @@ export function PublishPanel({
     [],
   );
 
-  const shown = row && (awaiting === null || row.request_id === awaiting) ? displayState(row, { fieldLabels }) : null;
+  const shown = row && answers(row, awaiting) ? displayState(row, { fieldLabels }) : null;
   const state: DisplayState | null = shown ?? (awaiting !== null ? IN_PROGRESS : null);
   const inFlight = busy || (state !== null && !isFinal(state));
 

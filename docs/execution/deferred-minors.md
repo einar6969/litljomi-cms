@@ -202,3 +202,15 @@ Parked items from Task 1, recorded in its notes in `state.json` with their IDs; 
 - `apps/cms/src/privileged/worker/sweep.ts:87-98`: notify retries run after every tenant's delivery, which may now include the pointer poll (≤ 120 s); one tenant's slow pointer can delay other tenants' retries within a sweep. Timing only.
 - `apps/cms/src/privileged/worker/pointer-fresh.ts:115`: cap the pointer body size before `response.json()` (defence in depth).
 - `apps/cms/src/privileged/worker/pipeline.ts:15-18`: take `runDeadline` from the request's arrival rather than the start of the `after()` job.
+
+## M4 (2026-11-05), for M5
+
+Deferred by the M4 reviews. None is Critical or Major. See also `docs/king/OPEN-ISSUES.md`, S25 and S26.
+
+| Task | Minors |
+|---|---|
+| M4-01 | `seed.ts` resets tenants to active, outside the task's files; `090` test description reworded; no explicit `revoke` on the new functions (default ACL covers it); `session-expiry-form` test name; long `it` in `session-expiry.integration.test.ts`; hand-kept `plan(86)`; mid-file test tables in `113`; `m4-admin.test.ts` cleanup without `try/finally`; `seed.ts` comment placement; dependence on the constraint name `tenants_slug_key` |
+| M4-02 | `readSecret` terminal hint names P-2; `worker_sites` lists active sites only, so a rerun for a deactivated site makes a duplicate; `--expect-ref` refusals tested on `tenant` only; `tenant-status` absent from the rerun block; `state.invitations` unasserted; no size or time limit in `guardedFetch`; `remove-editor` exits 0 on a mistyped id; first-match email lookup; `provision.ts` header on output; repeated secret-read block; needless `?.` in `findUserId`; shared editor loop; refuses-secret regex alternation; `hostedFetch` sync throw; order-dependent state in the rotation test |
+| M4-03 | `100_escalation` comment says 8 views; gate copied into six views; weak lower bound on `console_audit`; tenant-specific failure messages in `console-views.test.ts`; `afterAll` cleanup; `tests.k` repeated across files |
+| M4-04 | GET enrolment can replace an unverified factor, cross-site or in parallel; first-enrolment race with a stolen `aal1` session; no Back test after enrolment; layout guard can be skipped, so pages rely on the views; no test of Auth refusing a verified-factor change at `aal1`; shared `mfa` preamble; serial test's secret guard; weak layout assertion; leftover password on the local persona; `getSession` warning is noise, unless something reads `user` from it |
+| M4-05 | Deliveries Release column untested; dead `in` and `nullsFirst` in `fake-client.ts`; 50-tenant cap not stated on the overview, and past 50 sites a delivery can show "unknown" |

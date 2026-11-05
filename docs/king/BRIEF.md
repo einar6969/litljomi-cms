@@ -21,13 +21,12 @@ A milestone being accepted does not make every line of it hosted.
 
 ## 1. Where things stand
 
-- **Accepted:** M0, M1 (checkpoint C4), M2 and M3 (C5, decision 51.5). Einar closed M2 and M3 on 2026-11-04.
-- **M4 code done, hosted acceptance waiting:** M4-01 to M4-05 merged (#51 to #55), and the runbook M4-06 is written. Local only: nothing of M4 has reached staging. Hosted acceptance needs Einar's approval (`docs/plans/m4.md`). Decisions 53, 55, 56 and 58 set its scope.
-- **`main` is ahead of staging.** `origin/main` is `eb4e85c`, with 39 migrations. Staging runs `b73582e`, with 38. The difference is W1 (withdrawal confirmation, #47) and its migration, #45's env example and comments, the sandbox settings (#50) and docs. M2 and M3 were accepted on `b73582e`, and W1 merged after that, so W1 has CI evidence and one review. Einar ruled out a dedicated staging run (decision 54). Staging keeps the old behaviour until M4's acceptance advances it, because migrations apply in order; W1 then arrives with no test of its own.
+- **Accepted:** M0, M1 (checkpoint C4), M2 and M3 (C5, decision 51.5), M4 (C6, decision 64).
+- **Staging matches `main`** at `4d078b5`, with 42 migrations, W1 included. Later local docs commits don't affect it.
 - **Nothing real is live.** There is no production project, no real editor and no real content. labak.is is still the old Joomla site.
 - **Tests:** on `b756c74`, from the CI log: pgTAP 2,006 in 39 files, unit 2,498, integration 96 + 116. Unit 2,498 re-run locally on `f2ab9e4`; the other totals were not re-read. CI passed on `eb4e85c`.
 
-The next real decision is Einar's: the hosted approval at the end of M4 (section 7).
+M5's review is done. Its fix round is `docs/plans/m5.md`.
 
 ## 2. What the Hub is and why it exists
 
@@ -122,6 +121,9 @@ All numbered decisions are in `docs/plans/2026-11-01-m0-m1.md`, despite its name
 | 60 | Full git autonomy: `git` and `gh` run with no prompt, outside the sandbox. Gates are unchanged |
 | 61 | The KING merges once PASS, up to date and green CI all hold. M4 runs without stopping, except for hosted actions, `staging`, unsettled spec conflicts and unfixed failures |
 | 62 | TOTP rate-limit risk accepted for the console; recheck at hosted acceptance and M5 |
+| 63 | M4 hosted acceptance approved, §8.2 names the operator's read of a webhook secret |
+| 64 | M4 accepted |
+| 65 | M5 fix plan approved. Agent access accepted as a risk: an agent can reach the secret key and `staging` |
 
 **Known not to be in the numbered decisions:**
 
@@ -205,7 +207,7 @@ Off-limits without Einar's explicit say-so: labak.is, its DNS, FILMÍS, ISNIC, t
 
 | Milestone | Delivers | Status |
 |---|---|---|
-| **M4 Operations** | Minimal read-only console with MFA; provisioning CLI; webhook secret rotation; suspend and revoke from the CLI; runbooks. Offboarding, exports and restore are out (decisions 53, 55, 56) | Tasks done, hosted acceptance waiting. Plan in `docs/plans/m4.md`, runbook in `docs/runbooks/operations.md`. `tools/cli` has `provision` for tenant, site, editor and preview, plus `migrate-drafts`, `boundary-check` and `check-schema`. No console routes exist. Findings are in `OPEN-ISSUES.md`, section M |
+| **M4 Operations** | Minimal read-only console with MFA; provisioning CLI; webhook secret rotation; suspend and revoke from the CLI; runbooks. Offboarding, exports and restore are out (decisions 53, 55, 56) | Accepted (C6, decision 64). Plan in `docs/plans/m4.md`, runbook in `docs/runbooks/operations.md`. `tools/cli` has `provision` for tenant, site, editor and preview, plus `migrate-drafts`, `boundary-check` and `check-schema`. No console routes exist. Findings are in `OPEN-ISSUES.md`, section M |
 | **M5 Independent review** | Fresh-context security review of the boundary, worker, preview and SDK | Not started. Must pass before real editors or content |
 | **M6 LABAK integration** | Import 21 articles word for word; site reads from the SDK; `remotePatterns`; Icelandic editor guide | Started: `hub-integration` at `376402b` proved the slice |
 
@@ -276,7 +278,7 @@ Test content stays on staging, because entries can't be deleted through `api`. O
 | The rules of the repo | `CLAUDE.md`, `docs/execution/environment.md`, `gates.json` |
 | The spec | `docs/architecture.md` |
 | Plans | `docs/plans/m2.md`, `m3.md`, `m4.md`; M0, M1 and every decision in `2026-11-01-m0-m1.md` |
-| Checkpoint reports | `docs/execution/checkpoints/C0.md` to `C5.md`. C5 is the latest |
+| Checkpoint reports | `docs/execution/checkpoints/C0.md` to `C6.md`. C6 is the latest |
 | M1 reviews | `docs/execution/reviews/`. It stops at M1 |
 | M2 and M3 reviews | PR comments on GitHub |
 | Session-by-session notes | `docs/execution/progress.md`, `progress-notes.md` |

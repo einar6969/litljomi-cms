@@ -265,6 +265,10 @@ export const is = {
     notConfirmedRetryingUnpublishDetail: 'Beiðnin var send á vefinn en færslan hefur ekki enn horfið þaðan. Kerfið reynir aftur sjálfkrafa.',
     noSite: 'Enginn vefur tengdur',
     requestFailed: 'Ekki tókst að senda beiðnina. Reyndu aftur.',
+    // M5-01 (draft): a second unpublish from a stale panel, in the action's response only. It says nothing about what the site shows.
+    notPublished: 'Ekkert var gert því færslan er ekki birt.',
+    // M5-01 (draft): a publish that a newer unpublish cancelled. It says nothing about what the site shows.
+    cancelled: 'Hætt var við birtinguna vegna beiðni um að taka færsluna af vef.',
     statusUnavailable: 'Ekki tókst að sækja stöðu birtingar.',
   },
   // M3-12: the editor's preview button and its failures.

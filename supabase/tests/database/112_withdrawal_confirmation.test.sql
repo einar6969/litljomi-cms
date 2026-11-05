@@ -5,7 +5,7 @@
 --      withdrawn, withdrawals_others, withdrawal_alerted) across records until the delivery is live
 --      ok; a record with neither status only merges p_error into an existing row's last_error.
 --   2. api.worker_deliveries_to_retry also lists a superseded release's delivery whose stored
---      withdrawals are still unconfirmed, for entries whose latest request is still that release's
+--      withdrawals are still unconfirmed, for entries whose latest committed request is still that release's
 --      unpublish, when its next attempt is due or when the hour after the release ended and no
 --      withdrawal alert was raised yet. It names the latest delivered release (notify_release_number)
 --      and the state (withdrawal); never the old bundles.
@@ -187,7 +187,7 @@ select tests.act_as_service();
 select results_eq($$ select site_id, notify_release_number, bundle_path, withdrawal from tests.d_rows(0) $$,
   $$ values (tests.k('b201'), 9003, null::text,
              jsonb_build_object('pending', jsonb_build_array(tests.w('c201'), tests.w('c202')), 'withdrawn', jsonb_build_array(),
-                                'others', false, 'alerted', false, 'hourOver', false)) $$,
+                                'others', false, 'alerted', false, 'hourOver', false, 'expired', false)) $$,
   'a superseded release''s unconfirmed withdrawal is retried when due: the latest release is notified, no bundle is named');
 select is((select count(*)::int from api.worker_deliveries_to_retry(now()) where release_id = tests.k('a202') and site_id = tests.k('b202')), 0,
   'a site that confirmed is not checked again');
@@ -207,13 +207,14 @@ select tests.act_as_service();
 select is_empty($$ select * from tests.d_rows(51) $$, 'once alerted, only when its next attempt is due');
 select is((select (withdrawal ->> 'alerted')::boolean from tests.d_rows(60)), true, 'and the row says it was alerted');
 
--- Republishing stops the checks at once: only the entries whose latest request is D's unpublish.
+-- Republishing stops the checks at once: only the entries whose latest committed request is D's
+-- unpublish (decision 65; a request still in flight stops nothing, 115_withdrawal_safety).
 select tests.act_as_owner();
 insert into cms.publish_requests (id, tenant_id, entry_id, action, draft_version, requested_by, requested_at, status) values
-  (tests.k('e203'), tests.tenant('labak'), tests.entry('c202'), 'publish', 1, tests.persona('editor_labak'), now() - interval '1 minute', 'pending');
+  (tests.k('e203'), tests.tenant('labak'), tests.entry('c202'), 'publish', 1, tests.persona('editor_labak'), now() - interval '1 minute', 'committed');
 select tests.act_as_service();
 select is((select withdrawal -> 'pending' from tests.d_rows(60)), jsonb_build_array(tests.w('c201')),
-  'an entry requested for publishing again is no longer checked');
+  'an entry published again is no longer checked');
 select tests.act_as_owner();
 insert into cms.publish_requests (id, tenant_id, entry_id, action, draft_version, requested_by, requested_at, status) values
   (tests.k('e204'), tests.tenant('labak'), tests.entry('c201'), 'publish', 1, tests.persona('editor_labak'), now() - interval '1 minute', 'committed');
