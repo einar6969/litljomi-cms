@@ -16,7 +16,7 @@
 --   demo is suspended.
 begin;
 \ir _helpers.sql
-select plan(132);
+select plan(134);
 
 create function tests.k(p_key text) returns uuid
 language plpgsql
@@ -121,7 +121,7 @@ select columns_are('api', 'console_deliveries',
   array['release_id', 'site_id', 'tenant_id', 'notify_status', 'notify_attempts', 'notified_at', 'live_status',
         'live_confirmed_at', 'last_error', 'first_failed_at', 'next_attempt_at'], 'console_deliveries columns');
 select columns_are('api', 'console_audit',
-  array['id', 'tenant_id', 'at', 'action', 'target_type', 'target_id'], 'console_audit columns');
+  array['id', 'tenant_id', 'at', 'actor_id', 'action', 'target_type', 'target_id'], 'console_audit columns');
 select is_empty($$ select a.attrelid::regclass::text, a.attname from pg_catalog.pg_attribute a
   where a.attrelid = any (select to_regclass('api.' || v) from unnest(tests.console_all()) as v)
     and a.attnum > 0 and not a.attisdropped
@@ -251,9 +251,16 @@ select set_eq($$ select release_id, site_id, tenant_id, notify_status, notify_at
              null::timestamptz, '{"code": "http_500"}'::jsonb, '2026-11-05 11:05+00'::timestamptz,
              '2026-11-05 12:00+00'::timestamptz) $$,
   'admin at aal2: console_deliveries has both tenants, with statuses, attempts, times and last error');
-select set_eq($$ select id, tenant_id, at, action, target_type, target_id from api.console_audit $$,
-  $$ select id, tenant_id, at, action, target_type, target_id from cms.audit_log $$,
+select set_eq($$ select id, tenant_id, at, actor_id, action, target_type, target_id from api.console_audit $$,
+  $$ select id, tenant_id, at, actor_id, action, target_type, target_id from cms.audit_log $$,
   'admin at aal2: console_audit has every event');
+select results_eq($$ select actor_id from api.console_audit
+                     where action = 'publish_request.created' and tenant_id = tests.tenant('labak') $$,
+  $$ values (tests.persona('editor_labak')) $$,
+  'admin at aal2: console_audit says who acted');
+select results_eq($$ select actor_id from api.console_audit where action = 'system.console_test' $$,
+  $$ values (null::uuid) $$,
+  'admin at aal2: a system event has no actor');
 select set_has($$ select tenant_id from api.console_audit $$,
   $$ values (tests.tenant('labak')), (tests.tenant('demo')), (null::uuid) $$,
   'admin at aal2: console_audit covers both tenants and platform events');

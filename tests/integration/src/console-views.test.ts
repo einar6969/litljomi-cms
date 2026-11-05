@@ -148,6 +148,9 @@ describe('console views over the Data API (M4-03)', () => {
     expect(sites).toEqual([{ id: a.siteId, tenant_id: a.tenantId, base_url: 'http://localhost:3299/a', active: true }]);
     const delivery = (await rows(adminAal2, 'console_deliveries')).find((d) => d.tenant_id === b.tenantId);
     expect(delivery).toMatchObject({ release_id: b.releaseId, site_id: b.siteId, notify_status: 'failed', notify_attempts: 4, last_error: { code: 'http_500' } });
+    const audit = (await rows(adminAal2, 'console_audit')).find((e) => e.tenant_id === b.tenantId && e.action === 'publish_request.created');
+    expect(audit).toMatchObject({ actor_id: PERSONAS.editor_labak.id, target_type: expect.any(String) });
+    expect(audit).not.toHaveProperty('details');
   });
 
   it('no view hands a secret reference to an admin at aal2', async () => {

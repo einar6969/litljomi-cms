@@ -12,6 +12,8 @@
 --
 -- Columns are what §8.4 needs and no more. console_sites has no secret reference, and the column
 -- grant on cms.sites would refuse one anyway. No view carries content, or the audit log's details.
+-- releases.error stays out: its free-text message can quote a corrupt bundle, so a fragment of
+-- published text can reach it.
 
 create view api.console_admin with (security_invoker = true) as
 select pa.user_id
@@ -65,7 +67,7 @@ where (select auth.jwt() ->> 'aal') = 'aal2'
   );
 
 create view api.console_audit with (security_invoker = true) as
-select l.id, l.tenant_id, l.at, l.action, l.target_type, l.target_id
+select l.id, l.tenant_id, l.at, l.actor_id, l.action, l.target_type, l.target_id
 from cms.audit_log l
 where (select auth.jwt() ->> 'aal') = 'aal2'
   and exists (
