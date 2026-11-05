@@ -160,7 +160,7 @@ select is_empty($$ select 1 from cms.memberships m join extensions.pgrowlocks('c
                    where m.user_id = tests.persona('editor_labak') $$,
   'the requester''s membership row is not locked (accepted race, decision 33)');
 select tests.act_as_service();
-select is(api.worker_commit_unpublish(tests.pub('e956')), 'committed', 'the demo unpublish commits');
+select is(api.worker_commit_unpublish(tests.pub('e956')), 'superseded', 'the demo unpublish ends (c953 was never published), locks taken');
 select tests.act_as_owner();
 select is((select l.modes from cms.tenants t join extensions.pgrowlocks('cms.tenants') l on l.locked_row = t.ctid
            where t.id = tests.tenant('demo')),

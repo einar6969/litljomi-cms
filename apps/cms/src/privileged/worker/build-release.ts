@@ -115,7 +115,13 @@ export type BuildResult = {
 };
 
 /** A committed request linked to a delivered release. */
-export type LinkedRequest = { id: string; entryId: string; action: 'publish' | 'unpublish' };
+export type LinkedRequest = {
+  id: string;
+  entryId: string;
+  action: 'publish' | 'unpublish';
+  /** Whether an earlier release reached a site with the entry (api.worker_entry_was_delivered). */
+  wasDelivered: boolean;
+};
 
 export type BuildOptions = {
   db?: SupabaseClient;
@@ -150,7 +156,7 @@ type Snapshot = {
   tenant: { id: string; slug: string };
   entries: SnapshotEntry[];
   assets: SnapshotAsset[];
-  requests: Array<{ id: string; entry_id: string; action: 'publish' | 'unpublish'; revision_id: string | null }>;
+  requests: Array<{ id: string; entry_id: string; action: 'publish' | 'unpublish'; revision_id: string | null; was_delivered: boolean }>;
 };
 
 /**
@@ -322,7 +328,7 @@ export async function buildRelease(tenantId: string, options: BuildOptions = {})
     // Step 10. Failed entries are visible and alerted ("Withdrawal and failure visibility"; §7.1).
     if (omitted.length > 0) await alert('release.entry_omitted', { tenantId, releaseId, number, omitted: stored });
     if (fallback.length > 0) await alert('release.entry_fallback', { tenantId, releaseId, number, fallback: storedFallback });
-    const requests = snapshot.requests.map((r) => ({ id: r.id, entryId: r.entry_id, action: r.action }));
+    const requests = snapshot.requests.map((r) => ({ id: r.id, entryId: r.entry_id, action: r.action, wasDelivered: r.was_delivered }));
     return {
       status: 'delivered',
       releaseId,

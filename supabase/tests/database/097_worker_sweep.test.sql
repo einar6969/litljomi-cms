@@ -126,8 +126,8 @@ select is((select row(tenant_id, tenant_slug, release_number, bundle_path, previ
   'the row names the tenant, the release, its bundle and the previous delivered release''s bundle');
 select is((select requests from api.worker_deliveries_to_retry(now())),
   jsonb_build_array(
-    jsonb_build_object('id', tests.k('e971'), 'entry_id', tests.entry('c971'), 'action', 'publish'),
-    jsonb_build_object('id', tests.k('e972'), 'entry_id', tests.entry('c972'), 'action', 'publish')),
+    jsonb_build_object('id', tests.k('e971'), 'entry_id', tests.entry('c971'), 'action', 'publish', 'was_delivered', false),
+    jsonb_build_object('id', tests.k('e972'), 'entry_id', tests.entry('c972'), 'action', 'publish', 'was_delivered', false)),
   'with the requests linked to the release, in request order');
 
 -- The schedule (M3-02): a failed notification is returned once its next attempt is due at p_now.
@@ -152,12 +152,13 @@ select tests.act_as_service();
 select results_eq($$ select site_id, notify_status, live_status from api.worker_deliveries_to_retry(now()) $$,
   $$ values (tests.k('b972'), 'ok'::text, 'pending'::text) $$,
   'an ok notification whose live check stayed pending for over 5 minutes is returned');
--- ... unless the delivery's 24 hours since its first failure have run out.
+-- ... unless the delivery's 24 hours since its first failure ran out before it was notified (M5-01:
+-- one notified before they ended gets one more run, 115_withdrawal_safety).
 select tests.act_as_owner();
-update cms.site_deliveries set first_failed_at = now() - interval '24 hours' where release_id = tests.k('a972') and site_id = tests.k('b972');
+update cms.site_deliveries set first_failed_at = now() - interval '24 hours 10 minutes' where release_id = tests.k('a972') and site_id = tests.k('b972');
 select tests.act_as_service();
 select is_empty($$ select * from api.worker_deliveries_to_retry(now()) $$,
-  'a pending live check is not retried once 24 hours have passed since the delivery''s first failure');
+  'a pending live check notified after the 24 hours since the delivery''s first failure is not retried');
 select tests.act_as_owner();
 update cms.site_deliveries set first_failed_at = now() - interval '23 hours' where release_id = tests.k('a972') and site_id = tests.k('b972');
 select tests.act_as_service();

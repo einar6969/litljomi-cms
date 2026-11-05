@@ -74,7 +74,7 @@ describe('liveTargets', () => {
 
   it('a published entry: present checks against this release, its new hash, its own path and its media URLs', () => {
     seen.length = 0;
-    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q1', entryId: E1, action: 'publish' }] }, MEDIA);
+    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q1', entryId: E1, action: 'publish', wasDelivered: true }] }, MEDIA);
     expect(t).toEqual({
       entryId: E1,
       requestIds: ['q1'],
@@ -91,7 +91,7 @@ describe('liveTargets', () => {
   });
 
   it('an unpublished entry: absent checks computed from the previous release’s record, no hash', () => {
-    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q2', entryId: E2, action: 'unpublish' }] }, MEDIA);
+    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q2', entryId: E2, action: 'unpublish', wasDelivered: true }] }, MEDIA);
     expect(t).toMatchObject({
       entryId: E2,
       failure: null,
@@ -106,13 +106,57 @@ describe('liveTargets', () => {
   });
 
   it('a published entry left out of the release (omitted) is delivery failed, never checked as present', () => {
-    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q3', entryId: E3, action: 'publish' }] }, MEDIA);
+    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q3', entryId: E3, action: 'publish', wasDelivered: true }] }, MEDIA);
     expect(t).toMatchObject({ entryId: E3, failure: 'delivery_failed', checks: [] });
   });
 
   it('an unpublished entry that no delivered release contained has nothing to check', () => {
-    const [t] = liveTargets(module, { bundle: current, previousBundle: null, requests: [{ id: 'q4', entryId: E4, action: 'unpublish' }] }, MEDIA);
+    const [t] = liveTargets(module, { bundle: current, previousBundle: null, requests: [{ id: 'q4', entryId: E4, action: 'unpublish', wasDelivered: false }] }, MEDIA);
     expect(t).toMatchObject({ entryId: E4, failure: null, checks: [], mediaUrls: [] });
+  });
+
+  // M5-01: a site may hold it (an older release, a failed release whose pointer was written), and
+  // neither bundle says where to look, so it is never confirmed with nothing checked.
+  it('an unpublished entry a site may hold, with no record to check, is a failure, never confirmed', () => {
+    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q4', entryId: E4, action: 'unpublish', wasDelivered: true }] }, MEDIA);
+    expect(t).toMatchObject({ entryId: E4, failure: 'withdrawal_unchecked', checks: [], withdrawal: true });
+  });
+
+  it('a publish and an unpublish coalesced into one build, a site having held the entry before: the same failure', () => {
+    const [t] = liveTargets(
+      module,
+      {
+        bundle: current,
+        previousBundle: previous,
+        requests: [
+          { id: 'q4a', entryId: E4, action: 'publish', wasDelivered: true },
+          { id: 'q4b', entryId: E4, action: 'unpublish', wasDelivered: true },
+        ],
+      },
+      MEDIA,
+    );
+    expect(t).toMatchObject({ entryId: E4, requestIds: ['q4a', 'q4b'], failure: 'withdrawal_unchecked', checks: [], withdrawal: true });
+  });
+
+  it('a publish and an unpublish coalesced into one build, no site ever having held the entry: nothing to check', () => {
+    const [t] = liveTargets(
+      module,
+      {
+        bundle: current,
+        previousBundle: previous,
+        requests: [
+          { id: 'q4a', entryId: E4, action: 'publish', wasDelivered: false },
+          { id: 'q4b', entryId: E4, action: 'unpublish', wasDelivered: false },
+        ],
+      },
+      MEDIA,
+    );
+    expect(t).toMatchObject({ entryId: E4, failure: null, checks: [], withdrawal: true });
+  });
+
+  it('a request that does not say whether a site held the entry fails closed', () => {
+    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q4', entryId: E4, action: 'unpublish' } as never] }, MEDIA);
+    expect(t).toMatchObject({ failure: 'withdrawal_unchecked' });
   });
 
   it('one target per entry; the release’s content decides (a publish then an unpublish of the same entry)', () => {
@@ -122,9 +166,9 @@ describe('liveTargets', () => {
         bundle: current,
         previousBundle: previous,
         requests: [
-          { id: 'q5', entryId: E2, action: 'publish' },
-          { id: 'q6', entryId: E2, action: 'unpublish' },
-          { id: 'q7', entryId: E1, action: 'publish' },
+          { id: 'q5', entryId: E2, action: 'publish', wasDelivered: true },
+          { id: 'q6', entryId: E2, action: 'unpublish', wasDelivered: true },
+          { id: 'q7', entryId: E1, action: 'publish', wasDelivered: true },
         ],
       },
       MEDIA,
@@ -144,27 +188,27 @@ describe('liveTargets', () => {
         bundle: current,
         previousBundle: previous,
         requests: [
-          { id: 'q10', entryId: E1, action: 'publish' },
-          { id: 'q11', entryId: E1, action: 'unpublish' },
+          { id: 'q10', entryId: E1, action: 'publish', wasDelivered: true },
+          { id: 'q11', entryId: E1, action: 'unpublish', wasDelivered: true },
         ],
       },
       MEDIA,
     );
     expect(t).toMatchObject({ entryId: E1, requestIds: ['q10', 'q11'], failure: 'still_published', checks: [], contentHash: null, mediaUrls: [] });
-    const [only] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q12', entryId: E1, action: 'unpublish' }] }, MEDIA);
+    const [only] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q12', entryId: E1, action: 'unpublish', wasDelivered: true }] }, MEDIA);
     expect(only).toMatchObject({ failure: 'still_published', checks: [] });
   });
 
   it('a type without site pages has no checks, but its media is still checked', () => {
     const other = bundle(3, []);
     other.entries['page'] = [{ ...entry(E1, 'a', null, { image }) }];
-    const [t] = liveTargets(module, { bundle: other, previousBundle: null, requests: [{ id: 'q8', entryId: E1, action: 'publish' }] }, MEDIA);
+    const [t] = liveTargets(module, { bundle: other, previousBundle: null, requests: [{ id: 'q8', entryId: E1, action: 'publish', wasDelivered: true }] }, MEDIA);
     expect(t).toMatchObject({ failure: null, checks: [], mediaUrls: [image.url], contentHash: 'h-' + E1 });
   });
 
   it('a module whose checks throw gives a failure, not an exception', () => {
     const broken = { site: { news: { path: () => '/x', checks: () => { throw new Error('boom'); } } } } as unknown as ModuleManifest;
-    const [t] = liveTargets(broken, { bundle: current, previousBundle: null, requests: [{ id: 'q9', entryId: E1, action: 'publish' }] }, MEDIA);
+    const [t] = liveTargets(broken, { bundle: current, previousBundle: null, requests: [{ id: 'q9', entryId: E1, action: 'publish', wasDelivered: true }] }, MEDIA);
     expect(t).toMatchObject({ failure: 'checks_failed', checks: [] });
   });
 });
@@ -444,7 +488,7 @@ describe('confirmRelease: the public pointer', () => {
     number: 2,
     bundle: bundle(2, [entry(E1, 'a', null)]),
     previousBundle: null,
-    requests: [{ id: 'q1', entryId: E1, action: 'publish' }],
+    requests: [{ id: 'q1', entryId: E1, action: 'publish', wasDelivered: true }],
   };
   const workerSite = (id: string) => ({ id, base_url: site.origin, revalidate_url: `${site.origin}/api/revalidate/${id}`, webhook_secrets: ['leyndo'] });
 
@@ -499,6 +543,81 @@ describe('confirmRelease: the public pointer', () => {
     expect(events).toEqual(['poll 1', 'poll 1', 'poll 2', 'notify /api/revalidate/s1']);
     expect(recorded.at(-1)).toMatchObject({ p_site_id: 's1', p_live_status: 'ok' });
     expect(infoLines('pointer')).toEqual([{ tenant: 'prufa', release: 2, fresh: true, lagMs: 2_060, polls: 3 }]);
+  });
+
+  // M5-01 (finding 2): a run killed from here on leaves a row the sweep retries and alerts.
+  describe('the withdrawal state, stored before the poll', () => {
+    const withdrawing: DeliveredRelease = {
+      ...published,
+      bundle: bundle(2, []),
+      previousBundle: bundle(1, [entry(E2, 'b', null)]),
+      requests: [{ id: 'u2', entryId: E2, action: 'unpublish', wasDelivered: true }],
+    };
+    const state = {
+      withdrawals: [{ entryId: E2, requestIds: ['u2'], checks: [{ path: '/n/b', expect: 'absent' }, { path: '/n', expect: 'absent' }], ownPath: '/n/b' }],
+      withdrawals_others: false,
+    };
+    const clock = { pollMs: 20, timeoutMs: 1_000, now: () => Date.UTC(2026, 10, 5, 12, 0, 0) };
+
+    it('is the first record of the run, one per site, before the first poll', async () => {
+      sites = [workerSite('s1'), workerSite('s2')];
+      site.pages.set('/n', { status: 200, html: html(releaseMeta(2), '<ul></ul>') });
+      site.pages.set('/n/b', { status: 404 });
+      const p = pointerSeams([2]);
+      const pollsAtFirstRecord: number[] = [];
+      const seen = {
+        rpc: async (fn: string, args: Record<string, unknown>) => {
+          if (fn === 'worker_record_delivery') pollsAtFirstRecord.push(p.urls.length);
+          return (db as unknown as { rpc: typeof seen.rpc }).rpc(fn, args);
+        },
+      } as unknown as SupabaseClient;
+
+      await confirmRelease(seen, { ...withdrawing, pointerWrittenAt: p.c.t }, { ...clock, pointer: p.seams });
+
+      expect(pollsAtFirstRecord.slice(0, 2)).toEqual([0, 0]);
+      expect(recorded.slice(0, 2)).toEqual(
+        ['s1', 's2'].map((id) => ({ p_release_id: 'rel', p_site_id: id, p_notify_status: 'pending', p_live_status: null, p_error: state, p_now: '2026-11-05T12:00:00.000Z' })),
+      );
+    });
+
+    it('is on the delivery when the run dies in the poll: nothing after it is recorded', async () => {
+      const p = pointerSeams([1]);
+      const killed = new Error('killed');
+      await expect(confirmRelease(db, { ...withdrawing, pointerWrittenAt: p.c.t }, { ...clock, pointer: { ...p.seams, sleep: async () => Promise.reject(killed) } })).rejects.toBe(killed);
+      expect(recorded.map((r) => [r.p_notify_status, r.p_live_status, r.p_error])).toEqual([['pending', null, state]]);
+    });
+
+    it('names what else the release has to confirm, so a withdrawal alone never settles it', async () => {
+      const mixed: DeliveredRelease = { ...withdrawing, bundle: bundle(2, [entry(E1, 'a', null)]), requests: [...published.requests, ...withdrawing.requests] };
+      const p = pointerSeams([2]);
+      await confirmRelease(db, { ...mixed, pointerWrittenAt: p.c.t }, { ...clock, pointer: p.seams });
+      expect(recorded[0]).toMatchObject({ p_notify_status: 'pending', p_error: { withdrawals_others: true } });
+    });
+
+    it('a retry stores it too (a delivery that has no row yet)', async () => {
+      site.pages.set('/n', { status: 200, html: html(releaseMeta(2), '<ul></ul>') });
+      site.pages.set('/n/b', { status: 404 });
+      await confirmRelease(db, withdrawing, clock, new Set(['s1']));
+      expect(recorded[0]).toMatchObject({ p_notify_status: 'pending', p_error: state });
+    });
+
+    it('a release that withdraws nothing records nothing before the notification', async () => {
+      const p = pointerSeams([2]);
+      await confirmRelease(db, { ...published, pointerWrittenAt: p.c.t }, { ...clock, pointer: p.seams });
+      expect(recorded[0]).toMatchObject({ p_notify_status: 'ok' });
+    });
+
+    it('a withdrawal that cannot be checked is stored as such before the poll, and never recorded live', async () => {
+      const unchecked: DeliveredRelease = { ...withdrawing, previousBundle: null };
+      const entry = { entryId: E2, requestIds: ['u2'], checks: [], ownPath: '', unchecked: true };
+      await confirmRelease(db, unchecked, clock, new Set(['s1']));
+      expect(recorded.map((r) => r.p_notify_status)).toEqual(['pending', 'ok', null]);
+      expect(recorded[0]).toMatchObject({ p_error: { withdrawals: [entry], withdrawals_others: true } });
+      expect(recorded.at(-1)).toMatchObject({
+        p_live_status: 'not_confirmed',
+        p_error: { code: 'live_not_confirmed', failures: [{ entryId: E2, reason: 'withdrawal_unchecked' }], withdrawals: [entry], withdrawn: [], withdrawals_others: true },
+      });
+    });
   });
 
   it('polls once per release, not once per site', async () => {
@@ -728,7 +847,7 @@ describe('confirmSite: retries after not_confirmed (M3-03)', () => {
     number: 2,
     bundle: bundle(2, [entry(E, 'a', '2026-01-01T00:00:00.000Z')]),
     previousBundle: null,
-    requests: [{ id: 'q1', entryId: E, action: 'publish' }],
+    requests: [{ id: 'q1', entryId: E, action: 'publish', wasDelivered: true }],
   };
   const workerSite = (): WorkerSite => ({ id: 's', base_url: site.origin, revalidate_url: `${site.origin}/api/revalidate`, webhook_secrets: ['leyndo'] });
   const webhooks = () => site.requests.filter((r) => r.method === 'POST').length;
@@ -816,7 +935,7 @@ describe('withdrawal state (W1)', () => {
   const workerSite = (): WorkerSite => ({ id: 's', base_url: site.origin, revalidate_url: `${site.origin}/api/revalidate`, webhook_secrets: ['leyndo'] });
   const gone = (id: string): StoredWithdrawal => ({ entryId: id, requestIds: ['u-' + id], checks: [{ path: `/n/${id}`, expect: 'absent' }, { path: '/n', expect: 'absent' }], ownPath: `/n/${id}` });
   const release = { tenantId: 't', tenantSlug: 'prufa', releaseId: 'rel-17', number: 17, notifyRelease: 18 };
-  const state = (over: Partial<WithdrawalState> = {}): WithdrawalState => ({ pending: [gone(E1)], withdrawn: [], others: false, alerted: false, hourOver: false, ...over });
+  const state = (over: Partial<WithdrawalState> = {}): WithdrawalState => ({ pending: [gone(E1)], withdrawn: [], others: false, alerted: false, hourOver: false, expired: false, ...over });
   const errors = () => recorded.map((r) => r.p_error as Record<string, unknown> | null);
 
   beforeEach(async () => {
@@ -841,9 +960,9 @@ describe('withdrawal state (W1)', () => {
         bundle: current,
         previousBundle: previous,
         requests: [
-          { id: 'q1', entryId: E1, action: 'publish' },
-          { id: 'q2', entryId: E2, action: 'unpublish' },
-          { id: 'q3', entryId: E3, action: 'unpublish' },
+          { id: 'q1', entryId: E1, action: 'publish', wasDelivered: true },
+          { id: 'q2', entryId: E2, action: 'unpublish', wasDelivered: true },
+          { id: 'q3', entryId: E3, action: 'unpublish', wasDelivered: false },
         ],
       },
       MEDIA,
@@ -853,7 +972,7 @@ describe('withdrawal state (W1)', () => {
       [E2, true],
       [E3, true],
     ]);
-    const still = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q4', entryId: E1, action: 'unpublish' }] }, MEDIA);
+    const still = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q4', entryId: E1, action: 'unpublish', wasDelivered: true }] }, MEDIA);
     expect(still[0]).toMatchObject({ failure: 'still_published' });
     expect(still[0]!.withdrawal ?? false).toBe(false);
   });
@@ -865,8 +984,8 @@ describe('withdrawal state (W1)', () => {
         bundle: bundle(3, []),
         previousBundle: bundle(2, [entry(E1, 'a', null), entry(E2, 'b', null)]),
         requests: [
-          { id: 'u1', entryId: E1, action: 'unpublish' },
-          { id: 'u2', entryId: E2, action: 'unpublish' },
+          { id: 'u1', entryId: E1, action: 'unpublish', wasDelivered: true },
+          { id: 'u2', entryId: E2, action: 'unpublish', wasDelivered: true },
         ],
       },
       MEDIA,
@@ -941,6 +1060,32 @@ describe('withdrawal state (W1)', () => {
 
     mocks.alert.mockClear();
     await confirmWithdrawals(db, release, workerSite(), state({ hourOver: true, alerted: true }), clock);
+    expect(mocks.alert).not.toHaveBeenCalled();
+  });
+
+  // Review item 3: nothing can prove these, so they miss until the alert, which the database stops at.
+  it('confirmWithdrawals: a withdrawal with nothing to check never passes, runs no check, and alerts after the hour', async () => {
+    const unchecked: StoredWithdrawal = { entryId: E1, requestIds: ['u1'], checks: [], ownPath: '', unchecked: true };
+    expect(await confirmWithdrawals(db, release, workerSite(), state({ pending: [unchecked], others: true }), clock)).toBe('not_confirmed');
+    expect(errors().at(-1)).toMatchObject({ failures: [{ entryId: E1, path: '', reason: 'withdrawal_unchecked' }], withdrawals: [unchecked] });
+    expect(mocks.alert).not.toHaveBeenCalled();
+
+    await confirmWithdrawals(db, release, workerSite(), state({ pending: [unchecked], others: true, hourOver: true }), clock);
+    expect(errors().at(-1)).toMatchObject({ withdrawal_alerted: '2026-11-03T12:00:00.000Z' });
+    expect(mocks.alert.mock.calls).toEqual([['delivery.withdrawal_unconfirmed', { tenantId: 't', releaseId: 'rel-17', number: 17, siteId: 's' }]]);
+    expect(site.requests.filter((r) => r.method === 'GET')).toEqual([]);
+  });
+
+  // Review item 4: repeatedly killed runs recorded no miss, so the bound ends them here.
+  it('confirmWithdrawals: past the 24 hours it ends the delivery and alerts, with no notification and no check', async () => {
+    await confirmWithdrawals(db, release, workerSite(), state({ expired: true, hourOver: true }), clock);
+    expect(site.requests).toEqual([]);
+    expect(recorded.map((r) => [r.p_notify_status, r.p_live_status])).toEqual([[null, 'not_confirmed']]);
+    expect(errors().at(-1)).toMatchObject({ code: 'live_not_confirmed', withdrawals: [gone(E1)], withdrawal_alerted: '2026-11-03T12:00:00.000Z' });
+    expect(mocks.alert.mock.calls).toEqual([['delivery.withdrawal_unconfirmed', { tenantId: 't', releaseId: 'rel-17', number: 17, siteId: 's' }]]);
+
+    mocks.alert.mockClear();
+    await confirmWithdrawals(db, release, workerSite(), state({ expired: true, hourOver: true, alerted: true }), clock);
     expect(mocks.alert).not.toHaveBeenCalled();
   });
 

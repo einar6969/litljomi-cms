@@ -173,6 +173,8 @@ describe('requestUnpublishAction', () => {
     await expect(requestUnpublishAction(ENTRY)).resolves.toEqual({ error: 'error' });
     state.rpc.request_unpublish = { error: { code: 'PGRST301', message: 'JWT' }, status: 401 };
     await expect(requestUnpublishAction(ENTRY)).resolves.toEqual({ error: 'auth' });
+    state.rpc.request_unpublish = { error: { code: 'P0001', message: 'not_published' } };
+    await expect(requestUnpublishAction(ENTRY)).resolves.toEqual({ error: 'not_published' });
     expect(state.after).toEqual([]);
   });
 });
