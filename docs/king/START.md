@@ -18,13 +18,7 @@ git -C /Users/einarzoega/litljomi-cms switch main
 git -C /Users/einarzoega/litljomi-cms merge --ff-only origin/main
 ```
 
-**2. Create a folder for the KING.** The repo's sandbox blocks GitHub for any session opened inside it, and `gh` is how a KING verifies work. So the KING runs from its own folder and reads the repo by path:
-
-```bash
-mkdir -p /Users/einarzoega/litljomi-king
-```
-
-**3. Open a new Claude Code session** in the Desktop app, in `/Users/einarzoega/litljomi-king`, and paste the prompt below.
+**2. Open a new Claude Code session** in the Desktop app, in `/Users/einarzoega/litljomi-cms`, and paste the prompt below. In Accept-edits mode every `gh` call prompts you, even reads; Auto mode avoids that.
 
 ## Opening prompt
 
