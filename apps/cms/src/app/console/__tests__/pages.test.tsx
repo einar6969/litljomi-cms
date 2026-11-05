@@ -43,6 +43,8 @@ const use = (views: Parameters<typeof fakeClient>[0]) => {
   return fake;
 };
 const params = (tenant: string) => ({ params: Promise.resolve({ tenant }) });
+/** The `<tr>` that holds `text`: ties an assertion to one row. */
+const rowOf = (out: string, text: string) => out.split('<tr>').find((row) => row.includes(text)) ?? '';
 const html = async (page: Promise<unknown>) => renderToStaticMarkup((await page) as never);
 
 beforeEach(() => {
@@ -69,7 +71,9 @@ describe('/console', () => {
     const out = await html(ConsolePage());
     expect(out).toContain('LABAK');
     expect(out).toContain('Demo');
-    expect(out).toContain('suspended');
+    expect(rowOf(out, 'Demo')).toContain('<span>suspended</span>');
+    expect(rowOf(out, 'LABAK')).toContain('<span>active</span>');
+    expect(rowOf(out, 'LABAK')).not.toContain('suspended');
     expect(out).toContain('Release 3');
     expect(out).toContain('build_failed at previous_bundle');
     expect(out).toContain('href="/console/t/demo"');
@@ -80,6 +84,15 @@ describe('/console', () => {
     expect(await html(ConsolePage())).toContain('No tenants.');
     use(EMPTY);
     expect(await html(ConsolePage())).toContain('No release yet');
+  });
+
+  it('says the latest releases could not be read, and does not call the tenants release-less', async () => {
+    use({ ...FULL, console_releases: { error: '42501' } });
+    const out = await html(ConsolePage());
+    expect(out).toContain('The latest releases could not be read');
+    expect(out).toContain('role="alert"');
+    expect(out).not.toContain('No release yet');
+    expect(out).toContain('LABAK');
   });
 
   it('shows a failed read as an error, not as empty', async () => {
@@ -94,8 +107,9 @@ describe('/console/t/[tenant]', () => {
   it('shows a failed delivery, the request, release, site and audit event of a suspended tenant', async () => {
     use(FULL);
     const out = await html(TenantPage(params('demo')));
-    expect(out).toContain('suspended');
+    expect(out).toContain('<span>suspended</span>');
     expect(out).toContain('notify_failed (500)');
+    expect(out).toContain('http://localhost:3101');
     expect(out).toContain('4 attempts');
     expect(out).toContain('failed validation');
     expect(out).toContain('invalid_data');
@@ -123,14 +137,18 @@ describe('/console/t/[tenant]', () => {
     expect(out).toContain('invalid_data');
   });
 
+  it('shows the releases and deliveries as unreadable when the releases read fails', async () => {
+    use({ ...FULL, console_releases: { error: 'x' } });
+    const out = await html(TenantPage(params('demo')));
+    expect(out).toContain('The releases could not be read');
+    expect(out).toContain('The deliveries could not be read');
+    expect(out).not.toContain('No releases.');
+    expect(out).not.toContain('No deliveries.');
+    expect(out).toContain('invalid_data');
+  });
+
   it('shows an error, not a 404, when the tenant read fails', async () => {
     use({ console_tenants: { error: 'x' } });
     expect(await html(TenantPage(params('demo')))).toContain('The tenant could not be read');
-  });
-
-  it('prefetches no link', async () => {
-    use(FULL);
-    // next/link renders no prefetch marker statically; the source check below pins the prop.
-    expect(await html(TenantPage(params('demo')))).toContain('<a ');
   });
 });

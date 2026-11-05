@@ -1,6 +1,6 @@
 // M4-05: the console pages (spec §8.4), against the local CMS and stack. An aal2 admin sees the
 // seeded tenants and two fixture tenants (support/console-admin.ts): one active with a failed
-// request, release and delivery, one suspended with nothing. Read only: the pages have no form.
+// request, release and delivery, one suspended (named "paused", so only its status says suspended) with nothing. Read only: the pages have no form.
 import type { BrowserContext, Page } from '@playwright/test';
 import { arrangePages, cleanPages, resetAdmin } from './support/console-admin';
 import { CMS_URL } from './support/local';
@@ -58,9 +58,10 @@ test.describe('as the platform admin at aal2', () => {
   test('the overview lists every tenant, and a suspended tenant as suspended', async () => {
     await page.goto('/console');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Console');
-    for (const name of ['LABAK', 'Demo', 'Console fixture', 'Console suspended']) await expect(row(name)).toHaveCount(1);
-    await expect(row('Console suspended')).toContainText('suspended');
-    await expect(row('Console suspended')).toContainText('No release yet');
+    for (const name of ['LABAK', 'Demo', 'Console fixture', 'Console paused']) await expect(row(name)).toHaveCount(1);
+    await expect(row('Console paused').getByText('suspended', { exact: true })).toBeVisible();
+    await expect(row('Console fixture').getByText('suspended', { exact: true })).toHaveCount(0);
+    await expect(row('Console paused')).toContainText('No release yet');
     await expect(row('Console fixture')).toContainText('active');
     await expect(row('Console fixture')).toContainText('build_failed at previous_bundle');
   });
@@ -80,13 +81,13 @@ test.describe('as the platform admin at aal2', () => {
   });
 
   test('a suspended tenant shows as suspended with empty lists, and an unknown slug is a 404', async () => {
-    await page.goto('/console/t/console-suspended');
-    await expect(page.getByRole('main')).toContainText('suspended');
-    for (const noun of ['requests', 'releases', 'deliveries', 'sites']) await expect(page.getByText(`No ${noun}.`)).toBeVisible();
+    await page.goto('/console/t/console-paused');
+    await expect(page.getByRole('main').getByText('suspended', { exact: true })).toBeVisible();
+    for (const noun of ['requests', 'releases', 'deliveries', 'sites', 'audit events']) await expect(page.getByText(`No ${noun}.`)).toBeVisible();
     expect((await page.goto('/console/t/no-such-tenant'))?.status()).toBe(404);
   });
 
-  test('both pages fit 375, 768 and 1440 px without sideways scrolling of the page', async () => {
+  test('both pages fit 375, 768 and 1440 px, and at 375 each table scrolls to its last column', async () => {
     for (const width of [375, 768, 1440]) {
       await page.setViewportSize({ width, height: 900 });
       for (const path of ['/console', '/console/t/console-fixture']) {
@@ -95,5 +96,32 @@ test.describe('as the platform admin at aal2', () => {
         expect(overflow, `${path} at ${width}`).toBeLessThanOrEqual(0);
       }
     }
+
+    // scrollWidth of the page cannot see inside a table's own scrolling wrapper: scroll each one
+    // to its end and check that the last header cell then lies within the viewport.
+    await page.setViewportSize({ width: 375, height: 900 });
+    await page.goto('/console/t/console-fixture');
+    await expect(page.getByRole('region', { name: 'Deliveries' }).getByText('failed', { exact: true }).first()).toBeAttached();
+    for (const name of ['Requests', 'Releases', 'Deliveries', 'Sites']) {
+      const region = page.getByRole('region', { name });
+      const reached = await region.locator('.overflow-x-auto').evaluate((wrapper: HTMLElement) => {
+        wrapper.scrollLeft = wrapper.scrollWidth;
+        const last = wrapper.querySelector('th:last-child');
+        if (!last) return false;
+        const box = last.getBoundingClientRect();
+        return box.right <= document.documentElement.clientWidth + 1 && box.left >= 0;
+      });
+      expect(reached, `${name}: last column reachable at 375`).toBe(true);
+    }
+    await page.goto('/console');
+    await expect(row('Console paused').getByText('suspended', { exact: true })).toBeVisible();
+    const tenants = page.getByRole('region', { name: 'Tenants' }).locator('.overflow-x-auto');
+    expect(
+      await tenants.evaluate((wrapper: HTMLElement) => {
+        wrapper.scrollLeft = wrapper.scrollWidth;
+        const last = wrapper.querySelector('th:last-child')!.getBoundingClientRect();
+        return last.right <= document.documentElement.clientWidth + 1 && last.left >= 0;
+      }),
+    ).toBe(true);
   });
 });

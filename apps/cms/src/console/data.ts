@@ -102,37 +102,61 @@ export async function latestReleases(tenantIds: string[], client?: SupabaseClien
   return { ok: true, rows };
 }
 
+/** A delivery with the number of its release. */
+export type DeliveryRow = Delivery & { release_number: number };
+
 export type TenantDetail = {
   requests: Read<Request>;
   releases: Read<Release>;
-  deliveries: Read<Delivery>;
+  deliveries: Read<DeliveryRow>;
   sites: Read<Site>;
   audit: Read<AuditEvent>;
 };
 
+/** The most deliveries one page reads before it keeps the newest LIMIT: 50 releases, a few sites each. */
+export const DELIVERY_READ_LIMIT = 200;
+
+/**
+ * The deliveries of the given releases (the tenant's 50 latest), newest release first, at most
+ * LIMIT. Deliveries have no time of their own, so the release is the age: a delivery never
+ * notified on an old release cannot hide a newer one.
+ */
+async function latestDeliveries(c: SupabaseClient, tenantId: string, releases: Read<Release>): Promise<Read<DeliveryRow>> {
+  if (!releases.ok) return { ok: false };
+  if (releases.rows.length === 0) return { ok: true, rows: [] };
+  const numbers = new Map(releases.rows.map((release) => [release.id, release.number]));
+  const fetched = await read<Delivery>(
+    c.from('console_deliveries').select('*').eq('tenant_id', tenantId).in('release_id', [...numbers.keys()])
+      .order('release_id', { ascending: false }).order('site_id').limit(DELIVERY_READ_LIMIT),
+    'console_deliveries',
+  );
+  if (!fetched.ok) return fetched;
+  const rows = fetched.rows
+    .map((row) => ({ ...row, release_number: numbers.get(row.release_id) ?? 0 }))
+    .sort((a, b) => b.release_number - a.release_number || a.site_id.localeCompare(b.site_id))
+    .slice(0, LIMIT);
+  return { ok: true, rows };
+}
+
 /** One tenant's latest requests, releases, deliveries and audit events (50 each), and its sites. */
 export async function tenantDetail(tenantId: string, client?: SupabaseClient): Promise<TenantDetail> {
   const c = client ?? (await createEditorClient());
-  const [requests, releases, deliveries, sites, audit] = await Promise.all([
+  const releasesPromise = read<Release>(
+    c.from('console_releases').select('*').eq('tenant_id', tenantId).order('number', { ascending: false }).limit(LIMIT),
+    'console_releases',
+  );
+  const [requests, releases, sites, audit] = await Promise.all([
     read<Request>(
       c.from('console_requests').select('*').eq('tenant_id', tenantId).order('requested_at', { ascending: false }).order('id').limit(LIMIT),
       'console_requests',
     ),
-    read<Release>(
-      c.from('console_releases').select('*').eq('tenant_id', tenantId).order('number', { ascending: false }).limit(LIMIT),
-      'console_releases',
-    ),
-    // No delivery has a creation time: not yet notified (null) comes first, then the latest notified.
-    read<Delivery>(
-      c.from('console_deliveries').select('*').eq('tenant_id', tenantId)
-        .order('notified_at', { ascending: false, nullsFirst: true }).order('release_id', { ascending: false }).order('site_id').limit(LIMIT),
-      'console_deliveries',
-    ),
+    releasesPromise,
     read<Site>(c.from('console_sites').select('*').eq('tenant_id', tenantId).order('base_url', { ascending: true }).limit(LIMIT), 'console_sites'),
     read<AuditEvent>(
       c.from('console_audit').select('*').eq('tenant_id', tenantId).order('at', { ascending: false }).order('id', { ascending: false }).limit(LIMIT),
       'console_audit',
     ),
   ]);
+  const deliveries = await latestDeliveries(c, tenantId, releases);
   return { requests, releases, deliveries, sites, audit };
 }

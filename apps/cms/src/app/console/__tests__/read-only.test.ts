@@ -25,6 +25,7 @@ describe('the console pages', () => {
     ['a server action', /['"]use server['"]/],
     ['a form', /<form\b/],
     ['a POST or other write handler', /export\s+(async\s+)?(function|const)\s+(POST|PUT|PATCH|DELETE)\b/],
+    ['a re-exported write handler', /export\s*\{[^}]*\b(POST|PUT|PATCH|DELETE)\b[^}]*\}/],
     ['a mutation', /\.(insert|update|upsert|delete|rpc)\(/],
     ['the secret key', /service_role|createServiceClient|secretClient|SECRET_KEY|privileged\//],
     ['a client component', /['"]use client['"]/],

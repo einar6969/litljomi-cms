@@ -31,8 +31,8 @@ export default async function ConsoleTenantPage({ params }: { params: Promise<{ 
   if (!found.tenant) notFound();
   const { tenant } = found;
   const detail = await tenantDetail(tenant.id);
-  // Release numbers for the deliveries, from the releases already read.
-  const numbers = new Map(detail.releases.ok ? detail.releases.rows.map((release) => [release.id, release.number]) : []);
+  // The sites' addresses for the deliveries; unknown when the sites read failed.
+  const addresses = new Map(detail.sites.ok ? detail.sites.rows.map((site) => [site.id, site.base_url]) : []);
 
   return (
     <main className="flex flex-col gap-8 py-8">
@@ -80,7 +80,8 @@ export default async function ConsoleTenantPage({ params }: { params: Promise<{ 
         read={detail.deliveries}
         rowKey={(row) => `${row.release_id}:${row.site_id}`}
         columns={[
-          { header: 'Release', cell: (row) => numbers.get(row.release_id) ?? 'older' },
+          { header: 'Release', cell: (row) => row.release_number },
+          { header: 'Site', cell: (row) => <span className="break-all">{addresses.get(row.site_id) ?? 'unknown'}</span> },
           {
             header: 'Notified',
             cell: (row) => (

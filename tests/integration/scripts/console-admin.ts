@@ -38,14 +38,14 @@ const steps: Record<string, () => Promise<unknown>> = {
   },
 
   // The fixtures of console-pages.spec.ts (M4-05): an active tenant with a site, a failed request,
-  // a failed release and a failed delivery, and a suspended tenant with nothing. Rows of their own,
+  // a failed release and a failed delivery, and a suspended tenant (named so its name and slug do not say "suspended") with nothing. Rows of their own,
   // so no seeded tenant changes state. Rerunnable: it clears first.
   async 'arrange-pages'() {
     await steps['clean-pages']!();
     const [active] = await ownerQuery<{ id: string }>(
       `insert into cms.tenants (slug, name) values ('console-fixture', 'Console fixture') returning id`,
     );
-    await ownerQuery(`insert into cms.tenants (slug, name, status) values ('console-suspended', 'Console suspended', 'suspended')`);
+    await ownerQuery(`insert into cms.tenants (slug, name, status) values ('console-paused', 'Console paused', 'suspended')`);
     const tenantId = active!.id;
     const [site] = await ownerQuery<{ id: string }>(
       `insert into cms.sites (tenant_id, base_url, revalidate_url, webhook_secret_ref)
@@ -74,11 +74,13 @@ const steps: Record<string, () => Promise<unknown>> = {
   },
 
   async 'clean-pages'() {
-    const ids = `(select id from cms.tenants where slug in ('console-fixture', 'console-suspended'))`;
+    const ids = `(select id from cms.tenants where slug in ('console-fixture', 'console-paused'))`;
     for (const table of ['site_deliveries', 'publish_requests', 'releases', 'entries', 'sites']) {
       await ownerQuery(`delete from cms.${table} where tenant_id in ${ids}`);
     }
-    await ownerQuery(`delete from cms.tenants where slug in ('console-fixture', 'console-suspended')`);
+    // The audit events the fixture's inserts caused (triggers write them, §4.7).
+    await ownerQuery(`delete from cms.audit_log where tenant_id in ${ids}`);
+    await ownerQuery(`delete from cms.tenants where slug in ('console-fixture', 'console-paused')`);
     return { cleaned: true };
   },
 
