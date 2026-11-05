@@ -3,7 +3,9 @@
 // real autosave controller and server actions keep every edit in the tab while signed out; after
 // signing in again the save lands at the expected version with all of them. A reload of the tab
 // while signed out loses nothing either: the copy comes back and is saved when the editor chooses.
-// Another account's session never saves them. Signing out removes the tab's copy for good.
+// Another account's session never saves them. Signing out removes the tab's copy for good. An editor
+// removed from the tenant with a tab open (M4-01, review focus 5) is refused the next save, with a
+// session that is still good, and loses nothing either.
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { anonClient, retryRateLimited, secretClient } from '../../../../../tests/integration/src/clients.ts';
 import { PERSONAS, TENANT } from '../../../../../tests/integration/src/fixtures.ts';
@@ -217,5 +219,58 @@ describe('session expiry loses no work (M2-17)', () => {
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(storedCopy(storage, entryId)).toBeNull();
     expect(c.getSnapshot().state).toBe('signed_out');
+  });
+});
+
+describe('an editor removed from the tenant with a tab open (M4-01, review focus 5)', () => {
+  const admin = (fn: string, args: Record<string, unknown>) => secretClient().schema('api').rpc(fn, args);
+  const removals = async () =>
+    (await ownerQuery('select id from cms.audit_log where action = $1 and tenant_id = $2 and target_id = $3', ['system.membership.removed', TENANT.labak, USER])).length;
+
+  it('the next save is refused and audited, nothing reaches the draft, and the edits stay in the tab until they can be saved', async () => {
+    const entryId = await newEntry();
+    const start = (await draftVersion(entryId))!;
+    const storage = new TabStorage();
+    const c = tab(storage, entryId, start);
+    c.start();
+    c.schedule({ title: 'Fyrir brottnám' });
+    await settled(c, 'saved');
+    const removalsBefore = await removals();
+
+    expect((await admin('admin_remove_membership', { p_tenant_id: TENANT.labak, p_user_id: USER })).error).toBeNull();
+    try {
+      c.schedule({ title: 'Eftir brottnám', excerpt: 'Skrifað í opnum flipa' });
+      await settled(c, 'error');
+
+      // The session is still good: the membership is what refuses the save, on this very request.
+      expect(await hasSession(session.current as never)).toBe(true);
+      const direct = await (session.current as EditorSession).rpc('save_draft', {
+        p_entry_id: entryId,
+        p_expected_version: start + 1,
+        p_data: { title: 'Bein tilraun' },
+        p_schema_version: getType('labak', 'news')!.version,
+        p_title: null,
+        p_sort_at: null,
+      });
+      expect(direct.error?.message).toBe('not_found');
+      expect(await draftVersion(entryId)).toBe(start + 1);
+      expect(await draftData(entryId)).toEqual({ title: 'Fyrir brottnám' });
+      expect(await removals()).toBe(removalsBefore + 1);
+
+      // Nothing is lost: the tab's copy holds every edit, at the version they were made on.
+      expect(storedCopy(storage, entryId)).toEqual({ version: start + 1, data: { title: 'Eftir brottnám', excerpt: 'Skrifað í opnum flipa' } });
+      expect(c.pendingData()).toEqual({ title: 'Eftir brottnám', excerpt: 'Skrifað í opnum flipa' });
+      c.retry();
+      await settled(c, 'error');
+      expect(await draftVersion(entryId)).toBe(start + 1);
+    } finally {
+      expect((await admin('admin_add_membership', { p_tenant_id: TENANT.labak, p_user_id: USER })).error).toBeNull();
+    }
+
+    // The membership is back: the same edits save at the expected version.
+    c.retry();
+    await settled(c, 'saved');
+    expect(await draftData(entryId)).toEqual({ title: 'Eftir brottnám', excerpt: 'Skrifað í opnum flipa' });
+    expect(storedCopy(storage, entryId)).toBeNull();
   });
 });

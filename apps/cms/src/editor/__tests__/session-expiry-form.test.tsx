@@ -116,6 +116,23 @@ describe('session expiry in the form (M2-17)', () => {
     expect(localStorage.length).toBe(0);
   });
 
+  it('a refused save with a good session (the editor was removed, M4-01) keeps the values on the screen and in the tab, and asks for no sign-in', async () => {
+    browser.user = USER;
+    actions.saveDraftAction.mockResolvedValue({ ok: false, code: 'error' });
+    await renderForm();
+    await type($<HTMLInputElement>('#field-title')!, 'Nýr titill');
+    await pause();
+    expect(alert()?.textContent).toContain(t.editor.error);
+    expect(alert()?.textContent).not.toContain(t.editor.signedOut);
+    expect($<HTMLInputElement>('#field-title')!.value).toBe('Nýr titill');
+    expect(stored()).toEqual({ version: 3, data: { title: 'Nýr titill' } });
+
+    // Editing goes on, and every edit is kept.
+    await type($<HTMLTextAreaElement>('#field-excerpt')!, 'Inngangur');
+    await pause();
+    expect(stored()).toEqual({ version: 3, data: { title: 'Nýr titill', excerpt: 'Inngangur' } });
+  });
+
   it('after signing in in another tab, the save goes through by itself with every edit and the tab\'s copy is removed', async () => {
     actions.saveDraftAction.mockResolvedValueOnce({ ok: false, code: 'auth' }).mockResolvedValueOnce({ ok: false, code: 'auth' });
     await renderForm();

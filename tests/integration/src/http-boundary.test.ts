@@ -190,6 +190,10 @@ describe('A3: worker and admin functions are for the secret key only', () => {
     ['admin_create_tenant', { p_slug: 'x-a3', p_name: 'x' }],
     ['admin_create_site', { p_tenant_id: TENANT.labak, p_base_url: 'http://x', p_revalidate_url: 'http://x', p_preview_url: null, p_webhook_secret: 's' }],
     ['admin_add_membership', { p_tenant_id: TENANT.labak, p_user_id: PERSONAS.outsider.id }],
+    // M4-01.
+    ['admin_set_webhook_secret', { p_site_id: randomUUID(), p_webhook_secret: 'x'.repeat(32) }],
+    ['admin_set_tenant_status', { p_tenant_id: TENANT.labak, p_status: 'suspended' }],
+    ['admin_remove_membership', { p_tenant_id: TENANT.labak, p_user_id: PERSONAS.editor_labak.id }],
   ] as const)('A3: %s is refused for anon and every editor persona (42501)', async (fn, args) => {
     for (const persona of ['anon', 'editor_labak', 'editor_demo', 'outsider', 'revoked', 'platform_admin'] as const) {
       const c = persona === 'anon' ? anonClient() : await editorClient(persona);
