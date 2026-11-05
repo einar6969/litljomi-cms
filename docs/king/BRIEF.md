@@ -97,7 +97,7 @@ Delivered and verified, in brief:
 
 ## 5. Decisions that matter
 
-All numbered decisions are in `docs/plans/2026-11-01-m0-m1.md`, despite its name. They run from about line 240 to 578 and quote Einar. Start with these:
+All numbered decisions are in `docs/plans/2026-11-01-m0-m1.md`, despite its name. They start at about line 240 and quote Einar. Start with these:
 
 | Decision | Why it matters |
 |---|---|

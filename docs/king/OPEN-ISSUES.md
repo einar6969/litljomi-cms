@@ -127,7 +127,7 @@ Left unchanged on purpose. The KING proposes corrections and Einar agrees them.
 
 ## M. M4 findings, 2026-11-05
 
-From a read-only investigation. Decisions 53, 55 and 56 hold the scope. `docs/plans/m4.md` turns this into tasks, and none has started.
+From a read-only investigation. Decisions 53, 55 and 56 hold the scope. `docs/plans/m4.md` turns this into tasks.
 
 | Area | Code supports | Missing | Undecided |
 |---|---|---|---|
