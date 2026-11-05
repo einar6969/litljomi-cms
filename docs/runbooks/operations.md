@@ -48,7 +48,9 @@
 
 ## 2. New tenant in under an hour
 
-**Order (decision 45.1):** module, provision, publish once, then the site. A site's build fails while its tenant has no release, on purpose.
+**Order (§9.2, decision 45.1):** module PR merged, advance staging (migrations first, branch straight after), provision the tenant and invite the editor, publish once, then the optional site. The CMS has the module before anyone can sign in to the tenant. A site's build fails while its tenant has no release, on purpose.
+
+**In the M4 acceptance run, the module PR must reach `staging` before provisioning.** Don't run step 7 until step 6 has a Ready CMS deployment of the merged commit.
 
 **The site is optional** for M4's test 1 (decision 58). Without it, the test ends at step 10.
 
@@ -61,16 +63,16 @@
 | 3 | `pnpm install` and the snapshot | Local | 1 min |
 | 4 | Run the checks | Local | 1 min |
 | 5 | Code PR under the merge rule | HOSTED (GitHub) | 15 min, mostly waiting for CI and review |
-| 6 | Provision the tenant | HOSTED | 1 min |
-| 7 | Invite the editor | HOSTED | 1 min |
-| 8 | Advance staging | HOSTED | 6 min, mostly waiting for the deploy |
+| 6 | Advance staging | HOSTED | 6 min, mostly waiting for the deploy |
+| 7 | Provision the tenant | HOSTED | 1 min |
+| 8 | Invite the editor | HOSTED | 1 min |
 | 9 | Publish once | HOSTED (the editor, on staging) | 5 min |
 | 10 | Check the release | HOSTED (read only) | 2 min |
 | | **Without a site** | | **38 min** |
 | 11 | The site | HOSTED | 12 min, mostly waiting for the deploy |
 | | **With a site** | | **50 min** |
 
-The waits dominate: CI and review in step 5, and the deploys in steps 8 and 11. The commands take minutes.
+The waits dominate: CI and review in step 5, and the deploys in steps 6 and 11. The commands take minutes.
 
 **Stopping a local dry run.** Steps 1 to 4 are the local part. To undo them:
 
@@ -169,7 +171,13 @@ git pull --ff-only origin main
 pnpm install
 ```
 
-### Step 6. Provision the tenant
+### Step 6. Advance staging
+
+**HOSTED.** Owner: Einar. Section 8, with the merged commit of step 5. This deploys the CMS with the new module.
+
+**Verify:** section 8's checks pass, and `vefumsjon-staging` shows a Ready production deployment of a commit that holds the module. Only then go on.
+
+### Step 7. Provision the tenant
 
 **HOSTED.** Owner: Einar.
 
@@ -179,7 +187,7 @@ pnpm --silent --filter @litljomi/cli cli provision tenant '<tenant>' --name '<Te
 
 **Verify:** it prints `tenant <tenant>: <tenant-id>`. Keep the id. A rerun with the same name prints the same line. Another name fails with `slug_taken` and changes nothing.
 
-### Step 7. Invite the editor
+### Step 8. Invite the editor
 
 **HOSTED.** Owner: Einar. On staging, the editor is an address Einar controls.
 
@@ -188,12 +196,6 @@ pnpm --silent --filter @litljomi/cli cli provision editor --email '<address>' --
 ```
 
 **Verify:** it prints `invited <address>: user <user-id>` and `membership <tenant-id>: ok`. Keep the user id: section 5 needs it to revoke. A rerun prints `existing user <address>: user <user-id>` and finishes the memberships, whether or not the first run did. If a membership fails, the tool prints the exact command that finishes the job.
-
-The CMS doesn't have this module until step 8. Leave the invitation unopened until then.
-
-### Step 8. Advance staging
-
-**HOSTED.** Owner: Einar. Section 8. This deploys the CMS with the new module.
 
 ### Step 9. Publish once
 
