@@ -61,7 +61,7 @@ grant execute on function tests.api_functions(), tests.api_views(), tests.sqlsta
 select is((select count(*)::int from tests.api_functions()), 49, 'api holds 49 functions');
 select is((select count(*)::int from tests.api_functions() where name ~ '^(worker|admin)_'), 39,
   '39 of them are worker_* or admin_*');
-select is((select count(*)::int from tests.api_views()), 8, 'api holds 8 views');
+select is((select count(*)::int from tests.api_views()), 15, 'api holds 15 views');
 
 select tests.seed();
 insert into cms.entries (id, tenant_id, type, created_by) values

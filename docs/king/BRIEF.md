@@ -119,7 +119,8 @@ All numbered decisions are in `docs/plans/2026-11-01-m0-m1.md`, despite its name
 | 57 | M4 unfrozen. GitHub is for code and CI; docs stay local and reach GitHub in the next code PR |
 | 58 | M4 plan approved, test 1 runs without a live site, three small spec amendments |
 | 59 | Permission rules for read-only `git`; replaced by 60 |
-| 60 | Full git autonomy: `git` and `gh` run with no prompt, outside the sandbox. Merge rule and gates are unchanged |
+| 60 | Full git autonomy: `git` and `gh` run with no prompt, outside the sandbox. Gates are unchanged |
+| 61 | The KING merges once PASS, up to date and green CI all hold. M4 runs without stopping, except for hosted actions, `staging`, unsettled spec conflicts and unfixed failures |
 
 **Known not to be in the numbered decisions:**
 
@@ -165,10 +166,10 @@ Batch rulings at checkpoints, each with a recommendation. Ask for one hosted app
 
 ### Merging, as it really works
 
-1. An implementing thread opens a PR and never merges it.
+1. An implementer opens a PR and never merges it.
 2. A separate thread reviews it and posts `Review: PASS <full sha>`.
 3. The branch must be up to date with `main`, with CI green on that commit.
-4. The coordinator reports having no merge tool. It asks Einar, then a merge-only thread merges, one PR at a time, as a merge commit. Reported by the coordinator; every merge shows as `einar6969`.
+4. The KING merges, one PR at a time, as a merge commit, with no further approval from Einar (decision 61). Before that, on Nov 4, the coordinator asked Einar and a merge-only thread merged.
 
 This applies to everything except docs-only commits (decision 54), which the KING reads as `docs/**`. They need no PR, PASS or CI.
 
