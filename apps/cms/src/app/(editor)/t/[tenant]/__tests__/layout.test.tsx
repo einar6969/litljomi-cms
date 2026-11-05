@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('next/navigation', () => ({
+  usePathname: () => '/',
   notFound: vi.fn(() => {
     throw new Error('NOT_FOUND');
   }),

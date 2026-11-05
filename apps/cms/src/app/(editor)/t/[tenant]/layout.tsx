@@ -1,10 +1,16 @@
 import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
+import { signOut } from '@/app/login/actions';
+import { navSections } from '@/editor/structure';
 import { t } from '@/i18n/is';
 import { requireUserId } from '@/lib/auth/session';
 import { createEditorClient } from '@/lib/supabase/server';
 import { currentTenant, isActive } from '@/lib/tenant';
+import { getModule } from '@/modules/registry';
 import { Notice } from '@/ui/Notice';
+import { Shell } from '@/ui/Shell';
+import { Sidebar } from '@/ui/Sidebar';
+import { TopBar } from '@/ui/TopBar';
 
 type Props = { children: ReactNode; params: Promise<{ tenant: string }> };
 
@@ -17,15 +23,24 @@ export default async function TenantLayout({ children, params }: Props) {
   await requireUserId(await createEditorClient());
   const tenant = await currentTenant(slug);
   if (!tenant) notFound();
-  if (!isActive(tenant)) {
-    return (
-      <main>
-        <Notice as="div" tone="warning" className="flex flex-col gap-2">
-          <h1>{t.tenant.inactive}</h1>
-          <p>{t.tenant.inactiveBody}</p>
-        </Notice>
-      </main>
-    );
-  }
-  return <>{children}</>;
+  const active = isActive(tenant);
+  const sections = active ? navSections(getModule(tenant.slug)?.structure ?? []) : [];
+  const sidebar = <Sidebar tenant={{ slug: tenant.slug, name: tenant.name }} sections={sections} signOut={signOut} />;
+  return (
+    <Shell sidebar={sidebar}>
+      {active ? (
+        children
+      ) : (
+        <>
+          <TopBar title={tenant.name} home />
+          <main className="page page-home">
+            <Notice as="div" tone="warning">
+              <h1 className="text-xl">{t.tenant.inactive}</h1>
+              <p>{t.tenant.inactiveBody}</p>
+            </Notice>
+          </main>
+        </>
+      )}
+    </Shell>
+  );
 }

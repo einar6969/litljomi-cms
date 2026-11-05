@@ -10,6 +10,7 @@ import { prepareUpload, uploadOriginal } from '../../upload';
 import type { FieldProps } from '../field-registry';
 import { useEditorTenant } from '../tenant-context';
 import { Button, buttonClasses } from '@/ui/Button';
+import { Icon } from '@/ui/Icon';
 import { Field } from '@/ui/Field';
 import { Notice as NoticeBox, type NoticeTone } from '@/ui/Notice';
 
@@ -145,14 +146,37 @@ export function ImageField({ id, label, required, value, onChange }: FieldProps)
     }
   };
 
-  // The picker is a <label>, which has no disabled state: while busy it mirrors the `disabled:`
-  // look of the secondary Button (ui/Button.tsx); keep the two in step.
-  const busyPicker = busy ? 'cursor-not-allowed border-hairline bg-recessed text-muted' : 'cursor-pointer';
+  // The picker is a <label>, which has no disabled state: while busy it says so with aria-disabled.
+  // The native input is visually hidden but still the label's control: focusable, named, and what a
+  // test or a screen reader reaches.
+  const picker = (
+    <label
+      htmlFor={id}
+      aria-disabled={busy || undefined}
+      className={`${buttonClasses('secondary', 'sm')} relative has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent-text`}
+    >
+      {image ? t.editor.image.replace : t.editor.image.choose}
+      <input
+        id={id}
+        name={id}
+        type="file"
+        accept={ACCEPT}
+        required={required && !image}
+        disabled={busy}
+        className="sr-only"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = '';
+          if (file) void upload(file);
+        }}
+      />
+    </label>
+  );
   return (
-    <fieldset className="flex min-w-0 flex-col gap-3 rounded-lg border border-hairline p-4">
-      <legend className="px-1 text-[15px] font-medium">{label}</legend>
+    <fieldset className="fld">
+      <legend className="lab mb-1.5">{label}</legend>
       {image ? (
-        <div className="flex flex-col items-start gap-3">
+        <div className="imgf">
           {preview ? (
             <FocalPointPicker
               id={id}
@@ -162,52 +186,42 @@ export function ImageField({ id, label, required, value, onChange }: FieldProps)
               onSave={(focal) => void updateAsset({ focal }, 'focalSaved')}
               onImageError={previewFailed}
             />
-          ) : null}
-          <div className="w-full">
+          ) : (
+            <div className="thumb" />
+          )}
+          <div className="fld gap-2.5">
             <Field label={t.editor.image.alt} htmlFor={`${id}-alt`}>
               <input id={`${id}-alt`} name={`${id}-alt`} type="text" maxLength={MAX_ALT_LENGTH} value={image.alt} onChange={(e) => onChange({ ...image, alt: e.target.value })} />
             </Field>
+            <div className="acts">
+              {picker}
+              <Button variant="danger" size="sm" onClick={() => onChange(undefined)}>
+                {t.editor.image.remove}
+              </Button>
+            </div>
+            <div className="acts">
+              <Button
+                variant="quiet"
+                size="sm"
+                className="whitespace-normal"
+                disabled={!preview || image.alt === (preview.defaultAlt ?? '')}
+                onClick={() => void updateAsset({ defaultAlt: image.alt === '' ? null : image.alt }, 'defaultAltSaved')}
+              >
+                {t.editor.image.saveDefaultAlt}
+              </Button>
+            </div>
+            {/* A new tab (a plain link, no client navigation), so the form and anything not yet autosaved stay where they are. */}
+            <a href={`/t/${encodeURIComponent(tenant.slug)}/assets/${image._ref}`} target="_blank" rel="noopener" className="text-sm">
+              {t.editor.image.details}
+            </a>
           </div>
-          <div className="flex flex-wrap gap-3 max-sm:w-full max-sm:flex-col">
-            <Button disabled={!preview || image.alt === (preview.defaultAlt ?? '')} onClick={() => void updateAsset({ defaultAlt: image.alt === '' ? null : image.alt }, 'defaultAltSaved')}>
-              {t.editor.image.saveDefaultAlt}
-            </Button>
-            <Button variant="danger" onClick={() => onChange(undefined)}>
-              {t.editor.image.remove}
-            </Button>
-          </div>
-          {/* A new tab (a plain link, no client navigation), so the form and anything not yet autosaved stay where they are. */}
-          <a
-            href={`/t/${encodeURIComponent(tenant.slug)}/assets/${image._ref}`}
-            target="_blank"
-            rel="noopener"
-            className="inline-flex min-h-[44px] items-center text-[15px] font-medium"
-          >
-            {t.editor.image.details}
-          </a>
         </div>
-      ) : null}
-      {/* The native input is visually hidden but still the label's control: focusable, named, and what a test or a screen reader reaches. */}
-      <label
-        htmlFor={id}
-        className={`${buttonClasses('secondary')} relative self-start max-sm:w-full has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ink ${busyPicker}`}
-      >
-        {image ? t.editor.image.replace : t.editor.image.choose}
-        <input
-          id={id}
-          name={id}
-          type="file"
-          accept={ACCEPT}
-          required={required && !image}
-          disabled={busy}
-          className="sr-only"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            e.target.value = '';
-            if (file) void upload(file);
-          }}
-        />
-      </label>
+      ) : (
+        <div className="drop">
+          <Icon name="image" size={20} />
+          {picker}
+        </div>
+      )}
       {notice ? (
         // Progress and success are announced politely, failures as alerts. Not role="status": the
         // form's save status is the page's one status element.

@@ -8,11 +8,11 @@ export function ReleaseStatus({ status, code, step }: { status: string; code?: s
   const tone = TONES[status as keyof typeof TONES] ?? 'neutral';
   const detail = [code, step].filter(Boolean).join(' at ');
   return (
-    <span className="flex flex-col gap-1">
-      <StatusBadge as="span" tone={tone}>
+    <span className="stack">
+      <StatusBadge tone={tone}>
         {statusText(status)}
       </StatusBadge>
-      {detail ? <span className="text-muted">{detail}</span> : null}
+      {detail ? <span className="mono text-muted">{detail}</span> : null}
     </span>
   );
 }

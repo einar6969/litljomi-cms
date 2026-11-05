@@ -40,7 +40,7 @@ describe('the console layout', () => {
   it.each(['needs_mfa', 'ok'])('renders its children for %s, marked as English', async (level) => {
     access.consoleAccess.mockResolvedValue(level);
     const html = renderToStaticMarkup(await ConsoleLayout({ children: 'child' }));
-    expect(html).toBe('<div lang="en">child</div>');
+    expect(html).toBe('<div lang="en" class="console">child</div>');
   });
 });
 

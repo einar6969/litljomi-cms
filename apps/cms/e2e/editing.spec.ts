@@ -1,9 +1,11 @@
-// Task 23: entry list, new entry, generated form, autosave, conflict and slugs, as editor_labak
+// Task 23: entry list, new entry, generated form, autosave, conflict and the slug, as editor_labak
 // (the session saved by the editor-session setup project), against the local CMS and stack.
 import { randomBytes } from 'node:crypto';
 import type { Page } from '@playwright/test';
 import { t } from '../src/i18n/is';
 import { createNews } from './support/editor';
+import { editorHeadersOf, entryDetail } from './support/editor-api';
+import { SUPABASE_URL } from './support/local';
 import { sessionState } from './support/session';
 import { expect, test } from './support/test';
 
@@ -15,10 +17,9 @@ const DATE = 'Dagsetning';
 const BODY = 'Meginmál';
 const SAVED = { timeout: 10_000 };
 
-test('creates a news entry, suggests the slug from the title and autosaves', async ({ page }) => {
+test('creates a news entry and autosaves', async ({ page }) => {
   await createNews(page);
   await page.getByLabel(TITLE).fill('Brauð ársins 2025');
-  await expect(page.getByTestId('slug-suggestion')).toContainText('braud-arsins-2025');
   await expect(page.getByRole('status')).toHaveText(t.editor.saved, SAVED);
 
   // Since Task 24 every field kind of the news type has a component, so no field shows the
@@ -105,38 +106,27 @@ test('a second tab editing the same entry gives the first the conflict notice an
   await expect(page.getByLabel(TITLE)).toHaveValue('Fyrsti flipi, lagað');
 });
 
-test('a duplicate slug shows "Slóðin er þegar í notkun"', async ({ page }) => {
-  // A fresh slug per run: the local database keeps earlier runs' entries.
-  const title = `Afrit ${randomBytes(5).toString('hex')}`;
-  const slug = title.toLowerCase().replace(' ', '-');
+// Tenants never see or set a slug: the autosave keeps it in step with the title, and a taken slug
+// gets a number.
+test('the slug follows the title out of sight, and a taken slug gets a number', async ({ page }) => {
+  // A fresh title per run: the local database keeps earlier runs' entries.
+  const tag = randomBytes(5).toString('hex');
+  const statusRead = page.waitForRequest((r) => r.url().startsWith(`${SUPABASE_URL}/rest/v1/publication_status`));
+  const first = await createNews(page);
+  const editor = await editorHeadersOf(await statusRead);
+  await expect(page.getByLabel('Slóð')).toHaveCount(0);
 
-  await createNews(page);
-  await page.getByLabel(TITLE).fill(title);
-  await page.getByRole('button', { name: t.editor.slug.save }).click();
-  await expect(page.getByTestId('slug-notice')).toHaveText(t.editor.slug.saved);
-  await expect(page.getByLabel(t.editor.slug.label)).toHaveValue(slug);
+  const slugOf = (id: string) => () => entryDetail<{ slug: string | null }>(editor, id).then((entry) => entry.slug);
 
-  await createNews(page);
-  await page.getByLabel(TITLE).fill(title);
-  await page.getByRole('button', { name: t.editor.slug.save }).click();
-  await expect(page.getByTestId('slug-notice')).toHaveText('Slóðin er þegar í notkun');
-});
+  await page.getByLabel(TITLE).fill(`Brauð ${tag}`);
+  await expect.poll(slugOf(first), SAVED).toBe(`braud-${tag}`);
 
-// Decision 39.3: the suggestion is a placeholder, so typing into the field after focusing it gives
-// exactly what was typed, never the suggestion with the typing appended.
-test('typing a slug into the focused field gives exactly what was typed', async ({ page }) => {
-  const slug = `min-slod-${randomBytes(5).toString('hex')}`;
-  await createNews(page);
-  await page.getByLabel(TITLE).fill('Brauð ársins 2025');
-  const field = page.getByLabel(t.editor.slug.label);
-  await expect(field).toHaveAttribute('placeholder', 'braud-arsins-2025');
-  await field.click();
-  await page.keyboard.type(slug);
-  await expect(field).toHaveValue(slug);
-  await page.getByRole('button', { name: t.editor.slug.save }).click();
-  await expect(page.getByTestId('slug-notice')).toHaveText(t.editor.slug.saved);
-  await page.reload();
-  await expect(page.getByLabel(t.editor.slug.label)).toHaveValue(slug);
+  await page.getByLabel(TITLE).fill(`Kaka ${tag}`);
+  await expect.poll(slugOf(first), SAVED).toBe(`kaka-${tag}`);
+
+  const second = await createNews(page);
+  await page.getByLabel(TITLE).fill(`Kaka ${tag}`);
+  await expect.poll(slugOf(second), SAVED).toBe(`kaka-${tag}-2`);
 });
 
 // Decision 39.3: the rich-text area is named by its field label.

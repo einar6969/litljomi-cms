@@ -2,6 +2,7 @@
 
 import { isSingleton } from '@litljomi/cms-schema';
 import { z } from 'zod';
+import { syncSlug } from '@/editor/server/auto-slug';
 import { authOrError, failureAmong, hasSession, loadEntryContext, sessionUserId } from '@/editor/server/entry-context';
 import { readEntryDetail } from '@/editor/server/entry-detail';
 import { restoreRevision, type RestoreRevisionResult } from '@/editor/server/restore-revision';
@@ -17,8 +18,6 @@ import { getModule, getType } from '@/modules/registry';
 
 const entryId = z.uuid();
 const draftVersion = z.number().int().min(1).max(2_147_483_647);
-// The database check (§4.3, decision 2); the length bound keeps a long title's slug storable.
-const slugShape = z.string().max(200).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
 const MAX_NAME_LENGTH = 100;
 
 export type SaveDraftResult =
@@ -30,10 +29,6 @@ export type LoadDraftResult =
   | { ok: false; code: 'auth' | 'invalid' | 'error' };
 
 export type { RestoreRevisionResult, UpdateDraftSchemaResult };
-
-export type SetSlugResult =
-  | { ok: true; slug: string }
-  | { ok: false; code: 'invalid' | 'slug_taken' | 'slug_locked' | 'auth' | 'error' };
 
 /**
  * Creates an entry and its empty draft in a tenant the editor is a member of. The tenant comes
@@ -81,7 +76,8 @@ export async function openSingletonAction(tenantSlug: string, type: string): Pro
  * keys the type does not define (§5.3); `title` and `sort_at` come from the same type. The caller's
  * version is passed through, so a stale save is `version_conflict`. A field kind the form cannot
  * edit yet is saved unchanged because the form sends it back as it received it. `expectedUserId`
- * is the user the form was opened for; a session of any other user is answered `auth`.
+ * is the user the form was opened for; a session of any other user is answered `auth`. A saved
+ * draft also brings the entry's slug in step with its title: nobody sets a slug by hand.
  */
 export async function saveDraftAction(id: string, expectedVersion: number, data: unknown, expectedUserId: string): Promise<SaveDraftResult> {
   const args = z.object({ id: entryId, expectedVersion: draftVersion, expectedUserId: z.uuid() }).safeParse({ id, expectedVersion, expectedUserId });
@@ -108,7 +104,9 @@ export async function saveDraftAction(id: string, expectedVersion: number, data:
       p_sort_at: sortAt,
     });
     if (result.error) return { ok: false, code: failureAmong({ error: result.error, status: result.status }, ['version_conflict']) };
-    return typeof result.data === 'number' ? { ok: true, version: result.data } : { ok: false, code: 'error' };
+    if (typeof result.data !== 'number') return { ok: false, code: 'error' };
+    await syncSlug(client, context.entryId, context.slug, title);
+    return { ok: true, version: result.data };
   } catch {
     return { ok: false, code: 'error' };
   }
@@ -136,23 +134,6 @@ export async function loadDraftAction(id: string): Promise<LoadDraftResult> {
     const row = draftRow.safeParse(result.data);
     if (!row.success) return { ok: false, code: 'error' };
     return { ok: true, version: row.data.draft_version, data: isObject(row.data.data) ? row.data.data : {} };
-  } catch {
-    return { ok: false, code: 'error' };
-  }
-}
-
-/** Sets the entry's slug before its first publication (§4.6); the database locks it afterwards. */
-export async function setSlugAction(id: string, slug: string): Promise<SetSlugResult> {
-  const args = z.object({ id: entryId, slug: slugShape }).safeParse({ id, slug });
-  if (!args.success) return { ok: false, code: 'invalid' };
-  try {
-    const client = await createEditorClient();
-    if (!(await hasSession(client))) return { ok: false, code: 'auth' };
-    const context = await loadEntryContext(client, args.data.id);
-    if (!context) return { ok: false, code: 'error' };
-    const result = await client.rpc('set_slug', { p_entry_id: context.entryId, p_slug: args.data.slug });
-    if (result.error) return { ok: false, code: failureAmong({ error: result.error, status: result.status }, ['slug_taken', 'slug_locked']) };
-    return { ok: true, slug: args.data.slug };
   } catch {
     return { ok: false, code: 'error' };
   }

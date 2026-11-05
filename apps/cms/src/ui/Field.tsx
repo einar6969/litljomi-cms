@@ -29,8 +29,8 @@ export const fieldErrorId = (htmlFor: string) => `${htmlFor}-error`;
  */
 export function Field({ label, htmlFor, children, help, error, required = false }: Props) {
   return (
-    <div className="flex flex-col gap-1.5 text-[15px] font-medium">
-      <label htmlFor={htmlFor} className="flex flex-col gap-1.5">
+    <div className="fld">
+      <label htmlFor={htmlFor} className="fld">
         <LabelText label={label} required={required} />
         {children}
       </label>
@@ -46,8 +46,8 @@ export function Field({ label, htmlFor, children, help, error, required = false 
  */
 export function FieldGroup({ id, label, children, help, error, required = false, describedBy }: Omit<Props, 'htmlFor'> & { id: string; describedBy?: string }) {
   return (
-    <div className="flex flex-col gap-1.5 text-[15px] font-medium">
-      <fieldset id={id} aria-describedby={describedBy} className="flex min-w-0 flex-col gap-1.5">
+    <div className="fld">
+      <fieldset id={id} aria-describedby={describedBy} className="fld">
         <legend className="mb-1.5">
           <LabelText label={label} required={required} />
         </legend>
@@ -66,10 +66,10 @@ export function describedByOf(id: string, { help, error }: { help?: unknown; err
 
 function LabelText({ label, required }: { label: string; required: boolean }) {
   return (
-    <span>
+    <span className="lab">
       {label}
       {required ? (
-        <span aria-hidden="true" data-required-marker="" className="ml-1 text-danger">
+        <span aria-hidden="true" data-required-marker="" className="req">
           *
         </span>
       ) : null}
@@ -81,12 +81,12 @@ function HelpAndError({ id, help, error }: { id: string; help?: ReactNode; error
   return (
     <>
       {help ? (
-        <span id={fieldHelpId(id)} className="text-sm font-normal text-muted">
+        <span id={fieldHelpId(id)} className="help">
           {help}
         </span>
       ) : null}
       {error ? (
-        <span id={fieldErrorId(id)} role="alert" className="text-sm font-medium text-danger">
+        <span id={fieldErrorId(id)} role="alert" className="err">
           {error}
         </span>
       ) : null}

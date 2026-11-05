@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { t } from '@/i18n/is';
 import { Button } from '@/ui/Button';
+import { Icon } from '@/ui/Icon';
 import { Notice } from '@/ui/Notice';
 
 export type PreviewTokenAnswer = { status: number; body: unknown };
@@ -76,9 +77,10 @@ export function PreviewButton({ entryId, disabled = false, unsaved, request = re
   };
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-2">
       <Button variant="secondary" disabled={disabled || busy} onClick={() => void open()}>
         {busy ? t.preview.opening : t.preview.open}
+        <Icon name="arrowUpRight" />
       </Button>
       {notice ? (
         <Notice tone="error" role="alert">

@@ -3,11 +3,15 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { NewEntryButton } from '@/editor/NewEntryButton';
 import { OpenSingleton } from '@/editor/OpenSingleton';
+import { SearchShortcut } from '@/editor/SearchShortcut';
+import { structureLabel } from '@/editor/structure';
 import { applyEntryListFilter, isFiltered, MAX_QUERY_LENGTH, parseEntryListFilter, STATUS_FILTERS, type StatusFilter } from '@/editor/entry-list-filter';
 import { t } from '@/i18n/is';
 import { Button } from '@/ui/Button';
-import { Field } from '@/ui/Field';
-import { StatusBadge } from '@/ui/StatusBadge';
+import { Icon } from '@/ui/Icon';
+import { StatusBadge, type BadgeTone } from '@/ui/StatusBadge';
+import { TopBar } from '@/ui/TopBar';
+import { Cloud } from '@/ui/Wordmark';
 import { createEditorClient } from '@/lib/supabase/server';
 import { currentTenant, isActive } from '@/lib/tenant';
 import { getModule, getType } from '@/modules/registry';
@@ -21,11 +25,8 @@ type Row = { id: string; slug: string | null; title: string | null; status: keyo
 
 const MAX_ROWS = 200;
 
-// Only "Birt" is a positive state; the others are neutral.
-const STATUS_TONE: Partial<Record<Row['status'], 'ok' | 'pending'>> = { published: 'ok' };
-// Below 768 px the table is restyled as stacked rows (globals.css). Some screen readers drop a
-// table's semantics once it is no longer display:table, so the roles are stated explicitly.
-const HEAD = 'py-2 pr-4 font-display text-xs font-semibold uppercase tracking-wider text-muted';
+// Green is what is live; amber is a live entry whose draft has moved on; the rest are neutral.
+const STATUS_TONE: Partial<Record<Row['status'], BadgeTone>> = { published: 'ok', changed: 'warning', archived: 'hollow', draft: 'neutral' };
 
 const FILTER_LABELS: Record<StatusFilter, string> = { ...t.entries.statuses, unpublished: t.entries.filter.unpublished };
 
@@ -42,12 +43,19 @@ export default async function EntryListPage({ params, searchParams }: Props) {
   if (!isActive(tenant)) return null;
   const type = getType(tenant.slug, typeName);
   if (!type) notFound();
-  if (isSingleton(getModule(tenant.slug)!, type.name)) {
+  const manifest = getModule(tenant.slug)!;
+  const heading = structureLabel(manifest.structure, type.name) ?? type.label;
+  const tenantPath = `/t/${encodeURIComponent(tenant.slug)}`;
+  const bar = <TopBar title={tenant.name} crumbs={[{ label: tenant.name, href: tenantPath }, { label: heading }]} />;
+  if (isSingleton(manifest, type.name)) {
     return (
-      <main className="flex flex-col gap-6">
-        <h1>{type.label}</h1>
-        <OpenSingleton tenantSlug={tenant.slug} type={type.name} />
-      </main>
+      <>
+        {bar}
+        <main className="page">
+          <h1>{heading}</h1>
+          <OpenSingleton tenantSlug={tenant.slug} type={type.name} />
+        </main>
+      </>
     );
   }
   const query = (await createEditorClient())
@@ -61,69 +69,92 @@ export default async function EntryListPage({ params, searchParams }: Props) {
   if (error) throw new Error(`entry_list: ${error.code}`);
   const rows = (data ?? []) as Row[];
   const base = `/t/${encodeURIComponent(tenant.slug)}/${encodeURIComponent(type.name)}`;
+  const filtered = isFiltered(filter);
   return (
-    <main className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1>{type.label}</h1>
-        <NewEntryButton tenantSlug={tenant.slug} type={type.name} />
-      </div>
-      <form role="search" aria-label={t.entries.filter.label} method="get" action={base} className="flex flex-wrap items-end gap-3">
-        <div className="min-w-[12rem] flex-1">
-          <Field label={t.entries.filter.search} htmlFor="entry-search">
-            <input id="entry-search" name="q" type="search" maxLength={MAX_QUERY_LENGTH} defaultValue={filter.q} />
-          </Field>
+    <>
+      {bar}
+      <main className="page">
+        <SearchShortcut inputId="entry-search" />
+        <div className="head">
+          <h1>{heading}</h1>
+          <NewEntryButton tenantSlug={tenant.slug} type={type.name} />
         </div>
-        <Field label={t.entries.filter.status} htmlFor="entry-status">
-          <select id="entry-status" name="status" defaultValue={filter.status ?? ''}>
-            <option value="">{t.entries.filter.all}</option>
-            {STATUS_FILTERS.map((status) => (
-              <option key={status} value={status}>
-                {FILTER_LABELS[status]}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Button type="submit">{t.entries.filter.submit}</Button>
-        {isFiltered(filter) ? (
-          <Link href={base} className="inline-flex min-h-[44px] items-center">
-            {t.entries.filter.clear}
-          </Link>
-        ) : null}
-      </form>
-      {rows.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-control bg-recessed px-4 py-8 text-center text-muted">
-          {isFiltered(filter) ? t.entries.filter.none : t.entries.empty}
-        </p>
-      ) : (
-        <table role="table" className="entry-table w-full border-collapse text-left">
-          <thead role="rowgroup">
-            <tr role="row" className="border-b border-ink">
-              <th role="columnheader" className={HEAD}>{t.entries.title}</th>
-              <th role="columnheader" className={HEAD}>{t.entries.status}</th>
-              <th role="columnheader" className={HEAD}>{t.entries.updated}</th>
-            </tr>
-          </thead>
-          <tbody role="rowgroup">
-            {rows.map((row) => (
-              <tr key={row.id} role="row" className="border-b border-hairline">
-                <td role="cell" className="py-1 pr-4 md:py-2">
-                  <Link href={`${base}/${row.id}`} className="inline-flex min-h-[44px] items-center text-lg font-semibold md:text-base">
-                    {row.title ?? t.entries.untitled}
-                  </Link>
-                </td>
-                <td role="cell" className="py-2 pr-4">
-                  <StatusBadge as="span" tone={STATUS_TONE[row.status] ?? 'pending'} className="text-sm">
-                    {t.entries.statuses[row.status] ?? row.status}
-                  </StatusBadge>
-                </td>
-                <td role="cell" className="py-2 text-sm text-muted">
-                  <time dateTime={row.updated_at}>{new Date(row.updated_at).toLocaleString('is-IS', { timeZone: 'Atlantic/Reykjavik' })}</time>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </main>
+        {rows.length === 0 && !filtered ? null : (
+          <form role="search" aria-label={t.entries.filter.label} method="get" action={base} className="tools">
+            <div className="search">
+              <label htmlFor="entry-search" className="sr-only">
+                {t.entries.filter.search}
+              </label>
+              <Icon name="search" />
+              <input id="entry-search" name="q" type="search" placeholder={t.entries.filter.search} maxLength={MAX_QUERY_LENGTH} defaultValue={filter.q} />
+              <span className="kbd" aria-hidden="true">
+                /
+              </span>
+            </div>
+            <label htmlFor="entry-status" className="sr-only">
+              {t.entries.filter.status}
+            </label>
+            <select id="entry-status" name="status" defaultValue={filter.status ?? ''}>
+              <option value="">{t.entries.filter.all}</option>
+              {STATUS_FILTERS.map((status) => (
+                <option key={status} value={status}>
+                  {FILTER_LABELS[status]}
+                </option>
+              ))}
+            </select>
+            <Button type="submit">{t.entries.filter.submit}</Button>
+            {filtered ? (
+              <Link href={base} className="inline-flex min-h-[44px] items-center px-2 text-sm">
+                {t.entries.filter.clear}
+              </Link>
+            ) : null}
+          </form>
+        )}
+        {rows.length === 0 ? (
+          <div className="card empty">
+            {filtered ? null : <Cloud />}
+            <p>{filtered ? t.entries.filter.none : t.entries.empty}</p>
+            {filtered ? null : <NewEntryButton tenantSlug={tenant.slug} type={type.name} />}
+          </div>
+        ) : (
+          <div className="card tbl-w">
+            {/* Below 768 px the table is restyled as stacked rows (globals.css). Some screen readers
+                drop a table's semantics once it is no longer display:table, so the roles are stated. */}
+            <table role="table" className="tbl entry-table">
+              <thead role="rowgroup">
+                <tr role="row">
+                  <th role="columnheader">{t.entries.title}</th>
+                  <th role="columnheader" className="w-status">
+                    {t.entries.status}
+                  </th>
+                  <th role="columnheader" className="w-time">
+                    {t.entries.updated}
+                  </th>
+                </tr>
+              </thead>
+              <tbody role="rowgroup">
+                {rows.map((row) => (
+                  <tr key={row.id} role="row">
+                    <td role="cell">
+                      <Link href={`${base}/${row.id}`} className={row.title ? 't' : 't text-muted'}>
+                        {row.title ?? t.entries.untitled}
+                      </Link>
+                    </td>
+                    <td role="cell">
+                      <StatusBadge tone={STATUS_TONE[row.status] ?? 'neutral'}>{t.entries.statuses[row.status] ?? row.status}</StatusBadge>
+                    </td>
+                    <td role="cell">
+                      <time className="mono text-muted" dateTime={row.updated_at}>
+                        {new Date(row.updated_at).toLocaleString('is-IS', { timeZone: 'Atlantic/Reykjavik' })}
+                      </time>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </main>
+    </>
   );
 }

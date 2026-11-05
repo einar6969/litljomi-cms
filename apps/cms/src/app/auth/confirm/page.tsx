@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
 import { t } from '@/i18n/is';
 import { createDetachedClient, createEditorClient } from '@/lib/supabase/server';
+import { AuthFrame } from '@/ui/AuthFrame';
 import { Button } from '@/ui/Button';
 import { Notice } from '@/ui/Notice';
-import { Wordmark } from '@/ui/Wordmark';
 import { confirmSignIn, keepSession, replaceSession } from './actions';
 import { DropLinkQuery } from './DropLinkQuery';
 import { readPending } from './pending';
@@ -39,45 +39,39 @@ export default async function ConfirmPage({ searchParams }: Props) {
   const emailChange = first(type) === 'email_change';
   const signedIn = !emailChange && (await hasSession());
   return (
-    <main className="flex max-w-[480px] flex-col gap-6 pt-12 md:pt-24">
+    <AuthFrame>
       <DropLinkQuery />
-      <Wordmark />
-      <div className="flex flex-col gap-2">
-        <h1>{emailChange ? t.confirm.emailChangeTitle : t.confirm.title}</h1>
-        <p className="text-muted">{emailChange ? t.confirm.emailChangeIntro : t.confirm.intro}</p>
-      </div>
+      <h1>{emailChange ? t.confirm.emailChangeTitle : t.confirm.title}</h1>
+      <p className="lede">{emailChange ? t.confirm.emailChangeIntro : t.confirm.intro}</p>
       {signedIn ? (
         <Notice tone="info" role="status">
           <span className="font-semibold">{t.confirm.signedIn}</span> {t.confirm.signedInDetail}
         </Notice>
       ) : null}
-      <form action={confirmSignIn} className="flex flex-col gap-4">
+      <form action={confirmSignIn}>
         <input type="hidden" name="token_hash" value={first(token_hash)} />
         <input type="hidden" name="type" value={first(type)} />
         <input type="hidden" name="next" value={first(next)} />
-        <Button type="submit" variant="primary">
+        <Button type="submit" variant="primary" className="btn-wide">
           {t.confirm.submit}
         </Button>
       </form>
-    </main>
+    </AuthFrame>
   );
 }
 
 /** The question before a link replaces the visitor's session: the link's account and two buttons. */
 function ReplaceQuestion({ email }: { email: string }) {
   return (
-    <main className="flex max-w-[480px] flex-col gap-6 pt-12 md:pt-24">
-      <Wordmark />
-      <div className="flex flex-col gap-2">
-        <h1>{t.confirm.replaceTitle}</h1>
-        <p>
-          {t.confirm.replaceAccount} <strong>{email}</strong>.
-        </p>
-        <p className="text-muted">{t.confirm.replaceDetail}</p>
-      </div>
-      <div className="flex flex-wrap gap-3">
+    <AuthFrame>
+      <h1>{t.confirm.replaceTitle}</h1>
+      <p>
+        {t.confirm.replaceAccount} <strong>{email}</strong>.
+      </p>
+      <p className="lede">{t.confirm.replaceDetail}</p>
+      <div className="acts">
         <form action={replaceSession}>
-          <Button type="submit" variant="primary">
+          <Button type="submit" variant="ink">
             {t.confirm.replace}
           </Button>
         </form>
@@ -85,7 +79,7 @@ function ReplaceQuestion({ email }: { email: string }) {
           <Button type="submit">{t.confirm.keep}</Button>
         </form>
       </div>
-    </main>
+    </AuthFrame>
   );
 }
 

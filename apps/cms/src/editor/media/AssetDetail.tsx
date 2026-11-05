@@ -72,37 +72,41 @@ export function AssetDetail({ assetId, url: initialUrl, filename, width, height,
 
   const trimmed = alt.trim();
   return (
-    <div className="flex flex-col gap-6">
-      <FocalPointPicker
-        id={ID}
-        url={url}
-        alt={savedAlt}
-        focal={focal}
-        onSave={(next) => void save({ focal: next }, 'focalSaved', () => setFocal(next))}
-        onImageError={() => void previewFailed()}
-      />
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[15px]">
-        <dt className="font-medium">{t.asset.filename}</dt>
-        <dd className="min-w-0 break-words" data-testid="asset-filename">
-          {filename}
-        </dd>
-        <dt className="font-medium">{t.asset.size}</dt>
-        <dd data-testid="asset-size">
-          {t.asset.dimensions.replace('{width}', String(width)).replace('{height}', String(height))}
-        </dd>
-      </dl>
-      <form
-        className="flex flex-col items-start gap-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const next = trimmed === '' ? null : trimmed;
-          void save({ defaultAlt: next }, 'defaultAltSaved', () => {
-            setSavedAlt(next ?? '');
-            setAlt(next ?? '');
-          });
-        }}
-      >
-        <div className="w-full">
+    <div className="asset">
+      <div className="card sheet">
+        <FocalPointPicker
+          id={ID}
+          url={url}
+          alt={savedAlt}
+          focal={focal}
+          onSave={(next) => void save({ focal: next }, 'focalSaved', () => setFocal(next))}
+          onImageError={() => void previewFailed()}
+        />
+      </div>
+      <div className="flex min-w-0 flex-col gap-4">
+        <section className="card sub">
+          <dl className="meta">
+            <dt>{t.asset.filename}</dt>
+            <dd className="mono min-w-0 break-words" data-testid="asset-filename">
+              {filename}
+            </dd>
+            <dt>{t.asset.size}</dt>
+            <dd className="mono" data-testid="asset-size">
+              {t.asset.dimensions.replace('{width}', String(width)).replace('{height}', String(height))}
+            </dd>
+          </dl>
+        </section>
+        <form
+          className="card sub"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const next = trimmed === '' ? null : trimmed;
+            void save({ defaultAlt: next }, 'defaultAltSaved', () => {
+              setSavedAlt(next ?? '');
+              setAlt(next ?? '');
+            });
+          }}
+        >
           <Field label={t.asset.defaultAlt} htmlFor={`${ID}-default-alt`} help={t.asset.defaultAltHelp}>
             <input
               id={`${ID}-default-alt`}
@@ -114,20 +118,20 @@ export function AssetDetail({ assetId, url: initialUrl, filename, width, height,
               onChange={(e) => setAlt(e.target.value)}
             />
           </Field>
-        </div>
-        <Button type="submit" disabled={trimmed === savedAlt} className="max-sm:w-full">
-          {t.asset.saveDefaultAlt}
-        </Button>
-      </form>
-      {notice ? (
-        <NoticeBox
-          data-testid={`${ID}-notice`}
-          tone={notice.endsWith('Saved') ? 'success' : 'error'}
-          {...(notice.endsWith('Saved') ? { 'aria-live': 'polite' as const } : { role: 'alert' })}
-        >
-          {messages[notice]}
-        </NoticeBox>
-      ) : null}
+          <Button type="submit" size="sm" disabled={trimmed === savedAlt}>
+            {t.asset.saveDefaultAlt}
+          </Button>
+        </form>
+        {notice ? (
+          <NoticeBox
+            data-testid={`${ID}-notice`}
+            tone={notice.endsWith('Saved') ? 'success' : 'error'}
+            {...(notice.endsWith('Saved') ? { 'aria-live': 'polite' as const } : { role: 'alert' })}
+          >
+            {messages[notice]}
+          </NoticeBox>
+        ) : null}
+      </div>
     </div>
   );
 }

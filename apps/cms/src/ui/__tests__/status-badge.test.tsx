@@ -20,9 +20,19 @@ describe('StatusBadge tones', () => {
     expect(dot('neutral')).toEqual(dot('pending').filter((c) => c !== 'motion-safe:animate-pulse'));
   });
 
-  it('warning ("Enginn vefur tengdur") is the warning colour with canvas (white) text and dot', () => {
-    expect(pill('warning')).toEqual(expect.arrayContaining(['bg-warning', 'text-canvas']));
-    expect(dot('warning')).toContain('bg-canvas');
+  it('warning ("Enginn vefur tengdur") and error carry their own tone; ok is the accent', () => {
+    expect(pill('warning')).toContain('pill-warning');
+    expect(pill('error')).toContain('pill-error');
+    expect(pill('ok')).toContain('pill-ok');
+  });
+
+  it('the publish panel\'s look is the same tones at full width', () => {
+    const html = renderToStaticMarkup(
+      <StatusBadge tone="ok" look="state">
+        Birt
+      </StatusBadge>,
+    );
+    expect(classesOf(html, 0)).toEqual(['state', 'state-ok']);
   });
 
   it('the text is the status; the dot is hidden from assistive technology', () => {

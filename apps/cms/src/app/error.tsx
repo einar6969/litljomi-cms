@@ -2,6 +2,7 @@
 
 import { t } from '@/i18n/is';
 import { Button } from '@/ui/Button';
+import { Wordmark } from '@/ui/Wordmark';
 
 /**
  * Shown in place of a page whose server or client code failed (M2-19): without it the editor
@@ -10,16 +11,17 @@ import { Button } from '@/ui/Button';
  */
 export default function ErrorPage({ reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
-    <main>
-      <h1>{t.error.title}</h1>
-      <p className="mt-4" role="alert">
-        {t.error.body}
-      </p>
-      <p className="mt-6">
-        <Button variant="primary" onClick={() => reset()}>
+    <div className="msg">
+      <Wordmark />
+      <main className="msg-b">
+        <h1>{t.error.title}</h1>
+        <p className="text-muted" role="alert">
+          {t.error.body}
+        </p>
+        <Button variant="ink" onClick={() => reset()}>
           {t.error.retry}
         </Button>
-      </p>
-    </main>
+      </main>
+    </div>
   );
 }

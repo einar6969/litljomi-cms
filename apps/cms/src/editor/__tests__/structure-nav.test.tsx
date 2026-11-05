@@ -2,6 +2,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { t } from '@/i18n/is';
 
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => undefined }) }));
+vi.mock('@/app/(editor)/t/[tenant]/actions', () => ({ createEntryAction: vi.fn() }));
 vi.mock('next/link', () => ({ default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => <a href={href} {...rest}>{children}</a> }));
 
 const { StructureNav } = await import('../StructureNav');

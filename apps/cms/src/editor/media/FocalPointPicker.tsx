@@ -85,7 +85,7 @@ export function FocalPointPicker({ id, url, alt, focal, onSave, onImageError }: 
         onClick={onClick}
         onKeyDown={onKeyDown}
         onBlur={flush}
-        className="relative inline-block min-h-0 max-w-full cursor-crosshair overflow-hidden rounded-lg border border-hairline bg-recessed p-0 leading-none hover:bg-recessed"
+        className="relative inline-block min-h-0 max-w-full cursor-crosshair overflow-hidden rounded-md border border-hairline bg-recessed p-0 leading-none"
       >
         <img data-testid={`${id}-preview`} src={url} alt={alt} className="block max-h-[240px] max-w-full" onError={onImageError} />
         {shown !== null ? (
@@ -97,11 +97,13 @@ export function FocalPointPicker({ id, url, alt, focal, onSave, onImageError }: 
           />
         ) : null}
       </button>
-      <p id={helpId} className="text-sm text-muted">
+      <p id={helpId} className="help">
         <span data-testid={`${id}-focal-value`}>{describe(shown)}</span> {t.editor.image.focalHelp}
       </p>
       {focal !== null || pending !== null ? (
-        <Button onClick={() => save(null)}>{t.editor.image.clearFocal}</Button>
+        <Button size="sm" onClick={() => save(null)}>
+          {t.editor.image.clearFocal}
+        </Button>
       ) : null}
     </div>
   );

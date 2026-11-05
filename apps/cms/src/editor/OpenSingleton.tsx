@@ -31,17 +31,22 @@ export function OpenSingleton({ tenantSlug, type }: { tenantSlug: string; type: 
   }, [open]);
   if (state === 'opening') {
     return (
-      <p role="status" className="text-muted">
-        {t.singleton.opening}
-      </p>
+      <div className="card empty">
+        <span className="spin" />
+        <p role="status" className="text-muted">
+          {t.singleton.opening}
+        </p>
+      </div>
     );
   }
   return (
     <div className="flex flex-col items-start gap-3">
-      <Notice tone="error" role="alert">
+      <Notice tone="error" role="alert" className="w-full">
         {state === 'auth' ? t.editor.signedOut : t.singleton.openFailed}
       </Notice>
-      <Button onClick={() => void open()}>{t.editor.retry}</Button>
+      <Button size="sm" onClick={() => void open()}>
+        {t.editor.retry}
+      </Button>
     </div>
   );
 }

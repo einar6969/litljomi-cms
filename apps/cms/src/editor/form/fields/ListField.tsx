@@ -4,6 +4,7 @@ import { newItemKey, type ListItem } from '@litljomi/cms-schema/src/fields/list.
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
 import { t } from '@/i18n/is';
 import { Button } from '@/ui/Button';
+import { Icon } from '@/ui/Icon';
 import { describedByOf, FieldGroup } from '@/ui/Field';
 import type { FieldProps } from '../field-registry';
 import { FieldInput } from '../FieldInput';
@@ -149,8 +150,8 @@ export function ListField({ id, label, required, value, onChange, of, min, max }
   return (
     <FieldGroup id={id} label={label} required={required} help={help} error={error} describedBy={describedByOf(id, { help, error })}>
       <div ref={rootRef} className="flex flex-col gap-3">
-      {items.length === 0 ? <p className="text-sm font-normal text-muted">{l.empty}</p> : null}
-      <ol className="flex flex-col gap-3">
+      {items.length === 0 ? <p className="help">{l.empty}</p> : null}
+      <ol className="flex flex-col gap-2">
         {items.map((item, index) => {
           const name = itemLabel(index + 1);
           const fill = (s: string) => s.replace('{item}', name);
@@ -175,9 +176,9 @@ export function ListField({ id, label, required, value, onChange, of, min, max }
                 setDragged(null);
                 setArmed(null);
               }}
-              className={`flex flex-col gap-3 rounded-lg border border-hairline p-4 ${dragged === item._key ? 'opacity-50' : ''}`}
+              className={`li ${dragged === item._key ? 'opacity-50' : ''}`}
             >
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="li-head">
                 <button
                   type="button"
                   data-handle=""
@@ -185,27 +186,27 @@ export function ListField({ id, label, required, value, onChange, of, min, max }
                   onKeyDown={(e) => onHandleKey(e, index)}
                   onPointerDown={() => setArmed(item._key)}
                   onPointerUp={() => setArmed(null)}
-                  className="inline-flex min-h-[44px] min-w-[44px] cursor-grab items-center justify-center rounded-md text-muted"
+                  className="icbtn cursor-grab"
                 >
-                  <span aria-hidden="true">⠿</span>
+                  <Icon name="grip" />
                 </button>
-                <span className="ml-auto flex flex-wrap gap-2">
+                <span className="ml-auto flex">
                   {index > 0 ? (
-                    <Button variant="secondary" aria-label={fill(l.moveUp)} onClick={() => move(index, index - 1)}>
-                      <span aria-hidden="true">↑</span>
-                    </Button>
+                    <button type="button" className="icbtn" aria-label={fill(l.moveUp)} onClick={() => move(index, index - 1)}>
+                      <Icon name="chevronUp" />
+                    </button>
                   ) : null}
                   {index < items.length - 1 ? (
-                    <Button variant="secondary" aria-label={fill(l.moveDown)} onClick={() => move(index, index + 1)}>
-                      <span aria-hidden="true">↓</span>
-                    </Button>
+                    <button type="button" className="icbtn" aria-label={fill(l.moveDown)} onClick={() => move(index, index + 1)}>
+                      <Icon name="chevronDown" />
+                    </button>
                   ) : null}
-                  <Button variant="secondary" onClick={() => remove(index)}>
-                    {fill(l.remove)}
-                  </Button>
+                  <button type="button" className="icbtn" aria-label={fill(l.remove)} onClick={() => remove(index)}>
+                    <Icon name="close" />
+                  </button>
                 </span>
               </div>
-              <div data-item-body="">
+              <div data-item-body="" className="li-body">
                 {itemField ? (
                   <FieldInput field={itemField} id={`${id}-${item._key}`} label={name} value={item.value ?? undefined} onChange={(next) => setItem(item._key, next)} />
                 ) : null}
@@ -215,7 +216,8 @@ export function ListField({ id, label, required, value, onChange, of, min, max }
         })}
       </ol>
       <div data-add="">
-        <Button variant="secondary" onClick={add} disabled={full}>
+        <Button size="sm" onClick={add} disabled={full}>
+          <Icon name="plus" />
           {l.add}
         </Button>
       </div>

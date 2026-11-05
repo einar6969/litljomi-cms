@@ -6,6 +6,7 @@ import { describeFields } from '@/editor/form/descriptors';
 import { EntryForm } from '@/editor/form/EntryForm';
 import { OutdatedDraft } from '@/editor/form/OutdatedDraft';
 import { RESTORED_PARAM } from '@/editor/revisions';
+import { structureLabel } from '@/editor/structure';
 import { readEntryDetail } from '@/editor/server/entry-detail';
 import { loadRevisionHistory } from '@/editor/server/restore-revision';
 import { t } from '@/i18n/is';
@@ -13,6 +14,8 @@ import { requireUserId } from '@/lib/auth/session';
 import { createEditorClient } from '@/lib/supabase/server';
 import { currentTenant, isActive } from '@/lib/tenant';
 import { getModule, getType } from '@/modules/registry';
+import { Icon } from '@/ui/Icon';
+import { TopBar, type Crumb } from '@/ui/TopBar';
 
 type Props = {
   params: Promise<{ tenant: string; type: string; entryId: string }>;
@@ -46,35 +49,47 @@ export default async function EntryPage({ params, searchParams }: Props) {
   const fields = describeFields(type);
   const fieldLabels = Object.fromEntries(fields.map((f) => [f.key, f.label]));
   // A singleton has no list to go back to: its type's page would open this entry again.
-  const singleton = isSingleton(getModule(tenant.slug)!, type.name);
+  const manifest = getModule(tenant.slug)!;
+  const singleton = isSingleton(manifest, type.name);
   const tenantPath = `/t/${encodeURIComponent(tenant.slug)}`;
+  const listLabel = structureLabel(manifest.structure, type.name) ?? type.label;
+  const stored = isObject(entry.data) ? entry.data : {};
+  const titleValue = stored[type.preview.title];
+  const title = typeof titleValue === 'string' && titleValue !== '' ? titleValue : t.entries.untitled;
+  const backTo = singleton ? tenantPath : `${tenantPath}/${encodeURIComponent(type.name)}`;
+  const backName = singleton ? t.entries.backHome : t.entries.back;
+  const crumbs: Crumb[] = singleton
+    ? [{ label: tenant.name, href: tenantPath, name: backName }, { label: listLabel }]
+    : [{ label: tenant.name, href: tenantPath }, { label: listLabel, href: backTo, name: backName }, { label: title }];
   return (
-    <main className="flex flex-col gap-4">
-      <p>
-        <Link href={singleton ? tenantPath : `${tenantPath}/${encodeURIComponent(type.name)}`} className="inline-flex min-h-[44px] items-center text-[15px] font-medium">
-          {singleton ? t.entries.backHome : t.entries.back}
-        </Link>
-      </p>
-      <h1>{type.label}</h1>
-      {outdated ? (
-        // §5.3, M2-14: a draft written at an older version is updated before it can be edited.
-        <OutdatedDraft entryId={entryId} version={entry.draft_version} published={published} fieldLabels={fieldLabels} />
-      ) : (
-        <EntryForm
-          tenant={{ id: tenant.id, slug: tenant.slug }}
-          userId={userId}
-          entryId={entryId}
-          fields={fields}
-          titleKey={type.preview.title}
-          initialData={isObject(entry.data) ? entry.data : {}}
-          initialVersion={entry.draft_version}
-          initialSlug={entry.slug}
-          slugLocked={entry.first_published_at !== null}
-          published={published}
-          revisions={revisions}
-          restored={restored}
-        />
-      )}
-    </main>
+    <>
+      <TopBar title={tenant.name} crumbs={crumbs} saves={!outdated} />
+      <main className="page">
+        <div>
+          <Link href={backTo} className="back">
+            <Icon name="chevronLeft" />
+            {backName}
+          </Link>
+          <h1>{type.label}</h1>
+        </div>
+        {outdated ? (
+          // §5.3, M2-14: a draft written at an older version is updated before it can be edited.
+          <OutdatedDraft entryId={entryId} version={entry.draft_version} published={published} fieldLabels={fieldLabels} />
+        ) : (
+          <EntryForm
+            tenant={{ id: tenant.id, slug: tenant.slug }}
+            userId={userId}
+            entryId={entryId}
+            fields={fields}
+            titleKey={type.preview.title}
+            initialData={stored}
+            initialVersion={entry.draft_version}
+            published={published}
+            revisions={revisions}
+            restored={restored}
+          />
+        )}
+      </main>
+    </>
   );
 }

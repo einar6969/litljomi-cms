@@ -20,7 +20,7 @@ type Props<T> = {
  */
 export function Section<T>({ id, title, noun, read, columns, rowKey }: Props<T>) {
   return (
-    <section aria-labelledby={id} className="flex flex-col gap-3">
+    <section aria-labelledby={id} className="sect">
       <h2 id={id}>{title}</h2>
       {!read.ok ? (
         <Notice tone="error" role="alert">
@@ -29,12 +29,12 @@ export function Section<T>({ id, title, noun, read, columns, rowKey }: Props<T>)
       ) : read.rows.length === 0 ? (
         <p className="text-muted">No {noun}.</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-left text-[15px]">
+        <div className="card tbl-s">
+          <table className="tbl">
             <thead>
               <tr>
                 {columns.map((column) => (
-                  <th key={column.header} scope="col" className="border-b border-hairline px-3 py-2 font-semibold whitespace-nowrap">
+                  <th key={column.header} scope="col">
                     {column.header}
                   </th>
                 ))}
@@ -44,9 +44,7 @@ export function Section<T>({ id, title, noun, read, columns, rowKey }: Props<T>)
               {read.rows.map((row) => (
                 <tr key={rowKey(row)}>
                   {columns.map((column) => (
-                    <td key={column.header} className="border-b border-hairline px-3 py-2 align-top">
-                      {column.cell(row)}
-                    </td>
+                    <td key={column.header}>{column.cell(row)}</td>
                   ))}
                 </tr>
               ))}

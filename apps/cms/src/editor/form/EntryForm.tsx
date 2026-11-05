@@ -1,11 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { loadDraftAction, saveDraftAction, setSlugAction } from '@/app/(editor)/t/[tenant]/actions';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { loadDraftAction, saveDraftAction } from '@/app/(editor)/t/[tenant]/actions';
 import { t } from '@/i18n/is';
 import { createBrowserEditorClient } from '@/lib/supabase/browser';
-import { Button } from '@/ui/Button';
+import { Button, linkButtonClasses } from '@/ui/Button';
+import { Icon } from '@/ui/Icon';
 import { Notice } from '@/ui/Notice';
+import { SAVE_SLOT_ID } from '@/ui/TopBar';
 import { useAutosave, type SaveDraft, type TheirVersion } from '../autosave';
 import { PreviewButton } from '../publish/PreviewButton';
 import { PublishPanel } from '../publish/PublishPanel';
@@ -15,7 +18,6 @@ import { changedFields } from './conflict';
 import type { FieldDescriptor } from './descriptors';
 import { FieldInput } from './FieldInput';
 import { RevisionHistory } from './RevisionHistory';
-import { SlugField } from './SlugField';
 import { EditorTenantProvider, type EditorTenant } from './tenant-context';
 
 type Props = {
@@ -25,12 +27,10 @@ type Props = {
   userId: string;
   entryId: string;
   fields: FieldDescriptor[];
-  /** The field the slug suggestion and the list title come from. */
+  /** The field the list title comes from: it is set larger than the rest. */
   titleKey: string;
   initialData: Record<string, unknown>;
   initialVersion: number;
-  initialSlug: string | null;
-  slugLocked: boolean;
   /** The entry has a published revision (Task 25: the publish panel offers to take it down). */
   published?: boolean;
   /** The entry's published revisions, newest first (M2-16). */
@@ -59,7 +59,7 @@ async function sessionIsUser(userId: string): Promise<boolean> {
  * back with a notice, saved only when the editor chooses to. Every save names the user, so another
  * account's session never saves them. Signing out, in this tab or another, drops them.
  */
-export function EntryForm({ tenant, userId, entryId, fields, titleKey, initialData, initialVersion, initialSlug, slugLocked, published = false, revisions = [], restored = false }: Props) {
+export function EntryForm({ tenant, userId, entryId, fields, titleKey, initialData, initialVersion, published = false, revisions = [], restored = false }: Props) {
   const [data, setData] = useState<Record<string, unknown>>(initialData);
   const latest = useRef(data);
   // Bumped when "reload theirs" replaces the values, so every field remounts with them (a field may
@@ -99,70 +99,84 @@ export function EntryForm({ tenant, userId, entryId, fields, titleKey, initialDa
     },
     [schedule],
   );
-  const titleValue = data[titleKey];
-  const title = useMemo(() => (typeof titleValue === 'string' ? titleValue : ''), [titleValue]);
   const fieldLabels = useMemo(() => Object.fromEntries(fields.map((f) => [f.key, f.label])), [fields]);
 
   return (
     <EditorTenantProvider value={tenant}>
-      <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
-        <form onSubmit={(e) => e.preventDefault()} className="flex min-w-0 flex-col gap-5">
-          {restored ? (
-            <Notice tone="success" role="status">
-              {t.editor.history.restored}
-            </Notice>
-          ) : null}
+      {restored ? (
+        <Notice tone="success" role="status">
+          {t.editor.history.restored}
+        </Notice>
+      ) : null}
+      {autosave.state === 'conflict' ? (
+        <ConflictNotice theirs={autosave.theirs} fields={fields} mine={data} retry={autosave.retry} keepMine={autosave.keepMine} reloadTheirs={reloadTheirs} />
+      ) : autosave.state === 'restored' ? (
+        <RestoredNotice save={autosave.saveRestored} discard={discardCopy} />
+      ) : (
+        <SaveProblem state={autosave.state} retry={autosave.retry} />
+      )}
+      <SaveSlot>
+        <SaveLine state={autosave.state} />
+      </SaveSlot>
+      <div className="ed">
+        <form onSubmit={(e) => e.preventDefault()} className="card sheet">
           {fields.map((field) => (
-            <FieldInput
-              key={`${field.key}:${generation}`}
-              field={field}
-              id={`field-${field.key}`}
-              value={data[field.key]}
-              onChange={(value) => change(field.key, value)}
-            />
+            <div key={`${field.key}:${generation}`} data-title-field={field.key === titleKey ? '' : undefined}>
+              <FieldInput field={field} id={`field-${field.key}`} value={data[field.key]} onChange={(value) => change(field.key, value)} />
+            </div>
           ))}
-          <SlugField entryId={entryId} initialSlug={initialSlug} title={title} locked={slugLocked} setSlug={setSlugAction} />
-          {autosave.state === 'conflict' ? (
-            <ConflictNotice theirs={autosave.theirs} fields={fields} mine={data} retry={autosave.retry} keepMine={autosave.keepMine} reloadTheirs={reloadTheirs} />
-          ) : autosave.state === 'restored' ? (
-            <RestoredNotice save={autosave.saveRestored} discard={discardCopy} />
-          ) : (
-            <SaveStatus state={autosave.state} retry={autosave.retry} />
-          )}
         </form>
-        <div className="flex min-w-0 flex-col gap-8">
-          <div className="flex flex-col gap-4">
-            {/* The request carries the version the editor last saw (review focus 3). */}
-            <PublishPanel
-              entryId={entryId}
-              version={autosave.version}
-              disabled={blocked}
-              initiallyPublished={published}
-              fieldLabels={fieldLabels}
-            />
+        <div className="rail">
+          {/* The request carries the version the editor last saw (review focus 3). */}
+          <PublishPanel entryId={entryId} version={autosave.version} disabled={blocked} initiallyPublished={published} fieldLabels={fieldLabels}>
             {/* Preview shows the saved draft (spec §7.5, M3-12). */}
-            <PreviewButton
-              entryId={entryId}
-              disabled={blocked}
-              unsaved={() => autosave.state === 'saving' || autosave.pendingData() !== null}
-            />
+            <PreviewButton entryId={entryId} disabled={blocked} unsaved={() => autosave.state === 'saving' || autosave.pendingData() !== null} />
+          </PublishPanel>
+          <div className="slot-hist">
+            <RevisionHistory entryId={entryId} revisions={revisions} version={autosave.version} disabled={blocked} hasUnsaved={hasUnsaved} />
           </div>
-          <RevisionHistory
-            entryId={entryId}
-            revisions={revisions}
-            version={autosave.version}
-            disabled={blocked}
-            hasUnsaved={hasUnsaved}
-          />
         </div>
       </div>
     </EditorTenantProvider>
   );
 }
 
-const NOTICE_COLUMN = 'flex flex-col items-start gap-3';
-// A fixed line height keeps the form from jumping when the status text appears.
-const SAVE_LINE = 'min-h-5 text-sm text-muted';
+/** Puts the save status in the top bar, where it stays in view; without a bar it stays in place. */
+function SaveSlot({ children }: { children: ReactNode }) {
+  const [slot, setSlot] = useState<Element | null>(null);
+  useEffect(() => setSlot(document.getElementById(SAVE_SLOT_ID)), []);
+  return slot ? createPortal(children, slot) : children;
+}
+
+function SaveLine({ state }: { state: ReturnType<typeof useAutosave>['state'] }) {
+  switch (state) {
+    case 'saving':
+      return (
+        <p role="status" className="save">
+          <span className="spin" />
+          {t.editor.saving}
+        </p>
+      );
+    case 'saved':
+      return (
+        <p role="status" className="save">
+          <Icon name="check" />
+          {t.editor.saved}
+        </p>
+      );
+    case 'error':
+    case 'signed_out':
+    case 'conflict':
+      return (
+        <p className="save save-bad">
+          <Icon name="alert" />
+          {t.editor.notSaved}
+        </p>
+      );
+    default:
+      return <p role="status" className="save" />;
+  }
+}
 
 type ConflictProps = {
   theirs: TheirVersion | undefined;
@@ -183,36 +197,45 @@ function ConflictNotice({ theirs, fields, mine, retry, keepMine, reloadTheirs }:
   const ready = theirs?.status === 'ready' ? theirs : null;
   const changed = useMemo(() => (ready ? changedFields(fields, mine, ready.data) : []), [ready, fields, mine]);
   return (
-    <Notice as="div" tone="error" role="alert" className={NOTICE_COLUMN}>
+    <Notice as="div" tone="error" role="alert">
       <strong>{t.editor.conflict}</strong>
       <p>{t.editor.conflictBody}</p>
       {theirs?.status === 'failed' || theirs === undefined ? (
         <>
           {theirs && <p>{r.loadError}</p>}
-          <div className="flex flex-wrap gap-3">
-            {theirs && <Button onClick={retry}>{t.editor.retry}</Button>}
-            <Button onClick={() => window.location.reload()}>{t.editor.reload}</Button>
+          <div className="note-acts">
+            {theirs && (
+              <Button size="sm" onClick={retry}>
+                {t.editor.retry}
+              </Button>
+            )}
+            <Button size="sm" onClick={() => window.location.reload()}>
+              {t.editor.reload}
+            </Button>
           </div>
         </>
       ) : ready === null ? (
-        <p>{r.loading}</p>
+        <p className="inline-flex items-center gap-2 text-sm">
+          <span className="spin" />
+          {r.loading}
+        </p>
       ) : (
         <>
           {changed.length === 0 ? (
             <p>{r.same}</p>
           ) : (
-            <section aria-label={r.changed} className="flex w-full flex-col gap-3">
-              <h2 className="text-[15px] font-medium">{r.changed}</h2>
+            <section aria-label={r.changed} className="compare">
+              <h2 className="lab">{r.changed}</h2>
               {changed.map((f) => (
-                <div key={f.key} data-testid="conflict-field" className="flex flex-col gap-1.5">
-                  <h3 className="text-[15px] font-medium">{f.label}</h3>
-                  <dl className="grid gap-2 sm:grid-cols-2">
-                    <div data-side="theirs" className="min-w-0">
-                      <dt className="text-sm text-muted">{r.theirs}</dt>
+                <div key={f.key} data-testid="conflict-field">
+                  <h3>{f.label}</h3>
+                  <dl className="cmp">
+                    <div data-side="theirs">
+                      <dt>{r.theirs}</dt>
                       <dd className="whitespace-pre-wrap break-words">{f.theirs}</dd>
                     </div>
-                    <div data-side="mine" className="min-w-0">
-                      <dt className="text-sm text-muted">{r.mine}</dt>
+                    <div data-side="mine">
+                      <dt>{r.mine}</dt>
                       <dd className="whitespace-pre-wrap break-words">{f.mine}</dd>
                     </div>
                   </dl>
@@ -220,13 +243,17 @@ function ConflictNotice({ theirs, fields, mine, retry, keepMine, reloadTheirs }:
               ))}
             </section>
           )}
-          <div className="flex flex-col gap-1.5">
-            <Button onClick={keepMine}>{r.keepMine}</Button>
-            <p className="text-sm">{r.keepMineHint}</p>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Button onClick={reloadTheirs}>{r.reloadTheirs}</Button>
-            <p className="text-sm">{r.reloadTheirsHint}</p>
+          <div className="way">
+            <div>
+              <Button variant="ink" onClick={keepMine}>
+                {r.keepMine}
+              </Button>
+              <p className="text-sm">{r.keepMineHint}</p>
+            </div>
+            <div>
+              <Button onClick={reloadTheirs}>{r.reloadTheirs}</Button>
+              <p className="text-sm">{r.reloadTheirsHint}</p>
+            </div>
           </div>
         </>
       )}
@@ -240,40 +267,51 @@ function ConflictNotice({ theirs, fields, mine, retry, keepMine, reloadTheirs }:
  */
 function RestoredNotice({ save, discard }: { save: () => void; discard: () => void }) {
   return (
-    <Notice as="div" tone="info" role="alert" className={NOTICE_COLUMN}>
+    <Notice as="div" tone="info" role="alert">
       <strong>{t.editor.restoredCopy}</strong>
       <p>{t.editor.restoredCopyBody}</p>
-      <div className="flex flex-wrap gap-3">
-        <Button onClick={save}>{t.editor.restoredCopySave}</Button>
-        <Button onClick={discard}>{t.editor.restoredCopyDiscard}</Button>
+      <div className="note-acts">
+        <Button variant="ink" size="sm" onClick={save}>
+          {t.editor.restoredCopySave}
+        </Button>
+        <Button size="sm" onClick={discard}>
+          {t.editor.restoredCopyDiscard}
+        </Button>
       </div>
     </Notice>
   );
 }
 
-function SaveStatus({ state, retry }: { state: Exclude<ReturnType<typeof useAutosave>['state'], 'conflict' | 'restored'>; retry: () => void }) {
+function SaveProblem({ state, retry }: { state: ReturnType<typeof useAutosave>['state']; retry: () => void }) {
   switch (state) {
     case 'signed_out':
       return (
-        <Notice as="div" tone="error" role="alert" className={NOTICE_COLUMN}>
+        <Notice as="div" tone="error" role="alert">
           <strong>{t.editor.signedOut}</strong>
           <p>{t.editor.signedOutBody}</p>
-          <a href="/login" target="_blank" rel="noreferrer" className="inline-flex min-h-[44px] items-center font-medium">{t.editor.signIn}</a>
-          <Button onClick={retry}>{t.editor.retry}</Button>
+          <div className="note-acts">
+            <a href="/login" target="_blank" rel="noreferrer" className={linkButtonClasses('ink', 'sm')}>
+              {t.editor.signIn}
+              <Icon name="arrowUpRight" />
+            </a>
+            <Button size="sm" onClick={retry}>
+              {t.editor.retry}
+            </Button>
+          </div>
         </Notice>
       );
     case 'error':
       return (
-        <Notice as="div" tone="error" role="alert" className={NOTICE_COLUMN}>
+        <Notice as="div" tone="error" role="alert">
           <p>{t.editor.error}</p>
-          <Button onClick={retry}>{t.editor.retry}</Button>
+          <div className="note-acts">
+            <Button size="sm" onClick={retry}>
+              {t.editor.retry}
+            </Button>
+          </div>
         </Notice>
       );
-    case 'saving':
-      return <p role="status" className={SAVE_LINE}>{t.editor.saving}</p>;
-    case 'saved':
-      return <p role="status" className={SAVE_LINE}>{t.editor.saved}</p>;
-    case 'idle':
-      return <p role="status" className={SAVE_LINE} />;
+    default:
+      return null;
   }
 }

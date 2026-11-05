@@ -9,7 +9,6 @@
 // user belongs to two tenants. Each screen at 375 px must not scroll sideways. Run as
 // `pnpm --filter cms e2e design`. Every request is to a loopback address (support/test.ts aborts the
 // rest); the only thing written is the PNG files.
-import { randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
@@ -74,9 +73,6 @@ test.describe('demo editor (event)', () => {
     await page.getByLabel('Title').fill(title);
     await page.getByLabel('Start date').fill('2026-12-01');
     await expect(page.getByRole('status')).toHaveText(t.editor.saved, SAVED);
-    await page.getByLabel(t.editor.slug.label).fill(`honnun-${randomBytes(5).toString('hex')}`);
-    await page.getByRole('button', { name: t.editor.slug.save }).click();
-    await expect(page.getByTestId('slug-notice')).toHaveText(t.editor.slug.saved);
   }
 
   test('edit form in each publish state, and the entry list', async ({ page }) => {
@@ -198,15 +194,12 @@ test.describe('labak editor, remaining screens', () => {
     await shoot2(page, 'image-field');
 
     // Publish in a tenant with no active site: nothing can confirm it, so it ends at "Enginn vefur tengdur".
-    await page.getByLabel(t.editor.slug.label).fill(`honnun-${randomBytes(5).toString('hex')}`);
-    await page.getByRole('button', { name: t.editor.slug.save }).click();
-    await expect(page.getByTestId('slug-notice')).toHaveText(t.editor.slug.saved);
     await page.getByRole('button', { name: t.publish.publish }).click();
     await expect(state(page)).toHaveText(t.publish.noSite, CONFIRMED);
-    // Task 32: the warning tone, #b45309 with white text.
+    // The kit's warning: #85520a on #fcf3e2.
     await expect(state(page)).toHaveAttribute('data-tone', 'warning');
-    await expect(state(page)).toHaveCSS('background-color', 'rgb(180, 83, 9)');
-    await expect(state(page)).toHaveCSS('color', 'rgb(255, 255, 255)');
+    await expect(state(page)).toHaveCSS('background-color', 'rgb(252, 243, 226)');
+    await expect(state(page)).toHaveCSS('color', 'rgb(133, 82, 10)');
     await shoot2(page, 'publish-no-site');
   });
 });

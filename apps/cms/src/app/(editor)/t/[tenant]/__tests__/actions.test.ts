@@ -33,7 +33,7 @@ const fake = {
 };
 vi.mock('@/lib/supabase/server', () => ({ createEditorClient: vi.fn(async () => fake) }));
 
-const { createEntryAction, loadDraftAction, openSingletonAction, saveDraftAction: saveDraftAs, setSlugAction } = await import('../actions');
+const { createEntryAction, loadDraftAction, openSingletonAction, saveDraftAction: saveDraftAs } = await import('../actions');
 /** A save by the signed-in editor the form was opened for (M2-17: every save names its user). */
 const saveDraftAction = (id: string, expectedVersion: number, data: unknown) => saveDraftAs(id, expectedVersion, data, USER);
 
@@ -280,29 +280,3 @@ describe('loadDraftAction (M2-11: the newer version after a conflict)', () => {
   });
 });
 
-describe('setSlugAction', () => {
-  it('sets a valid slug', async () => {
-    await expect(setSlugAction(ENTRY, 'braud-arsins-2025')).resolves.toEqual({ ok: true, slug: 'braud-arsins-2025' });
-    expect(state.calls).toEqual([{ name: 'set_slug', args: { p_entry_id: ENTRY, p_slug: 'braud-arsins-2025' } }]);
-  });
-
-  it('rejects malformed slugs and ids without a database call', async () => {
-    for (const slug of ['', 'Braud', 'braud arsins', '-a', 'a--b', 'brauð', 'a'.repeat(201), '../x']) {
-      await expect(setSlugAction(ENTRY, slug)).resolves.toEqual({ ok: false, code: 'invalid' });
-    }
-    await expect(setSlugAction('x', 'ok')).resolves.toEqual({ ok: false, code: 'invalid' });
-    await expect(setSlugAction(ENTRY, 5 as unknown as string)).resolves.toEqual({ ok: false, code: 'invalid' });
-    expect(state.calls).toEqual([]);
-  });
-
-  it('maps slug_taken, slug_locked, auth and the rest', async () => {
-    state.rpc.set_slug = { error: { code: 'P0001', message: 'slug_taken' } };
-    await expect(setSlugAction(ENTRY, 'a')).resolves.toEqual({ ok: false, code: 'slug_taken' });
-    state.rpc.set_slug = { error: { code: 'P0001', message: 'slug_locked' } };
-    await expect(setSlugAction(ENTRY, 'a')).resolves.toEqual({ ok: false, code: 'slug_locked' });
-    state.rpc.set_slug = { error: { code: '23514', message: 'check' } };
-    await expect(setSlugAction(ENTRY, 'a')).resolves.toEqual({ ok: false, code: 'error' });
-    state.user = null;
-    await expect(setSlugAction(ENTRY, 'a')).resolves.toEqual({ ok: false, code: 'auth' });
-  });
-});

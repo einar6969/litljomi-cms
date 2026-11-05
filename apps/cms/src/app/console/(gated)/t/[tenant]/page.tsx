@@ -5,9 +5,13 @@ import { findTenant, tenantDetail, LIMIT } from '@/console/data';
 import { statusText, when } from '@/console/format';
 import { Notice } from '@/ui/Notice';
 import { StatusBadge } from '@/ui/StatusBadge';
+import { ConsoleFrame } from '../../../_components/ConsoleFrame';
 import { ReleaseStatus } from '../../../_components/ReleaseStatus';
 import { Section } from '../../../_components/Section';
 import { TenantStatus } from '../../../_components/TenantStatus';
+
+/** A timestamp in the console's monospace. */
+const time = (value: string | null) => <span className="mono">{when(value)}</span>;
 
 // A layout is not the boundary: the page checks access itself before it reads (§4.4). An unknown
 // slug is a 404, as for anyone who may not see the tenant.
@@ -20,12 +24,14 @@ export default async function ConsoleTenantPage({ params }: { params: Promise<{ 
   const found = await findTenant(slug);
   if (!found.ok) {
     return (
-      <main className="flex flex-col gap-6 py-8">
-        <BackLink />
-        <Notice tone="error" role="alert">
-          The tenant could not be read. Reload the page to try again.
-        </Notice>
-      </main>
+      <ConsoleFrame>
+        <main className="page">
+          <BackLink />
+          <Notice tone="error" role="alert">
+            The tenant could not be read. Reload the page to try again.
+          </Notice>
+        </main>
+      </ConsoleFrame>
     );
   }
   if (!found.tenant) notFound();
@@ -35,15 +41,16 @@ export default async function ConsoleTenantPage({ params }: { params: Promise<{ 
   const addresses = new Map(detail.sites.ok ? detail.sites.rows.map((site) => [site.id, site.base_url]) : []);
 
   return (
-    <main className="flex flex-col gap-8 py-8">
-      <BackLink />
-      <div className="flex flex-col gap-2">
+    <ConsoleFrame tenant={{ slug: tenant.slug, name: tenant.name }}>
+    <main className="page">
+      <div className="flex flex-col gap-1.5">
+        <BackLink />
         <h1>{tenant.name}</h1>
-        <p className="flex flex-wrap items-center gap-3 text-muted">
-          <span>{tenant.slug}</span>
+        <p className="flex flex-wrap items-center gap-2.5 text-muted">
+          <span className="mono">{tenant.slug}</span>
           <TenantStatus status={tenant.status} />
         </p>
-        <p className="text-muted">Requests, releases, deliveries and audit events: the latest {LIMIT} of each, newest first. Sites: up to {LIMIT}, by address.</p>
+        <p className="text-sm text-muted">Requests, releases, deliveries and audit events: the latest {LIMIT} of each, newest first. Sites: up to {LIMIT}, by address.</p>
       </div>
 
       <Section
@@ -53,10 +60,10 @@ export default async function ConsoleTenantPage({ params }: { params: Promise<{ 
         read={detail.requests}
         rowKey={(row) => row.id}
         columns={[
-          { header: 'Requested', cell: (row) => when(row.requested_at) },
+          { header: 'Requested', cell: (row) => time(row.requested_at) },
           { header: 'Action', cell: (row) => statusText(row.action) },
           { header: 'Status', cell: (row) => statusText(row.status) },
-          { header: 'Claimed', cell: (row) => when(row.claimed_at) },
+          { header: 'Claimed', cell: (row) => time(row.claimed_at) },
           { header: 'Error', cell: (row) => row.error_code ?? '–' },
         ]}
       />
@@ -69,8 +76,8 @@ export default async function ConsoleTenantPage({ params }: { params: Promise<{ 
         columns={[
           { header: 'Release', cell: (row) => row.number },
           { header: 'Status', cell: (row) => <ReleaseStatus status={row.status} code={row.error_code} step={row.error_step} /> },
-          { header: 'Created', cell: (row) => when(row.created_at) },
-          { header: 'Delivered', cell: (row) => when(row.delivered_at) },
+          { header: 'Created', cell: (row) => time(row.created_at) },
+          { header: 'Delivered', cell: (row) => time(row.delivered_at) },
         ]}
       />
       <Section
@@ -81,16 +88,16 @@ export default async function ConsoleTenantPage({ params }: { params: Promise<{ 
         rowKey={(row) => `${row.release_id}:${row.site_id}`}
         columns={[
           { header: 'Release', cell: (row) => row.release_number },
-          { header: 'Site', cell: (row) => <span className="break-all">{addresses.get(row.site_id) ?? 'unknown'}</span> },
+          { header: 'Site', cell: (row) => <span className="mono break-all">{addresses.get(row.site_id) ?? 'unknown'}</span> },
           {
             header: 'Notified',
             cell: (row) => (
-              <span className="flex flex-col gap-1">
-                <StatusBadge as="span" tone={row.notify_status === 'failed' ? 'error' : row.notify_status === 'pending' ? 'pending' : 'ok'}>
+              <span className="stack">
+                <StatusBadge tone={row.notify_status === 'failed' ? 'error' : row.notify_status === 'pending' ? 'pending' : 'ok'}>
                   {statusText(row.notify_status)}
                 </StatusBadge>
-                <span className="text-muted">
-                  {row.notify_attempts} {row.notify_attempts === 1 ? 'attempt' : 'attempts'}, {when(row.notified_at)}
+                <span className="text-sm text-muted">
+                  {row.notify_attempts} {row.notify_attempts === 1 ? 'attempt' : 'attempts'}, {time(row.notified_at)}
                 </span>
               </span>
             ),
@@ -98,9 +105,9 @@ export default async function ConsoleTenantPage({ params }: { params: Promise<{ 
           {
             header: 'Live',
             cell: (row) => (
-              <span className="flex flex-col gap-1">
+              <span className="stack">
                 <span>{statusText(row.live_status)}</span>
-                <span className="text-muted">{when(row.live_confirmed_at)}</span>
+                <span className="text-muted">{time(row.live_confirmed_at)}</span>
               </span>
             ),
           },
@@ -120,7 +127,7 @@ export default async function ConsoleTenantPage({ params }: { params: Promise<{ 
         read={detail.sites}
         rowKey={(row) => row.id}
         columns={[
-          { header: 'Address', cell: (row) => <span className="break-all">{row.base_url}</span> },
+          { header: 'Address', cell: (row) => <span className="mono break-all">{row.base_url}</span> },
           { header: 'State', cell: (row) => (row.active ? 'active' : 'inactive') },
         ]}
       />
@@ -131,19 +138,20 @@ export default async function ConsoleTenantPage({ params }: { params: Promise<{ 
         read={detail.audit}
         rowKey={(row) => String(row.id)}
         columns={[
-          { header: 'When', cell: (row) => when(row.at) },
+          { header: 'When', cell: (row) => time(row.at) },
           { header: 'Action', cell: (row) => statusText(row.action) },
           { header: 'Target', cell: (row) => (row.target_type ? `${row.target_type} ${row.target_id ?? ''}`.trim() : '–') },
-          { header: 'Actor', cell: (row) => <span className="break-all">{row.actor_id ?? 'system'}</span> },
+          { header: 'Actor', cell: (row) => <span className="mono break-all">{row.actor_id ?? 'system'}</span> },
         ]}
       />
     </main>
+    </ConsoleFrame>
   );
 }
 
 function BackLink() {
   return (
-    <Link href="/console" prefetch={false} className="inline-flex min-h-[44px] w-fit items-center">
+    <Link href="/console" prefetch={false} className="inline-flex min-h-[28px] w-fit items-center text-sm">
       ← All tenants
     </Link>
   );

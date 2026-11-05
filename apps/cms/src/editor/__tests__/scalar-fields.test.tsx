@@ -375,8 +375,6 @@ describe('EntryForm with the scalar kinds', () => {
         titleKey="title"
         initialData={{ title: 'Tónleikar' }}
         initialVersion={1}
-        initialSlug={null}
-        slugLocked={false}
       />,
     );
     await type($<HTMLInputElement>('#field-capacity')!, '120');
