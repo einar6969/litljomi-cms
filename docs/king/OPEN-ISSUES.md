@@ -136,7 +136,6 @@ From a read-only investigation. Decision 53 holds the scope. M4 is frozen, so no
 | Suspend, revoke | Suspension is enforced. `service_role` has the grants | `admin_set_tenant_status`, `admin_remove_membership`, CLI commands | None |
 | Console | RLS covers every console table at `aal2` | Routes, TOTP enrolment, MFA code, and a way to add a `platform_admins` row other than owner SQL | None |
 | Offboarding | Removing memberships before the Auth user is decided (decision 32) | Parked (decision 53). When it returns: the owner SQL, Vault cleanup, the storage delete, and what happens to audit rows | Audit rows |
-| Export | Originals are in `media-private`. Nothing exports yet | A CLI command. Restore is dropped (decision 55) and offboarding is parked, so nothing uses an export yet | Whether export stays in M4 |
 | Provisioning | `provision` refuses safely on a rerun (`slug_taken`, duplicate site) | Spec §9.2 says idempotent, and it refuses rather than continues | Whether a safe refusal meets the requirement |
 
 Local verification: `pnpm lint`, `typecheck`, `test`, `check:slugs`, `check:schema` and `harness:test` run on the laptop. `pnpm db:test` and `pnpm test:integration` need `pnpm db:reset` first when the stack is behind on migrations. CI has no browser tests.
