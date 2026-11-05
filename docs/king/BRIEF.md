@@ -4,7 +4,7 @@ The handoff for whoever coordinates this project. Read it with [OPEN-ISSUES.md](
 
 | | |
 |---|---|
-| State as of | 2026-11-05, `origin/main` at `eb4e85c` with local docs commits ahead of it, after M3 |
+| State as of | 2026-11-05, after M5. `main` on GitHub carries every M5 record; `staging` is at `9d31159` |
 | Written by | The first KING, from its transcript and the repository. Corrected by the second KING against GitHub |
 | Keep current | Update "Where things stand" and `OPEN-ISSUES.md` at each milestone |
 
@@ -22,7 +22,7 @@ A milestone being accepted does not make every line of it hosted.
 ## 1. Where things stand
 
 - **Accepted:** M0, M1 (checkpoint C4), M2 and M3 (C5, decision 51.5), M4 (C6, decision 64), M5 (C7, decision 69).
-- **Staging matches `main`** at `9d31159`, with 45 migrations, the M5 fixes included. Later local docs commits don't affect it.
+- **Staging matches `main`** at `9d31159`, with 45 migrations, the M5 fixes included. Later docs commits on `main` don't affect it.
 - **Nothing real is live.** There is no production project, no real editor and no real content. labak.is is still the old Joomla site.
 - **Tests:** on `b756c74`, from the CI log: pgTAP 2,006 in 39 files, unit 2,498, integration 96 + 116. Unit 2,498 re-run locally on `f2ab9e4`; the other totals were not re-read. CI passed on `eb4e85c`.
 
