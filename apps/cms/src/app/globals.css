@@ -1483,6 +1483,7 @@
 
   /* ---- console ---- */
   .console {
+    isolation: isolate;
     min-height: 100vh;
     background: var(--canvas);
     color: var(--ink);
@@ -1706,6 +1707,25 @@
     color: var(--ink-muted);
   }
 
+  /* The sidebar's colour runs the page's full height, past the sticky sidebar itself. */
+  @media (min-width: 1024px) {
+    .app {
+      position: relative;
+    }
+
+    .app::before {
+      content: '';
+      position: absolute;
+      z-index: -1;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 248px;
+      border-right: 1px solid var(--border);
+      background: var(--sidebar);
+    }
+  }
+
   /* ---- tablet and phone: the sidebar becomes a drawer, the rail drops under the form ---- */
   @media (max-width: 1023px) {
     .side {
@@ -1720,14 +1740,12 @@
       box-shadow: var(--sh-3);
       transform: translateX(-100%);
       visibility: hidden;
-      transition:
-        transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
-        visibility 0.2s;
     }
 
     .app.is-open .side {
       transform: none;
       visibility: visible;
+      transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     .csl-side {
@@ -1811,10 +1829,21 @@
       z-index: 2;
       bottom: 0;
       order: 3;
+      gap: 8px;
       margin: 2px -24px -48px;
+      padding: 12px 24px;
       border-width: 1px 0 0;
       border-radius: 0;
       box-shadow: 0 -10px 24px -18px rgba(64, 54, 30, 0.3);
+    }
+
+    /* The panel stays in view over the form, so it keeps to what it must show. */
+    .pub h2 {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
     }
 
     .asset {
@@ -1969,6 +1998,7 @@
 
     .pub {
       margin: 2px -16px -40px;
+      padding: 12px 16px;
     }
 
     .imgf,
