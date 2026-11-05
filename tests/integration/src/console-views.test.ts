@@ -15,6 +15,8 @@ const OPERATIONAL = ['console_tenants', 'console_requests', 'console_releases', 
 const VIEWS = ['console_admin', ...OPERATIONAL] as const;
 
 const RUN = randomUUID().slice(0, 8);
+/** In the free-text parts of each fixture error; no view may show it. */
+const LEAKED = 'leaked-payload-text';
 const rpc = async <T>(fn: string, args: Record<string, unknown>): Promise<T> => {
   const { data, error } = await secretClient().schema('api').rpc(fn, args);
   if (error) throw new Error(`${fn}: ${error.code} ${error.message}`);
@@ -35,16 +37,19 @@ async function arrangeTenant(label: string) {
   const releaseId = randomUUID();
   const requester = PERSONAS.editor_labak.id;
   await ownerQuery('insert into cms.entries (id, tenant_id, type, created_by) values ($1, $2, $3, $4)', [entryId, tenantId, 'news', requester]);
-  await ownerQuery(`insert into cms.releases (id, tenant_id, number, status) values ($1, $2, 1, 'failed')`, [releaseId, tenantId]);
+  await ownerQuery(
+    `insert into cms.releases (id, tenant_id, number, status, error) values ($1, $2, 1, 'failed', $3)`,
+    [releaseId, tenantId, { code: 'build_failed', step: 'previous_bundle', message: LEAKED, omitted: [{ entryId, error: { message: LEAKED } }] }],
+  );
   await ownerQuery(
     `insert into cms.publish_requests (tenant_id, entry_id, action, draft_version, requested_by, status, error)
-     values ($1, $2, 'publish', 1, $3, 'failed', '{"code": "fixture"}')`,
-    [tenantId, entryId, requester],
+     values ($1, $2, 'publish', 1, $3, 'failed', $4)`,
+    [tenantId, entryId, requester, { code: 'invalid_data', issues: [{ message: LEAKED }] }],
   );
   await ownerQuery(
     `insert into cms.site_deliveries (release_id, site_id, tenant_id, notify_status, notify_attempts, last_error)
-     values ($1, $2, $3, 'failed', 4, '{"code": "http_500"}')`,
-    [releaseId, siteId, tenantId],
+     values ($1, $2, $3, 'failed', 4, $4)`,
+    [releaseId, siteId, tenantId, { code: 'notify_failed', status: 500, withdrawals: [{ ownPath: `/${LEAKED}` }] }],
   );
   return { tenantId, siteId, releaseId };
 }
@@ -147,7 +152,11 @@ describe('console views over the Data API (M4-03)', () => {
     const sites = (await rows(adminAal2, 'console_sites')).filter((s) => s.tenant_id === a.tenantId);
     expect(sites).toEqual([{ id: a.siteId, tenant_id: a.tenantId, base_url: 'http://localhost:3299/a', active: true }]);
     const delivery = (await rows(adminAal2, 'console_deliveries')).find((d) => d.tenant_id === b.tenantId);
-    expect(delivery).toMatchObject({ release_id: b.releaseId, site_id: b.siteId, notify_status: 'failed', notify_attempts: 4, last_error: { code: 'http_500' } });
+    expect(delivery).toMatchObject({ release_id: b.releaseId, site_id: b.siteId, notify_status: 'failed', notify_attempts: 4, last_error_code: 'notify_failed', last_error_status: '500' });
+    const release = (await rows(adminAal2, 'console_releases')).find((r) => r.tenant_id === b.tenantId);
+    expect(release).toMatchObject({ id: b.releaseId, error_code: 'build_failed', error_step: 'previous_bundle' });
+    const request = (await rows(adminAal2, 'console_requests')).find((r) => r.tenant_id === b.tenantId);
+    expect(request).toMatchObject({ status: 'failed', error_code: 'invalid_data' });
     const audit = (await rows(adminAal2, 'console_audit')).find((e) => e.tenant_id === b.tenantId && e.action === 'publish_request.created');
     expect(audit).toMatchObject({ actor_id: PERSONAS.editor_labak.id, target_type: expect.any(String) });
     expect(audit).not.toHaveProperty('details');
@@ -160,6 +169,10 @@ describe('console views over the Data API (M4-03)', () => {
       const keys = (await rows(adminAal2, view)).flatMap((r) => Object.keys(r));
       expect(keys.filter((k) => k.includes('secret')), view).toEqual([]);
     }
+  });
+
+  it('no view hands the free text of an error to an admin at aal2', async () => {
+    for (const view of VIEWS) expect(JSON.stringify(await rows(adminAal2, view)), view).not.toContain(LEAKED);
   });
 
   it('the views are read-only for an admin at aal2 (42501)', async () => {

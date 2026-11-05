@@ -12,8 +12,11 @@
 --
 -- Columns are what §8.4 needs and no more. console_sites has no secret reference, and the column
 -- grant on cms.sites would refuse one anyway. No view carries content, or the audit log's details.
--- releases.error stays out: its free-text message can quote a corrupt bundle, so a fragment of
--- published text can reach it.
+--
+-- The three jsonb error columns are never shown whole, only their stable fields, because each can
+-- hold free text: releases.error has the failure's message, which can quote a corrupt bundle, and
+-- entries' projection errors; publish_requests.error has validation messages, which can echo an
+-- item's _key; site_deliveries.last_error has site paths, which name slugs and media files.
 
 create view api.console_admin with (security_invoker = true) as
 select pa.user_id
@@ -30,7 +33,7 @@ where (select auth.jwt() ->> 'aal') = 'aal2'
   );
 
 create view api.console_requests with (security_invoker = true) as
-select r.id, r.tenant_id, r.action, r.status, r.requested_at, r.claimed_at, r.error
+select r.id, r.tenant_id, r.action, r.status, r.requested_at, r.claimed_at, r.error ->> 'code' as error_code
 from cms.publish_requests r
 where (select auth.jwt() ->> 'aal') = 'aal2'
   and exists (
@@ -39,7 +42,8 @@ where (select auth.jwt() ->> 'aal') = 'aal2'
   );
 
 create view api.console_releases with (security_invoker = true) as
-select r.id, r.tenant_id, r.number, r.status, r.created_at, r.delivered_at
+select r.id, r.tenant_id, r.number, r.status, r.created_at, r.delivered_at,
+       r.error ->> 'code' as error_code, r.error ->> 'step' as error_step
 from cms.releases r
 where (select auth.jwt() ->> 'aal') = 'aal2'
   and exists (
@@ -58,7 +62,8 @@ where (select auth.jwt() ->> 'aal') = 'aal2'
 
 create view api.console_deliveries with (security_invoker = true) as
 select d.release_id, d.site_id, d.tenant_id, d.notify_status, d.notify_attempts, d.notified_at, d.live_status,
-       d.live_confirmed_at, d.last_error, d.first_failed_at, d.next_attempt_at
+       d.live_confirmed_at, d.last_error ->> 'code' as last_error_code, d.last_error ->> 'status' as last_error_status,
+       d.first_failed_at, d.next_attempt_at
 from cms.site_deliveries d
 where (select auth.jwt() ->> 'aal') = 'aal2'
   and exists (

@@ -9,14 +9,16 @@
 -- Fixtures (tests.k('xxxx') = 00000000-0000-4000-8000-00000000xxxx), one of each per tenant:
 --   site     1411 labak, 1412 demo (secret references 14f1, 14f2)
 --   entry    c141 labak, c142 demo
---   release  1421 labak (delivered), 1422 demo (failed)
+--   release  1421 labak (delivered), 1422 demo (failed, as build_failed at the previous_bundle step)
 --   request  1431 labak (committed), 1432 demo (failed_validation, with an error)
 --   delivery (1421, 1411) labak ok, (1422, 1412) demo failed, with a last error
+--   Each error also holds the marker text LEAKED in the free-text fields its writers fill, which no
+--   view may show: a corrupt bundle's fragment, an item key echoed in an issue message, a site path.
 --   audit    the seed's and these inserts' events, and one platform event with no tenant
 --   demo is suspended.
 begin;
 \ir _helpers.sql
-select plan(134);
+select plan(137);
 
 create function tests.k(p_key text) returns uuid
 language plpgsql
@@ -79,20 +81,26 @@ insert into cms.sites (id, tenant_id, base_url, revalidate_url, preview_url, web
 insert into cms.entries (id, tenant_id, type, slug, created_by) values
   (tests.entry('c141'), tests.tenant('labak'), 'news', null, tests.persona('editor_labak')),
   (tests.entry('c142'), tests.tenant('demo'), 'event', null, tests.persona('editor_demo'));
-insert into cms.releases (id, tenant_id, number, status, bundle_path, created_at, delivered_at) values
-  (tests.k('1421'), tests.tenant('labak'), 1, 'delivered', 'labak/releases/1.json', '2026-11-05 10:00+00', '2026-11-05 10:01+00'),
-  (tests.k('1422'), tests.tenant('demo'), 1, 'failed', null, '2026-11-05 11:00+00', null);
+insert into cms.releases (id, tenant_id, number, status, bundle_path, created_at, delivered_at, error) values
+  (tests.k('1421'), tests.tenant('labak'), 1, 'delivered', 'labak/releases/1.json', '2026-11-05 10:00+00', '2026-11-05 10:01+00', null),
+  (tests.k('1422'), tests.tenant('demo'), 1, 'failed', null, '2026-11-05 11:00+00', null,
+   jsonb_build_object('code', 'build_failed', 'step', 'previous_bundle', 'pointerWritten', false,
+     'message', 'previous_bundle: Unexpected token ''#'', ..."body":#"LEAKED"... is not valid JSON',
+     'omitted', jsonb_build_array(jsonb_build_object('entryId', tests.entry('c142'), 'requestIds', jsonb_build_array(tests.k('1432')),
+       'error', jsonb_build_object('code', 'projection_error', 'message', 'LEAKED')))));
 insert into cms.publish_requests (id, tenant_id, entry_id, action, draft_version, requested_by, requested_at, status,
                                   claimed_at, error, release_id) values
   (tests.k('1431'), tests.tenant('labak'), tests.entry('c141'), 'publish', 1, tests.persona('editor_labak'),
    '2026-11-05 09:00+00', 'committed', '2026-11-05 09:01+00', null, tests.k('1421')),
   (tests.k('1432'), tests.tenant('demo'), tests.entry('c142'), 'unpublish', null, tests.persona('editor_demo'),
-   '2026-11-05 09:30+00', 'failed_validation', null, '{"code": "schema_version"}', null);
+   '2026-11-05 09:30+00', 'failed_validation', null,
+   '{"code": "invalid_data", "issues": [{"code": "custom", "path": ["items", 1, "_key"], "message": "duplicate item key \"LEAKED\""}]}', null);
 insert into cms.site_deliveries (release_id, site_id, tenant_id, notify_status, notify_attempts, notified_at, live_status,
                                  live_confirmed_at, last_error, first_failed_at, next_attempt_at) values
   (tests.k('1421'), tests.k('1411'), tests.tenant('labak'), 'ok', 1, '2026-11-05 10:02+00', 'ok', '2026-11-05 10:03+00',
    null, null, null),
-  (tests.k('1422'), tests.k('1412'), tests.tenant('demo'), 'failed', 4, null, 'pending', null, '{"code": "http_500"}',
+  (tests.k('1422'), tests.k('1412'), tests.tenant('demo'), 'failed', 4, null, 'pending', null,
+   '{"code": "notify_failed", "status": 500, "withdrawals": [{"entryId": "x", "ownPath": "/events/LEAKED", "checks": []}]}',
    '2026-11-05 11:05+00', '2026-11-05 12:00+00');
 insert into cms.audit_log (tenant_id, action, target_type, target_id)
   values (null, 'system.console_test', 'tenant', tests.k('1441'));
@@ -113,20 +121,21 @@ select is_empty($$ select v from unnest(tests.console_all()) as v
 select columns_are('api', 'console_admin', array['user_id'], 'console_admin columns');
 select columns_are('api', 'console_tenants', array['id', 'slug', 'name', 'status', 'created_at'], 'console_tenants columns');
 select columns_are('api', 'console_requests',
-  array['id', 'tenant_id', 'action', 'status', 'requested_at', 'claimed_at', 'error'], 'console_requests columns');
+  array['id', 'tenant_id', 'action', 'status', 'requested_at', 'claimed_at', 'error_code'], 'console_requests columns');
 select columns_are('api', 'console_releases',
-  array['id', 'tenant_id', 'number', 'status', 'created_at', 'delivered_at'], 'console_releases columns');
+  array['id', 'tenant_id', 'number', 'status', 'created_at', 'delivered_at', 'error_code', 'error_step'], 'console_releases columns');
 select columns_are('api', 'console_sites', array['id', 'tenant_id', 'base_url', 'active'], 'console_sites columns');
 select columns_are('api', 'console_deliveries',
   array['release_id', 'site_id', 'tenant_id', 'notify_status', 'notify_attempts', 'notified_at', 'live_status',
-        'live_confirmed_at', 'last_error', 'first_failed_at', 'next_attempt_at'], 'console_deliveries columns');
+        'live_confirmed_at', 'last_error_code', 'last_error_status', 'first_failed_at', 'next_attempt_at'],
+  'console_deliveries columns');
 select columns_are('api', 'console_audit',
   array['id', 'tenant_id', 'at', 'actor_id', 'action', 'target_type', 'target_id'], 'console_audit columns');
 select is_empty($$ select a.attrelid::regclass::text, a.attname from pg_catalog.pg_attribute a
   where a.attrelid = any (select to_regclass('api.' || v) from unnest(tests.console_all()) as v)
     and a.attnum > 0 and not a.attisdropped
-    and a.attname ~ '(secret|_ref$|^data$|^details$|^revalidate_url$)' $$,
-  'no console view exposes a secret reference, the revalidate URL or content');
+    and a.attname ~ '(secret|_ref$|^data$|^details$|^revalidate_url$|^error$|^last_error$|message|omitted)' $$,
+  'no console view exposes a secret reference, the revalidate URL, content or a whole error');
 
 select set_eq($$
   select v.relname::text as view_name, t.relname::text as table_name
@@ -228,29 +237,37 @@ select set_eq($$ select id, slug, name, status from api.console_tenants $$,
   $$ values (tests.tenant('labak'), 'labak', 'Landssamband bakarameistara', 'active'),
             (tests.tenant('demo'), 'demo', 'Demo', 'suspended') $$,
   'admin at aal2: console_tenants has both tenants, the suspended one as suspended');
-select set_eq($$ select id, tenant_id, action, status, requested_at, claimed_at, error from api.console_requests $$,
+select set_eq($$ select id, tenant_id, action, status, requested_at, claimed_at, error_code from api.console_requests $$,
   $$ values (tests.k('1431'), tests.tenant('labak'), 'publish', 'committed', '2026-11-05 09:00+00'::timestamptz,
-             '2026-11-05 09:01+00'::timestamptz, null::jsonb),
+             '2026-11-05 09:01+00'::timestamptz, null::text),
             (tests.k('1432'), tests.tenant('demo'), 'unpublish', 'failed_validation', '2026-11-05 09:30+00'::timestamptz,
-             null::timestamptz, '{"code": "schema_version"}'::jsonb) $$,
-  'admin at aal2: console_requests has both tenants, with status, action, times and error');
-select set_eq($$ select id, tenant_id, number, status, created_at, delivered_at from api.console_releases $$,
+             null::timestamptz, 'invalid_data') $$,
+  'admin at aal2: console_requests has both tenants, with status, action, times and error code');
+select set_eq($$ select id, tenant_id, number, status, created_at, delivered_at, error_code, error_step from api.console_releases $$,
   $$ values (tests.k('1421'), tests.tenant('labak'), 1, 'delivered', '2026-11-05 10:00+00'::timestamptz,
-             '2026-11-05 10:01+00'::timestamptz),
-            (tests.k('1422'), tests.tenant('demo'), 1, 'failed', '2026-11-05 11:00+00'::timestamptz, null::timestamptz) $$,
-  'admin at aal2: console_releases has both tenants, with number, status and times');
+             '2026-11-05 10:01+00'::timestamptz, null::text, null::text),
+            (tests.k('1422'), tests.tenant('demo'), 1, 'failed', '2026-11-05 11:00+00'::timestamptz, null::timestamptz,
+             'build_failed', 'previous_bundle') $$,
+  'admin at aal2: console_releases has both tenants, with number, status, times, error code and step');
 select set_eq($$ select id, tenant_id, base_url, active from api.console_sites $$,
   $$ values (tests.k('1411'), tests.tenant('labak'), 'http://localhost:3411', true),
             (tests.k('1412'), tests.tenant('demo'), 'http://localhost:3412', false) $$,
   'admin at aal2: console_sites has both tenants, with id, base URL and active');
 select set_eq($$ select release_id, site_id, tenant_id, notify_status, notify_attempts, notified_at, live_status,
-                        live_confirmed_at, last_error, first_failed_at, next_attempt_at from api.console_deliveries $$,
+                        live_confirmed_at, last_error_code, last_error_status, first_failed_at, next_attempt_at
+                 from api.console_deliveries $$,
   $$ values (tests.k('1421'), tests.k('1411'), tests.tenant('labak'), 'ok', 1, '2026-11-05 10:02+00'::timestamptz, 'ok',
-             '2026-11-05 10:03+00'::timestamptz, null::jsonb, null::timestamptz, null::timestamptz),
+             '2026-11-05 10:03+00'::timestamptz, null::text, null::text, null::timestamptz, null::timestamptz),
             (tests.k('1422'), tests.k('1412'), tests.tenant('demo'), 'failed', 4, null::timestamptz, 'pending',
-             null::timestamptz, '{"code": "http_500"}'::jsonb, '2026-11-05 11:05+00'::timestamptz,
+             null::timestamptz, 'notify_failed', '500', '2026-11-05 11:05+00'::timestamptz,
              '2026-11-05 12:00+00'::timestamptz) $$,
-  'admin at aal2: console_deliveries has both tenants, with statuses, attempts, times and last error');
+  'admin at aal2: console_deliveries has both tenants, with statuses, attempts, times and the last error''s code and status');
+select is_empty($$ select r.id from api.console_releases r where to_jsonb(r)::text like '%LEAKED%' $$,
+  'a release whose error has a message shows no message through console_releases');
+select is_empty($$ select r.id from api.console_requests r where to_jsonb(r)::text like '%LEAKED%' $$,
+  'a request whose error has an issue message shows none through console_requests');
+select is_empty($$ select d.site_id from api.console_deliveries d where to_jsonb(d)::text like '%LEAKED%' $$,
+  'a delivery whose last error names a path shows none through console_deliveries');
 select set_eq($$ select id, tenant_id, at, actor_id, action, target_type, target_id from api.console_audit $$,
   $$ select id, tenant_id, at, actor_id, action, target_type, target_id from cms.audit_log $$,
   'admin at aal2: console_audit has every event');
