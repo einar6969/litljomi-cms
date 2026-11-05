@@ -117,7 +117,7 @@ Left unchanged on purpose. The KING proposes corrections and Einar agrees them.
 
 | # | Decision | Note |
 |---|---|---|
-| E1 | Approving `docs/plans/m4.md` | M4 is unfrozen (decision 57). The plan also asks whether test 1 needs a live site |
+| E1 | The hosted approval at the end of M4 | `docs/plans/m4.md`, "Hosted acceptance" |
 | E4 | Production: when, which region, and the Pro cost | See R2 |
 | E5 | The definition of finished | Proposed in `BRIEF.md`, section 7 |
 | E6 | Target month for LABAK's launch | No urgency. A date sets M6's pace |
