@@ -1,6 +1,6 @@
 {
   "permissions": {
-    "defaultMode": "acceptEdits",
+    "defaultMode": "auto",
     "disableBypassPermissionsMode": "disable",
     "allow": [
       "Bash(git *)",
@@ -55,7 +55,8 @@
     "failIfUnavailable": true,
     "excludedCommands": [
       "gh *",
-      "git *"
+      "git *",
+      "pnpm --filter cms e2e *"
     ],
     "network": {
       "allowedDomains": [
