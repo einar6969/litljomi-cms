@@ -21,12 +21,12 @@ A milestone being accepted does not make every line of it hosted.
 
 ## 1. Where things stand
 
-- **Accepted:** M0, M1 (checkpoint C4), M2 and M3 (C5, decision 51.5), M4 (C6, decision 64).
+- **Accepted:** M0, M1 (checkpoint C4), M2 and M3 (C5, decision 51.5), M4 (C6, decision 64), M5 (C7, decision 69).
 - **Staging matches `main`** at `9d31159`, with 45 migrations, the M5 fixes included. Later local docs commits don't affect it.
 - **Nothing real is live.** There is no production project, no real editor and no real content. labak.is is still the old Joomla site.
 - **Tests:** on `b756c74`, from the CI log: pgTAP 2,006 in 39 files, unit 2,498, integration 96 + 116. Unit 2,498 re-run locally on `f2ab9e4`; the other totals were not re-read. CI passed on `eb4e85c`.
 
-M5's review and fix round are done and on staging. Hosted verification is in `docs/execution/checkpoints/C7.md`: every check run passed and the hosted email template is updated. M5 waits for Einar's acceptance.
+M5 is accepted. What stays open is in `docs/execution/checkpoints/C7.md`. Next are Einar's decisions on production (E4), the definition of finished (E5) and LABAK's month (E6). No hosted action has an approval now.
 
 ## 2. What the Hub is and why it exists
 
@@ -126,6 +126,8 @@ All numbered decisions are in `docs/plans/2026-11-01-m0-m1.md`, despite its name
 | 65 | M5 fix plan approved. Agent access accepted as a risk: an agent can reach the secret key and `staging` |
 | 66 | Finding 7 parked until a later password system |
 | 67 | Residual regex slowdown by an editor accepted |
+| 68 | M5 hosted verification approved |
+| 69 | M5 accepted |
 
 **Known not to be in the numbered decisions:**
 
@@ -210,7 +212,7 @@ Off-limits without Einar's explicit say-so: labak.is, its DNS, FILMÍS, ISNIC, t
 | Milestone | Delivers | Status |
 |---|---|---|
 | **M4 Operations** | Minimal read-only console with MFA; provisioning CLI; webhook secret rotation; suspend and revoke from the CLI; runbooks. Offboarding, exports and restore are out (decisions 53, 55, 56) | Accepted (C6, decision 64). Plan in `docs/plans/m4.md`, runbook in `docs/runbooks/operations.md`. `tools/cli` has `provision` for tenant, site, editor and preview, plus `migrate-drafts`, `boundary-check` and `check-schema`. No console routes exist. Findings are in `OPEN-ISSUES.md`, section M |
-| **M5 Independent review** | Fresh-context security review of the boundary, worker, preview and SDK | Review and fixes done, on staging. Hosted verification open (C7). Must be accepted before real editors or content |
+| **M5 Independent review** | Fresh-context security review of the boundary, worker, preview and SDK | Accepted (C7, decision 69) |
 | **M6 LABAK integration** | Import 21 articles word for word; site reads from the SDK; `remotePatterns`; Icelandic editor guide | Started: `hub-integration` at `376402b` proved the slice |
 
 The validation criteria are in spec §13.2. Inviting real editors and launching are separate decisions after M6.

@@ -65,7 +65,7 @@ These aren't in `deferred-minors.md`. "Open" was checked in code on 2026-11-05. 
 | S23 | P2 | W1 limit: replaced images aren't re-checked after a newer release | Decide in M5 |
 | S25 | P2 | A failed build's `releases.error` message can quote a fragment of published entry text, through `JSON.parse` errors. The same text reaches `audit_log.details` and possibly the alert email. `omitted[].error` is free text too. Schema validation can echo a crafted key (`packages/schema/src/fields/list.ts:46`) into `publish_requests.error`. `site_deliveries.last_error` holds site paths and media URLs. The console shows only codes, steps and statuses | Fix in M5: `message` should never quote a payload |
 | S26 | P2 | TOTP guesses have no account lockout, only Auth's rate limit (default 15 a minute). Accepted for now (decision 62). The dashboard doesn't show the hosted value (C7) | Measure it or accept it before real clients |
-| S27 | P1 | M5's other Major findings: `docs/verification/m5-review.md`. Finding 10 is accepted (decision 65). Finding 7 is parked until a password system (decision 66) | Fixes merged and on staging. Findings 6 and 9 checked on hosted (C7) |
+| S27 | Closed | M5's other Major findings: fixed, reduced or accepted (C7, decision 69). Finding 10 is accepted (decision 65). Finding 7 is parked until a password system (decision 66) | None |
 | S24 | P2 | `main` has no branch protection. The merge rule and `main-guard` are behavioural and alert-only | Accept knowingly. While the repo is public, protection should need no GitHub Pro (not tested) |
 
 ## B. Verification gaps

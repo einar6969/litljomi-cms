@@ -191,6 +191,11 @@
           "at": "2026-11-05",
           "scope": "M5 hosted verification (decision 68), on Supabase staging and Vercel staging projects only: preflight read; supabase db push (3 migrations); push main to staging; email_change template; OTP and MFA settings read; sign-in, edit, publish, withdrawal, repeat unpublish and email-change checks; boundary-check; read-only connector checks. Einar delegated his steps to the KING where they can be done without his credentials being entered. Excludes production, labak-hub, labak.is, DNS, firewall rules and forced misses. Ends when Einar accepts M5.",
           "note": "Einar in chat, 2026-11-05, answering \"Do you approve M5's hosted verification on staging?\" after the request listing ten steps and exclusions: \"please go ahead and try to close this M5 task out by yourself. You have full autonomy. I just want to finish this as effectively as possible.\""
+        },
+        {
+          "at": "2026-11-05",
+          "scope": "Closed: the approval of decision 68 ended with this acceptance. A later hosted action needs a new approval.",
+          "note": "Einar in chat, 2026-11-05, answering \"Do you accept M5?\": \"Accept M5\"."
         }
       ],
       "amendments": [
@@ -321,6 +326,11 @@
           "at": "2026-11-05",
           "scope": "M5 hosted verification (decision 68), on Supabase staging and Vercel staging projects only: preflight read; supabase db push (3 migrations); push main to staging; email_change template; OTP and MFA settings read; sign-in, edit, publish, withdrawal, repeat unpublish and email-change checks; boundary-check; read-only connector checks. Einar delegated his steps to the KING where they can be done without his credentials being entered. Excludes production, labak-hub, labak.is, DNS, firewall rules and forced misses. Ends when Einar accepts M5.",
           "note": "Einar in chat, 2026-11-05, answering \"Do you approve M5's hosted verification on staging?\" after the request listing ten steps and exclusions: \"please go ahead and try to close this M5 task out by yourself. You have full autonomy. I just want to finish this as effectively as possible.\""
+        },
+        {
+          "at": "2026-11-05",
+          "scope": "Closed: the approval of decision 68 ended with this acceptance. A later hosted action needs a new approval.",
+          "note": "Einar in chat, 2026-11-05, answering \"Do you accept M5?\": \"Accept M5\"."
         }
       ]
     },
