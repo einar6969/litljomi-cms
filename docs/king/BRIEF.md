@@ -114,6 +114,7 @@ All numbered decisions are in `docs/plans/2026-11-01-m0-m1.md`, despite its name
 | 52 | Fallbacks local-only, next15 site inactive, HTTP 400 accepted, stale warning to clear |
 | 53 | M4's scope: on-demand exports, offboarding parked, suspend and revoke kept, three new `admin_*` functions, local execution |
 | 54 | Public repo, billing dropped, W1 gets no dedicated staging run, docs-only commits need no PR and can stay local, the second KING |
+| 55 | Single-tenant restore dropped, with its acceptance test. M4 has two acceptance tests |
 
 **Known not to be in the numbered decisions:**
 
@@ -197,7 +198,7 @@ Off-limits without Einar's explicit say-so: labak.is, its DNS, FILMÍS, ISNIC, t
 
 | Milestone | Delivers | Status |
 |---|---|---|
-| **M4 Operations** | Minimal read-only console with MFA; provisioning CLI; on-demand export and single-tenant restore; webhook secret rotation; suspend and revoke from the CLI; runbooks. Offboarding and nightly exports are out (decision 53) | Frozen, no plan. `tools/cli` has `provision` for tenant, site, editor and preview, plus `migrate-drafts`, `boundary-check` and `check-schema`. No console routes exist. Findings are in `OPEN-ISSUES.md`, section M |
+| **M4 Operations** | Minimal read-only console with MFA; provisioning CLI; on-demand export; webhook secret rotation; suspend and revoke from the CLI; runbooks. Offboarding, nightly exports and restore are out (decisions 53, 55) | Frozen, no plan. `tools/cli` has `provision` for tenant, site, editor and preview, plus `migrate-drafts`, `boundary-check` and `check-schema`. No console routes exist. Findings are in `OPEN-ISSUES.md`, section M |
 | **M5 Independent review** | Fresh-context security review of the boundary, worker, preview and SDK | Not started. Must pass before real editors or content |
 | **M6 LABAK integration** | Import 21 articles word for word; site reads from the SDK; `remotePatterns`; Icelandic editor guide | Started: `hub-integration` at `376402b` proved the slice |
 
