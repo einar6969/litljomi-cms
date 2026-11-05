@@ -10,7 +10,7 @@ If the plan and the spec disagree, the spec wins: stop and report the conflict i
 
 ## How to resume
 
-Read `docs/execution/RESUME.md` first. Execution state lives in `docs/execution/` (`state.json` is authoritative), never in conversation history.
+A session coordinating the project as KING starts at `docs/king/START.md`. Otherwise, read `docs/execution/RESUME.md` first. Execution state lives in `docs/execution/` (`state.json` is authoritative), never in conversation history.
 
 ## Approval gates
 
