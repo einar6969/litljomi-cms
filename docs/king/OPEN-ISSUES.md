@@ -63,6 +63,7 @@ These aren't in `deferred-minors.md`. "Open" was checked in code on 2026-11-05. 
 | S21 | P2 | Sign-out can't revoke a pending sign-in session; it stays valid until its tokens expire (`deferred-minors.md`, M5) | M5 |
 | S22 | P2 | W1 limit: any newer request for the entry stops the checks, even one that failed. A withdrawal still on the site then gets no alert | Decide in M5 |
 | S23 | P2 | W1 limit: replaced images aren't re-checked after a newer release | Decide in M5 |
+| S25 | P2 | A failed build's `releases.error` message can quote a fragment of published entry text, through `JSON.parse` errors. The same text reaches `audit_log.details` and possibly the alert email. `omitted[].error` is free text too. The console shows only the code and step | Fix in M5: `message` should never quote a payload |
 | S24 | P2 | `main` has no branch protection. The merge rule and `main-guard` are behavioural and alert-only | Accept knowingly. While the repo is public, protection should need no GitHub Pro (not tested) |
 
 ## B. Verification gaps
