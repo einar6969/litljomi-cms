@@ -1,11 +1,12 @@
 import { notFound } from 'next/navigation';
 import { parseChangesParam } from '@/editor/overview';
 import { loadTenantOverview } from '@/editor/server/tenant-overview';
+import { structureLabel } from '@/editor/structure';
 import { TenantOverview } from '@/editor/TenantOverview';
 import { t } from '@/i18n/is';
 import { createEditorClient } from '@/lib/supabase/server';
 import { currentTenant, isActive } from '@/lib/tenant';
-import { getModule } from '@/modules/registry';
+import { getModule, getType } from '@/modules/registry';
 import { TopBar } from '@/ui/TopBar';
 
 type Props = {
@@ -28,11 +29,13 @@ export default async function TenantHome({ params, searchParams }: Props) {
     structure,
     showWaiting: parseChangesParam(breytingar),
   });
+  // A waiting entry can be of a type outside the structure, so the module has the last word.
+  const typeLabel = (type: string) => structureLabel(structure, type) ?? getType(tenant.slug, type)?.label;
   return (
     <>
       <TopBar title={t.app.title} home />
       <main className="page page-home">
-        <TenantOverview tenantSlug={tenant.slug} tenantName={tenant.name} structure={structure} overview={overview} now={new Date()} />
+        <TenantOverview tenantSlug={tenant.slug} tenantName={tenant.name} structure={structure} typeLabel={typeLabel} overview={overview} now={new Date()} />
       </main>
     </>
   );

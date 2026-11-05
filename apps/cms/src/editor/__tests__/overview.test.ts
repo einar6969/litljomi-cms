@@ -19,13 +19,10 @@ import {
 } from '../overview';
 
 const row = (overrides: Partial<OverviewStatusRow> = {}): OverviewStatusRow => ({
-  request_id: 'r1',
-  tenant_id: 't1',
   entry_id: 'e1',
   action: 'publish',
   status: 'committed',
   requested_at: '2026-11-05T12:00:00+00:00',
-  release_number: 1,
   release_status: 'delivered',
   omitted: false,
   site_count: 1,
@@ -34,15 +31,13 @@ const row = (overrides: Partial<OverviewStatusRow> = {}): OverviewStatusRow => (
   sites_not_confirmed: 0,
   retries_exhausted: false,
   live_retrying: false,
-  latest_request_id: 'r1',
-  latest_action: 'publish',
   ...overrides,
 });
 
 const pending = (entry_id: string) => row({ entry_id, status: 'pending', release_status: null, sites_notified: 0, sites_live_ok: 0 });
 const failed = (entry_id: string) => row({ entry_id, sites_live_ok: 0, retries_exhausted: true });
 const notConfirmed = (entry_id: string) => row({ entry_id, sites_live_ok: 0, sites_not_confirmed: 1 });
-const removed = (entry_id: string) => row({ entry_id, action: 'unpublish', latest_action: 'unpublish' });
+const removed = (entry_id: string) => row({ entry_id, action: 'unpublish' });
 
 const ok = <T,>(value: T): Read<T> => ({ ok: true, value });
 const bad: Read<never> = { ok: false, code: '42501' };
@@ -72,6 +67,11 @@ describe('the waiting set', () => {
   it('is the union of the changed ids and the unproven rows, each entry once', () => {
     const summary = summarizeStatus([pending('a'), failed('b'), row({ entry_id: 'c' })]);
     expect(waitingIds(['a', 'd'], summary).sort()).toEqual(['a', 'b', 'd']);
+  });
+
+  it('puts the unproven entries first, then the changed ones in the order they were read', () => {
+    const summary = summarizeStatus([pending('a'), failed('b')]);
+    expect(waitingIds(['newest', 'a', 'older'], summary)).toEqual(['a', 'b', 'newest', 'older']);
   });
 
   it('leaves out proven, withdrawn, and no-site rows', () => {

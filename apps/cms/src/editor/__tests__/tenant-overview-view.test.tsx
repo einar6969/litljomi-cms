@@ -28,8 +28,10 @@ const overview = (over: Partial<Overview> = {}): Overview => ({
   ...over,
 });
 
+const typeLabel = (type: string) => (type === 'news' ? 'Fréttir' : undefined);
+
 const render = (over: Partial<Overview> = {}, structure: React.ComponentProps<typeof TenantOverview>['structure'] = [{ type: 'news', label: 'Fréttir' }]) =>
-  renderToStaticMarkup(<TenantOverview tenantSlug="acme" tenantName="Acme" structure={structure} overview={overview(over)} now={NOW} />);
+  renderToStaticMarkup(<TenantOverview tenantSlug="acme" tenantName="Acme" structure={structure} typeLabel={typeLabel} overview={overview(over)} now={NOW} />);
 
 describe('the tenant overview', () => {
   it('keeps the tenant name as the only h1, over the greeting', () => {
@@ -84,12 +86,26 @@ describe('the tenant overview', () => {
     expect(link).not.toContain('Fréttir');
   });
 
+  it('shows the label it is given, whatever the structure says', () => {
+    const html = renderToStaticMarkup(
+      <TenantOverview tenantSlug="acme" tenantName="Acme" structure={[]} typeLabel={() => 'Tilkynning'} overview={overview({ recent: { ok: true, value: [{ ...ENTRY, type: 'notice' }] } })} now={NOW} />,
+    );
+    expect(html).toContain('<span class="ov-type">Tilkynning</span>');
+  });
+
+  it('renders no type label when there is none, and never the key', () => {
+    const html = render({ recent: { ok: true, value: [{ ...ENTRY, type: 'notice' }] } });
+    expect(html).not.toContain('ov-type');
+    expect(html).not.toContain('>notice<');
+  });
+
   it('encodes the slug and the type, and names an untitled entry', () => {
     const html = renderToStaticMarkup(
       <TenantOverview
         tenantSlug="a b"
         tenantName="Acme"
         structure={[{ type: 'x/y', label: 'X' }]}
+        typeLabel={typeLabel}
         overview={overview({ recent: { ok: true, value: [{ ...ENTRY, type: 'x/y', title: null }] } })}
         now={NOW}
       />,
@@ -146,9 +162,8 @@ describe('the tenant overview', () => {
   it('lets an unproven state replace green in the list', () => {
     const status = summarizeStatus([
       {
-        request_id: 'r1', tenant_id: 't', entry_id: 'e1', action: 'publish', status: 'pending', requested_at: '2026-11-05T12:00:00Z', release_number: null,
-        release_status: null, omitted: false, site_count: 1, sites_notified: 0, sites_live_ok: 0, sites_not_confirmed: 0, retries_exhausted: false,
-        live_retrying: false, latest_request_id: 'r1', latest_action: 'publish',
+        entry_id: 'e1', action: 'publish', status: 'pending', requested_at: '2026-11-05T12:00:00Z', release_status: null, omitted: false, site_count: 1,
+        sites_notified: 0, sites_live_ok: 0, sites_not_confirmed: 0, retries_exhausted: false, live_retrying: false,
       },
     ]);
     const html = render({ status: { ok: true, value: status } });

@@ -5,6 +5,7 @@ import type { StructureNode } from '@litljomi/cms-schema';
 import { describe, expect, it } from 'vitest';
 import { t } from '@/i18n/is';
 import type { SupabaseClient } from '@/lib/supabase/types';
+import { waitingHeading } from '../../overview';
 import { loadTenantOverview, OVERVIEW_STATUS_COLUMNS } from '../tenant-overview';
 
 type Answer = { data?: unknown; error?: { code: string; message?: string } | null; count?: number | null };
@@ -76,13 +77,10 @@ const STRUCTURE: StructureNode[] = [
 ];
 const ENTRY = { id: 'e1', type: 'news', title: 'Frétt', status: 'published', updated_at: '2026-11-05T12:00:00+00:00' };
 const LIVE = {
-  request_id: 'r1',
-  tenant_id: TENANT,
   entry_id: 'e1',
   action: 'publish',
   status: 'committed',
   requested_at: '2026-11-05T12:00:00+00:00',
-  release_number: 1,
   release_status: 'delivered',
   omitted: false,
   site_count: 1,
@@ -91,8 +89,6 @@ const LIVE = {
   sites_not_confirmed: 0,
   retries_exhausted: false,
   live_retrying: false,
-  latest_request_id: 'r1',
-  latest_action: 'publish',
 };
 const UNPROVEN = { ...LIVE, entry_id: 'e2', status: 'pending', release_status: null, sites_notified: 0, sites_live_ok: 0 };
 
@@ -144,14 +140,14 @@ describe('the reads', () => {
     }
   });
 
-  it('read the status without error and missing_assets', async () => {
+  it('read only the status columns the overview uses', async () => {
     const { client, calls } = fakeClient(healthy);
     await load(client);
     const status = calls.find(isStatus)!;
     expect(status.columns).toBe(OVERVIEW_STATUS_COLUMNS);
-    expect(status.columns.split(', ')).not.toContain('error');
-    expect(status.columns.split(', ')).not.toContain('missing_assets');
-    expect(status.columns.split(', ')).toContain('latest_action');
+    expect(status.columns).toBe(
+      'entry_id, action, status, requested_at, release_status, omitted, site_count, sites_notified, sites_live_ok, sites_not_confirmed, retries_exhausted, live_retrying',
+    );
     expect(status.in.status).toEqual(['pending', 'validating', 'committed']);
     expect(status.limit).toBe(1000);
     expect(status.options).toEqual({ count: 'exact' });
@@ -207,7 +203,7 @@ describe('the reads', () => {
   it('read the changed ids with an exact count', async () => {
     const { client, calls } = fakeClient(healthy);
     await load(client);
-    expect(calls.find(isChanged)).toMatchObject({ columns: 'id', options: { count: 'exact' }, limit: 1000 });
+    expect(calls.find(isChanged)).toMatchObject({ columns: 'id', options: { count: 'exact' }, limit: 1000, order: [['updated_at', { ascending: false }]] });
   });
 
   it('do not read the published count unless the band needs it', async () => {
@@ -331,7 +327,29 @@ describe('the waiting view (?breytingar=1)', () => {
     expect(calls.some(isRecent)).toBe(false);
     const byId = calls.find(isById)!;
     expect(byId.in.id!.slice().sort()).toEqual(['e1', 'e2', 'e3']);
-    expect(byId).toMatchObject({ columns: 'id, type, title, status, updated_at', eq: { tenant_id: TENANT }, order: [['updated_at', { ascending: false }]] });
+    expect(byId).toMatchObject({
+      columns: 'id, type, title, status, updated_at',
+      eq: { tenant_id: TENANT },
+      is: { archived_at: null },
+      order: [['updated_at', { ascending: false }]],
+    });
+  });
+
+  it('asks for the unproven entries first, then the newest changed ones, each once', async () => {
+    const { client, calls } = withAnswers(
+      (c) => (isChanged(c) ? { data: [{ id: 'newest' }, { id: 'e2' }, { id: 'older' }], count: 3 } : isStatus(c) ? { data: [LIVE, UNPROVEN], count: 2 } : undefined),
+    );
+    await load(client, { showWaiting: true });
+    expect(calls.find(isById)!.in.id).toEqual(['e2', 'newest', 'older']);
+  });
+
+  it('never lets the changed entries push an unproven one past the bound, and n stays the full count', async () => {
+    const unproven = Array.from({ length: 30 }, (_, i) => ({ ...UNPROVEN, entry_id: `u${i}` }));
+    const changed = Array.from({ length: 40 }, (_, i) => ({ id: `c${i}` }));
+    const { client, calls } = withAnswers((c) => (isChanged(c) ? { data: changed, count: 40 } : isStatus(c) ? { data: unproven, count: 30 } : undefined));
+    const overview = await load(client, { showWaiting: true });
+    expect(calls.find(isById)!.in.id).toEqual([...unproven.map((row) => row.entry_id), ...changed.slice(0, 20).map((row) => row.id)]);
+    expect(overview.band.heading).toBe(waitingHeading(70));
   });
 
   it('asks for the first 50 ids', async () => {

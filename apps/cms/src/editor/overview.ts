@@ -11,8 +11,23 @@ import { navSections, type NavItem } from './structure';
 /** A read that succeeded, or failed with its code only (never the database's message). */
 export type Read<T> = { ok: true; value: T } | { ok: false; code: string };
 
-/** The columns of `api.publication_status` the overview reads: `displayState` needs no others here. */
-export type OverviewStatusRow = Omit<PublicationStatusRow, 'error' | 'missing_assets'>;
+/** The columns of `api.publication_status` the overview reads: what `displayState` uses for `pending`, `validating` and `committed`, and what `summarizeStatus` uses. */
+export const OVERVIEW_STATUS_FIELDS = [
+  'entry_id',
+  'action',
+  'status',
+  'requested_at',
+  'release_status',
+  'omitted',
+  'site_count',
+  'sites_notified',
+  'sites_live_ok',
+  'sites_not_confirmed',
+  'retries_exhausted',
+  'live_retrying',
+] as const satisfies readonly (keyof PublicationStatusRow)[];
+
+export type OverviewStatusRow = Pick<PublicationStatusRow, (typeof OVERVIEW_STATUS_FIELDS)[number]>;
 
 export type EntryStatus = keyof typeof t.entries.statuses;
 
@@ -48,6 +63,17 @@ export type Band = {
 };
 
 type BandReads = { site: Read<OverviewSite | null>; changed: Read<string[]>; status: Read<StatusSummary> };
+
+/** The rest of a `PublicationStatusRow`: never read, and `displayState` looks at none of it for these statuses. */
+const UNREAD: Omit<PublicationStatusRow, keyof OverviewStatusRow> = {
+  request_id: '',
+  tenant_id: '',
+  error: null,
+  release_number: null,
+  missing_assets: null,
+  latest_request_id: '',
+  latest_action: 'publish',
+};
 
 const STATUS_TONE: Record<EntryStatus, BadgeTone> = { published: 'ok', changed: 'warning', archived: 'hollow', draft: 'neutral' };
 
@@ -87,7 +113,7 @@ export function summarizeStatus(rows: readonly OverviewStatusRow[]): StatusSumma
   let failed = false;
   let lastPublished: string | null = null;
   for (const row of rows) {
-    const state = displayState({ ...row, error: null, missing_assets: null });
+    const state = displayState({ ...row, ...UNREAD });
     if (row.action === 'publish' && state.tone === 'ok') {
       proven.add(row.entry_id);
       if (lastPublished === null || Date.parse(row.requested_at) > Date.parse(lastPublished)) lastPublished = row.requested_at;
@@ -98,8 +124,8 @@ export function summarizeStatus(rows: readonly OverviewStatusRow[]): StatusSumma
   return { proven, unproven, failed, lastPublished };
 }
 
-/** The entries that wait: changed since their publication, or with an unproven request. Each once. */
-export const waitingIds = (changed: readonly string[], summary: StatusSummary): string[] => [...new Set([...changed, ...summary.unproven.keys()])];
+/** The entries that wait: with an unproven request first, then changed since their publication, in `changed`'s order. Each once. */
+export const waitingIds = (changed: readonly string[], summary: StatusSummary): string[] => [...new Set([...summary.unproven.keys(), ...changed])];
 
 /** Whether the band has reached "nothing proven, n = 0", the one place the published count decides. */
 export function needsPublishedCount({ site, changed, status }: BandReads): boolean {

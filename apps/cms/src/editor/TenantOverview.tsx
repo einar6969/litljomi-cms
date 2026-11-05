@@ -8,12 +8,13 @@ import { StatusBadge } from '@/ui/StatusBadge';
 import { entryPill, formatOverviewTime, type OverviewEntry, type Read, type StatusSummary } from './overview';
 import type { TenantOverviewData } from './server/tenant-overview';
 import { StructureNav } from './StructureNav';
-import { structureLabel } from './structure';
 
 type Props = {
   tenantSlug: string;
   tenantName: string;
   structure: StructureNode[];
+  /** What to call a content type, resolved by the page. Without a label a row shows none, never the key. */
+  typeLabel: (type: string) => string | undefined;
   overview: TenantOverviewData;
   /** The moment "í dag" and "í gær" are counted from. */
   now: Date;
@@ -32,7 +33,7 @@ function Time({ iso, now, className = '' }: { iso: string; now: Date; className?
   );
 }
 
-function RecentTable({ rows, base, structure, status, now }: { rows: OverviewEntry[]; base: string; structure: StructureNode[]; status: Read<StatusSummary>; now: Date }) {
+function RecentTable({ rows, base, typeLabel, status, now }: { rows: OverviewEntry[]; base: string; typeLabel: Props['typeLabel']; status: Read<StatusSummary>; now: Date }) {
   return (
     // Below 768 px the table is stacked (globals.css), so its roles are stated, as in the entry list.
     <table role="table" className="tbl entry-table">
@@ -48,22 +49,25 @@ function RecentTable({ rows, base, structure, status, now }: { rows: OverviewEnt
         </tr>
       </thead>
       <tbody role="rowgroup">
-        {rows.map((row) => (
-          <tr key={row.id} role="row">
-            <td role="cell">
-              <Link href={`${base}/${encodeURIComponent(row.type)}/${encodeURIComponent(row.id)}`} className={row.title ? 't' : 't text-muted'}>
-                {row.title ?? t.entries.untitled}
-              </Link>
-              <span className="ov-type">{structureLabel(structure, row.type) ?? row.type}</span>
-            </td>
-            <td role="cell">
-              <Pill entry={row} status={status} />
-            </td>
-            <td role="cell">
-              <Time iso={row.updated_at} now={now} className="text-muted" />
-            </td>
-          </tr>
-        ))}
+        {rows.map((row) => {
+          const label = typeLabel(row.type);
+          return (
+            <tr key={row.id} role="row">
+              <td role="cell">
+                <Link href={`${base}/${encodeURIComponent(row.type)}/${encodeURIComponent(row.id)}`} className={row.title ? 't' : 't text-muted'}>
+                  {row.title ?? t.entries.untitled}
+                </Link>
+                {label ? <span className="ov-type">{label}</span> : null}
+              </td>
+              <td role="cell">
+                <Pill entry={row} status={status} />
+              </td>
+              <td role="cell">
+                <Time iso={row.updated_at} now={now} className="text-muted" />
+              </td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );
@@ -74,7 +78,7 @@ function RecentTable({ rows, base, structure, status, now }: { rows: OverviewEnt
  * pages (the Síður card). What it says comes from `loadTenantOverview` and editor/overview.ts; this
  * file only lays it out.
  */
-export function TenantOverview({ tenantSlug, tenantName, structure, overview, now }: Props) {
+export function TenantOverview({ tenantSlug, tenantName, structure, typeLabel, overview, now }: Props) {
   const { band, counts, recent, showingWaiting, pages, pagesFailed, status } = overview;
   const base = `/t/${encodeURIComponent(tenantSlug)}`;
   return (
@@ -132,7 +136,7 @@ export function TenantOverview({ tenantSlug, tenantName, structure, overview, no
               <p>{t.entries.empty}</p>
             </div>
           ) : (
-            <RecentTable rows={recent.value} base={base} structure={structure} status={status} now={now} />
+            <RecentTable rows={recent.value} base={base} typeLabel={typeLabel} status={status} now={now} />
           )}
         </section>
         {pages.length > 0 ? (

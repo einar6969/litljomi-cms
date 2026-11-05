@@ -537,11 +537,44 @@ test.describe('the tenant overview', () => {
     await page.setViewportSize({ width: 1280, height: 720 });
   }
 
+  /** At each width, every recent row's type label starts at or below the end of its title link. */
+  async function expectLabelsBelowTitles(page: Page): Promise<void> {
+    for (const width of WIDTHS) {
+      await page.setViewportSize({ width, height: 900 });
+      const rows = await recentRows(page).evaluateAll((trs) =>
+        trs.flatMap((tr) => {
+          const link = tr.querySelector('a.t');
+          const label = tr.querySelector('.ov-type');
+          return link && label ? [{ title: link.textContent, gap: label.getBoundingClientRect().top - link.getBoundingClientRect().bottom }] : [];
+        }),
+      );
+      expect(rows.length, `recent rows with a label at ${width} px`).toBeGreaterThan(0);
+      expect(rows.filter((row) => row.gap < 0), `labels above their title's end at ${width} px`).toEqual([]);
+    }
+    await page.setViewportSize({ width: 1280, height: 720 });
+  }
+
+  /** How many lines of text a link's title takes at 1440 px. */
+  async function titleLines(page: Page, title: string): Promise<number> {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const lines = await recentRows(page)
+      .locator('a.t', { hasText: title })
+      .evaluate((link) => {
+        const range = document.createRange();
+        range.selectNodeContents(link);
+        return Math.round(range.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(link).lineHeight));
+      });
+    await page.setViewportSize({ width: 1280, height: 720 });
+    return lines;
+  }
+
   test('populated, and the waiting entries', async ({ page }) => {
     test.setTimeout(10 * 60_000);
     await ensureDemoSite(page);
     const statusRead = page.waitForRequest((r) => r.url().startsWith(`${SUPABASE_URL}/rest/v1/publication_status`));
-    await newDemoEvent(page, `Yfirlit ${Date.now()}`);
+    // Long enough to wrap at 1440 px: its type label must still sit below its last line.
+    const title = `Yfirlit opnunarhátíðar vorsins með tónlist og veitingum fyrir alla fjölskylduna ${Date.now()}`;
+    await newDemoEvent(page, title);
     const editor = await editorHeadersOf(await statusRead);
     await page.getByRole('button', { name: t.publish.publish }).click();
     await expect(state(page)).toHaveText(t.publish.live, CONFIRMED);
@@ -553,6 +586,7 @@ test.describe('the tenant overview', () => {
     await page.waitForURL(/\/t\/demo\/site-info\/[0-9a-f-]{36}$/);
 
     // The demo tenant keeps what earlier specs left, so what the band must say comes from the rows.
+    // Computed with production `deriveBand`, so this checks the wiring; overview.test.ts pins the rules.
     const rows = await apiRows<OverviewStatusRow>(editor, 'publication_status?status=in.(pending,validating,committed)');
     const changed = await apiRows<{ id: string }>(editor, 'entry_list?select=id&status=eq.changed');
     const expected = deriveBand({
@@ -583,6 +617,8 @@ test.describe('the tenant overview', () => {
     await expect(clear(page)).toBeVisible();
     await expect(recentRows(page).first()).toBeVisible();
     await expectTapTargets(page);
+    expect(await titleLines(page, title), 'the long title wraps at 1440 px').toBeGreaterThan(1);
+    await expectLabelsBelowTitles(page);
     await shoot(page, 'home-overview-changes');
 
     await clear(page).click();

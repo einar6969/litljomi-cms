@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@/lib/supabase/types';
 import {
   deriveBand,
   needsPublishedCount,
+  OVERVIEW_STATUS_FIELDS,
   overviewTypes,
   summarizeStatus,
   usableSiteUrl,
@@ -17,7 +18,6 @@ import {
   type Read,
   type StatusSummary,
 } from '../overview';
-import { PUBLICATION_STATUS_COLUMNS } from '../publish/status';
 
 export type TenantOverviewData = {
   band: Band;
@@ -35,13 +35,11 @@ type Answer<T> = { data: T | null; error: { code?: string } | null; count?: numb
 type Query = PromiseLike<Answer<unknown>>;
 
 const ENTRY_COLUMNS = 'id, type, title, status, updated_at';
-/** The columns of the status read: no `error`, no `missing_assets` (a request in these states has neither to show). */
-export const OVERVIEW_STATUS_COLUMNS = PUBLICATION_STATUS_COLUMNS.split(', ')
-  .filter((column) => column !== 'error' && column !== 'missing_assets')
-  .join(', ');
+export const OVERVIEW_STATUS_COLUMNS = OVERVIEW_STATUS_FIELDS.join(', ');
 /** The statuses `displayState` can take further than a failure of the request itself. */
 const OPEN_STATUSES = ['pending', 'validating', 'committed'];
 const RECENT_LIMIT = 5;
+/** The `.in('id', ...)` list goes in the URL, so it stays short. */
 const WAITING_LIMIT = 50;
 /** The stack's `max_rows`: asking for more cannot return more. */
 const MAX_ROWS = 1000;
@@ -116,7 +114,9 @@ export async function loadTenantOverview(
         return { ok: true, value: row ? { url: usableSiteUrl(row.base_url) } : null };
       },
     ),
-    allRows<{ id: string }>(entries().select('id', { count: 'exact' }).eq('tenant_id', tenantId).eq('status', 'changed').limit(MAX_ROWS)),
+    allRows<{ id: string }>(
+      entries().select('id', { count: 'exact' }).eq('tenant_id', tenantId).eq('status', 'changed').order('updated_at', { ascending: false }).limit(MAX_ROWS),
+    ),
     allRows<OverviewStatusRow>(
       client.from('publication_status').select(OVERVIEW_STATUS_COLUMNS, { count: 'exact' }).eq('tenant_id', tenantId).in('status', OPEN_STATUSES).limit(MAX_ROWS),
     ),
@@ -146,7 +146,12 @@ export async function loadTenantOverview(
     firstRecent ??
       (showingWaiting
         ? rows<OverviewEntry>(
-            entries().select(ENTRY_COLUMNS).eq('tenant_id', tenantId).in('id', waiting.slice(0, WAITING_LIMIT)).order('updated_at', { ascending: false }),
+            entries()
+              .select(ENTRY_COLUMNS)
+              .eq('tenant_id', tenantId)
+              .is('archived_at', null)
+              .in('id', waiting.slice(0, WAITING_LIMIT))
+              .order('updated_at', { ascending: false }),
           )
         : readRecent()),
     needsPublishedCount(bandReads)

@@ -1257,9 +1257,13 @@
     width: 128px;
   }
 
+  /* The link stays a 44 px target and its last line sits on the type label, however many it has. */
+  .ov .tbl a.t {
+    align-items: flex-end;
+  }
+
   .ov-type {
     display: block;
-    margin-top: -8px;
     padding-bottom: 6px;
     color: var(--ink-muted);
     font-size: 13.5px;
