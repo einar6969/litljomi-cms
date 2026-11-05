@@ -727,6 +727,8 @@ git diff --name-only origin/staging origin/main -- supabase/migrations | xargs g
 
 The first line after `git fetch` lists the migrations. The second lists what they drop. Each drop in the list needs a look. If no migration is listed, the second prints nothing and `db push` has nothing to do.
 
+**The next advance removes `data` from the entry views.** `20261105140100_view_data_removal.sql` breaks the deployed app until the new deployment is live, so entry pages show an error for the length of the build. That's acceptable on staging, and doesn't apply to a new production project, which starts with every migration.
+
 **W1 goes with the next advance.** Its migration `20261104180000_withdrawal_confirmation.sql` drops `api.worker_deliveries_to_retry` and creates it again with the same arguments. It has no dedicated staging run (decision 54), so it arrives untested on staging.
 
 **Confirm the link.** Einar's `supabase login` and `supabase link --project-ref <project-ref>` are already done; he types the database password only at the CLI's prompt. The next command must print the staging project's reference:
