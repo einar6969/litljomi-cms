@@ -43,7 +43,7 @@ export default async function ConsoleTenantPage({ params }: { params: Promise<{ 
           <span>{tenant.slug}</span>
           <TenantStatus status={tenant.status} />
         </p>
-        <p className="text-muted">The latest {LIMIT} rows of each list, newest first.</p>
+        <p className="text-muted">Requests, releases, deliveries and audit events: the latest {LIMIT} of each, newest first. Sites: up to {LIMIT}, by address.</p>
       </div>
 
       <Section

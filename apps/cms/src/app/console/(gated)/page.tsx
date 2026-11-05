@@ -46,8 +46,8 @@ export default async function ConsolePage() {
           {
             header: 'Latest release',
             cell: (tenant) => {
-              const release = latest.get(tenant.id);
               if (!releases?.ok) return '–';
+              const release = latest.get(tenant.id);
               return release ? (
                 <span className="flex flex-col gap-1">
                   <span>Release {release.number}</span>

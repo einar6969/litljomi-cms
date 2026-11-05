@@ -38,8 +38,9 @@ const steps: Record<string, () => Promise<unknown>> = {
   },
 
   // The fixtures of console-pages.spec.ts (M4-05): an active tenant with a site, a failed request,
-  // a failed release and a failed delivery, and a suspended tenant (named so its name and slug do not say "suspended") with nothing. Rows of their own,
-  // so no seeded tenant changes state. Rerunnable: it clears first.
+  // a failed release and a failed delivery, and a suspended tenant with nothing. The suspended one is
+  // named "paused", so only its status says "suspended". Rows of their own, so no seeded tenant
+  // changes state. Rerunnable: it clears first.
   async 'arrange-pages'() {
     await steps['clean-pages']!();
     const [active] = await ownerQuery<{ id: string }>(

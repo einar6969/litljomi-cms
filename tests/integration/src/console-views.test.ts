@@ -152,7 +152,7 @@ describe('console views over the Data API (M4-03)', () => {
     const sites = (await rows(adminAal2, 'console_sites')).filter((s) => s.tenant_id === a.tenantId);
     expect(sites).toEqual([{ id: a.siteId, tenant_id: a.tenantId, base_url: 'http://localhost:3299/a', active: true }]);
     const delivery = (await rows(adminAal2, 'console_deliveries')).find((d) => d.tenant_id === b.tenantId);
-    expect(delivery).toMatchObject({ release_id: b.releaseId, site_id: b.siteId, notify_status: 'failed', notify_attempts: 4, last_error_code: 'notify_failed', last_error_status: '500' });
+    expect(delivery).toMatchObject({ release_id: b.releaseId, site_id: b.siteId, notify_status: 'failed', notify_attempts: 4, last_error_code: 'notify_failed', last_error_status: '500', release_number: 1 });
     const release = (await rows(adminAal2, 'console_releases')).find((r) => r.tenant_id === b.tenantId);
     expect(release).toMatchObject({ id: b.releaseId, error_code: 'build_failed', error_step: 'previous_bundle' });
     const request = (await rows(adminAal2, 'console_requests')).find((r) => r.tenant_id === b.tenantId);

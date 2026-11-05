@@ -30,7 +30,7 @@ const FULL = {
     { id: 'q1', tenant_id: 'a2', action: 'publish', status: 'failed_validation', requested_at: '2026-11-03T11:00:00Z', claimed_at: null, error_code: 'invalid_data' },
   ],
   console_deliveries: [
-    { release_id: 'e2', site_id: 's1', tenant_id: 'a2', notify_status: 'failed', notify_attempts: 4, notified_at: null, live_status: 'pending', live_confirmed_at: null, last_error_code: 'notify_failed', last_error_status: '500', first_failed_at: '2026-11-03T11:02:00Z', next_attempt_at: '2026-11-03T12:00:00Z' },
+    { release_id: 'e2', release_number: 1, site_id: 's1', tenant_id: 'a2', notify_status: 'failed', notify_attempts: 4, notified_at: null, live_status: 'pending', live_confirmed_at: null, last_error_code: 'notify_failed', last_error_status: '500', first_failed_at: '2026-11-03T11:02:00Z', next_attempt_at: '2026-11-03T12:00:00Z' },
   ],
   console_sites: [{ id: 's1', tenant_id: 'a2', base_url: 'http://localhost:3101', active: true }],
   console_audit: [{ id: 1, tenant_id: 'a2', at: '2026-11-03T11:05:00Z', actor_id: null, action: 'tenant_suspended', target_type: 'tenant', target_id: 'a2' }],
@@ -108,12 +108,10 @@ describe('/console/t/[tenant]', () => {
     use(FULL);
     const out = await html(TenantPage(params('demo')));
     expect(out).toContain('<span>suspended</span>');
-    expect(out).toContain('notify_failed (500)');
-    expect(out).toContain('http://localhost:3101');
+    expect(rowOf(out, 'notify_failed')).toContain('http://localhost:3101');
     expect(out).toContain('4 attempts');
     expect(out).toContain('failed validation');
     expect(out).toContain('invalid_data');
-    expect(out).toContain('http://localhost:3101');
     expect(out).toContain('tenant suspended');
     expect(out).toContain('href="/console"');
   });
@@ -137,13 +135,20 @@ describe('/console/t/[tenant]', () => {
     expect(out).toContain('invalid_data');
   });
 
-  it('shows the releases and deliveries as unreadable when the releases read fails', async () => {
+  it('names no site for a delivery when the sites read fails', async () => {
+    use({ ...FULL, console_sites: { error: 'x' } });
+    const out = await html(TenantPage(params('demo')));
+    expect(rowOf(out, 'notify_failed')).toContain('unknown');
+    expect(rowOf(out, 'notify_failed')).not.toContain('http://localhost:3101');
+    expect(out).toContain('The sites could not be read');
+  });
+
+  it('shows only the releases as unreadable when the releases read fails', async () => {
     use({ ...FULL, console_releases: { error: 'x' } });
     const out = await html(TenantPage(params('demo')));
     expect(out).toContain('The releases could not be read');
-    expect(out).toContain('The deliveries could not be read');
     expect(out).not.toContain('No releases.');
-    expect(out).not.toContain('No deliveries.');
+    expect(out).toContain('notify_failed');
     expect(out).toContain('invalid_data');
   });
 

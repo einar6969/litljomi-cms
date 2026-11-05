@@ -1,7 +1,8 @@
 // M4-05: the console pages (spec §8.4), against the local CMS and stack. An aal2 admin sees the
 // seeded tenants and two fixture tenants (support/console-admin.ts): one active with a failed
-// request, release and delivery, one suspended (named "paused", so only its status says suspended) with nothing. Read only: the pages have no form.
-import type { BrowserContext, Page } from '@playwright/test';
+// request, release and delivery, one suspended with nothing (named "paused", so only its status
+// says suspended). Read only: the pages have no form.
+import type { BrowserContext, Locator, Page } from '@playwright/test';
 import { arrangePages, cleanPages, resetAdmin } from './support/console-admin';
 import { CMS_URL } from './support/local';
 import { PERSONA_EMAILS } from './support/personas';
@@ -97,31 +98,23 @@ test.describe('as the platform admin at aal2', () => {
       }
     }
 
-    // scrollWidth of the page cannot see inside a table's own scrolling wrapper: scroll each one
-    // to its end and check that the last header cell then lies within the viewport.
+    // scrollWidth of the page cannot see inside a table's own scrolling wrapper: scroll each one to
+    // its end and check that the last header cell then lies within the viewport.
+    const lastColumnReachable = (wrapper: Locator) =>
+      wrapper.evaluate((element: HTMLElement) => {
+        element.scrollLeft = element.scrollWidth;
+        const last = element.querySelector('th:last-child')?.getBoundingClientRect();
+        return !!last && last.left >= 0 && last.right <= document.documentElement.clientWidth + 1;
+      });
     await page.setViewportSize({ width: 375, height: 900 });
     await page.goto('/console/t/console-fixture');
-    await expect(page.getByRole('region', { name: 'Deliveries' }).getByText('failed', { exact: true }).first()).toBeAttached();
-    for (const name of ['Requests', 'Releases', 'Deliveries', 'Sites']) {
-      const region = page.getByRole('region', { name });
-      const reached = await region.locator('.overflow-x-auto').evaluate((wrapper: HTMLElement) => {
-        wrapper.scrollLeft = wrapper.scrollWidth;
-        const last = wrapper.querySelector('th:last-child');
-        if (!last) return false;
-        const box = last.getBoundingClientRect();
-        return box.right <= document.documentElement.clientWidth + 1 && box.left >= 0;
-      });
-      expect(reached, `${name}: last column reachable at 375`).toBe(true);
+    for (const name of ['Requests', 'Releases', 'Deliveries', 'Sites', 'Audit events']) {
+      const wrapper = page.getByRole('region', { name }).locator('.overflow-x-auto');
+      await expect(wrapper, `${name} has a table`).toHaveCount(1);
+      expect(await lastColumnReachable(wrapper), `${name}: last column reachable at 375`).toBe(true);
     }
     await page.goto('/console');
     await expect(row('Console paused').getByText('suspended', { exact: true })).toBeVisible();
-    const tenants = page.getByRole('region', { name: 'Tenants' }).locator('.overflow-x-auto');
-    expect(
-      await tenants.evaluate((wrapper: HTMLElement) => {
-        wrapper.scrollLeft = wrapper.scrollWidth;
-        const last = wrapper.querySelector('th:last-child')!.getBoundingClientRect();
-        return last.right <= document.documentElement.clientWidth + 1 && last.left >= 0;
-      }),
-    ).toBe(true);
+    expect(await lastColumnReachable(page.getByRole('region', { name: 'Tenants' }).locator('.overflow-x-auto'))).toBe(true);
   });
 });
