@@ -64,16 +64,16 @@ These aren't in `deferred-minors.md`. "Open" was checked in code on 2026-11-05. 
 | S22 | P2 | W1 limit: any newer request for the entry stops the checks, even one that failed. A withdrawal still on the site then gets no alert | Decide in M5 |
 | S23 | P2 | W1 limit: replaced images aren't re-checked after a newer release | Decide in M5 |
 | S25 | P2 | A failed build's `releases.error` message can quote a fragment of published entry text, through `JSON.parse` errors. The same text reaches `audit_log.details` and possibly the alert email. `omitted[].error` is free text too. Schema validation can echo a crafted key (`packages/schema/src/fields/list.ts:46`) into `publish_requests.error`. `site_deliveries.last_error` holds site paths and media URLs. The console shows only codes, steps and statuses | Fix in M5: `message` should never quote a payload |
-| S26 | P2 | TOTP guesses have no account lockout, only Auth's rate limit (default 15 a minute). Accepted for now (decision 62). The hosted value is unconfirmed | Check at hosted acceptance. M5 reviews it before real clients |
+| S26 | P2 | TOTP guesses have no account lockout, only Auth's rate limit (default 15 a minute). Accepted for now (decision 62). The hosted value wasn't read at acceptance (C6) | Read it in the dashboard. M5 reviews it before real clients |
 | S24 | P2 | `main` has no branch protection. The merge rule and `main-guard` are behavioural and alert-only | Accept knowingly. While the repo is public, protection should need no GitHub Pro (not tested) |
 
 ## B. Verification gaps
 
 | # | P | Gap | What would close it |
 |---|---|---|---|
-| B1 | Closed | W1 has never run on staging, and `demo` release 17 won't clear by itself. Einar ruled out a dedicated staging run (decision 54). W1 reaches staging when M4's acceptance advances it, because migrations apply in order | None, by ruling. It gets no test of its own |
-| B2 | P1 | Spec A1–A4 last ran on staging at M1, through `boundary-check`. 22 migrations have landed since, and C5 didn't rerun it | Rerun in M4 or M5. Needs Einar's terminal and approval |
-| B3 | P1 | No record that Supabase's security advisor was run, though §8.5 expects it | Run on staging, then production |
+| B1 | Closed | W1 has never run on staging, and `demo` release 17 won't clear by itself. Einar ruled out a dedicated staging run (decision 54). W1 reached staging with M4's acceptance (C6) | None, by ruling. It gets no test of its own |
+| B2 | Closed | A1–A4 reran on staging: 71 passed, 0 failed (C6) | None |
+| B3 | P2 | Security advisor ran on staging: one warning, leaked password protection, not applicable (C6) | Run on production |
 | B4 | P2 | Serving with the CMS down passed on staging once, at M1 (paused 38 s, `m1-report.md` criterion 8). Not rerun since, and not in §8.5's E2E form | Repeat before go-live |
 | B5 | P2 | Four §8.5 fallback cases are CI only, by ruling (decision 52). Two more are partial on staging (C5's table). An image replacement with a missed check is CI only (decision 51.1) | None needed unless M5 asks |
 | B6 | P2 | Go-live items not yet done: Einar's phone check; the email change confirmed by both addresses; the password-403 re-run; image 404 to 200; `current.json` overwrite; DMARC; `*.vercel.app` domains; key check after entry. The full list is in C4 | Before LABAK's go-live |
@@ -118,7 +118,7 @@ Left unchanged on purpose. The KING proposes corrections and Einar agrees them.
 
 | # | Decision | Note |
 |---|---|---|
-| E1 | The hosted approval at the end of M4 | `docs/plans/m4.md`, "Hosted acceptance" |
+| E1 | Accepting M4 | C6 reports both tests passed |
 | E4 | Production: when, which region, and the Pro cost | See R2 |
 | E5 | The definition of finished | Proposed in `BRIEF.md`, section 7 |
 | E6 | Target month for LABAK's launch | No urgency. A date sets M6's pace |

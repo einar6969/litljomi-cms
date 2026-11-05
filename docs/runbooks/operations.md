@@ -57,7 +57,7 @@
 
 **The site is optional** for M4's test 1 (decision 58). Without it, the test ends at step 10.
 
-**The times are estimates**, except steps 3 and 4, which were measured locally. Replace them with the timed hosted run. They count a tenant made as a copy of `demo`. Designing a real client's content types is separate work (§9.2, step 1).
+**The times are estimates.** The whole section took 26 min 36 s in M4's hosted run, with no site, from the first step to the public pointer (C6). They count a tenant made as a copy of `demo`. Designing a real client's content types is separate work (§9.2, step 1).
 
 | Step | What | Where | Time |
 |---|---|---|---|
@@ -400,7 +400,7 @@ REF='<project-ref>'
 vercel inspect "https://$SITE_HOST" --cwd ~/vercel-link/"$SITE_PROJECT"
 ```
 
-The output must name `<site-project>`. If it doesn't, stop: the host and the project don't belong together. Confirm the command's output at execution time.
+The output must name `<site-project>` and list `<site-host>` under Aliases. If it doesn't, stop: the host and the project don't belong together.
 
 Then read the old secret. The script stops unless `<site-id>` is the site stored at `https://<site-host>`, so all three name one site. Write down the time `date` prints: that's `<start-time>`.
 
@@ -421,7 +421,7 @@ vercel ls --environment production --limit 1 --cwd ~/vercel-link/"$SITE_PROJECT"
 vercel redeploy '<deployment-url>' --cwd ~/vercel-link/"$SITE_PROJECT"
 ```
 
-`<deployment-url>` is the URL the `vercel ls` line prints. A variable reaches a site only through a new deployment. The Ignored Build Step should let a production redeploy through: decision 51's CMS redeploy built, through the connector, but `vercel redeploy` itself hasn't been run here. Confirm it and its flags at execution time. The dashboard's Redeploy button does the same.
+`<deployment-url>` is the URL the `vercel ls` line prints. A variable reaches a site only through a new deployment. `vercel redeploy` passes the Ignored Build Step: M4's hosted run did it twice, Ready in under a minute (C6). The dashboard's Redeploy button does the same.
 
 **Verify:** `vercel ls --environment production --limit 1 --cwd ~/vercel-link/"$SITE_PROJECT"` shows a new Ready deployment. Publish and run the check. The webhook is still signed with the old secret, so this proves the site still accepts it.
 
@@ -646,7 +646,7 @@ select count(*) from auth.mfa_factors f join auth.users u on u.id = f.user_id wh
 
 The first lists the address. The second returns `1`.
 
-Staging is on Supabase Free, and a comment in `supabase/config.toml` ties MFA to Pro. The first run on staging is the first proof that TOTP works there. If it doesn't, stop and report.
+TOTP works on Supabase Free: M4's hosted run proved it on staging (C6). If it doesn't, stop and report.
 
 ### Recover a lost factor
 
