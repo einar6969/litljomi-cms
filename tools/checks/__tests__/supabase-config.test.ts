@@ -75,15 +75,17 @@ describe('supabase/config.toml security settings', () => {
 
   // Spec §4.4: Icelandic, Litljómi-branded templates for the email flows v1 uses. The Supabase CLI
   // reads `content_path` from the project root (its own scaffold's form, `./supabase/templates/…`).
-  // Magic links and invitations go to the CMS's own /auth/confirm page with the token hash, which
-  // verifies it on the server only when the editor presses its button, so the link works in any
-  // browser (decision 41.1); `{{ .SiteURL }}` is the Auth Site URL, the CMS host.
+  // Magic links, invitations and both addresses' email-change links go to the CMS's own
+  // /auth/confirm page with the token hash, which verifies it on the server only when the editor
+  // presses its button, so the link works in any browser (decision 41.1) and a mail scanner opening
+  // it confirms nothing (M5 finding 9); `{{ .SiteURL }}` is the Auth Site URL, the CMS host.
   const MAGIC_LINK = '{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email';
   const INVITE_LINK = '{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=invite';
+  const EMAIL_CHANGE_LINK = '{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email_change';
   describe.each([
     ['magic_link', [MAGIC_LINK], [MAGIC_LINK]],
     ['invite', [INVITE_LINK], [INVITE_LINK]],
-    ['email_change', ['{{ .ConfirmationURL }}', '{{ .Email }}', '{{ .NewEmail }}'], ['{{ .ConfirmationURL }}']],
+    ['email_change', [EMAIL_CHANGE_LINK, '{{ .Email }}', '{{ .NewEmail }}'], [EMAIL_CHANGE_LINK]],
     ['reauthentication', ['{{ .Token }}'], []],
   ])('[auth.email.template.%s]', (name, variables, links) => {
     const contentPath = `./supabase/templates/${name}.html`;
@@ -109,6 +111,11 @@ describe('supabase/config.toml security settings', () => {
       const hrefs = [...html.matchAll(/href\s*=\s*"([^"]*)"/gi)].map((m) => m[1]);
       expect(hrefs).toEqual(links);
     });
+  });
+
+  // `{{ .ConfirmationURL }}` is Auth's own GET /verify, which a mail scanner's open would use up.
+  it.each(['magic_link', 'invite', 'email_change'])('[auth.email.template.%s] has no link Auth consumes on GET', (name) => {
+    expect(readFileSync(join(repoRoot, `supabase/templates/${name}.html`), 'utf8')).not.toContain('.ConfirmationURL');
   });
 
   // Decision 42.2 (Q3): the magic-link mail carries the link only, no 6-digit code.

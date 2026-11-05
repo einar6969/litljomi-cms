@@ -26,6 +26,9 @@ const first = (value: Param): string => (Array.isArray(value) ? (value[0] ?? '')
  * If the link turns out to be for another account, the action holds its session aside and comes back
  * here without a query: the page then names the account the link signs in to and asks before
  * replacing the visitor's session (M3-14).
+ *
+ * The links of an email change land here too, from both addresses (spec §4.4), with the same one
+ * button in the page's own words.
  */
 export default async function ConfirmPage({ searchParams }: Props) {
   const { token_hash, type, next } = await searchParams;
@@ -33,14 +36,15 @@ export default async function ConfirmPage({ searchParams }: Props) {
     const email = await pendingAccount();
     if (email !== null) return <ReplaceQuestion email={email} />;
   }
-  const signedIn = await hasSession();
+  const emailChange = first(type) === 'email_change';
+  const signedIn = !emailChange && (await hasSession());
   return (
     <main className="flex max-w-[480px] flex-col gap-6 pt-12 md:pt-24">
       <DropLinkQuery />
       <Wordmark />
       <div className="flex flex-col gap-2">
-        <h1>{t.confirm.title}</h1>
-        <p className="text-muted">{t.confirm.intro}</p>
+        <h1>{emailChange ? t.confirm.emailChangeTitle : t.confirm.title}</h1>
+        <p className="text-muted">{emailChange ? t.confirm.emailChangeIntro : t.confirm.intro}</p>
       </div>
       {signedIn ? (
         <Notice tone="info" role="status">

@@ -5,10 +5,10 @@ import { Notice } from '@/ui/Notice';
 import { Wordmark } from '@/ui/Wordmark';
 import { requestMagicLink } from './actions';
 
-type Props = { searchParams: Promise<{ sent?: string | string[]; error?: string | string[] }> };
+type Props = { searchParams: Promise<{ sent?: string | string[]; error?: string | string[]; emailChange?: string | string[] }> };
 
 export default async function LoginPage({ searchParams }: Props) {
-  const { sent, error } = await searchParams;
+  const { sent, error, emailChange } = await searchParams;
   return (
     <main className="flex max-w-[480px] flex-col gap-6 pt-12 md:pt-24">
       <Wordmark />
@@ -19,6 +19,11 @@ export default async function LoginPage({ searchParams }: Props) {
       {error === 'link' ? (
         <Notice tone="error" role="alert">
           {t.login.linkInvalid}
+        </Notice>
+      ) : null}
+      {emailChange === 'waiting' ? (
+        <Notice tone="success" role="status">
+          {t.login.emailChangeWaiting}
         </Notice>
       ) : null}
       <form action={requestMagicLink} className="flex flex-col gap-4">

@@ -11,6 +11,8 @@ import { discardPending, logFailure, revoke } from './revoke';
 // hex digest, prefixed `pkce_` when the link was requested by the PKCE client.
 const TOKEN_HASH = /^(?:pkce_)?[0-9a-f]{56}$/;
 const FAILED = '/login?error=link';
+/** After the first of an email change's two links: the sign-in page says the other is still needed. */
+const WAITING = '/login?emailChange=waiting';
 /** Where the confirm page asks a signed-in visitor whether to replace their session (M3-14). */
 const QUESTION = '/auth/confirm';
 
@@ -22,6 +24,11 @@ const field = (formData: FormData, name: string): string | null => {
 type Session = { access_token: string; refresh_token: string; user?: { id?: string } | null };
 type Current = { accessToken: string; userId: string | null };
 type Outcome = { to: string };
+type LinkType = 'email' | 'invite' | 'email_change';
+
+// Only the link types the mail templates send (supabase/templates/magic_link.html, invite.html,
+// email_change.html). Every other type Auth knows is refused here, before Auth is called.
+const isLinkType = (type: string | null): type is LinkType => type === 'email' || type === 'invite' || type === 'email_change';
 
 /**
  * Signs the editor in from the magic link's confirm page (spec §4.4; decision 41.1): the button's
@@ -36,6 +43,11 @@ type Outcome = { to: string };
  * leaves the cookies alone: if it signs in to the same account, that session simply takes over; if
  * it signs in to another account, its session is held aside (pending.ts) and the confirm page shows
  * which account the link is for and asks before replacing the visitor's session (M3-14).
+ *
+ * An email change's links from both addresses come here too (spec §4.4): each needs this POST. The
+ * first one Auth accepts issues no session and changes nothing, so the visitor is told the other
+ * address has to confirm as well. The second completes the change and issues a session, which is
+ * handled as a magic link's is.
  */
 export async function confirmSignIn(formData: FormData): Promise<void> {
   const tokenHash = field(formData, 'token_hash');
@@ -46,17 +58,18 @@ export async function confirmSignIn(formData: FormData): Promise<void> {
 
 async function signInWithLink(tokenHash: string | null, type: string | null, next: string): Promise<Outcome> {
   if (tokenHash === null || !TOKEN_HASH.test(tokenHash)) return { to: FAILED };
-  // Only the link types the mail templates send (supabase/templates/magic_link.html, invite.html).
-  if (type !== 'email' && type !== 'invite') return { to: FAILED };
+  if (!isLinkType(type)) return { to: FAILED };
   try {
     const client = await createEditorClient();
     const current = await currentSession(client);
     if (current === null) {
-      return (await verify(client, tokenHash, type)) === null ? { to: FAILED } : { to: next };
+      const verified = await verify(client, tokenHash, type);
+      return verified === null ? { to: FAILED } : verified === 'waiting' ? { to: WAITING } : { to: next };
     }
 
     const session = await verify(createDetachedClient(), tokenHash, type);
     if (session === null) return { to: FAILED };
+    if (session === 'waiting') return { to: WAITING };
     if (session.user?.id !== undefined && session.user.id === current.userId) {
       return (await adopt(client, session, current.accessToken)) ? { to: next } : { to: FAILED };
     }
@@ -69,14 +82,18 @@ async function signInWithLink(tokenHash: string | null, type: string | null, nex
   }
 }
 
-/** Verifies the link with `client`; the session Auth issued, or null when it issued none. */
-async function verify(client: SupabaseClient, tokenHash: string, type: 'email' | 'invite'): Promise<Session | null> {
+/**
+ * Verifies the link with `client`: the session Auth issued; 'waiting' for the first of an email
+ * change's two links, which Auth accepts without one; else null.
+ */
+async function verify(client: SupabaseClient, tokenHash: string, type: LinkType): Promise<Session | 'waiting' | null> {
   const { data, error } = await client.auth.verifyOtp({ token_hash: tokenHash, type });
   if (error) {
     console.error('[auth] link verification failed:', error.status, error.code);
     return null;
   }
-  return data.session ?? null;
+  if (data.session) return data.session;
+  return type === 'email_change' ? 'waiting' : null;
 }
 
 /**

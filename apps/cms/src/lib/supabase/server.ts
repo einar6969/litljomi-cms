@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { supabasePublicEnv } from './env';
+import { serverCookiesAreSecure, sessionCookieOptions } from './session-cookies';
 import type { SupabaseClient } from './types';
 
 /**
@@ -16,7 +17,8 @@ export async function createEditorClient(): Promise<SupabaseClient> {
       getAll: () => cookieStore.getAll(),
       setAll(cookiesToSet) {
         try {
-          for (const { name, value, options } of cookiesToSet) cookieStore.set(name, value, options);
+          const secure = serverCookiesAreSecure();
+          for (const { name, value, options } of cookiesToSet) cookieStore.set(name, value, sessionCookieOptions(options, secure));
         } catch {
           // A Server Component cannot set cookies; the session is refreshed where it can be (Task 22).
         }

@@ -21,6 +21,10 @@ const { confirmSignIn, keepSession, replaceSession } = await import('../actions'
 const HASH = '16b012167d533434e7798fb52bd2c600ea40eac016b347f9d5dd10f3';
 const PKCE_HASH = `pkce_${HASH}`;
 const FAILED = 'REDIRECT /login?error=link';
+/** After the first of an email change's two confirmations (spec §4.4). */
+const WAITING = /^REDIRECT \/login\?emailChange=waiting$/;
+/** What Auth answers for the first of the two links: 200, and no session (supabase-js's shape). */
+const FIRST_OF_TWO = { data: { session: null, user: { code: 200, msg: 'Confirmation link accepted.' } }, error: null };
 /** The redirect to `/` exactly: a substring match would also pass on FAILED. */
 const HOME = /^REDIRECT \/$/;
 const OLD_TOKEN = 'eyJold.access.token';
@@ -68,6 +72,53 @@ afterEach(() => {
 /** Everything written to the console during the test, as one string. */
 const consoleText = () => JSON.stringify([errors.mock.calls, logs.mock.calls, warns.mock.calls]);
 
+describe('confirmSignIn with an email change link (spec §4.4)', () => {
+  it.each([HASH, PKCE_HASH])('verifies %s with its POST, as type email_change', async (token_hash) => {
+    await expect(confirmSignIn(form({ token_hash, type: 'email_change' }))).rejects.toThrow(HOME);
+    expect(auth.verifyOtp).toHaveBeenCalledExactlyOnceWith({ token_hash, type: 'email_change' });
+  });
+
+  it('says the other address has to confirm too after the first of the two links, with no session and no error logged', async () => {
+    auth.verifyOtp.mockResolvedValue(FIRST_OF_TWO);
+    await expect(confirmSignIn(form({ token_hash: HASH, type: 'email_change', next: '/t/acme' }))).rejects.toThrow(WAITING);
+    expect(errors).not.toHaveBeenCalled();
+  });
+
+  it('leaves a signed-in visitor\'s session alone after the first of the two links', async () => {
+    signedIn();
+    detached.verifyOtp.mockResolvedValue(FIRST_OF_TWO);
+    await expect(confirmSignIn(form({ token_hash: HASH, type: 'email_change' }))).rejects.toThrow(WAITING);
+    expect(auth.verifyOtp).not.toHaveBeenCalled();
+    expect(auth.setSession).not.toHaveBeenCalled();
+    expect(auth.admin.signOut).not.toHaveBeenCalled();
+    expect(pending.writePending).not.toHaveBeenCalled();
+  });
+
+  it('after the second link, the session Auth issues takes over as a magic link\'s does', async () => {
+    signedIn(NEW_USER);
+    await expect(confirmSignIn(form({ token_hash: HASH, type: 'email_change' }))).rejects.toThrow(HOME);
+    expect(detached.verifyOtp).toHaveBeenCalledExactlyOnceWith({ token_hash: HASH, type: 'email_change' });
+    expect(auth.setSession).toHaveBeenCalledOnce();
+  });
+
+  it('asks a visitor signed in as another account before the second link\'s session replaces theirs', async () => {
+    signedIn(OLD_USER);
+    await expect(confirmSignIn(form({ token_hash: HASH, type: 'email_change' }))).rejects.toThrow(QUESTION);
+    expect(pending.writePending).toHaveBeenCalledOnce();
+    expect(auth.setSession).not.toHaveBeenCalled();
+  });
+
+  it('sends a refused link to the invalid-link notice, not to the waiting one', async () => {
+    auth.verifyOtp.mockResolvedValue({ data: { session: null, user: null }, error: { status: 403, code: 'otp_expired', message: 'x' } });
+    await expect(confirmSignIn(form({ token_hash: HASH, type: 'email_change' }))).rejects.toThrow(FAILED);
+  });
+
+  it.each(['email', 'invite'])('still counts a %s link that issues no session as failed', async (type) => {
+    auth.verifyOtp.mockResolvedValue(FIRST_OF_TWO);
+    await expect(confirmSignIn(form({ token_hash: HASH, type }))).rejects.toThrow(FAILED);
+  });
+});
+
 describe('confirmSignIn', () => {
   it.each([
     ['email', HASH],
@@ -92,7 +143,7 @@ describe('confirmSignIn', () => {
     },
   );
 
-  it.each(['magiclink', 'signup', 'recovery', 'email_change', 'sms', 'phone_change', 'EMAIL', ' email', '', undefined])(
+  it.each(['magiclink', 'signup', 'recovery', 'sms', 'phone_change', 'email_change_new', 'email_change_current', 'EMAIL', 'EMAIL_CHANGE', ' email', '', undefined])(
     'refuses the type %j without calling Auth',
     async (type) => {
       await expect(confirmSignIn(form({ token_hash: HASH, type }))).rejects.toThrow(FAILED);

@@ -12,6 +12,8 @@ export const is = {
     // One neutral message for success, an unknown address and a rate limit alike (decision 37.4).
     sent: 'Ef netfangið er skráð færðu tölvupóst',
     linkInvalid: 'Innskráningarhlekkurinn er ógildur eða útrunninn. Biddu um nýjan.',
+    // After the first of an email change's two links (spec §4.4).
+    emailChangeWaiting: 'Netfangið er staðfest. Breytingin tekur gildi þegar hitt netfangið hefur líka verið staðfest.',
   },
   // The magic link's landing page (decision 41.1): only its button signs in.
   confirm: {
@@ -26,6 +28,8 @@ export const is = {
     replaceDetail: 'Ef þú skiptir verður þú skráð/ur út af aðganginum sem er innskráður núna.',
     replace: 'Skipta um aðgang',
     keep: 'Hætta við',
+    emailChangeTitle: 'Staðfestu breytingu á netfangi',
+    emailChangeIntro: 'Smelltu á hnappinn til að staðfesta breytinguna. Hún tekur gildi þegar bæði gamla og nýja netfangið hafa staðfest hana.',
   },
   tenants: {
     title: 'Vefirnir þínir',

@@ -29,7 +29,7 @@ afterAll(async () => {
 });
 
 /** The link of the one new mail to `email`, checked to be the CMS's confirm page for `type`. */
-async function emailedConfirmLink(email: string, type: 'email' | 'invite'): Promise<string> {
+async function emailedConfirmLink(email: string, type: 'email' | 'invite' | 'email_change'): Promise<string> {
   const link = confirmLink((await waitMail(email))[0]!);
   expect(link.origin).toBe(SITE_URL);
   expect(link.pathname).toBe('/auth/confirm');
@@ -89,6 +89,29 @@ describe('the CMS confirm link (decision 41.1) signs in through the passwordless
     } finally {
       await deleteThrowawayUsers([invited.json.id]);
     }
+  });
+
+  it('both mails of an email change link to the confirm page; the first verification issues nothing, the second a token for the new address', async () => {
+    const user = await newUser('confirm-change');
+    const newAddress = `new-${user.email}`;
+    const session = await generateLinkSession(user.email, 'magiclink');
+    await sleep(1100);
+    await clearMail();
+    const put = await auth('/user', { method: 'PUT', token: session.json.access_token, body: { email: newAddress } });
+    expect(put.status, brief(put)).toBe(200);
+    const fromOld = await emailedConfirmLink(user.email, 'email_change');
+    const fromNew = await emailedConfirmLink(newAddress, 'email_change');
+    expect(fromOld).not.toBe(fromNew);
+
+    // What confirmSignIn does for each: verifyOtp({ token_hash, type: 'email_change' }).
+    const first = await auth('/verify', { body: { type: 'email_change', token_hash: fromOld } });
+    expect(first.status, brief(first)).toBe(200);
+    expect(first.json.access_token).toBeUndefined();
+
+    const second = await auth('/verify', { body: { type: 'email_change', token_hash: fromNew } });
+    expect(second.status, brief(second)).toBe(200);
+    expect(claims(second.json.access_token).email).toBe(newAddress);
+    for (const method of methods(second.json.access_token)) expect(EMAIL_METHODS, `amr method ${method}`).toContain(method);
   });
 
   it('a token hash of the wrong type, or a made-up one, gives no token', async () => {

@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { isPublicPath } from '../auth/routing';
 import { supabasePublicEnv } from './env';
+import { serverCookiesAreSecure, sessionCookieOptions } from './session-cookies';
 
 /**
  * Refreshes the editor's session on every request the proxy sees: Supabase Auth verifies the
@@ -21,7 +22,8 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
       setAll(cookiesToSet, headers) {
         for (const { name, value } of cookiesToSet) request.cookies.set(name, value);
         response = NextResponse.next({ request });
-        for (const { name, value, options } of cookiesToSet) response.cookies.set(name, value, options);
+        const secure = serverCookiesAreSecure();
+        for (const { name, value, options } of cookiesToSet) response.cookies.set(name, value, sessionCookieOptions(options, secure));
         for (const [key, value] of Object.entries(headers ?? {})) response.headers.set(key, value);
       },
     },

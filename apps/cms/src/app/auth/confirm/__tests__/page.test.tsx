@@ -49,6 +49,21 @@ describe('GET /auth/confirm', () => {
     expect(hidden(html, 'next')).toBe('/t/acme');
   });
 
+  // Both addresses' links land here (spec §4.4): a scanner opening either confirms nothing.
+  it('asks for the email change link\'s POST in its own words, verifying nothing', async () => {
+    auth.getUser.mockResolvedValue(SIGNED_IN);
+    const html = await render({ token_hash: HASH, type: 'email_change' });
+    expect(auth.verifyOtp).not.toHaveBeenCalled();
+    expect(detached.verifyOtp).not.toHaveBeenCalled();
+    expect(html.match(/<button/g)).toHaveLength(1);
+    expect(html).toContain(t.confirm.emailChangeTitle);
+    expect(html).toContain(t.confirm.emailChangeIntro);
+    expect(html).not.toContain(t.confirm.title);
+    expect(html).not.toContain(t.confirm.signedIn);
+    expect(hidden(html, 'token_hash')).toBe(HASH);
+    expect(hidden(html, 'type')).toBe('email_change');
+  });
+
   it('uses the first value of a repeated parameter and empty fields for missing ones', async () => {
     const html = await render({ token_hash: [HASH, 'other'] });
     expect(hidden(html, 'token_hash')).toBe(HASH);

@@ -12,7 +12,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import {
   adminAuth, auth, brief, claims, clearMail, confirmLink, deleteThrowawayUsers, followVerify, generateLinkSession, newUser,
-  pkce, sleep, tokenHashOf, totp, verifyLink, verifyUrlFor, waitMail, requestEmail,
+  pkce, sleep, tokenHashOf, totp, verifyUrlFor, waitMail, requestEmail,
 } from './auth-api.ts';
 import { closeAll, ownerQuery } from './sql.ts';
 
@@ -198,9 +198,10 @@ describe('decision 18: only email methods issue tokens', () => {
     expect(put3.status, brief(put3)).toBe(200);
     const pkceOld = (await waitMail(newAddress))[0]!;
     const pkceNew = (await waitMail(user.email))[0]!;
-    await followVerify(verifyLink(pkceNew));
+    // The mails link to the CMS (M5-03); their token hashes also work on Auth's own GET /verify.
+    await followVerify(verifyUrlFor(tokenHashOf(pkceNew), 'email_change'));
     expect(await emailOf(user.id)).toBe(newAddress);
-    const location = await followVerify(verifyLink(pkceOld));
+    const location = await followVerify(verifyUrlFor(tokenHashOf(pkceOld), 'email_change'));
     expect(await emailOf(user.id)).toBe(user.email);
     // The second confirmation redirects with a PKCE code (observed 2026-11-02).
     const code = location ? new URL(location).searchParams.get('code') : null;
