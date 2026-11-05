@@ -571,16 +571,17 @@ select is(api.worker_commit_unpublish(tests.pub('e924')), 'rejected', 'an unpubl
 select isnt((select published_rev_id from cms.entries where id = tests.entry('c913')), null,
   'the rejected unpublish leaves the entry published');
 -- Unpublishing an entry that is not published (demo c921, never published;
--- demo, so labak's release requests below are unchanged) commits and changes
--- nothing else.
-select is(api.worker_commit_unpublish(tests.pub('e934')), 'committed',
-  'unpublishing an entry that is not published is committed');
+-- demo, so labak's release requests below are unchanged) ends superseded and
+-- changes nothing else (M5-01).
+select is(api.worker_commit_unpublish(tests.pub('e934')), 'superseded',
+  'unpublishing an entry that is not published ends superseded');
 select is((select row(e.published_rev_id, e.published_draft_version, e.first_published_at, e.last_published_at)::text
            from cms.entries e where e.id = tests.entry('c921')),
   row(null::uuid, null::int, null::timestamptz, null::timestamptz)::text,
   'the entry is unchanged: no pointer, never published');
 select is((select row(status, revision_id, error)::text from cms.publish_requests where id = tests.pub('e934')),
-  row('committed', null::uuid, null::jsonb)::text, 'the no-op unpublish request is committed without a revision');
+  row('superseded', null::uuid, jsonb_build_object('code', 'not_published'))::text,
+  'the no-op unpublish request records why, without a revision');
 
 -- first_published_at is write-once (Task 6 security r1): the slug stays locked.
 select throws_ok($$ update cms.entries set first_published_at = null where id = tests.entry('c907') $$,

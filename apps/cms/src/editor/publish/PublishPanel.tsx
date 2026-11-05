@@ -46,6 +46,8 @@ const requestNotice = (result: Exclude<PublishActionResult, { requestId: string 
       return t.editor.signedOut;
     case 'tenant_inactive':
       return t.tenant.inactiveBody;
+    case 'not_published':
+      return t.publish.notPublished;
     default:
       return t.publish.requestFailed;
   }

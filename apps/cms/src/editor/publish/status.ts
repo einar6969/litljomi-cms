@@ -94,7 +94,8 @@ export function displayState(row: PublicationStatusRow, options: DisplayOptions 
     case 'failed_validation':
       return invalidState(row, options.fieldLabels ?? {});
     case 'superseded':
-      return { label: t.publish.superseded, tone: 'error' };
+      // M5-01: an unpublish ends superseded only when the entry had nothing left to withdraw.
+      return { label: row.action === 'unpublish' ? t.publish.notPublished : t.publish.superseded, tone: 'error' };
     case 'rejected':
       return { label: t.publish.rejected, tone: 'error' };
     case 'failed':

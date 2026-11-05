@@ -72,6 +72,11 @@ test('publish, edit and republish, then unpublish a demo event, each confirmed o
   expect(second.markers).toContainEqual({ id: entryId, hash: secondHash });
   expect(second.markers).not.toContainEqual({ id: entryId, hash: firstHash });
 
+  // M5-01: a second panel, opened before the withdrawal, goes stale.
+  const stale = await page.context().newPage();
+  await stale.goto(page.url());
+  await expect(state(stale)).toHaveText(t.publish.live, CONFIRMED);
+
   // Unpublish: "Tekið af vef", and its detail promises nothing about caches.
   await page.getByRole('button', { name: t.publish.unpublish }).click();
   await expect(state(page)).toHaveText(t.publish.removed, CONFIRMED);
@@ -81,4 +86,11 @@ test('publish, edit and republish, then unpublish a demo event, each confirmed o
   expect(gone.status).toBe(404);
   expect(gone.markers.map((m) => m.id)).not.toContain(entryId);
   await expect(page.getByRole('button', { name: t.publish.unpublish })).toHaveCount(0);
+
+  // The stale panel's unpublish is a plain refusal; the entry's status does not change.
+  await stale.getByRole('button', { name: t.publish.unpublish }).click();
+  await expect(stale.getByRole('alert')).toHaveText(t.publish.notPublished);
+  await page.reload();
+  await expect(state(page)).toHaveText(t.publish.removed, CONFIRMED);
+  await stale.close();
 });

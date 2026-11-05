@@ -3,7 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { t } from '@/i18n/is';
-import type { PublicationStatusRow } from '../publish/status';
+import { displayState, type PublicationStatusRow } from '../publish/status';
 
 vi.mock('@/lib/supabase/browser', () => ({ createBrowserEditorClient: () => ({}) }));
 vi.mock('@/app/(editor)/t/[tenant]/publish-actions', () => ({ requestPublishAction: vi.fn(), requestUnpublishAction: vi.fn() }));
@@ -148,6 +148,23 @@ describe('PublishPanel', () => {
     const loadStatus = vi.fn(async () => row({ status: 'failed_validation', error: { code: 'invalid_data', issues: [{ path: ['title'] }] } }));
     await renderPanel({ loadStatus });
     expect(stateText()).toBe('Ekki hægt að birta: Titill');
+  });
+
+  // M5-01: a panel opened before the withdrawal still offers it. The refusal changes nothing else.
+  it('a repeat unpublish from a stale panel is a plain refusal, and the status stays as it was', async () => {
+    const shown = live();
+    const before = displayState(shown).label;
+    const loadStatus = vi.fn(async () => shown);
+    const unpublish = vi.fn(async () => ({ error: 'not_published' as const }));
+    await renderPanel({ loadStatus, unpublish, initiallyPublished: true });
+    expect(stateText()).toBe(before);
+
+    await act(async () => button(t.publish.unpublish)!.click());
+    await advance(0);
+
+    expect(unpublish).toHaveBeenCalledWith(ENTRY);
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(t.publish.notPublished);
+    expect(stateText()).toBe(before);
   });
 
   it('shows a refused request\'s notice and keeps polling a status it could not read', async () => {

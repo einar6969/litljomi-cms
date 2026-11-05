@@ -200,6 +200,11 @@ describe('displayState: failures', () => {
     expect(unpublish.detail).not.toContain('birtist');
   });
 
+  it('a repeat unpublish that ended superseded (M5-01): the plain refusal, never the publish wording', () => {
+    const state = displayState(row({ action: 'unpublish', status: 'superseded', error: { code: 'not_published' }, release_status: null }));
+    expect(state).toEqual({ label: t.publish.notPublished, tone: 'error' });
+  });
+
   it('superseded: "Færslunni var breytt eftir að þú ýttir á Birta. Birtu aftur."', () => {
     const state = displayState(row({ status: 'superseded', error: { code: 'superseded' }, release_status: null }));
     expect(state).toMatchObject({ label: 'Færslunni var breytt eftir að þú ýttir á Birta. Birtu aftur.', tone: 'error' });

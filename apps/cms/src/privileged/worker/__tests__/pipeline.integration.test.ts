@@ -21,11 +21,12 @@ import { TENANT } from '../../../../../../tests/integration/src/fixtures.ts';
 import { closeAll, ownerQuery, withTx } from '../../../../../../tests/integration/src/sql.ts';
 import { createAdminClient } from '../../admin-client';
 import { buildRelease } from '../build-release';
+import { deliverTenant } from '../deliver';
 import { processAndDeliver, sweep } from '../pipeline';
 import { STALE_RELEASE_SECONDS } from '../sweep';
 import { PUBLICATION_STATUS_COLUMNS, displayState, type PublicationStatusRow } from '@/editor/publish/status';
 import { t } from '@/i18n/is';
-import { processPendingRequests } from '../process-request';
+import { processPendingRequests, processRequestById } from '../process-request';
 import { removeExpiredReleaseFiles } from '../retention';
 import { entryMarker, html, releaseMeta, startFakeSite, type FakeSite } from './fake-site';
 import { prepareLabak } from './labak-setup';
@@ -920,6 +921,211 @@ describe('housekeeping hold: a withdrawal whose first live check missed', () => 
         expect((await panel(w.entryId)).label).toBe(t.publish.removed);
       } finally {
         await cleanup();
+      }
+    });
+
+    /** The admin client with its RPCs passed through `wrap` (Storage and the rest as they are). */
+    const interceptRpc = (wrap: (fn: string, args: Record<string, unknown>, call: () => unknown) => unknown) => {
+      const admin = createAdminClient();
+      return new Proxy(admin, {
+        get: (target, key) =>
+          key === 'rpc' ? (fn: string, args: Record<string, unknown>) => wrap(fn, args, () => target.rpc(fn as never, args as never)) : Reflect.get(target, key),
+      });
+    };
+
+    // M5-01, finding 1: a second unpublish must not end the first one's checks, nor be confirmed
+    // with nothing checked.
+    describe('a repeat unpublish (M5-01)', () => {
+      const draftVersion = async (entryId: string) =>
+        (await ownerQuery<{ version: number }>('select version from cms.drafts where entry_id = $1', [entryId]))[0]!.version;
+
+      it('7. from a stale panel: refused, the status unchanged, still checked, and "Tekið af vef" only after a check passed', async () => {
+        const t0 = Date.now();
+        try {
+          const w = await supersededDuringHold(t0);
+          const before = await panel(w.entryId);
+          const requests = async () => (await ownerQuery('select id from cms.publish_requests where entry_id = $1', [w.entryId])).length;
+          const count = await requests();
+
+          const { error } = await editor.schema('api').rpc('request_unpublish', { p_entry_id: w.entryId });
+
+          expect(error).toMatchObject({ code: 'P0001', message: 'not_published' });
+          expect(await requests()).toBe(count);
+          expect(await panel(w.entryId)).toEqual(before);
+          expect(await d_rows(w.release.id, t0 + 10 * MINUTE)).toHaveLength(1);
+
+          await sweep({ ...SLOW, now: () => t0 + 10 * MINUTE });
+          expect(await deliveryOf(w.requestId)).toMatchObject({ live_status: 'not_confirmed' });
+          expect((await panel(w.entryId)).label).not.toBe(t.publish.removed);
+
+          stalePages.clear();
+          await sweep({ ...fast, now: () => t0 + 20 * MINUTE });
+          expect((await panel(w.entryId)).label).toBe(t.publish.removed);
+        } finally {
+          await cleanup();
+        }
+      });
+
+      it('8. two requests accepted before either ran: the repeat ends superseded in no release, and stops nothing', async () => {
+        const t0 = Date.now();
+        try {
+          const r = await requested('Tvisvar tekin af vef');
+          await processAndDeliver(r.requestId, fast);
+          revalidates = false;
+          const first = await rpc<string>('request_unpublish', { p_entry_id: r.entryId });
+          const repeat = await rpc<string>('request_unpublish', { p_entry_id: r.entryId });
+          await processAndDeliver(first, { ...SLOW, now: () => t0 });
+          const withdrawing = await latestRelease();
+          keepPage(r);
+          revalidates = true;
+
+          await processAndDeliver(repeat, { ...fast, now: () => t0 + 2 * MINUTE });
+
+          expect(await deliveryOf(repeat)).toMatchObject({ status: 'superseded', release_id: null });
+          expect((await latestRelease()).id).toBe(withdrawing.id);
+          expect((await panel(r.entryId)).label).toBe(t.publish.notPublished);
+          // A later release links nothing of it, and the first unpublish is still checked.
+          const newer = await supersede(t0 + 3 * MINUTE);
+          expect(await linkedRequests(newer.id)).toBe(1);
+          expect(await d_rows(withdrawing.id, t0 + 10 * MINUTE)).toHaveLength(1);
+          await sweep({ ...SLOW, now: () => t0 + 10 * MINUTE });
+          expect((await panel(r.entryId)).label).not.toBe(t.publish.removed);
+          expect(await deliveryOf(first)).toMatchObject({ live_status: 'not_confirmed' });
+        } finally {
+          await cleanup();
+        }
+      });
+
+      it('9. a publish and an unpublish coalesced into one build after a missed withdrawal stay unconfirmed, and alert', async () => {
+        const t0 = Date.now();
+        try {
+          const w = await missedWithdrawal('unpublish', t0);
+          keepPage(w);
+          revalidates = true;
+          const again = await rerequested(w.entryId, await draftVersion(w.entryId), 'Birt aftur í bili');
+          expect((await processRequestById(again)).status).toBe('committed');
+          const withdrawn = await rpc<string>('request_unpublish', { p_entry_id: w.entryId });
+          expect((await processRequestById(withdrawn)).status).toBe('committed');
+
+          expect((await deliverTenant(TENANT.labak, { ...SLOW, now: () => t0 + 5 * MINUTE })).status).toBe('delivered');
+
+          const coalesced = await deliveryOf(withdrawn);
+          expect(coalesced).toMatchObject({ live_status: 'not_confirmed', last_error: { code: 'live_not_confirmed', failures: [{ entryId: w.entryId, reason: 'withdrawal_unchecked' }] } });
+          expect((await panel(w.entryId)).label).not.toBe(t.publish.removed);
+
+          // Retried while it is the latest release: the same answer, never confirmed.
+          await sweep({ ...SLOW, now: () => t0 + 7 * MINUTE });
+          expect((await panel(w.entryId)).label).not.toBe(t.publish.removed);
+          // The hold ends unconfirmed: one alert, and the housekeeping release does not confirm it.
+          await sweep({ ...SLOW, now: () => t0 + 66 * MINUTE });
+          expect(await withdrawalAlerts(coalesced.release_id!)).toHaveLength(1);
+          await sweep({ ...SLOW, now: () => t0 + 68 * MINUTE });
+          expect((await panel(w.entryId)).label).not.toBe(t.publish.removed);
+        } finally {
+          await cleanup();
+        }
+      });
+
+      it('10. a failed release whose pointer was written: an entry only it held stays unconfirmed once withdrawn', async () => {
+        const t0 = Date.now();
+        try {
+          // The bundle and the pointer are written; finishing the release fails.
+          const r = await requested('Í misheppnaðri útgáfu');
+          expect((await processRequestById(r.requestId)).status).toBe('committed');
+          const refuseDelivered = interceptRpc((fn, args, call) =>
+            fn === 'worker_finish_release' && args.p_status === 'delivered' ? { data: null, error: { code: 'XX000', message: 'finish failed' } } : call(),
+          );
+          const failed = await buildRelease(TENANT.labak, { db: refuseDelivered });
+          expect(failed.status).toBe('failed');
+          const pointer = (await loadBundle())!;
+          expect(pointer.release).toBe(failed.number);
+          expect(pointer.entries['news']?.some((e) => e.id === r.entryId)).toBe(true);
+          // The site regenerated from that pointer, and keeps the page.
+          keepPage(r);
+
+          const withdrawn = await rpc<string>('request_unpublish', { p_entry_id: r.entryId });
+          expect((await processRequestById(withdrawn)).status).toBe('committed');
+          expect((await deliverTenant(TENANT.labak, { ...SLOW, now: () => t0 })).status).toBe('delivered');
+
+          expect(await deliveryOf(withdrawn)).toMatchObject({ live_status: 'not_confirmed', last_error: { failures: [{ entryId: r.entryId, reason: 'withdrawal_unchecked' }] } });
+          expect((await panel(r.entryId)).label).not.toBe(t.publish.removed);
+        } finally {
+          await cleanup();
+        }
+      });
+    });
+
+    // M5-01, finding 2: the run is killed after the release was delivered. Killed in the poll: the
+    // poll's pause rejects. Killed in the live window: the run's last record never reaches the database.
+    describe('a run killed before it recorded the live check (M5-01)', () => {
+      type Window = 'pointer poll' | 'live window';
+
+      async function killedRun(window: Window, t0: number) {
+        const r = await requested('Keyrsla stöðvuð');
+        await processAndDeliver(r.requestId, fast);
+        expect(await deliveryOf(r.requestId)).toMatchObject({ live_status: 'ok' });
+        const requestId = await rpc<string>('request_unpublish', { p_entry_id: r.entryId });
+        expect((await processRequestById(requestId)).status).toBe('committed');
+        keepPage(r);
+        const killed = new Error('killed');
+        if (window === 'pointer poll') {
+          const stale = async () => new Response('{}');
+          const run = deliverTenant(TENANT.labak, { ...SLOW, now: () => t0, pointer: { fetch: stale as unknown as typeof fetch, sleep: async () => Promise.reject(killed) } });
+          await expect(run).rejects.toBe(killed);
+        } else {
+          const db = interceptRpc((fn, args, call) =>
+            fn === 'worker_record_delivery' && args.p_live_status !== null ? { data: null, error: { code: 'XX000', message: 'killed' } } : call(),
+          );
+          await deliverTenant(TENANT.labak, { ...SLOW, db, now: () => t0 });
+        }
+        const d = await deliveryOf(requestId);
+        expect(d).toMatchObject({ live_status: 'pending', notify_status: window === 'pointer poll' ? 'pending' : 'ok', last_error: { withdrawals: [{ entryId: r.entryId }] } });
+        expect((await panel(r.entryId)).label).not.toBe(t.publish.removed);
+        return { entryId: r.entryId, slug: r.slug, requestId, release: { id: d.release_id!, number: d.number } };
+      }
+
+      for (const window of ['pointer poll', 'live window'] as const) {
+        it(`${window}, superseded: the withdrawal is left alone while the run can be alive, then checked, alerted once, and confirmed`, { timeout: 60_000 }, async () => {
+          const t0 = Date.now();
+          try {
+            const w = await killedRun(window, t0);
+            await supersede(t0 + MINUTE);
+            expect(await d_rows(w.release.id, t0 + 2 * MINUTE)).toEqual([]);
+
+            await sweep({ ...SLOW, now: () => t0 + 6 * MINUTE });
+            expect(await deliveryOf(w.requestId)).toMatchObject({ notify_status: 'ok', live_status: 'not_confirmed' });
+            expect(await withdrawalAlerts(w.release.id)).toEqual([]);
+
+            await sweep({ ...SLOW, now: () => t0 + 61 * MINUTE });
+            expect(await withdrawalAlerts(w.release.id)).toHaveLength(1);
+            expect((await panel(w.entryId)).label).not.toBe(t.publish.removed);
+
+            stalePages.clear();
+            await sweep({ ...fast, now: () => t0 + 3 * 60 * MINUTE });
+            expect((await panel(w.entryId)).label).toBe(t.publish.removed);
+            expect(await withdrawalAlerts(w.release.id)).toHaveLength(1);
+          } finally {
+            await cleanup();
+          }
+        });
+
+        it(`${window}, still the latest release: retried, then alerted when the hold ends`, { timeout: 60_000 }, async () => {
+          const t0 = Date.now();
+          try {
+            const w = await killedRun(window, t0);
+            expect(await d_rows(w.release.id, t0 + 2 * MINUTE)).toEqual([]);
+            expect((await labakListed(t0 + 2 * MINUTE)).listed).toBe(false);
+
+            await sweep({ ...SLOW, now: () => t0 + 6 * MINUTE });
+            expect(await deliveryOf(w.requestId)).toMatchObject({ notify_status: 'ok', live_status: 'not_confirmed' });
+
+            await sweep({ ...SLOW, now: () => t0 + 61 * MINUTE });
+            expect(await withdrawalAlerts(w.release.id)).toHaveLength(1);
+            expect((await panel(w.entryId)).label).not.toBe(t.publish.removed);
+          } finally {
+            await cleanup();
+          }
+        });
       }
     });
   });

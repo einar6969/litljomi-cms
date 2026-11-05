@@ -25,10 +25,10 @@
 //      that step 2 of this same sweep superseded. Steps 2 and 3 run per tenant, concurrently
 //      across tenants: one tenant's build never delays another's retries.
 //      W1: a superseded release's withdrawals that a site did not confirm are checked again from
-//      the checks its delivery stored (no bundle is read), while the entry's latest request is
-//      still that unpublish: when their next attempt is due, or once the hour after the release
-//      ended unalerted (the alert, once, if they still miss). These run at once, also while the
-//      tenant builds: a new release never re-checks them.
+//      the checks its delivery stored (no bundle is read), while the entry's latest committed
+//      request is still that unpublish: when their next attempt is due, or once the hour after the
+//      release ended unalerted (the alert, once, if they still miss). These run at once, also while
+//      the tenant builds: a new release never re-checks them.
 //   4. Originals in media-private with no assets row, older than a day, are removed
 //      (api.worker_private_orphans; M3-07).
 //   5. Releases older than the previous one, an hour after the newer delivery, are removed from
@@ -112,7 +112,7 @@ type RetryRow = {
   notify_status: string;
   notify_attempts: number;
   live_status: string;
-  requests: Array<{ id: string; entry_id: string; action: 'publish' | 'unpublish' }>;
+  requests: Array<{ id: string; entry_id: string; action: 'publish' | 'unpublish'; first_published_at: string | null }>;
   notify_release_number?: number;
   withdrawal?: WithdrawalState | null;
 };
@@ -291,7 +291,7 @@ async function retryRelease(db: SupabaseClient, rows: RetryRow[], options: Deliv
     number: first.release_number,
     bundle: await read(first.bundle_path, first.release_number),
     previousBundle: first.previous_bundle_path ? await read(first.previous_bundle_path, null) : null,
-    requests: first.requests.map((r) => ({ id: r.id, entryId: r.entry_id, action: r.action })),
+    requests: first.requests.map((r) => ({ id: r.id, entryId: r.entry_id, action: r.action, firstPublishedAt: r.first_published_at })),
   };
   // Only the sites listed for retry (one deactivated since is skipped).
   await confirmRelease(db, release, options, new Set(rows.map((row) => row.site_id)));

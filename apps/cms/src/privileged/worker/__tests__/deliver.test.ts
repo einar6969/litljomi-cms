@@ -24,6 +24,7 @@ const E1 = '11111111-1111-4111-8111-111111111111';
 const E2 = '22222222-2222-4222-8222-222222222222';
 const E3 = '33333333-3333-4333-8333-333333333333';
 const E4 = '44444444-4444-4444-8444-444444444444';
+const PUBLISHED = '2026-01-01T00:00:00.000Z';
 
 const entry = (id: string, slug: string, sortAt: string | null, data: Record<string, unknown> = {}): BundleEntry => ({
   id,
@@ -74,7 +75,7 @@ describe('liveTargets', () => {
 
   it('a published entry: present checks against this release, its new hash, its own path and its media URLs', () => {
     seen.length = 0;
-    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q1', entryId: E1, action: 'publish' }] }, MEDIA);
+    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q1', entryId: E1, action: 'publish', firstPublishedAt: PUBLISHED }] }, MEDIA);
     expect(t).toEqual({
       entryId: E1,
       requestIds: ['q1'],
@@ -91,7 +92,7 @@ describe('liveTargets', () => {
   });
 
   it('an unpublished entry: absent checks computed from the previous release’s record, no hash', () => {
-    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q2', entryId: E2, action: 'unpublish' }] }, MEDIA);
+    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q2', entryId: E2, action: 'unpublish', firstPublishedAt: PUBLISHED }] }, MEDIA);
     expect(t).toMatchObject({
       entryId: E2,
       failure: null,
@@ -106,13 +107,43 @@ describe('liveTargets', () => {
   });
 
   it('a published entry left out of the release (omitted) is delivery failed, never checked as present', () => {
-    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q3', entryId: E3, action: 'publish' }] }, MEDIA);
+    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q3', entryId: E3, action: 'publish', firstPublishedAt: PUBLISHED }] }, MEDIA);
     expect(t).toMatchObject({ entryId: E3, failure: 'delivery_failed', checks: [] });
   });
 
-  it('an unpublished entry that no delivered release contained has nothing to check', () => {
-    const [t] = liveTargets(module, { bundle: current, previousBundle: null, requests: [{ id: 'q4', entryId: E4, action: 'unpublish' }] }, MEDIA);
+  it('an unpublished entry that was never published has nothing to check', () => {
+    const [t] = liveTargets(module, { bundle: current, previousBundle: null, requests: [{ id: 'q4', entryId: E4, action: 'unpublish', firstPublishedAt: null }] }, MEDIA);
     expect(t).toMatchObject({ entryId: E4, failure: null, checks: [], mediaUrls: [] });
+  });
+
+  // M5-01: a site may hold it (an older release, a failed release whose pointer was written), and
+  // neither bundle says where to look, so it is never confirmed with nothing checked.
+  it('an unpublished entry published once, with no record to check, is a failure, never confirmed', () => {
+    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q4', entryId: E4, action: 'unpublish', firstPublishedAt: PUBLISHED }] }, MEDIA);
+    expect(t).toMatchObject({ entryId: E4, failure: 'withdrawal_unchecked', checks: [] });
+    expect(t!.withdrawal).toBeUndefined();
+  });
+
+  it('a publish and an unpublish coalesced into one build, the entry in neither bundle: the same failure', () => {
+    const [t] = liveTargets(
+      module,
+      {
+        bundle: current,
+        previousBundle: previous,
+        requests: [
+          { id: 'q4a', entryId: E4, action: 'publish', firstPublishedAt: PUBLISHED },
+          { id: 'q4b', entryId: E4, action: 'unpublish', firstPublishedAt: PUBLISHED },
+        ],
+      },
+      MEDIA,
+    );
+    expect(t).toMatchObject({ entryId: E4, requestIds: ['q4a', 'q4b'], failure: 'withdrawal_unchecked', checks: [] });
+    expect(t!.withdrawal).toBeUndefined();
+  });
+
+  it('a request that does not say whether the entry was published fails closed', () => {
+    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q4', entryId: E4, action: 'unpublish', firstPublishedAt: PUBLISHED } as never] }, MEDIA);
+    expect(t).toMatchObject({ failure: 'withdrawal_unchecked' });
   });
 
   it('one target per entry; the release’s content decides (a publish then an unpublish of the same entry)', () => {
@@ -122,9 +153,9 @@ describe('liveTargets', () => {
         bundle: current,
         previousBundle: previous,
         requests: [
-          { id: 'q5', entryId: E2, action: 'publish' },
-          { id: 'q6', entryId: E2, action: 'unpublish' },
-          { id: 'q7', entryId: E1, action: 'publish' },
+          { id: 'q5', entryId: E2, action: 'publish', firstPublishedAt: PUBLISHED },
+          { id: 'q6', entryId: E2, action: 'unpublish', firstPublishedAt: PUBLISHED },
+          { id: 'q7', entryId: E1, action: 'publish', firstPublishedAt: PUBLISHED },
         ],
       },
       MEDIA,
@@ -144,27 +175,27 @@ describe('liveTargets', () => {
         bundle: current,
         previousBundle: previous,
         requests: [
-          { id: 'q10', entryId: E1, action: 'publish' },
-          { id: 'q11', entryId: E1, action: 'unpublish' },
+          { id: 'q10', entryId: E1, action: 'publish', firstPublishedAt: PUBLISHED },
+          { id: 'q11', entryId: E1, action: 'unpublish', firstPublishedAt: PUBLISHED },
         ],
       },
       MEDIA,
     );
     expect(t).toMatchObject({ entryId: E1, requestIds: ['q10', 'q11'], failure: 'still_published', checks: [], contentHash: null, mediaUrls: [] });
-    const [only] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q12', entryId: E1, action: 'unpublish' }] }, MEDIA);
+    const [only] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q12', entryId: E1, action: 'unpublish', firstPublishedAt: PUBLISHED }] }, MEDIA);
     expect(only).toMatchObject({ failure: 'still_published', checks: [] });
   });
 
   it('a type without site pages has no checks, but its media is still checked', () => {
     const other = bundle(3, []);
     other.entries['page'] = [{ ...entry(E1, 'a', null, { image }) }];
-    const [t] = liveTargets(module, { bundle: other, previousBundle: null, requests: [{ id: 'q8', entryId: E1, action: 'publish' }] }, MEDIA);
+    const [t] = liveTargets(module, { bundle: other, previousBundle: null, requests: [{ id: 'q8', entryId: E1, action: 'publish', firstPublishedAt: PUBLISHED }] }, MEDIA);
     expect(t).toMatchObject({ failure: null, checks: [], mediaUrls: [image.url], contentHash: 'h-' + E1 });
   });
 
   it('a module whose checks throw gives a failure, not an exception', () => {
     const broken = { site: { news: { path: () => '/x', checks: () => { throw new Error('boom'); } } } } as unknown as ModuleManifest;
-    const [t] = liveTargets(broken, { bundle: current, previousBundle: null, requests: [{ id: 'q9', entryId: E1, action: 'publish' }] }, MEDIA);
+    const [t] = liveTargets(broken, { bundle: current, previousBundle: null, requests: [{ id: 'q9', entryId: E1, action: 'publish', firstPublishedAt: PUBLISHED }] }, MEDIA);
     expect(t).toMatchObject({ failure: 'checks_failed', checks: [] });
   });
 });
@@ -444,7 +475,7 @@ describe('confirmRelease: the public pointer', () => {
     number: 2,
     bundle: bundle(2, [entry(E1, 'a', null)]),
     previousBundle: null,
-    requests: [{ id: 'q1', entryId: E1, action: 'publish' }],
+    requests: [{ id: 'q1', entryId: E1, action: 'publish', firstPublishedAt: PUBLISHED }],
   };
   const workerSite = (id: string) => ({ id, base_url: site.origin, revalidate_url: `${site.origin}/api/revalidate/${id}`, webhook_secrets: ['leyndo'] });
 
@@ -499,6 +530,77 @@ describe('confirmRelease: the public pointer', () => {
     expect(events).toEqual(['poll 1', 'poll 1', 'poll 2', 'notify /api/revalidate/s1']);
     expect(recorded.at(-1)).toMatchObject({ p_site_id: 's1', p_live_status: 'ok' });
     expect(infoLines('pointer')).toEqual([{ tenant: 'prufa', release: 2, fresh: true, lagMs: 2_060, polls: 3 }]);
+  });
+
+  // M5-01 (finding 2): a run killed from here on leaves a row the sweep retries and alerts.
+  describe('the withdrawal state, stored before the poll', () => {
+    const withdrawing: DeliveredRelease = {
+      ...published,
+      bundle: bundle(2, []),
+      previousBundle: bundle(1, [entry(E2, 'b', null)]),
+      requests: [{ id: 'u2', entryId: E2, action: 'unpublish', firstPublishedAt: PUBLISHED }],
+    };
+    const state = {
+      withdrawals: [{ entryId: E2, requestIds: ['u2'], checks: [{ path: '/n/b', expect: 'absent' }, { path: '/n', expect: 'absent' }], ownPath: '/n/b' }],
+      withdrawals_others: false,
+    };
+    const clock = { pollMs: 20, timeoutMs: 1_000, now: () => Date.UTC(2026, 10, 5, 12, 0, 0) };
+
+    it('is the first record of the run, one per site, before the first poll', async () => {
+      sites = [workerSite('s1'), workerSite('s2')];
+      site.pages.set('/n', { status: 200, html: html(releaseMeta(2), '<ul></ul>') });
+      site.pages.set('/n/b', { status: 404 });
+      const p = pointerSeams([2]);
+      const pollsAtFirstRecord: number[] = [];
+      const seen = {
+        rpc: async (fn: string, args: Record<string, unknown>) => {
+          if (fn === 'worker_record_delivery') pollsAtFirstRecord.push(p.urls.length);
+          return (db as unknown as { rpc: typeof seen.rpc }).rpc(fn, args);
+        },
+      } as unknown as SupabaseClient;
+
+      await confirmRelease(seen, { ...withdrawing, pointerWrittenAt: p.c.t }, { ...clock, pointer: p.seams });
+
+      expect(pollsAtFirstRecord.slice(0, 2)).toEqual([0, 0]);
+      expect(recorded.slice(0, 2)).toEqual(
+        ['s1', 's2'].map((id) => ({ p_release_id: 'rel', p_site_id: id, p_notify_status: 'pending', p_live_status: null, p_error: state, p_now: '2026-11-05T12:00:00.000Z' })),
+      );
+    });
+
+    it('is on the delivery when the run dies in the poll: nothing after it is recorded', async () => {
+      const p = pointerSeams([1]);
+      const killed = new Error('killed');
+      await expect(confirmRelease(db, { ...withdrawing, pointerWrittenAt: p.c.t }, { ...clock, pointer: { ...p.seams, sleep: async () => Promise.reject(killed) } })).rejects.toBe(killed);
+      expect(recorded.map((r) => [r.p_notify_status, r.p_live_status, r.p_error])).toEqual([['pending', null, state]]);
+    });
+
+    it('names what else the release has to confirm, so a withdrawal alone never settles it', async () => {
+      const mixed: DeliveredRelease = { ...withdrawing, bundle: bundle(2, [entry(E1, 'a', null)]), requests: [...published.requests, ...withdrawing.requests] };
+      const p = pointerSeams([2]);
+      await confirmRelease(db, { ...mixed, pointerWrittenAt: p.c.t }, { ...clock, pointer: p.seams });
+      expect(recorded[0]).toMatchObject({ p_notify_status: 'pending', p_error: { withdrawals_others: true } });
+    });
+
+    it('a retry stores it too (a delivery that has no row yet)', async () => {
+      site.pages.set('/n', { status: 200, html: html(releaseMeta(2), '<ul></ul>') });
+      site.pages.set('/n/b', { status: 404 });
+      await confirmRelease(db, withdrawing, clock, new Set(['s1']));
+      expect(recorded[0]).toMatchObject({ p_notify_status: 'pending', p_error: state });
+    });
+
+    it('a release that withdraws nothing records nothing before the notification', async () => {
+      const p = pointerSeams([2]);
+      await confirmRelease(db, { ...published, pointerWrittenAt: p.c.t }, { ...clock, pointer: p.seams });
+      expect(recorded[0]).toMatchObject({ p_notify_status: 'ok' });
+    });
+
+    it('a withdrawal that cannot be checked is never recorded live, and is no stored check', async () => {
+      const unchecked: DeliveredRelease = { ...withdrawing, previousBundle: null };
+      await confirmRelease(db, unchecked, clock, new Set(['s1']));
+      expect(recorded.map((r) => r.p_notify_status)).toEqual(['ok', null]);
+      expect(recorded.at(-1)).toMatchObject({ p_live_status: 'not_confirmed', p_error: { code: 'live_not_confirmed', failures: [{ entryId: E2, reason: 'withdrawal_unchecked' }] } });
+      expect(recorded.at(-1)!.p_error).not.toHaveProperty('withdrawals');
+    });
   });
 
   it('polls once per release, not once per site', async () => {
@@ -728,7 +830,7 @@ describe('confirmSite: retries after not_confirmed (M3-03)', () => {
     number: 2,
     bundle: bundle(2, [entry(E, 'a', '2026-01-01T00:00:00.000Z')]),
     previousBundle: null,
-    requests: [{ id: 'q1', entryId: E, action: 'publish' }],
+    requests: [{ id: 'q1', entryId: E, action: 'publish', firstPublishedAt: PUBLISHED }],
   };
   const workerSite = (): WorkerSite => ({ id: 's', base_url: site.origin, revalidate_url: `${site.origin}/api/revalidate`, webhook_secrets: ['leyndo'] });
   const webhooks = () => site.requests.filter((r) => r.method === 'POST').length;
@@ -841,9 +943,9 @@ describe('withdrawal state (W1)', () => {
         bundle: current,
         previousBundle: previous,
         requests: [
-          { id: 'q1', entryId: E1, action: 'publish' },
-          { id: 'q2', entryId: E2, action: 'unpublish' },
-          { id: 'q3', entryId: E3, action: 'unpublish' },
+          { id: 'q1', entryId: E1, action: 'publish', firstPublishedAt: PUBLISHED },
+          { id: 'q2', entryId: E2, action: 'unpublish', firstPublishedAt: PUBLISHED },
+          { id: 'q3', entryId: E3, action: 'unpublish', firstPublishedAt: null },
         ],
       },
       MEDIA,
@@ -853,7 +955,7 @@ describe('withdrawal state (W1)', () => {
       [E2, true],
       [E3, true],
     ]);
-    const still = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q4', entryId: E1, action: 'unpublish' }] }, MEDIA);
+    const still = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q4', entryId: E1, action: 'unpublish', firstPublishedAt: PUBLISHED }] }, MEDIA);
     expect(still[0]).toMatchObject({ failure: 'still_published' });
     expect(still[0]!.withdrawal ?? false).toBe(false);
   });
@@ -865,8 +967,8 @@ describe('withdrawal state (W1)', () => {
         bundle: bundle(3, []),
         previousBundle: bundle(2, [entry(E1, 'a', null), entry(E2, 'b', null)]),
         requests: [
-          { id: 'u1', entryId: E1, action: 'unpublish' },
-          { id: 'u2', entryId: E2, action: 'unpublish' },
+          { id: 'u1', entryId: E1, action: 'unpublish', firstPublishedAt: PUBLISHED },
+          { id: 'u2', entryId: E2, action: 'unpublish', firstPublishedAt: PUBLISHED },
         ],
       },
       MEDIA,
