@@ -11,6 +11,7 @@ coverage/
 .worktrees/
 next-env.d.ts
 test-results/
+test-results-staging/
 playwright-report/
 apps/cms/e2e/.auth/
 apps/cms/e2e-screenshots/
