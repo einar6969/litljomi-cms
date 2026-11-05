@@ -121,6 +121,7 @@ All numbered decisions are in `docs/plans/2026-11-01-m0-m1.md`, despite its name
 | 59 | Permission rules for read-only `git`; replaced by 60 |
 | 60 | Full git autonomy: `git` and `gh` run with no prompt, outside the sandbox. Gates are unchanged |
 | 61 | The KING merges once PASS, up to date and green CI all hold. M4 runs without stopping, except for hosted actions, `staging`, unsettled spec conflicts and unfixed failures |
+| 62 | TOTP rate-limit risk accepted for the console; recheck at hosted acceptance and M5 |
 
 **Known not to be in the numbered decisions:**
 

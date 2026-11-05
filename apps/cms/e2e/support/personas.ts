@@ -3,6 +3,7 @@
 export const PERSONA_EMAILS = {
   editor_labak: 'editor-labak@test.local',
   editor_demo: 'editor-demo@test.local',
+  platform_admin: 'admin@test.local',
 } as const;
 
 export type E2ePersona = keyof typeof PERSONA_EMAILS;
