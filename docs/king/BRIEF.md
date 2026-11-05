@@ -26,7 +26,7 @@ A milestone being accepted does not make every line of it hosted.
 - **Nothing real is live.** There is no production project, no real editor and no real content. labak.is is still the old Joomla site.
 - **Tests:** on `b756c74`, from the CI log: pgTAP 2,006 in 39 files, unit 2,498, integration 96 + 116. Unit 2,498 re-run locally on `f2ab9e4`; the other totals were not re-read. CI passed on `eb4e85c`.
 
-M5's review and fix round are done and on staging. Hosted verification is in `docs/execution/checkpoints/C7.md`: the checks that need no credentials passed, and the rows marked Open wait for Einar. M5 isn't accepted yet.
+M5's review and fix round are done and on staging. Hosted verification is in `docs/execution/checkpoints/C7.md`: every check run passed, the hosted email template is updated, and only the console at `aal2` waits for Einar's TOTP code. M5 isn't accepted yet.
 
 ## 2. What the Hub is and why it exists
 
