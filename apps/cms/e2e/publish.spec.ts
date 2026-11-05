@@ -89,7 +89,8 @@ test('publish, edit and republish, then unpublish a demo event, each confirmed o
 
   // The stale panel's unpublish is a plain refusal; the entry's status does not change.
   await stale.getByRole('button', { name: t.publish.unpublish }).click();
-  await expect(stale.getByRole('alert')).toHaveText(t.publish.notPublished);
+  // (Next.js's own route announcer is also an alert, so the notice is picked by its text.)
+  await expect(stale.getByRole('alert').filter({ hasText: t.publish.notPublished })).toBeVisible();
   await page.reload();
   await expect(state(page)).toHaveText(t.publish.removed, CONFIRMED);
   await stale.close();

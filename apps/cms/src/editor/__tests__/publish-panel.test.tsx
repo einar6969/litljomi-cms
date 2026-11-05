@@ -18,6 +18,8 @@ const OLD_REQUEST = '00000000-0000-4000-8000-0000000000d0';
 
 const row = (patch: Partial<PublicationStatusRow>): PublicationStatusRow => ({
   request_id: REQUEST,
+  latest_request_id: patch.request_id ?? REQUEST,
+  latest_action: 'publish',
   tenant_id: '00000000-0000-4000-8000-0000000000f1',
   entry_id: ENTRY,
   action: 'publish',
@@ -165,6 +167,23 @@ describe('PublishPanel', () => {
     expect(unpublish).toHaveBeenCalledWith(ENTRY);
     expect(container.querySelector('[role="alert"]')?.textContent).toBe(t.publish.notPublished);
     expect(stateText()).toBe(before);
+  });
+
+  // M5-01: the view skips a superseded repeat, so the panel that sent it never sees its row.
+  it('a repeat that ended superseded shows the request the view shows, and does not wait for ever', async () => {
+    const REPEAT = '99999999-9999-4999-8999-999999999999';
+    const first = live({ action: 'unpublish', request_id: 'fyrsta', sites_live_ok: 0, sites_not_confirmed: 1 });
+    const loadStatus = vi.fn(async () => (unpublish.mock.calls.length > 0 ? { ...first, latest_request_id: REPEAT, latest_action: 'unpublish' as const } : live()));
+    const unpublish = vi.fn(async () => ({ requestId: REPEAT }));
+    await renderPanel({ loadStatus, unpublish, initiallyPublished: true });
+
+    await act(async () => button(t.publish.unpublish)!.click());
+    await advance(0);
+
+    expect(stateText()).toBe(displayState(first).label);
+    const calls = loadStatus.mock.calls.length;
+    await advance(POLL_MS * 2);
+    expect(loadStatus.mock.calls.length).toBe(calls);
   });
 
   it('shows a refused request\'s notice and keeps polling a status it could not read', async () => {

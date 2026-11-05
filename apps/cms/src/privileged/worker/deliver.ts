@@ -81,33 +81,46 @@ export type LiveTarget = {
   contentHash: string | null;
   mediaUrls: string[];
   /**
-   * W1: a withdrawal this release can check (the entry's last request is an unpublish, the entry is
-   * not in the release, no failure). Its checks are stored on a delivery that misses them.
+   * W1: a withdrawal of this release (the entry's last request is an unpublish, the entry is not in
+   * the release, no failure but `withdrawal_unchecked`). Its checks are stored on a delivery that
+   * misses them.
    */
   withdrawal?: true;
 };
 
-/** A withdrawal check as a delivery stores it (W1): enough to run it again without any bundle. */
-export type StoredWithdrawal = { entryId: string; requestIds: string[]; checks: LiveCheck[]; ownPath: string };
+/**
+ * A withdrawal check as a delivery stores it (W1): enough to run it again without any bundle.
+ * `unchecked`: no record to check it by (`withdrawal_unchecked`), so it can never pass.
+ */
+export type StoredWithdrawal = { entryId: string; requestIds: string[]; checks: LiveCheck[]; ownPath: string; unchecked?: true };
 
 /**
  * A site's withdrawal state for a superseded release, as api.worker_deliveries_to_retry gives it
  * (W1): the stored checks still to confirm (only entries whose latest committed request is still
  * the release's unpublish), the entries already confirmed, whether anything else in the release was
- * unconfirmed on the site, whether the alert was raised, and whether the hour after the release
- * ended.
+ * unconfirmed on the site, whether the alert was raised, whether the hour after the release ended,
+ * and whether the 24 hours since the state was first stored did (M5-01).
  */
-export type WithdrawalState = { pending: StoredWithdrawal[]; withdrawn: string[]; others: boolean; alerted: boolean; hourOver: boolean };
+export type WithdrawalState = { pending: StoredWithdrawal[]; withdrawn: string[]; others: boolean; alerted: boolean; hourOver: boolean; expired: boolean };
 
 /** A superseded release whose withdrawals are checked again (W1); `notifyRelease` is the tenant's latest delivered release. */
 export type WithdrawalRelease = { tenantId: string; tenantSlug: string; releaseId: string; number: number; notifyRelease: number };
 
-const stored = (t: LiveTarget): StoredWithdrawal => ({ entryId: t.entryId, requestIds: t.requestIds, checks: t.checks, ownPath: t.ownPath });
+const stored = (t: LiveTarget): StoredWithdrawal => ({
+  entryId: t.entryId,
+  requestIds: t.requestIds,
+  checks: t.checks,
+  ownPath: t.ownPath,
+  ...(t.failure !== null ? { unchecked: true as const } : {}),
+});
+
+/** Whether a target keeps its delivery from settling on withdrawal checks alone: not a withdrawal, or one nothing can prove. */
+const beyondWithdrawalChecks = (t: LiveTarget): boolean => !t.withdrawal || t.failure !== null;
 
 /** W1: the withdrawal state of a delivery that confirmed nothing yet; null when the release withdraws nothing it can check. */
 function unconfirmedState(targets: LiveTarget[]): { withdrawals: StoredWithdrawal[]; withdrawals_others: boolean } | null {
   const withdrawals = targets.filter((t) => t.withdrawal);
-  return withdrawals.length > 0 ? { withdrawals: withdrawals.map(stored), withdrawals_others: targets.some((t) => !t.withdrawal) } : null;
+  return withdrawals.length > 0 ? { withdrawals: withdrawals.map(stored), withdrawals_others: targets.some(beyondWithdrawalChecks) } : null;
 }
 
 /** A bundle as the module's `checks` see it: each type's entries by sortAt descending. */
@@ -185,7 +198,7 @@ export function liveTargets(
     if (inRelease && last.action === 'unpublish') return { ...base, failure: 'still_published' };
     const record = inRelease ?? find(release.previousBundle, entryId);
     const withdrawal = !inRelease && last.action === 'unpublish' ? ({ withdrawal: true } as const) : {};
-    if (!record) return last.wasDelivered === false ? { ...base, ...withdrawal } : { ...base, failure: 'withdrawal_unchecked' };
+    if (!record) return last.wasDelivered === false ? { ...base, ...withdrawal } : { ...base, ...withdrawal, failure: 'withdrawal_unchecked' };
     const own = inRelease ? { contentHash: inRelease.entry.contentHash, mediaUrls: mediaUrlsIn(inRelease.entry.data, mediaPrefix) } : {};
     const integration = Object.hasOwn(module.site, record.type) ? module.site[record.type] : undefined;
     if (!integration) return { ...base, ...own, ...withdrawal };
@@ -334,7 +347,7 @@ export async function confirmSite(
       ? {
           withdrawals: withdrawals.filter((t) => missed.has(t.entryId)).map(stored),
           withdrawn: withdrawals.filter((t) => !missed.has(t.entryId)).map((t) => t.entryId),
-          withdrawals_others: targets.some((t) => !t.withdrawal && missed.has(t.entryId)),
+          withdrawals_others: targets.some((t) => beyondWithdrawalChecks(t) && missed.has(t.entryId)),
         }
       : {};
   const recorded = await record(db, release.releaseId, site.id, null, 'not_confirmed', { ...missError(failures), ...state }, options);
@@ -393,6 +406,10 @@ export async function markWithdrawalAlerted(db: SupabaseClient, releaseId: strin
  * notification) after the hour following the release, marked on the delivery in the same record, or
  * when the retries run out, unless it was raised already. Never `delivery.retries_exhausted`: the
  * incident is the withdrawal.
+ *
+ * M5-01: a stored withdrawal with no checks always misses; the database stops listing it once the
+ * alert is marked. Once `expired`, runs were killed for 24 hours with no miss recorded, so the
+ * delivery ends here, with the alert first, and no notification or check that a kill could stop.
  */
 export async function confirmWithdrawals(
   db: SupabaseClient,
@@ -410,6 +427,12 @@ export async function confirmWithdrawals(
     }
   };
   const log = { tenant: release.tenantSlug, release: release.number, siteId: site.id, notified: release.notifyRelease };
+
+  if (state.expired) {
+    await raise(null);
+    await record(db, release.releaseId, site.id, null, 'not_confirmed', { ...missError([]), withdrawals: state.pending, ...marker }, options);
+    return 'not_confirmed';
+  }
 
   const notified = await notifySite(site, payload);
   if (!notified.ok) {
@@ -433,6 +456,11 @@ export async function confirmWithdrawals(
   const missed = new Set<string>();
   await Promise.all(
     state.pending.map(async (w) => {
+      if (w.unchecked) {
+        missed.add(w.entryId);
+        failures.push({ entryId: w.entryId, path: w.ownPath, reason: 'withdrawal_unchecked' });
+        return;
+      }
       const result = await runLiveChecks({
         baseUrl: site.base_url,
         checks: w.checks,

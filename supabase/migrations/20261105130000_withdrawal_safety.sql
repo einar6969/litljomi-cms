@@ -11,9 +11,14 @@
 --   1. api.request_unpublish refuses an entry that is not published and has no publish in flight
 --      (a publish request still pending or validating; §6.3's other statuses are final): P0001
 --      `not_published`, no request row. An unpublish in flight is no publish.
---   2. api.worker_commit_unpublish ends the request of an entry that is already unpublished as
---      `superseded`, with error {code: 'not_published'}: only a committed request is linked to a
---      release. This is what two requests accepted before either ran reach.
+--      The entry and the in-flight publish are read in one statement: read in two, a publish that
+--      commits between them is seen in neither.
+--   2. api.worker_commit_unpublish ends the request of an entry that is already unpublished, with
+--      no publish in flight, as `superseded`, with error {code: 'not_published'}: only a committed
+--      request is linked to a release. This is what two requests accepted before either ran reach.
+--      With a publish in flight the unpublish commits: withdrawal outranks. An older publish cannot
+--      commit after it (20261104150000: a newer request supersedes it), so the entry stays
+--      unpublished and the unpublish is never lost.
 --   3. api.worker_deliveries_to_retry: a stored withdrawal stops only on the entry's latest
 --      committed request (decision 65); a pending, failed or superseded request stops nothing.
 --   4. api.worker_entry_was_delivered (new; service_role only): whether an earlier release reached
@@ -32,16 +37,30 @@
 --      releases through their tenant-scoped keys. api.worker_release_snapshot and
 --      api.worker_deliveries_to_retry give the answer with each request (`was_delivered`, a key
 --      added, same signatures). The worker then keeps a withdrawal with no record unconfirmed
---      (deliver.ts, `withdrawal_unchecked`), and confirms one that no site ever had.
+--      (deliver.ts, `withdrawal_unchecked`), and confirms one that no site ever had. Such a
+--      withdrawal is stored in `withdrawals` too, with no checks and `unchecked: true`, and
+--      withdrawals_others set, so it reaches W1's alert when superseded or killed, and can never
+--      settle the delivery. It cannot pass, so the retry selection drops it once the alert is
+--      marked (withdrawal_alerted).
 --   5. api.worker_record_delivery (same signature and result): a record with notify status
 --      'pending', no live status and p_error naming `withdrawals` is the state the worker stores
 --      before the run's pointer poll and live window. It creates the delivery, pending, with no
---      attempt and no failure, its next attempt in five minutes (the worker's maxDuration, the same
---      grace as a delivery with no row); on a delivery that already has the state or is live ok it
---      changes nothing. The notification keeps a next attempt on a delivery with the state, five
---      minutes on, because the superseded branch of the retry selection needs one. Once the first
---      miss or failure is recorded the schedule is M3-02's as before. The state's shape is W1's.
---   6. api.worker_deliveries_to_retry leaves a pending delivery alone until that next attempt.
+--      attempt, its next attempt in five minutes (the worker's maxDuration, the same grace as a
+--      delivery with no row), and first_failed_at set: M3-02's 24 hours start when the state is
+--      first stored, so repeatedly killed runs end. On a delivery that already has the state or is
+--      live ok it changes nothing. The notification keeps a next attempt on a delivery with the
+--      state, five minutes on within the 24 hours, because the superseded branch of the retry
+--      selection needs one. A first run that passes clears first_failed_at, so the console shows no
+--      failure. Once the first miss or failure is recorded the schedule is M3-02's as before. The
+--      state's shape is W1's, plus `unchecked`.
+--   6. api.worker_deliveries_to_retry leaves a pending delivery alone until that next attempt, and
+--      past the 24 hours. A superseded delivery past them is listed with `expired` in its
+--      withdrawal state: no run recorded a miss, so the worker ends it (no notification, no check)
+--      and alerts (deliver.ts, confirmWithdrawals).
+--   7. api.publication_status skips a superseded unpublish when it picks the request to show, so a
+--      repeat never hides "live not confirmed" or "Tekið af vef" (§7.4), and appends
+--      latest_request_id and latest_action, the entry's newest request shown or not: the panel that
+--      sent a repeat stops waiting for it, and a publish a repeat cancelled says so.
 --
 -- §6.2's refusal of a repeat unpublish and its `superseded` end are under decision 65.
 --
@@ -60,20 +79,22 @@ set search_path = ''
 as $$
 declare
   v_tenant_id uuid;
-  v_published_rev_id uuid;
+  v_withdrawable boolean;
   v_id uuid;
 begin
-  select e.tenant_id, e.published_rev_id into v_tenant_id, v_published_rev_id
+  -- One statement, so both are read from one snapshot.
+  select e.tenant_id,
+         e.published_rev_id is not null or exists (
+           select 1 from cms.publish_requests r
+           where r.tenant_id = e.tenant_id and r.entry_id = e.id
+             and r.action = 'publish' and r.status in ('pending', 'validating'))
+    into v_tenant_id, v_withdrawable
   from cms.entries e
   where e.id = p_entry_id;
   if not found then
     raise exception 'not_found' using errcode = 'P0001';
   end if;
-  if v_published_rev_id is null and not exists (
-    select 1 from cms.publish_requests r
-    where r.tenant_id = v_tenant_id and r.entry_id = p_entry_id
-      and r.action = 'publish' and r.status in ('pending', 'validating')
-  ) then
+  if not v_withdrawable then
     raise exception 'not_published' using errcode = 'P0001';
   end if;
   insert into cms.publish_requests (tenant_id, entry_id, action)
@@ -126,8 +147,13 @@ begin
     return 'rejected';
   end if;
 
-  -- Nothing to withdraw: the request ends here and no release links it.
-  if v_published_rev_id is null then
+  -- Nothing to withdraw and nothing on its way: the request ends here and no release links it.
+  -- With a publish in flight it commits: an older publish cannot commit after it.
+  if v_published_rev_id is null and not exists (
+    select 1 from cms.publish_requests r
+    where r.tenant_id = v_request.tenant_id and r.entry_id = v_request.entry_id
+      and r.action = 'publish' and r.status in ('pending', 'validating')
+  ) then
     update cms.publish_requests r
     set status = 'superseded', error = pg_catalog.jsonb_build_object('code', 'not_published')
     where r.id = p_request_id;
@@ -136,7 +162,8 @@ begin
 
   update cms.entries e
   set published_rev_id = null, published_draft_version = null
-  where e.tenant_id = v_request.tenant_id and e.id = v_request.entry_id;
+  where e.tenant_id = v_request.tenant_id and e.id = v_request.entry_id
+    and e.published_rev_id is not null;
   update cms.publish_requests r
   set status = 'committed', error = null
   where r.id = p_request_id;
@@ -212,10 +239,11 @@ begin
   if p_notify_status = 'pending' and p_live_status is null
      and pg_catalog.jsonb_typeof(p_error -> 'withdrawals') = 'array' then
     insert into cms.site_deliveries as sd (release_id, site_id, tenant_id, notify_status, notify_attempts, live_status,
-                                           last_error, next_attempt_at)
-    values (p_release_id, p_site_id, v_tenant_id, 'pending', 0, 'pending', p_error, p_now + interval '5 minutes')
+                                           last_error, first_failed_at, next_attempt_at)
+    values (p_release_id, p_site_id, v_tenant_id, 'pending', 0, 'pending', p_error, p_now, p_now + interval '5 minutes')
     on conflict (release_id, site_id) do update
     set last_error = case when pg_catalog.jsonb_typeof(sd.last_error) = 'object' then sd.last_error else '{}'::jsonb end || p_error,
+        first_failed_at = coalesce(sd.first_failed_at, p_now),
         next_attempt_at = coalesce(sd.next_attempt_at, p_now + interval '5 minutes')
     where sd.live_status <> 'ok' and not coalesce(sd.last_error ? 'withdrawals', false)
     returning sd.* into v_row;
@@ -269,7 +297,12 @@ begin
                            from pg_catalog.unnest(array['withdrawals', 'withdrawn', 'withdrawals_others', 'withdrawal_alerted']) as k (key)
                            where sd.last_error ? k.key)
                    end,
-      first_failed_at = case when v_failed or v_missed then coalesce(sd.first_failed_at, p_now) else sd.first_failed_at end,
+      first_failed_at = case
+                          when v_failed or v_missed then coalesce(sd.first_failed_at, p_now)
+                          -- A first run that passed: nothing failed, the bound was only held for it.
+                          when p_live_status = 'ok' and sd.live_status = 'pending' and sd.notify_attempts <= 1 then null
+                          else sd.first_failed_at
+                        end,
       next_attempt_at = case
                           when v_failed or v_missed then
                             api.worker_next_attempt_at(coalesce(sd.first_failed_at, p_now),
@@ -277,7 +310,8 @@ begin
                           when p_live_status is not null then null
                           when p_notify_status = 'ok' and sd.live_status = 'not_confirmed' then sd.next_attempt_at
                           -- Notified, with withdrawals to confirm: a run killed in the live window is retried.
-                          when p_notify_status = 'ok' and sd.last_error ? 'withdrawals' then p_now + interval '5 minutes'
+                          when p_notify_status = 'ok' and sd.last_error ? 'withdrawals' then
+                            least(p_now + interval '5 minutes', coalesce(sd.first_failed_at, p_now) + interval '24 hours')
                           when p_notify_status is not null then null
                           else sd.next_attempt_at
                         end
@@ -339,7 +373,8 @@ begin
   where (sd.release_id is null and l.delivered_at < p_now - interval '5 minutes')
      or (sd.notify_status = 'failed' and sd.next_attempt_at <= p_now)
      or (sd.release_id is not null and sd.notify_status not in ('ok', 'failed')
-         and (sd.next_attempt_at is null or sd.next_attempt_at <= p_now))
+         and (sd.next_attempt_at is null or sd.next_attempt_at <= p_now)
+         and (sd.first_failed_at is null or p_now < sd.first_failed_at + interval '24 hours'))
      or (sd.notify_status = 'ok' and sd.live_status = 'pending'
          and sd.notified_at < p_now - interval '5 minutes'
          and (sd.first_failed_at is null or p_now < sd.first_failed_at + interval '24 hours'))
@@ -355,14 +390,16 @@ begin
                              then sd.last_error -> 'withdrawn' else '[]'::jsonb end,
            'others', coalesce(sd.last_error -> 'withdrawals_others' = 'true'::jsonb, false),
            'alerted', sd.last_error ? 'withdrawal_alerted',
-           'hourOver', coalesce(d.delivered_at <= p_now - interval '1 hour', false))
+           'hourOver', coalesce(d.delivered_at <= p_now - interval '1 hour', false),
+           'expired', coalesce(sd.first_failed_at <= p_now - interval '24 hours', false))
   from latest l
   join cms.tenants t on t.id = l.tenant_id
   join cms.releases d on d.tenant_id = l.tenant_id and d.status = 'delivered' and d.number < l.number
   join cms.site_deliveries sd on sd.tenant_id = d.tenant_id and sd.release_id = d.id
   join cms.sites s on s.tenant_id = sd.tenant_id and s.id = sd.site_id and s.active
   cross join lateral (
-    -- The stored withdrawals whose entry's latest committed request is still D's unpublish.
+    -- The stored withdrawals whose entry's latest committed request is still D's unpublish; one
+    -- with no checks only until its alert, as it cannot pass.
     select pg_catalog.jsonb_agg(x.w order by x.ord) as list
     from pg_catalog.jsonb_array_elements(case when pg_catalog.jsonb_typeof(sd.last_error -> 'withdrawals') = 'array'
                                               then sd.last_error -> 'withdrawals' else '[]'::jsonb end)
@@ -373,6 +410,7 @@ begin
                           and pr.status = 'committed'
                         order by pr.requested_at desc, pr.id desc limit 1) as lr
                   where lr.action = 'unpublish' and lr.release_id = d.id)
+      and not (x.w ? 'unchecked' and sd.last_error ? 'withdrawal_alerted')
   ) as pend
   where sd.live_status <> 'ok'
     and sd.next_attempt_at is not null
@@ -456,3 +494,137 @@ begin
   return v_result;
 end;
 $$;
+
+-- ---------------------------------------------------------------------------
+-- 7. api.publication_status: as in 20261104180000_withdrawal_confirmation.sql, with a superseded
+-- unpublish skipped and two columns appended (create or replace keeps its grants).
+
+create or replace view api.publication_status with (security_invoker = true) as
+select r.id as request_id, r.tenant_id, r.entry_id, r.action, r.status, r.error, r.requested_at,
+       rel.number as release_number, rel.status as release_status,
+       coalesce(failed.in_request_release
+                or (rel.status = 'delivered' and latest_delivered.number > rel.number and failed.in_latest_release),
+                false) as omitted,
+       case
+         when r.status = 'failed_validation' and r.error ->> 'code' = 'asset_missing'
+              and pg_catalog.jsonb_typeof(r.error -> 'assetIds') = 'array' then
+           (select pg_catalog.array_agg(a.filename order by ids.ord)
+            from pg_catalog.jsonb_array_elements_text(r.error -> 'assetIds') with ordinality as ids (id, ord)
+            join cms.assets a on a.tenant_id = r.tenant_id and a.id::text = ids.id)
+       end as missing_assets,
+       d.site_count, d.sites_notified, d.sites_live_ok, d.sites_not_confirmed,
+       (d.notify_exhausted
+        or d.live_exhausted
+        or (r.status = 'committed' and r.release_id is null
+            and exists (select 1
+                        from (select l.status, l.created_at, l.next_attempt_at from cms.releases l
+                              where l.tenant_id = r.tenant_id order by l.number desc limit 1) as latest
+                        where latest.status = 'failed' and latest.next_attempt_at is null
+                          and latest.created_at >= r.requested_at))) as retries_exhausted,
+       coalesce(d.live_pending_retry and rel.status = 'delivered', false) as live_retrying,
+       newest.id as latest_request_id, newest.action as latest_action
+from (
+  select distinct on (pr.tenant_id, pr.entry_id) pr.*
+  from cms.publish_requests pr
+  where exists (
+    select 1 from cms.memberships m
+    where m.tenant_id = pr.tenant_id and m.user_id = (select auth.uid())
+  )
+    -- A repeat changed nothing: the state to show is the request before it.
+    and not (pr.action = 'unpublish' and pr.status = 'superseded')
+  order by pr.tenant_id, pr.entry_id, pr.requested_at desc, pr.id desc
+) as r
+cross join lateral (
+  -- The entry's newest request, shown or not: a panel waits for it, and it says why a publish ended.
+  select n.id, n.action
+  from cms.publish_requests n
+  where n.tenant_id = r.tenant_id and n.entry_id = r.entry_id
+  order by n.requested_at desc, n.id desc
+  limit 1
+) as newest
+left join cms.releases rel on rel.tenant_id = r.tenant_id and rel.id = r.release_id
+left join lateral (
+  -- The tenant's latest delivered release (for `omitted` only).
+  select lr.id, lr.number, lr.error
+  from cms.releases lr
+  where lr.tenant_id = r.tenant_id and lr.status = 'delivered'
+  order by lr.number desc
+  limit 1
+) as latest_delivered on true
+cross join lateral (
+  -- Whether a release's error records the entry under `omitted` or `fallback` (each an array of
+  -- objects carrying entryId). Inline: the view runs as the caller, who has no access to private.
+  select bool_or(rr.which = 'request' and k.list @> pg_catalog.jsonb_build_array(
+                   pg_catalog.jsonb_build_object('entryId', r.entry_id::text))) as in_request_release,
+         bool_or(rr.which = 'latest' and k.list @> pg_catalog.jsonb_build_array(
+                   pg_catalog.jsonb_build_object('entryId', r.entry_id::text))) as in_latest_release
+  from (values ('request', rel.error), ('latest', latest_delivered.error)) as rr (which, error)
+  cross join lateral (
+    select rr.error -> key as list
+    from (values ('omitted'), ('fallback')) as keys (key)
+    where pg_catalog.jsonb_typeof(rr.error -> key) = 'array'
+  ) as k
+) as failed
+cross join lateral (
+  -- Whether a newer delivered release superseded the request's delivered release, whether the
+  -- request's release is still within its worker's run (SUPERSEDED_GRACE, 420 s since its
+  -- delivery), and whether the hour after its delivery ended (W1).
+  select coalesce(rel.status = 'delivered' and latest_delivered.number > rel.number, false) as superseded,
+         coalesce(rel.delivered_at > pg_catalog.now() - interval '420 seconds', false) as in_run,
+         not coalesce(rel.delivered_at > pg_catalog.now() - interval '1 hour', false) as hour_over
+) as sup
+cross join lateral (
+  -- Every active site of the tenant, with the request's own release's delivery for it (none
+  -- before the worker has recorded the site). Never the newer release's: it did not check this
+  -- entry. When superseded, a site that did not confirm the entry live counts as not_confirmed
+  -- with no retry pending and not exhausted (the editor sees "Ekki staðfest á vef"), unless its own
+  -- check may still be running (in_run, pending or not recorded yet, notify not failed), or (W1)
+  -- the entry is an unpublish the site's delivery still checks (`withdrawals`, kept within the
+  -- hour) or confirmed (`withdrawn`, live).
+  select pg_catalog.count(*)::int as site_count,
+         pg_catalog.count(*) filter (where sd.notify_status = 'ok')::int as sites_notified,
+         pg_catalog.count(*) filter (where sd.live_status = 'ok')::int as sites_live_ok,
+         pg_catalog.count(*) filter (where sd.live_status = 'not_confirmed')::int as sites_not_confirmed,
+         coalesce(pg_catalog.bool_or(sd.kept and sd.notify_status = 'failed' and own.next_attempt_at is null), false) as notify_exhausted,
+         coalesce(pg_catalog.bool_or(sd.live_status = 'not_confirmed' and sd.first_failed_at is not null
+                                     and sd.next_attempt_at is null), false) as live_exhausted,
+         coalesce(pg_catalog.bool_or(sd.live_status = 'not_confirmed' and sd.next_attempt_at is not null), false) as live_pending_retry
+  from cms.sites s
+  left join cms.site_deliveries own
+    on own.tenant_id = s.tenant_id and own.site_id = s.id and own.release_id = r.release_id
+  cross join lateral (
+    -- The unpublish's own withdrawal state on this site (W1).
+    select coalesce(r.action = 'unpublish' and pg_catalog.jsonb_typeof(own.last_error -> 'withdrawn') = 'array'
+                    and own.last_error -> 'withdrawn' ? r.entry_id::text, false) as confirmed,
+           coalesce(r.action = 'unpublish' and pg_catalog.jsonb_typeof(own.last_error -> 'withdrawals') = 'array'
+                    and own.last_error -> 'withdrawals' @> pg_catalog.jsonb_build_array(
+                          pg_catalog.jsonb_build_object('entryId', r.entry_id::text)), false) as checking
+  ) as w
+  cross join lateral (
+    select (not sup.superseded
+            or own.live_status is not distinct from 'ok'
+            or (sup.in_run and coalesce(own.live_status, 'pending') = 'pending'
+                and own.notify_status is distinct from 'failed')) as keep_own
+  ) as pick
+  cross join lateral (
+    -- Still checked past the hour: a failure, its retries unseen; exhausted once they ran out.
+    select (w.confirmed or w.checking or pick.keep_own) as kept,
+           case when w.confirmed then 'ok' else own.notify_status end as notify_status,
+           case
+             when w.confirmed then 'ok'
+             when w.checking and sup.hour_over then 'not_confirmed'
+             when w.checking or pick.keep_own then own.live_status
+             else 'not_confirmed'
+           end as live_status,
+           case
+             when w.confirmed then null
+             when w.checking and sup.hour_over then case when own.next_attempt_at is null then own.first_failed_at end
+             when w.checking or pick.keep_own then own.first_failed_at
+           end as first_failed_at,
+           case
+             when w.confirmed or (w.checking and sup.hour_over) then null
+             when w.checking or pick.keep_own then own.next_attempt_at
+           end as next_attempt_at
+  ) as sd
+  where s.tenant_id = r.tenant_id and s.active
+) as d;

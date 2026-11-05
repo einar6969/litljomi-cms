@@ -187,7 +187,7 @@ select tests.act_as_service();
 select results_eq($$ select site_id, notify_release_number, bundle_path, withdrawal from tests.d_rows(0) $$,
   $$ values (tests.k('b201'), 9003, null::text,
              jsonb_build_object('pending', jsonb_build_array(tests.w('c201'), tests.w('c202')), 'withdrawn', jsonb_build_array(),
-                                'others', false, 'alerted', false, 'hourOver', false)) $$,
+                                'others', false, 'alerted', false, 'hourOver', false, 'expired', false)) $$,
   'a superseded release''s unconfirmed withdrawal is retried when due: the latest release is notified, no bundle is named');
 select is((select count(*)::int from api.worker_deliveries_to_retry(now()) where release_id = tests.k('a202') and site_id = tests.k('b202')), 0,
   'a site that confirmed is not checked again');

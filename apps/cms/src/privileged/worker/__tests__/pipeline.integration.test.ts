@@ -966,7 +966,7 @@ describe('housekeeping hold: a withdrawal whose first live check missed', () => 
         }
       });
 
-      it('8. two requests accepted before either ran: the repeat ends superseded in no release, and stops nothing', async () => {
+      it('8. two requests accepted before either ran: the repeat ends superseded in no release, stops nothing, and hides nothing', async () => {
         const t0 = Date.now();
         try {
           const r = await requested('Tvisvar tekin af vef');
@@ -983,17 +983,88 @@ describe('housekeeping hold: a withdrawal whose first live check missed', () => 
 
           expect(await deliveryOf(repeat)).toMatchObject({ status: 'superseded', release_id: null });
           expect((await latestRelease()).id).toBe(withdrawing.id);
-          expect((await panel(r.entryId)).label).toBe(t.publish.notPublished);
+          // The editor sees the first unpublish's state; the repeat's "nothing was done" is never stored.
+          expect(await panel(r.entryId)).toMatchObject({ label: t.publish.notConfirmedRetrying, row: { request_id: first, latest_request_id: repeat } });
           // A later release links nothing of it, and the first unpublish is still checked.
           const newer = await supersede(t0 + 3 * MINUTE);
           expect(await linkedRequests(newer.id)).toBe(1);
           expect(await d_rows(withdrawing.id, t0 + 10 * MINUTE)).toHaveLength(1);
           await sweep({ ...SLOW, now: () => t0 + 10 * MINUTE });
-          expect((await panel(r.entryId)).label).not.toBe(t.publish.removed);
+          expect(await panel(r.entryId)).toMatchObject({ label: t.publish.notConfirmedRetrying, row: { request_id: first } });
           expect(await deliveryOf(first)).toMatchObject({ live_status: 'not_confirmed' });
+
+          stalePages.clear();
+          await sweep({ ...fast, now: () => t0 + 20 * MINUTE });
+          expect(await panel(r.entryId)).toMatchObject({ label: t.publish.removed, row: { request_id: first } });
         } finally {
           await cleanup();
         }
+      });
+
+      // Review item 1: withdrawal outranks a publish in flight, whichever the worker reaches first.
+      describe('an unpublish accepted during an in-flight publish', () => {
+        it('13. the unpublish first: it commits, the publish ends superseded, and the entry never reaches the site', async () => {
+          const t0 = Date.now();
+          try {
+            const r = await requested('Í flugi');
+            const u = await rpc<string>('request_unpublish', { p_entry_id: r.entryId });
+            await ownerQuery(`update cms.releases set created_at = now() - interval '1 hour' where tenant_id = $1 and status = 'failed'`, [TENANT.labak]);
+
+            await processAndDeliver(u, { ...fast, now: () => t0 });
+            await processAndDeliver(r.requestId, { ...fast, now: () => t0 });
+
+            expect(await deliveryOf(u)).toMatchObject({ status: 'committed', live_status: 'ok' });
+            expect(await deliveryOf(r.requestId)).toMatchObject({ status: 'superseded', release_id: null });
+            expect((await ownerQuery('select 1 from cms.entries where id = $1 and published_rev_id is null', [r.entryId])).length).toBe(1);
+            expect(news().some((e) => e.id === r.entryId)).toBe(false);
+            expect((await panel(r.entryId)).row.request_id).toBe(u);
+          } finally {
+            await cleanup();
+          }
+        });
+
+        it('14. the publish first: both end superseded, and the editor is told the publish was cancelled', async () => {
+          const t0 = Date.now();
+          try {
+            const r = await requested('Í flugi, fyrst');
+            const u = await rpc<string>('request_unpublish', { p_entry_id: r.entryId });
+
+            await processAndDeliver(r.requestId, { ...fast, now: () => t0 });
+            await processAndDeliver(u, { ...fast, now: () => t0 });
+
+            expect(await deliveryOf(r.requestId)).toMatchObject({ status: 'superseded', release_id: null });
+            expect(await deliveryOf(u)).toMatchObject({ status: 'superseded', release_id: null });
+            expect((await ownerQuery('select 1 from cms.entries where id = $1 and published_rev_id is null', [r.entryId])).length).toBe(1);
+            expect(await panel(r.entryId)).toMatchObject({ label: t.publish.cancelled, row: { request_id: r.requestId, latest_request_id: u } });
+          } finally {
+            await cleanup();
+          }
+        });
+
+        it('15. after a missed withdrawal: the commit moves the latest committed request, so the checks stop; the new delivery alerts, unconfirmed', async () => {
+          const t0 = Date.now();
+          try {
+            const w = await missedWithdrawal('unpublish', t0);
+            keepPage(w);
+            revalidates = true;
+            const again = await rerequested(w.entryId, await draftVersion(w.entryId), 'Í flugi aftur');
+            const u = await rpc<string>('request_unpublish', { p_entry_id: w.entryId });
+            await processAndDeliver(u, { ...SLOW, now: () => t0 + 2 * MINUTE });
+            await processAndDeliver(again, { ...fast, now: () => t0 + 2 * MINUTE });
+
+            expect(await deliveryOf(again)).toMatchObject({ status: 'superseded' });
+            const d = await deliveryOf(u);
+            expect(d).toMatchObject({ status: 'committed', live_status: 'not_confirmed', last_error: { withdrawals: [{ entryId: w.entryId, unchecked: true }] } });
+            expect(await d_rows(w.release.id, t0 + 10 * MINUTE)).toEqual([]);
+            expect((await panel(w.entryId)).label).not.toBe(t.publish.removed);
+
+            await sweep({ ...SLOW, now: () => t0 + 66 * MINUTE });
+            expect(await withdrawalAlerts(d.release_id!)).toHaveLength(1);
+            expect((await panel(w.entryId)).label).not.toBe(t.publish.removed);
+          } finally {
+            await cleanup();
+          }
+        });
       });
 
       it('9. a publish and an unpublish coalesced into one build after a missed withdrawal stay unconfirmed, and alert', async () => {
@@ -1049,6 +1120,37 @@ describe('housekeeping hold: a withdrawal whose first live check missed', () => 
 
           expect(await deliveryOf(withdrawn)).toMatchObject({ live_status: 'not_confirmed', last_error: { failures: [{ entryId: r.entryId, reason: 'withdrawal_unchecked' }] } });
           expect((await panel(r.entryId)).label).not.toBe(t.publish.removed);
+        } finally {
+          await cleanup();
+        }
+      });
+
+      // Review item 3: nothing can check it, so it alerts as a withdrawal once, then stops.
+      it('16. a withdrawal that cannot be checked, superseded during the hold: one alert, no further run, never confirmed', async () => {
+        const t0 = Date.now();
+        try {
+          const w = await missedWithdrawal('unpublish', t0);
+          revalidates = true;
+          const again = await rerequested(w.entryId, await draftVersion(w.entryId), 'Birt aftur í bili');
+          expect((await processRequestById(again)).status).toBe('committed');
+          const withdrawn = await rpc<string>('request_unpublish', { p_entry_id: w.entryId });
+          expect((await processRequestById(withdrawn)).status).toBe('committed');
+          expect((await deliverTenant(TENANT.labak, { ...SLOW, now: () => t0 + 5 * MINUTE })).status).toBe('delivered');
+          const d = await deliveryOf(withdrawn);
+          expect(d).toMatchObject({ live_status: 'not_confirmed', last_error: { withdrawals: [{ entryId: w.entryId, unchecked: true }], withdrawals_others: true } });
+          await supersede(t0 + 6 * MINUTE);
+
+          await sweep({ ...fast, now: () => t0 + 66 * MINUTE });
+          expect(await withdrawalAlerts(d.release_id!)).toHaveLength(1);
+
+          const before = webhooks().length;
+          expect(await d_rows(d.release_id!, t0 + 2 * 60 * MINUTE)).toEqual([]);
+          await sweep({ ...fast, now: () => t0 + 2 * 60 * MINUTE });
+          expect(webhooks().length).toBe(before);
+          expect(await withdrawalAlerts(d.release_id!)).toHaveLength(1);
+          // The view reads the real clock: the hour after the release has ended by any alert.
+          await ownerQuery(`update cms.releases set delivered_at = delivered_at - interval '2 hours' where id = $1`, [d.release_id]);
+          expect((await panel(w.entryId)).label).toBe(t.publish.notConfirmed);
         } finally {
           await cleanup();
         }
@@ -1132,6 +1234,50 @@ describe('housekeeping hold: a withdrawal whose first live check missed', () => 
         expect((await panel(r.entryId)).label).not.toBe(t.publish.removed);
         return { entryId: r.entryId, slug: r.slug, requestId, release: { id: d.release_id!, number: d.number } };
       }
+
+      it('a withdrawal that cannot be checked, killed in the pointer poll and superseded: one alert after the hour', { timeout: 60_000 }, async () => {
+        const t0 = Date.now();
+        try {
+          const w = await missedWithdrawal('unpublish', t0);
+          revalidates = true;
+          const again = await rerequested(w.entryId, (await ownerQuery<{ version: number }>('select version from cms.drafts where entry_id = $1', [w.entryId]))[0]!.version, 'Aftur');
+          expect((await processRequestById(again)).status).toBe('committed');
+          const withdrawn = await rpc<string>('request_unpublish', { p_entry_id: w.entryId });
+          expect((await processRequestById(withdrawn)).status).toBe('committed');
+          const killed = new Error('killed');
+          const run = deliverTenant(TENANT.labak, { ...SLOW, now: () => t0, pointer: { fetch: (async () => new Response('{}')) as unknown as typeof fetch, sleep: async () => Promise.reject(killed) } });
+          await expect(run).rejects.toBe(killed);
+          const d = await deliveryOf(withdrawn);
+          expect(d).toMatchObject({ notify_status: 'pending', last_error: { withdrawals: [{ entryId: w.entryId, unchecked: true }] } });
+
+          await supersede(t0 + MINUTE);
+          await sweep({ ...fast, now: () => t0 + 61 * MINUTE });
+          expect(await withdrawalAlerts(d.release_id!)).toHaveLength(1);
+          expect((await panel(w.entryId)).label).not.toBe(t.publish.removed);
+        } finally {
+          await cleanup();
+        }
+      });
+
+      // Review item 4: killed runs record no miss, so only the stored bound ends them.
+      it('a run killed every time ends when the 24 hours run out, with one alert', { timeout: 60_000 }, async () => {
+        const t0 = Date.now();
+        try {
+          const w = await killedRun('pointer poll', t0);
+          await supersede(t0 + MINUTE);
+          const before = webhooks().length;
+
+          await sweep({ ...fast, now: () => t0 + DAY + MINUTE });
+
+          expect(webhooks().length).toBe(before);
+          expect(await scheduleOf(w.requestId)).toEqual({ first_failed_at: t0, next_attempt_at: null });
+          expect(await withdrawalAlerts(w.release.id)).toHaveLength(1);
+          expect((await panel(w.entryId)).label).toBe(t.publish.deliveryFailed);
+          expect(await d_rows(w.release.id, t0 + 2 * DAY)).toEqual([]);
+        } finally {
+          await cleanup();
+        }
+      });
 
       for (const window of ['pointer poll', 'live window'] as const) {
         it(`${window}, superseded: the withdrawal is left alone while the run can be alive, then checked, alerted once, and confirmed`, { timeout: 60_000 }, async () => {

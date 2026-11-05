@@ -39,6 +39,9 @@ export type PublicationStatusRow = {
    * request's release is the tenant's latest delivered one and its retries are not exhausted.
    */
   live_retrying: boolean;
+  /** The entry's newest request, shown or not: the view skips a superseded unpublish (M5-01). */
+  latest_request_id: string;
+  latest_action: 'publish' | 'unpublish';
 };
 
 /**
@@ -55,10 +58,13 @@ export type DisplayOptions = {
 /** The columns the panel reads, in the view's order. */
 export const PUBLICATION_STATUS_COLUMNS =
   'request_id, tenant_id, entry_id, action, status, error, requested_at, release_number, release_status, omitted, ' +
-  'missing_assets, site_count, sites_notified, sites_live_ok, sites_not_confirmed, retries_exhausted, live_retrying';
+  'missing_assets, site_count, sites_notified, sites_live_ok, sites_not_confirmed, retries_exhausted, live_retrying, latest_request_id, latest_action';
 
 /** "Í birtingu…": a request on its way. The panel also shows it while it waits for its own new request's row. */
 export const IN_PROGRESS: Readonly<DisplayState> = Object.freeze({ label: t.publish.inProgress, tone: 'pending' });
+
+/** Whether a row answers the request `awaiting` (null: none): it is that request, or the view skipped it (M5-01). */
+export const answers = (row: PublicationStatusRow, awaiting: string | null): boolean => awaiting === null || row.request_id === awaiting || row.latest_request_id === awaiting;
 
 /** True once the state can no longer change without a new request: polling stops. */
 export const isFinal = (state: DisplayState): boolean => state.tone !== 'pending';
@@ -94,8 +100,9 @@ export function displayState(row: PublicationStatusRow, options: DisplayOptions 
     case 'failed_validation':
       return invalidState(row, options.fieldLabels ?? {});
     case 'superseded':
-      // M5-01: an unpublish ends superseded only when the entry had nothing left to withdraw.
-      return { label: row.action === 'unpublish' ? t.publish.notPublished : t.publish.superseded, tone: 'error' };
+      // M5-01: the view skips a superseded repeat, so the publish it cancelled can be what is shown.
+      if (row.action === 'publish' && row.latest_action === 'unpublish') return { label: t.publish.cancelled, tone: 'neutral' };
+      return { label: t.publish.superseded, tone: 'error' };
     case 'rejected':
       return { label: t.publish.rejected, tone: 'error' };
     case 'failed':

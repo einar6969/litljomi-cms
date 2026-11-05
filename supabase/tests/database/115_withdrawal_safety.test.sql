@@ -21,7 +21,7 @@
 -- (a303, five minutes ago); active site b301.
 begin;
 \ir _helpers.sql
-select plan(57);
+select plan(80);
 
 create function tests.k(p_key text) returns uuid
 language plpgsql
@@ -150,6 +150,8 @@ select isnt(api.request_unpublish(tests.entry('c301')), null::uuid, 'accepted wh
 select isnt(api.request_unpublish(tests.entry('c302')), null::uuid, 'a published entry is accepted');
 select throws_ok($$ select api.request_unpublish(gen_random_uuid()) $$, 'P0001', 'not_found', 'an unknown entry is still not_found');
 select tests.act_as_owner();
+select ok((select p.prosrc ~ 'cms\.publish_requests r[^;]*from cms\.entries e' from pg_proc p where p.oid = 'api.request_unpublish(uuid)'::regprocedure),
+  'the entry and the in-flight publish are read in one statement, one snapshot');
 delete from cms.publish_requests where entry_id in (tests.entry('c301'), tests.entry('c302'));
 
 -- ---------------------------------------------------------------------------
@@ -178,6 +180,54 @@ select is(api.worker_commit_unpublish(tests.k('e324')), 'rejected', 'a suspended
 select tests.act_as_owner();
 update cms.tenants set status = 'active' where id = tests.tenant('labak');
 delete from cms.publish_requests where id in (tests.k('e321'), tests.k('e322'), tests.k('e323'), tests.k('e324'));
+
+-- ---------------------------------------------------------------------------
+-- 2b. An unpublish accepted during an in-flight publish wins, whichever is processed first. c305
+-- was never published.
+insert into cms.entries (id, tenant_id, type, slug, created_by) values
+  (tests.entry('c305'), tests.tenant('labak'), 'news', 'c305', tests.persona('editor_labak'));
+insert into cms.drafts (entry_id, tenant_id, schema_version, data, updated_by) values
+  (tests.entry('c305'), tests.tenant('labak'), 1, '{"title": "Í flugi"}', tests.persona('editor_labak'));
+insert into cms.publish_requests (id, tenant_id, entry_id, action, draft_version, requested_by, requested_at, status, claimed_at, attempts) values
+  (tests.k('e351'), tests.tenant('labak'), tests.entry('c305'), 'publish', 1, tests.persona('editor_labak'), now() - interval '2 minutes', 'validating', now(), 1),
+  (tests.k('e352'), tests.tenant('labak'), tests.entry('c305'), 'unpublish', null, tests.persona('editor_labak'), now() - interval '1 minute', 'validating', now(), 1);
+select tests.act_as_service();
+select is(api.worker_commit_unpublish(tests.k('e352')), 'committed', 'the unpublish first, a publish in flight: it commits, so a release links it');
+select is(api.worker_commit_publish(tests.k('e351'), 1, 1, 'Í flugi', null), 'superseded', 'and the publish never commits over it');
+select tests.act_as_owner();
+select is((select published_rev_id from cms.entries where id = tests.entry('c305')), null::uuid, 'the entry ends unpublished');
+select is((select first_published_at from cms.entries where id = tests.entry('c305')), null::timestamptz, 'and was never published');
+select is((select row(status, error ->> 'newer_request_id')::text from cms.publish_requests where id = tests.k('e351')),
+  row('superseded', tests.k('e352')::text)::text, 'the publish ends superseded by the unpublish');
+-- The other order: the publish first, then nothing is in flight.
+update cms.publish_requests set status = 'validating', error = null where id in (tests.k('e351'), tests.k('e352'));
+select tests.act_as_service();
+select is(api.worker_commit_publish(tests.k('e351'), 1, 1, 'Í flugi', null), 'superseded', 'the publish first: superseded by the newer unpublish');
+select is(api.worker_commit_unpublish(tests.k('e352')), 'superseded', 'then no publish is in flight, so the repeat ends superseded');
+select tests.act_as_owner();
+select is((select published_rev_id from cms.entries where id = tests.entry('c305')), null::uuid, 'the entry ends unpublished');
+
+-- ---------------------------------------------------------------------------
+-- 2c. api.publication_status skips a superseded unpublish, and says what it skipped. Here the
+-- shown request is the cancelled publish.
+select tests.act_as(tests.persona('editor_labak'));
+select results_eq($$ select request_id, action, status, latest_request_id, latest_action from api.publication_status where entry_id = tests.entry('c305') $$,
+  $$ values (tests.k('e351'), 'publish', 'superseded', tests.k('e352'), 'unpublish') $$,
+  'the cancelled publish is shown, with the newest request it hides');
+select tests.act_as_owner();
+-- A committed withdrawal, then a repeat: the withdrawal is shown.
+update cms.publish_requests set action = 'unpublish', draft_version = null, status = 'committed', error = null, release_id = tests.k('a302') where id = tests.k('e351');
+select tests.act_as(tests.persona('editor_labak'));
+select results_eq($$ select request_id, status, release_number, latest_request_id from api.publication_status where entry_id = tests.entry('c305') $$,
+  $$ values (tests.k('e351'), 'committed', 9102, tests.k('e352')) $$,
+  'a superseded repeat never hides the withdrawal it repeated');
+select tests.act_as_owner();
+update cms.publish_requests set status = 'pending' where id = tests.k('e352');
+select tests.act_as(tests.persona('editor_labak'));
+select results_eq($$ select request_id, latest_request_id from api.publication_status where entry_id = tests.entry('c305') $$,
+  $$ values (tests.k('e352'), tests.k('e352')) $$, 'an unpublish on its way is shown as before');
+select tests.act_as_owner();
+delete from cms.publish_requests where entry_id = tests.entry('c305');
 
 -- ---------------------------------------------------------------------------
 -- 3. The checks stop only on the latest committed request (decision 65). D's delivery missed; H
@@ -211,6 +261,43 @@ select tests.act_as_service();
 select ok(not tests.listed('a302', 0), 'a committed publish stops the checks at once');
 select tests.act_as_owner();
 delete from cms.publish_requests where id = tests.k('e337');
+
+-- A withdrawal with no check record is stored too: checked until the alert, then left. D's row is
+-- due; H superseded it.
+create function tests.unchecked(p_entry text) returns jsonb
+language sql
+set search_path = ''
+as $$
+  select tests.w(p_entry) || '{"checks": [], "ownPath": "", "unchecked": true}'::jsonb;
+$$;
+grant execute on function tests.unchecked(text) to service_role;
+update cms.site_deliveries
+set last_error = jsonb_build_object('code', 'live_not_confirmed', 'failures', jsonb_build_array(),
+                                    'withdrawals', jsonb_build_array(tests.unchecked('c303')), 'withdrawn', jsonb_build_array(), 'withdrawals_others', true)
+where release_id = tests.k('a302');
+select tests.act_as_service();
+select is((select r.withdrawal -> 'pending' from api.worker_deliveries_to_retry(now()) r where r.release_id = tests.k('a302')),
+  jsonb_build_array(tests.unchecked('c303')), 'an unchecked withdrawal is listed until the alert');
+select is((select r.withdrawal -> 'others' from api.worker_deliveries_to_retry(now()) r where r.release_id = tests.k('a302')), 'true'::jsonb,
+  'and can never settle the delivery');
+select tests.act_as_owner();
+update cms.site_deliveries set last_error = last_error || '{"withdrawal_alerted": "2026-11-05T12:00:00Z"}' where release_id = tests.k('a302');
+select tests.act_as_service();
+select ok(not tests.listed('a302', 0), 'and stops once alerted: it can never pass');
+select tests.act_as_owner();
+update cms.site_deliveries
+set last_error = last_error || jsonb_build_object('withdrawals', jsonb_build_array(tests.unchecked('c303'), tests.w('c302')))
+where release_id = tests.k('a302');
+insert into cms.publish_requests (id, tenant_id, entry_id, action, draft_version, requested_by, requested_at, status, release_id) values
+  (tests.k('e339'), tests.tenant('labak'), tests.entry('c302'), 'unpublish', null, tests.persona('editor_labak'), now() - interval '11 minutes', 'committed', tests.k('a302'));
+select tests.act_as_service();
+select is((select r.withdrawal -> 'pending' from api.worker_deliveries_to_retry(now()) r where r.release_id = tests.k('a302')),
+  jsonb_build_array(tests.w('c302')), 'a withdrawal beside it is still checked after the alert');
+select tests.act_as_owner();
+delete from cms.publish_requests where id = tests.k('e339');
+update cms.site_deliveries
+set last_error = last_error - 'withdrawal_alerted' || jsonb_build_object('withdrawals', jsonb_build_array(tests.w('c303')), 'withdrawals_others', false)
+where release_id = tests.k('a302');
 
 -- ---------------------------------------------------------------------------
 -- 4. The requests the worker checks say whether a delivered release held the entry. c303 has no
@@ -329,8 +416,9 @@ delete from cms.publish_requests where id = tests.k('e341');
 -- D, the superseded release.
 select tests.act_as_service();
 select tests.hold('a303', 'c303', 0);
-select is((select row(r.notify_status, r.live_status, r.notify_attempts, r.first_failed_at)::text from tests.row_of('a303') r),
-  row('pending', 'pending', 0, null::timestamptz)::text, 'the record starts a pending delivery: no attempt, no failure');
+select is((select row(r.notify_status, r.live_status, r.notify_attempts)::text from tests.row_of('a303') r),
+  row('pending', 'pending', 0)::text, 'the record starts a pending delivery, with no attempt');
+select is((select r.first_failed_at from tests.row_of('a303') r), now(), 'and the 24-hour bound starts when the state is first stored');
 select ok((select r.next_attempt_at between now() + interval '4 minutes' and now() + interval '6 minutes' from tests.row_of('a303') r),
   'with its first attempt five minutes on');
 select is((select r.last_error from tests.row_of('a303') r),
@@ -351,6 +439,7 @@ select ok(tests.listed('a303', 8), 'a run killed in the live window is retried')
 select is((select count(*)::int from api.worker_record_delivery(tests.k('a303'), tests.k('b301'), null, 'ok', null, now() + interval '2 minutes') r
            where r.next_attempt_at is null), 1, 'a live ok ends the schedule');
 select is((select r.last_error from tests.row_of('a303') r), null::jsonb, 'and clears the state');
+select is((select r.first_failed_at from tests.row_of('a303') r), null::timestamptz, 'and a first run that passed leaves no failure for the console');
 
 -- A delivery with a record already: the state record changes nothing.
 select tests.hold('a303', 'c303', 3);
@@ -370,6 +459,21 @@ select is((select row(r.notify_status, r.notify_attempts, r.last_error -> 'withd
 select tests.act_as_owner();
 delete from cms.site_deliveries where release_id = tests.k('a303');
 
+-- The bound: pending rows of the latest release stop being retried when it ends.
+select tests.hold('a303', 'c303', -25 * 60);
+select ok(tests.listed('a303', 0) is false, 'the latest release: a pending delivery past the 24 hours is not retried');
+select tests.act_as_owner();
+delete from cms.site_deliveries where release_id = tests.k('a303');
+select tests.act_as_service();
+
+-- A notification keeps the next attempt within the bound.
+select tests.hold('a303', 'c303', -24 * 60 + 1);
+select is((select count(*)::int from api.worker_record_delivery(tests.k('a303'), tests.k('b301'), 'ok', null, null, now()) r), 1, 'a run notifies a minute before the bound');
+select is((select r.next_attempt_at - r.first_failed_at from tests.row_of('a303') r), interval '24 hours', 'and its next attempt is capped at the bound');
+select tests.act_as_owner();
+delete from cms.site_deliveries where release_id = tests.k('a303');
+select tests.act_as_service();
+
 -- The run of D, killed: superseded by H, with the state stored.
 select tests.act_as_service();
 select tests.hold('a302', 'c303', -10);
@@ -377,6 +481,10 @@ select ok(tests.listed('a302', 0), 'a killed run''s superseded delivery is check
 select is((select r.withdrawal -> 'pending' from api.worker_deliveries_to_retry(now()) r where r.release_id = tests.k('a302')),
   jsonb_build_array(tests.w('c303')), 'from the stored checks');
 select ok(not tests.listed('a302', -8), 'not while the run can be alive');
+select is((select r.withdrawal -> 'expired' from api.worker_deliveries_to_retry(now()) r where r.release_id = tests.k('a302')), 'false'::jsonb,
+  'within the 24 hours it is not expired');
+select is((select r.withdrawal -> 'expired' from api.worker_deliveries_to_retry(now() + interval '24 hours') r where r.release_id = tests.k('a302')), 'true'::jsonb,
+  'past them it is, so repeatedly killed runs end');
 select is((select r.withdrawal ->> 'hourOver' from api.worker_deliveries_to_retry(now() + interval '51 minutes') r where r.release_id = tests.k('a302')), 'true',
   'and the hour ending lists it for the alert');
 select tests.act_as(tests.persona('editor_labak'));

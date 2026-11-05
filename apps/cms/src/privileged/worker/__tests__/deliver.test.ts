@@ -119,8 +119,7 @@ describe('liveTargets', () => {
   // neither bundle says where to look, so it is never confirmed with nothing checked.
   it('an unpublished entry a site may hold, with no record to check, is a failure, never confirmed', () => {
     const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q4', entryId: E4, action: 'unpublish', wasDelivered: true }] }, MEDIA);
-    expect(t).toMatchObject({ entryId: E4, failure: 'withdrawal_unchecked', checks: [] });
-    expect(t!.withdrawal).toBeUndefined();
+    expect(t).toMatchObject({ entryId: E4, failure: 'withdrawal_unchecked', checks: [], withdrawal: true });
   });
 
   it('a publish and an unpublish coalesced into one build, a site having held the entry before: the same failure', () => {
@@ -136,8 +135,7 @@ describe('liveTargets', () => {
       },
       MEDIA,
     );
-    expect(t).toMatchObject({ entryId: E4, requestIds: ['q4a', 'q4b'], failure: 'withdrawal_unchecked', checks: [] });
-    expect(t!.withdrawal).toBeUndefined();
+    expect(t).toMatchObject({ entryId: E4, requestIds: ['q4a', 'q4b'], failure: 'withdrawal_unchecked', checks: [], withdrawal: true });
   });
 
   it('a publish and an unpublish coalesced into one build, no site ever having held the entry: nothing to check', () => {
@@ -157,7 +155,7 @@ describe('liveTargets', () => {
   });
 
   it('a request that does not say whether a site held the entry fails closed', () => {
-    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q4', entryId: E4, action: 'unpublish', wasDelivered: true } as never] }, MEDIA);
+    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q4', entryId: E4, action: 'unpublish' } as never] }, MEDIA);
     expect(t).toMatchObject({ failure: 'withdrawal_unchecked' });
   });
 
@@ -609,12 +607,16 @@ describe('confirmRelease: the public pointer', () => {
       expect(recorded[0]).toMatchObject({ p_notify_status: 'ok' });
     });
 
-    it('a withdrawal that cannot be checked is never recorded live, and is no stored check', async () => {
+    it('a withdrawal that cannot be checked is stored as such before the poll, and never recorded live', async () => {
       const unchecked: DeliveredRelease = { ...withdrawing, previousBundle: null };
+      const entry = { entryId: E2, requestIds: ['u2'], checks: [], ownPath: '', unchecked: true };
       await confirmRelease(db, unchecked, clock, new Set(['s1']));
-      expect(recorded.map((r) => r.p_notify_status)).toEqual(['ok', null]);
-      expect(recorded.at(-1)).toMatchObject({ p_live_status: 'not_confirmed', p_error: { code: 'live_not_confirmed', failures: [{ entryId: E2, reason: 'withdrawal_unchecked' }] } });
-      expect(recorded.at(-1)!.p_error).not.toHaveProperty('withdrawals');
+      expect(recorded.map((r) => r.p_notify_status)).toEqual(['pending', 'ok', null]);
+      expect(recorded[0]).toMatchObject({ p_error: { withdrawals: [entry], withdrawals_others: true } });
+      expect(recorded.at(-1)).toMatchObject({
+        p_live_status: 'not_confirmed',
+        p_error: { code: 'live_not_confirmed', failures: [{ entryId: E2, reason: 'withdrawal_unchecked' }], withdrawals: [entry], withdrawn: [], withdrawals_others: true },
+      });
     });
   });
 
@@ -933,7 +935,7 @@ describe('withdrawal state (W1)', () => {
   const workerSite = (): WorkerSite => ({ id: 's', base_url: site.origin, revalidate_url: `${site.origin}/api/revalidate`, webhook_secrets: ['leyndo'] });
   const gone = (id: string): StoredWithdrawal => ({ entryId: id, requestIds: ['u-' + id], checks: [{ path: `/n/${id}`, expect: 'absent' }, { path: '/n', expect: 'absent' }], ownPath: `/n/${id}` });
   const release = { tenantId: 't', tenantSlug: 'prufa', releaseId: 'rel-17', number: 17, notifyRelease: 18 };
-  const state = (over: Partial<WithdrawalState> = {}): WithdrawalState => ({ pending: [gone(E1)], withdrawn: [], others: false, alerted: false, hourOver: false, ...over });
+  const state = (over: Partial<WithdrawalState> = {}): WithdrawalState => ({ pending: [gone(E1)], withdrawn: [], others: false, alerted: false, hourOver: false, expired: false, ...over });
   const errors = () => recorded.map((r) => r.p_error as Record<string, unknown> | null);
 
   beforeEach(async () => {
@@ -1058,6 +1060,32 @@ describe('withdrawal state (W1)', () => {
 
     mocks.alert.mockClear();
     await confirmWithdrawals(db, release, workerSite(), state({ hourOver: true, alerted: true }), clock);
+    expect(mocks.alert).not.toHaveBeenCalled();
+  });
+
+  // Review item 3: nothing can prove these, so they miss until the alert, which the database stops at.
+  it('confirmWithdrawals: a withdrawal with nothing to check never passes, runs no check, and alerts after the hour', async () => {
+    const unchecked: StoredWithdrawal = { entryId: E1, requestIds: ['u1'], checks: [], ownPath: '', unchecked: true };
+    expect(await confirmWithdrawals(db, release, workerSite(), state({ pending: [unchecked], others: true }), clock)).toBe('not_confirmed');
+    expect(errors().at(-1)).toMatchObject({ failures: [{ entryId: E1, path: '', reason: 'withdrawal_unchecked' }], withdrawals: [unchecked] });
+    expect(mocks.alert).not.toHaveBeenCalled();
+
+    await confirmWithdrawals(db, release, workerSite(), state({ pending: [unchecked], others: true, hourOver: true }), clock);
+    expect(errors().at(-1)).toMatchObject({ withdrawal_alerted: '2026-11-03T12:00:00.000Z' });
+    expect(mocks.alert.mock.calls).toEqual([['delivery.withdrawal_unconfirmed', { tenantId: 't', releaseId: 'rel-17', number: 17, siteId: 's' }]]);
+    expect(site.requests.filter((r) => r.method === 'GET')).toEqual([]);
+  });
+
+  // Review item 4: repeatedly killed runs recorded no miss, so the bound ends them here.
+  it('confirmWithdrawals: past the 24 hours it ends the delivery and alerts, with no notification and no check', async () => {
+    await confirmWithdrawals(db, release, workerSite(), state({ expired: true, hourOver: true }), clock);
+    expect(site.requests).toEqual([]);
+    expect(recorded.map((r) => [r.p_notify_status, r.p_live_status])).toEqual([[null, 'not_confirmed']]);
+    expect(errors().at(-1)).toMatchObject({ code: 'live_not_confirmed', withdrawals: [gone(E1)], withdrawal_alerted: '2026-11-03T12:00:00.000Z' });
+    expect(mocks.alert.mock.calls).toEqual([['delivery.withdrawal_unconfirmed', { tenantId: 't', releaseId: 'rel-17', number: 17, siteId: 's' }]]);
+
+    mocks.alert.mockClear();
+    await confirmWithdrawals(db, release, workerSite(), state({ expired: true, hourOver: true, alerted: true }), clock);
     expect(mocks.alert).not.toHaveBeenCalled();
   });
 

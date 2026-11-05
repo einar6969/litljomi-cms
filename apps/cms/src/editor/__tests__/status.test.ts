@@ -4,6 +4,8 @@ import { t } from '@/i18n/is';
 import { displayState, IN_PROGRESS, isFinal, type PublicationStatusRow, type RequestStatus } from '../publish/status';
 
 const base: PublicationStatusRow = {
+  latest_request_id: '00000000-0000-4000-8000-0000000000d1',
+  latest_action: 'publish',
   request_id: '00000000-0000-4000-8000-0000000000e1',
   tenant_id: '00000000-0000-4000-8000-0000000000f1',
   entry_id: '00000000-0000-4000-8000-0000000000c1',
@@ -200,9 +202,11 @@ describe('displayState: failures', () => {
     expect(unpublish.detail).not.toContain('birtist');
   });
 
-  it('a repeat unpublish that ended superseded (M5-01): the plain refusal, never the publish wording', () => {
-    const state = displayState(row({ action: 'unpublish', status: 'superseded', error: { code: 'not_published' }, release_status: null }));
-    expect(state).toEqual({ label: t.publish.notPublished, tone: 'error' });
+  // M5-01: the view skips a superseded repeat, so the publish it cancelled can be the shown request.
+  it('a publish cancelled by a newer unpublish: says so, never "publish again"', () => {
+    const state = displayState(row({ status: 'superseded', latest_request_id: 'u', latest_action: 'unpublish', release_status: null }));
+    expect(state).toEqual({ label: t.publish.cancelled, tone: 'neutral' });
+    expect(isFinal(state)).toBe(true);
   });
 
   it('superseded: "Færslunni var breytt eftir að þú ýttir á Birta. Birtu aftur."', () => {
