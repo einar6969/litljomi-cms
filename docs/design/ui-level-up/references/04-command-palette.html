@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="is">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skipanaspjald — Litljómi Hub (reference mockup)</title>
+<!-- Reference mockup for the UI level-up brief. Static, inline-styled, not production code. Google Fonts are used here only for viewing; the CMS self-hosts its fonts. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;600&amp;family=Bricolage+Grotesque:opsz,wght@12..96,200..800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#fbfaf7}
+</style>
+</head>
+<body>
+<div style="width: 1440px; height: 900px; position: relative; overflow: hidden; background: #fbfaf7; color: #171714; font-family: 'Albert Sans', Arial, sans-serif; font-size: 14px; line-height: 20px;">
+
+  <div aria-hidden="true" style="position: absolute; inset: 0; display: flex;">
+    <div style="width: 248px; background: #f6f5f0; border-right: 1px solid #e7e5de; padding: 20px 16px; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px;">
+      <span style="height: 32px; border-radius: 6px; background: #e7e5de;"></span>
+      <span style="height: 30px; border-radius: 6px; background: #ffffff; border: 1px solid #e7e5de;"></span>
+      <span style="width: 70%; height: 10px; border-radius: 5px; background: #e7e5de; margin-top: 12px;"></span>
+      <span style="width: 80%; height: 10px; border-radius: 5px; background: #e7e5de;"></span>
+      <span style="width: 60%; height: 10px; border-radius: 5px; background: #e7e5de;"></span>
+      <span style="width: 75%; height: 10px; border-radius: 5px; background: #e7e5de;"></span>
+    </div>
+    <div style="flex-grow: 1; padding: 80px 40px; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px;">
+      <span style="width: 160px; height: 24px; border-radius: 6px; background: #e7e5de;"></span>
+      <span style="height: 420px; border-radius: 8px; background: #ffffff; border: 1px solid #e7e5de;"></span>
+    </div>
+  </div>
+
+  <div style="position: absolute; inset: 0; background: rgba(23, 23, 20, 0.32); backdrop-filter: blur(2px);"></div>
+
+  <div role="dialog" aria-modal="true" aria-label="Skipanaspjald" style="position: absolute; top: 140px; left: 50%; transform: translateX(-50%); width: 640px; border-radius: 12px; background: #ffffff; box-shadow: 0 24px 64px -12px rgba(23, 23, 20, 0.4), 0 0 0 1px #e7e5de; overflow: hidden; display: flex; flex-direction: column;">
+    <div style="height: 52px; box-sizing: border-box; padding: 0 16px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #e7e5de;">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#64635b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+      <label for="cmd" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">Leita</label>
+      <input id="cmd" type="text" value="opnun" style="flex-grow: 1; border: 0; outline: none; background: transparent; font-family: 'Albert Sans', Arial, sans-serif; font-size: 16px; color: #171714;">
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #64635b; border: 1px solid #dad8d0; border-radius: 4px; padding: 0 6px;">esc</span>
+    </div>
+
+    <div role="listbox" aria-label="Niðurstöður" style="padding: 8px; display: flex; flex-direction: column; gap: 2px;">
+      <span style="padding: 6px 10px 4px; font-size: 12px; font-weight: 500; color: #64635b;">Aðgerðir</span>
+      <div role="option" aria-selected="true" style="height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border-radius: 6px; background: #eef7e6; box-shadow: inset 0 0 0 1px #cfe8bb;">
+        <span style="width: 24px; height: 24px; border-radius: 6px; background: #8ed462; display: flex; align-items: center; justify-content: center;"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#171714" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></span>
+        <span style="flex-grow: 1;">Breyta <strong style="font-weight: 600;">opnun</strong>artímum</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #3b5a28;">↵</span>
+      </div>
+      <div role="option" aria-selected="false" style="height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border-radius: 6px;">
+        <span style="width: 24px; height: 24px; border-radius: 6px; background: #f1f0eb; display: flex; align-items: center; justify-content: center;"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#171714" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg></span>
+        <span style="flex-grow: 1;">Bæta við lokunardegi</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #64635b;">t.d. jóladagur</span>
+      </div>
+
+      <span style="padding: 10px 10px 4px; font-size: 12px; font-weight: 500; color: #64635b;">Síður</span>
+      <div role="option" aria-selected="false" style="height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border-radius: 6px;">
+        <span style="width: 24px; height: 24px; border-radius: 6px; background: #f1f0eb; display: flex; align-items: center; justify-content: center;"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#171714" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path></svg></span>
+        <span style="flex-grow: 1;"><strong style="font-weight: 600;">Opnun</strong>artímar</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #64635b;">/opnunartimar</span>
+      </div>
+
+      <span style="padding: 10px 10px 4px; font-size: 12px; font-weight: 500; color: #64635b;">Fara í</span>
+      <div role="option" aria-selected="false" style="height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border-radius: 6px;">
+        <span style="width: 24px; height: 24px; border-radius: 6px; background: #f1f0eb; display: flex; align-items: center; justify-content: center;"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#171714" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7h-9"></path><path d="M14 17H5"></path><circle cx="17" cy="17" r="3"></circle><circle cx="7" cy="7" r="3"></circle></svg></span>
+        <span style="flex-grow: 1;">Stillingar</span>
+        <span style="display: flex; gap: 4px;"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #171714; border: 1px solid #dad8d0; border-radius: 4px; padding: 0 5px;">G</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #171714; border: 1px solid #dad8d0; border-radius: 4px; padding: 0 5px;">S</span></span>
+      </div>
+      <div role="option" aria-selected="false" style="height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border-radius: 6px;">
+        <span style="width: 24px; height: 24px; border-radius: 6px; background: #f1f0eb; display: flex; align-items: center; justify-content: center;"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#171714" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7h10v10"></path><path d="M7 17 17 7"></path></svg></span>
+        <span style="flex-grow: 1;">Opna vefinn í nýjum flipa</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #64635b;">onnukonditori.is</span>
+      </div>
+    </div>
+
+    <div style="height: 40px; box-sizing: border-box; padding: 0 16px; border-top: 1px solid #e7e5de; background: #fbfaf7; display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: #64635b;">
+      <span style="display: flex; align-items: center; gap: 8px;">
+        <svg viewBox="0 0 512 512" width="16" height="16" aria-hidden="true"><rect width="512" height="512" rx="128" fill="#8ed462"></rect><g transform="translate(60,360.8) scale(0.3176)"><path d="M791.9 -654.5C689.4 -654.5 595.2 -598.1 546.7 -507.8C512.4 -533.7 470.6 -547.7 427.6 -547.8C318.2 -547.8 229.5 -459.1 229.5 -349.7C229.6 -347.7 229.7 -345.6 229.8 -343.5C224.8 -344.0 219.9 -344.2 214.9 -344.3C121.3 -344.3 45.5 -268.4 45.5 -174.9C45.5 -81.3 121.3 -5.5 214.9 -5.5H1019.3C1112.8 -5.5 1188.7 -81.3 1188.7 -174.9C1188.6 -249.8 1139.3 -315.9 1067.4 -337.2C1069.3 -350.0 1070.4 -363.0 1070.5 -376.0C1070.5 -529.8 945.8 -654.5 791.9 -654.5Z" fill="none" stroke="#171714" stroke-width="130" stroke-linecap="round" stroke-linejoin="round"></path></g></svg>
+        <span style="font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; color: #171714;">Litljómi Hub</span>
+      </span>
+      <span style="display: flex; align-items: center; gap: 14px; font-family: 'JetBrains Mono', monospace; font-size: 11px;">
+        <span>↑↓ velja</span><span>↵ opna</span><span>esc loka</span>
+      </span>
+    </div>
+  </div>
+</div>
+</body>
+</html>

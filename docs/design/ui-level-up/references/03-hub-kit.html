@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="is">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hub kit — grunnur og íhlutir (reference mockup)</title>
+<!-- Reference mockup for the UI level-up brief. Static, inline-styled, not production code. Google Fonts are used here only for viewing; the CMS self-hosts its fonts. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;600&amp;family=Bricolage+Grotesque:opsz,wght@12..96,200..800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#fbfaf7}
+a{color:#4d6c37;text-underline-offset:3px}a:hover{color:#171714}
+</style>
+</head>
+<body>
+<div style="width: 1440px; height: 1100px; box-sizing: border-box; padding: 48px 56px; display: flex; flex-direction: column; gap: 32px; background: #fbfaf7; color: #171714; font-family: 'Albert Sans', Arial, sans-serif; font-size: 14px; line-height: 20px;">
+
+  <div style="display: flex; align-items: center; justify-content: space-between; padding-bottom: 24px; border-bottom: 1px solid #e7e5de;">
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <svg viewBox="0 0 512 512" width="32" height="32" aria-hidden="true"><rect width="512" height="512" rx="128" fill="#8ed462"></rect><g transform="translate(60,360.8) scale(0.3176)"><path d="M791.9 -654.5C689.4 -654.5 595.2 -598.1 546.7 -507.8C512.4 -533.7 470.6 -547.7 427.6 -547.8C318.2 -547.8 229.5 -459.1 229.5 -349.7C229.6 -347.7 229.7 -345.6 229.8 -343.5C224.8 -344.0 219.9 -344.2 214.9 -344.3C121.3 -344.3 45.5 -268.4 45.5 -174.9C45.5 -81.3 121.3 -5.5 214.9 -5.5H1019.3C1112.8 -5.5 1188.7 -81.3 1188.7 -174.9C1188.6 -249.8 1139.3 -315.9 1067.4 -337.2C1069.3 -350.0 1070.4 -363.0 1070.5 -376.0C1070.5 -529.8 945.8 -654.5 791.9 -654.5Z" fill="none" stroke="#171714" stroke-width="115" stroke-linecap="round" stroke-linejoin="round"></path></g></svg>
+      <h1 style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 600; font-size: 28px; line-height: 32px; letter-spacing: -0.56px;">Hub kit</h1>
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #64635b; border: 1px solid #e7e5de; border-radius: 6px; padding: 2px 8px; background: #ffffff;">v0.1 · drög</span>
+    </div>
+    <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #64635b;">14px grunnur · 4px rúðunet · 6px horn</span>
+  </div>
+
+  <div style="flex-grow: 1; display: grid; grid-template-columns: 440px minmax(0, 1fr); gap: 48px;">
+
+    <div style="display: flex; flex-direction: column; gap: 32px;">
+      <section style="display: flex; flex-direction: column; gap: 12px;">
+        <h2 style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 600; font-size: 16px; letter-spacing: -0.2px;">Litir</h2>
+        <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px;">
+          <div style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 52px; border-radius: 6px; background: #fbfaf7; border: 1px solid #e7e5de;"></span><span style="font-size: 12px; font-weight: 500;">Canvas</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #64635b;">#fbfaf7</span></div>
+          <div style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 52px; border-radius: 6px; background: #ffffff; border: 1px solid #e7e5de;"></span><span style="font-size: 12px; font-weight: 500;">Surface</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #64635b;">#ffffff</span></div>
+          <div style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 52px; border-radius: 6px; background: #f1f0eb; border: 1px solid #e7e5de;"></span><span style="font-size: 12px; font-weight: 500;">Muted</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #64635b;">#f1f0eb</span></div>
+          <div style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 52px; border-radius: 6px; background: #e7e5de;"></span><span style="font-size: 12px; font-weight: 500;">Border</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #64635b;">#e7e5de</span></div>
+          <div style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 52px; border-radius: 6px; background: #171714;"></span><span style="font-size: 12px; font-weight: 500;">Ink</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #64635b;">#171714</span></div>
+          <div style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 52px; border-radius: 6px; background: #64635b;"></span><span style="font-size: 12px; font-weight: 500;">Ink muted</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #64635b;">#64635b</span></div>
+          <div style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 52px; border-radius: 6px; background: #8ed462;"></span><span style="font-size: 12px; font-weight: 500;">Grass</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #64635b;">#8ed462</span></div>
+          <div style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 52px; border-radius: 6px; background: #4d6c37;"></span><span style="font-size: 12px; font-weight: 500;">Grass deep</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #64635b;">#4d6c37</span></div>
+          <div style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 52px; border-radius: 6px; background: #eef7e6; border: 1px solid #cfe8bb;"></span><span style="font-size: 12px; font-weight: 500;">Grass subtle</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #64635b;">#eef7e6</span></div>
+          <div style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 52px; border-radius: 6px; background: #fcf3e2; border: 1px solid #f1dcb4;"></span><span style="font-size: 12px; font-weight: 500;">Amber</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #64635b;">#85520a</span></div>
+          <div style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 52px; border-radius: 6px; background: #c8352a;"></span><span style="font-size: 12px; font-weight: 500;">Danger</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #64635b;">#c8352a</span></div>
+          <div style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 52px; border-radius: 6px; background: #121210;"></span><span style="font-size: 12px; font-weight: 500;">Night</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #64635b;">#121210</span></div>
+        </div>
+      </section>
+
+      <section style="display: flex; flex-direction: column; gap: 12px;">
+        <h2 style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 600; font-size: 16px; letter-spacing: -0.2px;">Letur</h2>
+        <div style="border: 1px solid #e7e5de; border-radius: 8px; background: #ffffff; display: flex; flex-direction: column;">
+          <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 14px 16px; border-bottom: 1px solid #e7e5de;"><span style="font-family: 'Bricolage Grotesque', sans-serif; font-weight: 600; font-size: 28px; line-height: 32px; letter-spacing: -0.56px;">Síður</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #64635b;">Bricolage 600 · 28</span></div>
+          <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 14px 16px; border-bottom: 1px solid #e7e5de;"><span style="font-family: 'Bricolage Grotesque', sans-serif; font-weight: 600; font-size: 18px; letter-spacing: -0.3px;">Opnunartímar</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #64635b;">Bricolage 600 · 18</span></div>
+          <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 14px 16px; border-bottom: 1px solid #e7e5de;"><span style="font-size: 14px;">Breytingar vistast sjálfkrafa.</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #64635b;">Albert 400 · 14/20</span></div>
+          <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 14px 16px; border-bottom: 1px solid #e7e5de;"><span style="font-size: 13px; font-weight: 500;">Fyrirsögn</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #64635b;">Albert 500 · 13</span></div>
+          <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 14px 16px;"><span style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">/um-okkur · 09:41</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #64635b;">JetBrains Mono · 12</span></div>
+        </div>
+      </section>
+
+      <section style="display: flex; flex-direction: column; gap: 12px;">
+        <h2 style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 600; font-size: 16px; letter-spacing: -0.2px;">Horn og dýpt</h2>
+        <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px;">
+          <div style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 56px; border-radius: 4px; background: #ffffff; border: 1px solid #dad8d0;"></span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #64635b;">4 · merki</span></div>
+          <div style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 56px; border-radius: 6px; background: #ffffff; border: 1px solid #dad8d0;"></span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #64635b;">6 · stýringar</span></div>
+          <div style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 56px; border-radius: 8px; background: #ffffff; border: 1px solid #e7e5de; box-shadow: 0 1px 2px rgba(23, 23, 20, 0.05);"></span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #64635b;">8 · spjöld</span></div>
+          <div style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 56px; border-radius: 10px; background: #ffffff; box-shadow: 0 12px 32px -8px rgba(23, 23, 20, 0.22), 0 0 0 1px #e7e5de;"></span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #64635b;">10 · gluggar</span></div>
+        </div>
+      </section>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 28px;">
+      <section style="display: flex; flex-direction: column; gap: 12px;">
+        <h2 style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 600; font-size: 16px; letter-spacing: -0.2px;">Hnappar</h2>
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 20px; border: 1px solid #e7e5de; border-radius: 8px; background: #ffffff;">
+          <button type="button" style="height: 36px; padding: 0 14px; display: inline-flex; align-items: center; gap: 8px; border: 1px solid #7fc254; border-radius: 6px; background: #8ed462; color: #171714; font-family: 'Albert Sans', Arial, sans-serif; font-weight: 600; font-size: 14px; box-shadow: 0 1px 2px rgba(23, 23, 20, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.35); cursor: pointer;">Birta<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; padding: 1px 5px; border-radius: 4px; background: rgba(23, 23, 20, 0.1);">⌘↵</span></button>
+          <button type="button" style="height: 36px; padding: 0 14px; border: 1px solid #171714; border-radius: 6px; background: #171714; color: #fbfaf7; font-family: 'Albert Sans', Arial, sans-serif; font-weight: 600; font-size: 14px; cursor: pointer;">Vista</button>
+          <button type="button" style="height: 36px; padding: 0 14px; border: 1px solid #dad8d0; border-radius: 6px; background: #ffffff; color: #171714; font-family: 'Albert Sans', Arial, sans-serif; font-weight: 500; font-size: 14px; box-shadow: 0 1px 2px rgba(23, 23, 20, 0.05); cursor: pointer;">Forskoða</button>
+          <button type="button" style="height: 36px; padding: 0 14px; border: 1px solid transparent; border-radius: 6px; background: #f1f0eb; color: #171714; font-family: 'Albert Sans', Arial, sans-serif; font-weight: 500; font-size: 14px; cursor: pointer;">Hætta við</button>
+          <button type="button" style="height: 36px; padding: 0 14px; border: 1px solid #c8352a; border-radius: 6px; background: #c8352a; color: #ffffff; font-family: 'Albert Sans', Arial, sans-serif; font-weight: 600; font-size: 14px; cursor: pointer;">Eyða síðu</button>
+          <button type="button" style="height: 36px; padding: 0 14px; border: 1px solid #dad8d0; border-radius: 6px; background: #ffffff; color: #171714; font-family: 'Albert Sans', Arial, sans-serif; font-weight: 500; font-size: 14px; box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #4d6c37; cursor: pointer;">Fókus</button>
+          <button type="button" aria-label="Fleiri aðgerðir" style="width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #dad8d0; border-radius: 6px; background: #ffffff; cursor: pointer;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#171714" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg></button>
+          <button type="button" style="height: 28px; padding: 0 10px; border: 1px solid #dad8d0; border-radius: 6px; background: #ffffff; color: #171714; font-family: 'Albert Sans', Arial, sans-serif; font-weight: 500; font-size: 13px; cursor: pointer;">Lítill</button>
+        </div>
+      </section>
+
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px;">
+        <section style="display: flex; flex-direction: column; gap: 12px;">
+          <h2 style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 600; font-size: 16px; letter-spacing: -0.2px;">Reitir</h2>
+          <div style="padding: 20px; border: 1px solid #e7e5de; border-radius: 8px; background: #ffffff; display: flex; flex-direction: column; gap: 16px;">
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <label for="k-title" style="font-size: 13px; font-weight: 500;">Fyrirsögn</label>
+              <input id="k-title" type="text" value="Um okkur" style="height: 36px; box-sizing: border-box; padding: 0 12px; border: 1px solid #dad8d0; border-radius: 6px; background: #ffffff; font-family: 'Albert Sans', Arial, sans-serif; font-size: 14px; color: #171714; box-shadow: 0 1px 2px rgba(23, 23, 20, 0.04);">
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <label for="k-slug" style="font-size: 13px; font-weight: 500;">Slóð</label>
+              <div style="height: 36px; box-sizing: border-box; display: flex; align-items: center; border: 1px solid #4d6c37; border-radius: 6px; background: #ffffff; box-shadow: 0 0 0 3px rgba(142, 212, 98, 0.35); overflow: hidden;">
+                <span style="height: 100%; display: flex; align-items: center; padding: 0 10px; background: #f1f0eb; border-right: 1px solid #e7e5de; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #64635b;">onnukonditori.is/</span>
+                <input id="k-slug" type="text" value="um-okkur" style="flex-grow: 1; min-width: 0; height: 100%; border: 0; padding: 0 10px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #171714; background: transparent; outline: none;">
+              </div>
+              <span style="font-size: 12px; color: #64635b;">Lágstafir og bandstrik. Breytist ekki eftir birtingu.</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <label for="k-err" style="font-size: 13px; font-weight: 500;">Netfang</label>
+              <input id="k-err" type="email" value="anna@" aria-invalid="true" style="height: 36px; box-sizing: border-box; padding: 0 12px; border: 1px solid #c8352a; border-radius: 6px; background: #ffffff; font-family: 'Albert Sans', Arial, sans-serif; font-size: 14px; color: #171714;">
+              <span style="font-size: 12px; color: #c8352a;">Netfangið vantar lén.</span>
+            </div>
+          </div>
+        </section>
+
+        <section style="display: flex; flex-direction: column; gap: 12px;">
+          <h2 style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 600; font-size: 16px; letter-spacing: -0.2px;">Staða og val</h2>
+          <div style="padding: 20px; border: 1px solid #e7e5de; border-radius: 8px; background: #ffffff; display: flex; flex-direction: column; gap: 18px;">
+            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+              <span style="display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: 4px; border: 1px solid #cfe8bb; background: #eef7e6; color: #3b5a28; font-size: 12px; font-weight: 500;"><span style="width: 6px; height: 6px; border-radius: 3px; background: #5fa836;"></span>Birt</span>
+              <span style="display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: 4px; border: 1px solid #e7e5de; background: #f1f0eb; color: #64635b; font-size: 12px; font-weight: 500;"><span style="width: 6px; height: 6px; border-radius: 3px; background: #a3a199;"></span>Drög</span>
+              <span style="display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: 4px; border: 1px solid #f1dcb4; background: #fcf3e2; color: #85520a; font-size: 12px; font-weight: 500;"><span style="width: 6px; height: 6px; border-radius: 3px; background: #d18b1f;"></span>Áætlað</span>
+              <span style="display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: 4px; border: 1px solid #f2c9c4; background: #fcefed; color: #a82a20; font-size: 12px; font-weight: 500;"><span style="width: 6px; height: 6px; border-radius: 3px; background: #c8352a;"></span>Villa</span>
+              <span style="display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 4px; background: #171714; color: #8ed462; font-family: 'JetBrains Mono', monospace; font-size: 11px;">Vefumsjón</span>
+            </div>
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <span style="font-size: 14px;">Sýna hnapp</span>
+              <button type="button" role="switch" aria-checked="true" aria-label="Sýna hnapp" style="width: 40px; height: 22px; padding: 2px; border: 1px solid #7fc254; border-radius: 11px; background: #8ed462; display: flex; justify-content: flex-end; cursor: pointer;"><span style="width: 16px; height: 16px; border-radius: 8px; background: #171714;"></span></button>
+            </div>
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <span style="font-size: 14px;">Fela í valmynd</span>
+              <button type="button" role="switch" aria-checked="false" aria-label="Fela í valmynd" style="width: 40px; height: 22px; padding: 2px; border: 1px solid #dad8d0; border-radius: 11px; background: #f1f0eb; display: flex; justify-content: flex-start; cursor: pointer;"><span style="width: 16px; height: 16px; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgba(23, 23, 20, 0.2);"></span></button>
+            </div>
+            <div role="tablist" aria-label="Útsýni" style="display: flex; padding: 3px; gap: 2px; border-radius: 8px; background: #f1f0eb;">
+              <button type="button" role="tab" aria-selected="true" style="flex: 1; height: 30px; border: 0; border-radius: 6px; background: #ffffff; box-shadow: 0 1px 2px rgba(23, 23, 20, 0.08); font-family: 'Albert Sans', Arial, sans-serif; font-size: 13px; font-weight: 500; color: #171714; cursor: pointer;">Efni</button>
+              <button type="button" role="tab" aria-selected="false" style="flex: 1; height: 30px; border: 0; border-radius: 6px; background: transparent; font-family: 'Albert Sans', Arial, sans-serif; font-size: 13px; font-weight: 500; color: #64635b; cursor: pointer;">Útlit</button>
+              <button type="button" role="tab" aria-selected="false" style="flex: 1; height: 30px; border: 0; border-radius: 6px; background: transparent; font-family: 'Albert Sans', Arial, sans-serif; font-size: 13px; font-weight: 500; color: #64635b; cursor: pointer;">SEO</button>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: #64635b;">Leita
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #171714; border: 1px solid #dad8d0; border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: #ffffff;">⌘</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #171714; border: 1px solid #dad8d0; border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: #ffffff;">K</span>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px;">
+        <section style="display: flex; flex-direction: column; gap: 12px;">
+          <h2 style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 600; font-size: 16px; letter-spacing: -0.2px;">Tilkynningar</h2>
+          <div style="padding: 20px; border: 1px solid #e7e5de; border-radius: 8px; background: #f1f0eb; display: flex; flex-direction: column; gap: 10px;">
+            <div role="status" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border-radius: 8px; background: #171714; color: #f3f2ee; box-shadow: 0 12px 32px -8px rgba(23, 23, 20, 0.3);">
+              <span style="width: 20px; height: 20px; flex-shrink: 0; border-radius: 10px; background: #8ed462; display: flex; align-items: center; justify-content: center;"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#171714" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg></span>
+              <span style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1;"><span style="font-weight: 600;">Síðan er komin í loftið.</span><span style="font-size: 13px; color: #a3a199;">onnukonditori.is/um-okkur</span></span>
+              <a href="#" style="font-size: 13px; font-weight: 500; color: #8ed462;">Skoða</a>
+            </div>
+            <div style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border-radius: 8px; background: #ffffff; border: 1px solid #e7e5de;">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#85520a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-top: 2px;"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+              <span style="display: flex; flex-direction: column; gap: 2px;"><span style="font-weight: 600;">Óbirtar breytingar</span><span style="font-size: 13px; color: #64635b;">Þú átt breytingar á 2 síðum sem eru ekki komnar í loftið.</span></span>
+            </div>
+          </div>
+        </section>
+
+        <section style="display: flex; flex-direction: column; gap: 12px;">
+          <h2 style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 600; font-size: 16px; letter-spacing: -0.2px;">Spjald</h2>
+          <div style="padding: 20px; border: 1px solid #e7e5de; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgba(23, 23, 20, 0.05); display: flex; flex-direction: column; gap: 14px;">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <span style="font-family: 'Bricolage Grotesque', sans-serif; font-weight: 600; font-size: 18px; letter-spacing: -0.3px;">Opnunartímar</span>
+              <span style="display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: 4px; border: 1px solid #cfe8bb; background: #eef7e6; color: #3b5a28; font-size: 12px; font-weight: 500;"><span style="width: 6px; height: 6px; border-radius: 3px; background: #5fa836;"></span>Birt</span>
+            </div>
+            <p style="margin: 0; color: #64635b;">Breyttu tímum fyrir hátíðir og frídaga. Breytingin birtist strax á vefnum.</p>
+            <div style="display: flex; align-items: center; justify-content: space-between; padding-top: 14px; border-top: 1px solid #e7e5de;">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #64635b;">Breytt fyrir 2 dögum</span>
+              <a href="#" style="font-size: 13px; font-weight: 500;">Breyta →</a>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
