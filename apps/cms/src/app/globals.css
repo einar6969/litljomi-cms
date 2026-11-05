@@ -1905,8 +1905,12 @@
 
   @media (max-width: 767px) {
     .page {
-      padding: 4px 16px 40px;
+      padding: 16px 16px 40px;
       gap: 14px;
+    }
+
+    .back {
+      margin-top: -12px;
     }
 
     .page-home {
