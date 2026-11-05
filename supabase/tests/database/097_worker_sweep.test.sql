@@ -126,8 +126,8 @@ select is((select row(tenant_id, tenant_slug, release_number, bundle_path, previ
   'the row names the tenant, the release, its bundle and the previous delivered release''s bundle');
 select is((select requests from api.worker_deliveries_to_retry(now())),
   jsonb_build_array(
-    jsonb_build_object('id', tests.k('e971'), 'entry_id', tests.entry('c971'), 'action', 'publish', 'first_published_at', null),
-    jsonb_build_object('id', tests.k('e972'), 'entry_id', tests.entry('c972'), 'action', 'publish', 'first_published_at', null)),
+    jsonb_build_object('id', tests.k('e971'), 'entry_id', tests.entry('c971'), 'action', 'publish', 'was_delivered', false),
+    jsonb_build_object('id', tests.k('e972'), 'entry_id', tests.entry('c972'), 'action', 'publish', 'was_delivered', false)),
   'with the requests linked to the release, in request order');
 
 -- The schedule (M3-02): a failed notification is returned once its next attempt is due at p_now.

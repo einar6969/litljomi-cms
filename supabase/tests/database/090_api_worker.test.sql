@@ -137,6 +137,8 @@ select set_eq($$ select p.proname::text, pg_catalog.pg_get_function_result(p.oid
             ('worker_finish_release_cleanup', 'integer'),
             -- M3-08 (107_pointer_lag).
             ('worker_record_pointer_lag', 'boolean'),
+            -- M5-01 (115_withdrawal_safety).
+            ('worker_entry_was_delivered', 'boolean'),
             -- M2-13 (104_draft_migration).
             ('admin_outdated_drafts', 'TABLE(entry_id uuid, version integer, schema_version integer, data jsonb)'),
             ('admin_migrate_draft', 'integer'),

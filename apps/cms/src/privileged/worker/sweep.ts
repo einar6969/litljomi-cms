@@ -112,7 +112,7 @@ type RetryRow = {
   notify_status: string;
   notify_attempts: number;
   live_status: string;
-  requests: Array<{ id: string; entry_id: string; action: 'publish' | 'unpublish'; first_published_at: string | null }>;
+  requests: Array<{ id: string; entry_id: string; action: 'publish' | 'unpublish'; was_delivered: boolean }>;
   notify_release_number?: number;
   withdrawal?: WithdrawalState | null;
 };
@@ -291,7 +291,7 @@ async function retryRelease(db: SupabaseClient, rows: RetryRow[], options: Deliv
     number: first.release_number,
     bundle: await read(first.bundle_path, first.release_number),
     previousBundle: first.previous_bundle_path ? await read(first.previous_bundle_path, null) : null,
-    requests: first.requests.map((r) => ({ id: r.id, entryId: r.entry_id, action: r.action, firstPublishedAt: r.first_published_at })),
+    requests: first.requests.map((r) => ({ id: r.id, entryId: r.entry_id, action: r.action, wasDelivered: r.was_delivered })),
   };
   // Only the sites listed for retry (one deactivated since is skipped).
   await confirmRelease(db, release, options, new Set(rows.map((row) => row.site_id)));

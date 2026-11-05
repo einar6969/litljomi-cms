@@ -7,8 +7,9 @@
 --      release.
 --   3. api.worker_deliveries_to_retry stops a stored withdrawal only on the entry's latest committed
 --      request: a pending, failed or superseded request stops nothing.
---   4. The requests the worker live-checks (the snapshot's and the retry's) carry the entry's
---      first_published_at, so a withdrawal with no check record is never confirmed (deliver.ts).
+--   4. The requests the worker live-checks (the snapshot's and the retry's) say whether an earlier
+--      release reached a site with the entry (api.worker_entry_was_delivered, §7.4), so a
+--      withdrawal with no check record is confirmed only when none did (deliver.ts).
 --   5. api.worker_record_delivery with notify status 'pending' stores a delivery's withdrawal state
 --      before the run's pointer poll and live window: the row outlives a killed run, is retried and
 --      alerted, and is left alone while the run can still be alive.
@@ -20,7 +21,7 @@
 -- (a303, five minutes ago); active site b301.
 begin;
 \ir _helpers.sql
-select plan(42);
+select plan(57);
 
 create function tests.k(p_key text) returns uuid
 language plpgsql
@@ -212,27 +213,116 @@ select tests.act_as_owner();
 delete from cms.publish_requests where id = tests.k('e337');
 
 -- ---------------------------------------------------------------------------
--- 4. The requests the worker checks carry first_published_at.
+-- 4. The requests the worker checks say whether a delivered release held the entry. c303 has no
+-- committed publish here, so none did; another delivered release's publish of it says one did.
 update cms.publish_requests set release_id = null where id = tests.k('e301');
 insert into cms.releases (id, tenant_id, number, status, created_at) values
   (tests.k('a304'), tests.tenant('labak'), 9104, 'building', now());
+create function tests.snapshot_says() returns jsonb
+language sql
+set search_path = ''
+as $$
+  select r -> 'was_delivered'
+  from pg_catalog.jsonb_array_elements(api.worker_release_snapshot(tests.k('a304')) -> 'requests') r
+  where r ->> 'id' = tests.k('e301')::text;
+$$;
+grant execute on function tests.snapshot_says() to service_role;
 select tests.act_as_service();
-select is((select (r -> 'first_published_at') is not null and r ->> 'first_published_at' is not null
-           from jsonb_array_elements(api.worker_release_snapshot(tests.k('a304')) -> 'requests') r
-           where r ->> 'id' = tests.k('e301')::text), true,
-  'the snapshot''s request carries the entry''s first_published_at');
+select is(tests.snapshot_says(), 'false'::jsonb, 'the snapshot''s request: no delivered release held the entry');
+select tests.act_as_owner();
+insert into cms.publish_requests (id, tenant_id, entry_id, action, draft_version, requested_by, requested_at, status, revision_id, release_id) values
+  (tests.k('e338'), tests.tenant('labak'), tests.entry('c303'), 'publish', 1, tests.persona('editor_labak'), now() - interval '3 hours', 'committed', tests.revision('d303'), tests.k('a301'));
+select tests.act_as_service();
+select is(tests.snapshot_says(), 'true'::jsonb, 'and one did');
 select tests.act_as_owner();
 delete from cms.releases where id = tests.k('a304');
 update cms.publish_requests set release_id = tests.k('a303') where id = tests.k('e301');
 insert into cms.site_deliveries (release_id, site_id, tenant_id, notify_status, notify_attempts, live_status, first_failed_at, next_attempt_at) values
   (tests.k('a303'), tests.k('b301'), tests.tenant('labak'), 'failed', 1, 'pending', now(), now());
+create function tests.retry_says() returns jsonb
+language sql
+set search_path = ''
+as $$
+  select r.requests -> 0 -> 'was_delivered' from api.worker_deliveries_to_retry(now() + interval '1 minute') r
+  where r.release_id = tests.k('a303');
+$$;
+grant execute on function tests.retry_says() to service_role;
 select tests.act_as_service();
-select is((select r.requests -> 0 ->> 'first_published_at' is not null from api.worker_deliveries_to_retry(now() + interval '1 minute') r
-           where r.release_id = tests.k('a303')), true,
-  'and so does the retry''s');
+select is(tests.retry_says(), 'true'::jsonb, 'the retry''s request says the same');
+select tests.act_as_owner();
+delete from cms.publish_requests where id = tests.k('e338');
+select tests.act_as_service();
+select is(tests.retry_says(), 'false'::jsonb, 'and with no delivered release, never delivered');
 select tests.act_as_owner();
 delete from cms.site_deliveries where release_id in (tests.k('a302'), tests.k('a303'));
 update cms.publish_requests set release_id = tests.k('a302') where id = tests.k('e301');
+
+-- ---------------------------------------------------------------------------
+-- 4b. api.worker_entry_was_delivered: did a release before the one in hand reach a site with the
+-- entry? c304's publish e341 is linked to the release in hand, H.
+select ok(has_function_privilege('service_role', 'api.worker_entry_was_delivered(uuid, uuid)', 'execute')
+          and not has_function_privilege('authenticated', 'api.worker_entry_was_delivered(uuid, uuid)', 'execute')
+          and not has_function_privilege('anon', 'api.worker_entry_was_delivered(uuid, uuid)', 'execute')
+          and not has_function_privilege('public', 'api.worker_entry_was_delivered(uuid, uuid)', 'execute'),
+  'worker_entry_was_delivered is service_role only');
+select is((select count(*)::int from pg_proc p where p.oid = 'api.worker_entry_was_delivered(uuid, uuid)'::regprocedure
+             and not p.prosecdef and p.proconfig = array['search_path=""'] and p.provolatile = 's'), 1,
+  'and SECURITY INVOKER, stable, with search_path = ''''');
+insert into cms.entries (id, tenant_id, type, slug, created_by) values
+  (tests.entry('c304'), tests.tenant('labak'), 'news', 'c304', tests.persona('editor_labak'));
+insert into cms.revisions (id, tenant_id, entry_id, draft_version, schema_version, data, title, requested_by, committed_at) values
+  (tests.revision('d304'), tests.tenant('labak'), tests.entry('c304'), 1, 1, '{}', 'Stutt', tests.persona('editor_labak'), now() - interval '2 hours');
+insert into cms.publish_requests (id, tenant_id, entry_id, action, draft_version, requested_by, status, revision_id, release_id) values
+  (tests.k('e341'), tests.tenant('labak'), tests.entry('c304'), 'publish', 1, tests.persona('editor_labak'), 'committed', tests.revision('d304'), tests.k('a303'));
+
+select tests.act_as_service();
+select ok(not api.worker_entry_was_delivered(tests.k('a303'), tests.entry('c304')), 'linked only to the release in hand: never delivered');
+select ok(api.worker_entry_was_delivered(tests.k('a303'), tests.entry('c303')) is false, 'an entry with no committed publish: never delivered');
+select tests.act_as_owner();
+-- A publish that did not commit proves nothing.
+update cms.publish_requests set release_id = tests.k('a302'), status = 'superseded' where id = tests.k('e341');
+select tests.act_as_service();
+select ok(not api.worker_entry_was_delivered(tests.k('a303'), tests.entry('c304')), 'a request that did not commit: never delivered');
+select tests.act_as_owner();
+update cms.publish_requests set status = 'committed' where id = tests.k('e341');
+select tests.act_as_service();
+select ok(api.worker_entry_was_delivered(tests.k('a303'), tests.entry('c304')), 'linked to another delivered release: delivered');
+select tests.act_as_owner();
+
+-- A failed release before the one in hand: the entry was committed by then, and the pointer
+-- written, or not known to be unwritten.
+update cms.publish_requests set release_id = tests.k('a303') where id = tests.k('e341');
+insert into cms.releases (id, tenant_id, number, status, created_at, error) values
+  (tests.k('a305'), tests.tenant('labak'), 9100, 'failed', now() - interval '4 hours', '{"code": "build_failed", "pointerWritten": true}');
+select tests.act_as_service();
+select ok(not api.worker_entry_was_delivered(tests.k('a303'), tests.entry('c304')), 'a failed release from before the commit held nothing');
+select tests.act_as_owner();
+update cms.releases set created_at = now() - interval '1 hour' where id = tests.k('a305');
+create function tests.failed_with(p_error jsonb) returns boolean
+language plpgsql
+set search_path = ''
+as $$
+begin
+  update cms.releases set error = p_error where id = tests.k('a305');
+  return api.worker_entry_was_delivered(tests.k('a303'), tests.entry('c304'));
+end;
+$$;
+select ok(tests.failed_with('{"code": "build_failed", "pointerWritten": true}'), 'a failed release whose pointer was written counts');
+select ok(tests.failed_with('{"code": "build_failed", "pointerWritten": null}'), 'one whose pointer could not be read back counts');
+select ok(tests.failed_with('{"code": "stale_building", "maxAgeSeconds": 420}'), 'a stale one, killed anywhere in the build, counts');
+select ok(not tests.failed_with('{"code": "build_failed", "pointerWritten": false}'), 'one that wrote no pointer does not');
+update cms.releases set error = '{"code": "build_failed", "pointerWritten": true}', number = 9104 where id = tests.k('a305');
+select tests.act_as_service();
+select ok(not api.worker_entry_was_delivered(tests.k('a303'), tests.entry('c304')), 'a failed release after the one in hand does not');
+select tests.act_as_owner();
+-- Scoped to the tenant: another tenant's delivered release and failed release prove nothing.
+update cms.releases set tenant_id = tests.tenant('demo'), number = 1, status = 'delivered', bundle_path = 'demo/releases/1.json', delivered_at = now(), error = null
+  where id = tests.k('a305');
+select tests.act_as_service();
+select ok(not api.worker_entry_was_delivered(tests.k('a303'), tests.entry('c304')), 'another tenant''s releases prove nothing');
+select tests.act_as_owner();
+delete from cms.releases where id = tests.k('a305');
+delete from cms.publish_requests where id = tests.k('e341');
 
 -- ---------------------------------------------------------------------------
 -- 5. The state stored before the poll. H is the latest; the state is stored on it first, then on

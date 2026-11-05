@@ -16,13 +16,23 @@
 --      release. This is what two requests accepted before either ran reach.
 --   3. api.worker_deliveries_to_retry: a stored withdrawal stops only on the entry's latest
 --      committed request (decision 65); a pending, failed or superseded request stops nothing.
---   4. api.worker_release_snapshot and api.worker_deliveries_to_retry: each request the worker
---      live-checks carries its entry's first_published_at (same signatures, a key added to each
---      request). A withdrawal is checked from the record in the release before it. An entry with
---      first_published_at set may be on a site with no such record (a publish and an unpublish
---      coalesced into one build after an earlier withdrawal, a failed release whose pointer was
---      written), and the worker then keeps the delivery unconfirmed (deliver.ts,
---      `withdrawal_unchecked`) instead of confirming it with nothing checked.
+--   4. api.worker_entry_was_delivered (new; service_role only): whether an earlier release reached
+--      a site with the entry. §7.4 confirms a withdrawal with nothing to check only when no
+--      delivered release ever contained the entry, and a withdrawal is checked from the record in
+--      the release before it, so an entry may be on a site with no such record (a publish and an
+--      unpublish coalesced into one build after an earlier withdrawal). It is delivered when:
+--      - a committed publish of it is linked to a delivered release other than the one in hand; or
+--      - it was committed before the end of a failed release earlier than the one in hand whose
+--        pointer may be written: a failed release links no request, so its publish is linked
+--        later, or never. releases.error.pointerWritten says so (build-release.ts): true, null when
+--        the read-back could not tell, or missing on a stale_building release, which a killed
+--        worker may have left after the pointer write. Only false rules it out. A build ends within
+--        420 s (STALE_RELEASE_SECONDS), and its snapshot before that, which bounds the commit.
+--      Both branches read the entry's requests through publish_requests_tenant_entry_idx, and
+--      releases through their tenant-scoped keys. api.worker_release_snapshot and
+--      api.worker_deliveries_to_retry give the answer with each request (`was_delivered`, a key
+--      added, same signatures). The worker then keeps a withdrawal with no record unconfirmed
+--      (deliver.ts, `withdrawal_unchecked`), and confirms one that no site ever had.
 --   5. api.worker_record_delivery (same signature and result): a record with notify status
 --      'pending', no live status and p_error naming `withdrawals` is the state the worker stores
 --      before the run's pointer poll and live window. It creates the delivery, pending, with no
@@ -33,8 +43,11 @@
 --      miss or failure is recorded the schedule is M3-02's as before. The state's shape is W1's.
 --   6. api.worker_deliveries_to_retry leaves a pending delivery alone until that next attempt.
 --
--- No new table, column or grant. All functions stay SECURITY INVOKER with search_path = '' and
--- schema-qualified names; `create or replace` keeps their grants, and nothing is dropped.
+-- §6.2's refusal of a repeat unpublish and its `superseded` end are under decision 65.
+--
+-- No new table or column. All functions stay SECURITY INVOKER with search_path = '' and
+-- schema-qualified names; `create or replace` keeps their grants, and nothing is dropped. The one
+-- new function's grants are at its definition.
 
 -- ---------------------------------------------------------------------------
 -- 1. The editor's request.
@@ -132,7 +145,39 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- 3. The delivery record: as in 20261104180000_withdrawal_confirmation.sql, with the state stored
+-- 3. Whether an earlier release reached a site with the entry.
+
+create function api.worker_entry_was_delivered(p_release_id uuid, p_entry_id uuid)
+returns boolean
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select exists (
+    select 1
+    from cms.releases hand
+    join cms.publish_requests p
+      on p.tenant_id = hand.tenant_id and p.entry_id = p_entry_id
+     and p.action = 'publish' and p.status = 'committed'
+    where hand.id = p_release_id
+      and (exists (select 1 from cms.releases d
+                   where d.tenant_id = p.tenant_id and d.id = p.release_id
+                     and d.id <> hand.id and d.status = 'delivered')
+           or exists (select 1
+                      from cms.revisions v
+                      join cms.releases f on f.tenant_id = v.tenant_id
+                      where v.tenant_id = p.tenant_id and v.id = p.revision_id
+                        and f.number < hand.number and f.status = 'failed'
+                        and f.error ->> 'pointerWritten' is distinct from 'false'
+                        and v.committed_at < f.created_at + interval '420 seconds')));
+$$;
+
+revoke execute on function api.worker_entry_was_delivered(uuid, uuid) from public, anon, authenticated;
+grant execute on function api.worker_entry_was_delivered(uuid, uuid) to service_role;
+
+-- ---------------------------------------------------------------------------
+-- 4. The delivery record: as in 20261104180000_withdrawal_confirmation.sql, with the state stored
 -- before a run and the notification's next attempt.
 
 create or replace function api.worker_record_delivery(p_release_id uuid, p_site_id uuid, p_notify_status text,
@@ -244,8 +289,8 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- 4. The sweep's delivery selection: as in 20261104180000_withdrawal_confirmation.sql, with the
--- requests' first_published_at, the latest committed request, and a pending delivery left to its run.
+-- 5. The sweep's delivery selection: as in 20261104180000_withdrawal_confirmation.sql, with the
+-- requests' was_delivered, the latest committed request, and a pending delivery left to its run.
 
 create or replace function api.worker_deliveries_to_retry(p_now timestamptz)
 returns table (release_id uuid, tenant_id uuid, tenant_slug text, release_number int, bundle_path text,
@@ -281,10 +326,9 @@ begin
          coalesce(sd.live_status, 'pending'),
          coalesce((select pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
                             'id', pr.id, 'entry_id', pr.entry_id, 'action', pr.action,
-                            'first_published_at', e.first_published_at)
+                            'was_delivered', api.worker_entry_was_delivered(l.id, pr.entry_id))
                           order by pr.requested_at, pr.id)
                    from cms.publish_requests pr
-                   join cms.entries e on e.tenant_id = pr.tenant_id and e.id = pr.entry_id
                    where pr.tenant_id = l.tenant_id and pr.release_id = l.id), '[]'::jsonb),
          l.number,
          null::jsonb
@@ -341,7 +385,7 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- 5. The build's snapshot: as in 20261102000900_api_worker.sql, with the requests' first_published_at.
+-- 6. The build's snapshot: as in 20261102000900_api_worker.sql, with the requests' was_delivered.
 
 create or replace function api.worker_release_snapshot(p_release_id uuid)
 returns jsonb
@@ -400,10 +444,9 @@ begin
            'requests', coalesce((
              select pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
                       'id', pr.id, 'entry_id', pr.entry_id, 'action', pr.action, 'revision_id', pr.revision_id,
-                      'first_published_at', e.first_published_at)
+                      'was_delivered', api.worker_entry_was_delivered(rel.id, pr.entry_id))
                     order by pr.requested_at, pr.id)
              from cms.publish_requests pr
-             join cms.entries e on e.tenant_id = pr.tenant_id and e.id = pr.entry_id
              where pr.tenant_id = rel.tenant_id and pr.status = 'committed' and pr.release_id is null), '[]'::jsonb))
     into v_result
   from rel;

@@ -72,8 +72,8 @@ export type LiveTarget = {
   requestIds: string[];
   /**
    * `delivery_failed` (left out of the release, §7.1), `still_published` (withdrawn, but the entry is
-   * in the release), `withdrawal_unchecked` (withdrawn, published once, and no bundle here holds a
-   * record to check it by) or `checks_failed` (the module threw).
+   * in the release), `withdrawal_unchecked` (withdrawn, an earlier release reached a site with it,
+   * and no bundle here holds a record to check it by) or `checks_failed` (the module threw).
    */
   failure: string | null;
   checks: LiveCheck[];
@@ -159,10 +159,10 @@ function mediaUrlsIn(data: unknown, mediaPrefix: string): string[] {
  * - not in the release, with a publish as its last request: left out of the build (omitted), so
  *   `delivery_failed` (§7.1: never live);
  * - not in the release after an unpublish: the checks for the record the previous release had
- *   (no hash, no media). With no such record, nothing to check for an entry that was never
- *   published; for one that was, `withdrawal_unchecked`: a site may still hold it (from an older
- *   release, or a failed release whose pointer was written), so the withdrawal is never confirmed
- *   with nothing checked (M5-01);
+ *   (no hash, no media). With no such record, nothing to check when no site ever had it (§7.4;
+ *   api.worker_entry_was_delivered); otherwise `withdrawal_unchecked`: a site may still hold it
+ *   (from an older release, or a failed release whose pointer was written), so the withdrawal is
+ *   never confirmed with nothing checked (M5-01);
  * - in the release, with an unpublish as its last request: `still_published`. The withdrawal is not
  *   what the release delivered (an older publish committed after it, say), so it is never confirmed:
  *   the entry's own present checks would pass and show it removed (§7.1: withdrawal always wins).
@@ -185,7 +185,7 @@ export function liveTargets(
     if (inRelease && last.action === 'unpublish') return { ...base, failure: 'still_published' };
     const record = inRelease ?? find(release.previousBundle, entryId);
     const withdrawal = !inRelease && last.action === 'unpublish' ? ({ withdrawal: true } as const) : {};
-    if (!record) return last.firstPublishedAt === null ? { ...base, ...withdrawal } : { ...base, failure: 'withdrawal_unchecked' };
+    if (!record) return last.wasDelivered === false ? { ...base, ...withdrawal } : { ...base, failure: 'withdrawal_unchecked' };
     const own = inRelease ? { contentHash: inRelease.entry.contentHash, mediaUrls: mediaUrlsIn(inRelease.entry.data, mediaPrefix) } : {};
     const integration = Object.hasOwn(module.site, record.type) ? module.site[record.type] : undefined;
     if (!integration) return { ...base, ...own, ...withdrawal };

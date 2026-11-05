@@ -24,7 +24,6 @@ const E1 = '11111111-1111-4111-8111-111111111111';
 const E2 = '22222222-2222-4222-8222-222222222222';
 const E3 = '33333333-3333-4333-8333-333333333333';
 const E4 = '44444444-4444-4444-8444-444444444444';
-const PUBLISHED = '2026-01-01T00:00:00.000Z';
 
 const entry = (id: string, slug: string, sortAt: string | null, data: Record<string, unknown> = {}): BundleEntry => ({
   id,
@@ -75,7 +74,7 @@ describe('liveTargets', () => {
 
   it('a published entry: present checks against this release, its new hash, its own path and its media URLs', () => {
     seen.length = 0;
-    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q1', entryId: E1, action: 'publish', firstPublishedAt: PUBLISHED }] }, MEDIA);
+    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q1', entryId: E1, action: 'publish', wasDelivered: true }] }, MEDIA);
     expect(t).toEqual({
       entryId: E1,
       requestIds: ['q1'],
@@ -92,7 +91,7 @@ describe('liveTargets', () => {
   });
 
   it('an unpublished entry: absent checks computed from the previous release’s record, no hash', () => {
-    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q2', entryId: E2, action: 'unpublish', firstPublishedAt: PUBLISHED }] }, MEDIA);
+    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q2', entryId: E2, action: 'unpublish', wasDelivered: true }] }, MEDIA);
     expect(t).toMatchObject({
       entryId: E2,
       failure: null,
@@ -107,32 +106,32 @@ describe('liveTargets', () => {
   });
 
   it('a published entry left out of the release (omitted) is delivery failed, never checked as present', () => {
-    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q3', entryId: E3, action: 'publish', firstPublishedAt: PUBLISHED }] }, MEDIA);
+    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q3', entryId: E3, action: 'publish', wasDelivered: true }] }, MEDIA);
     expect(t).toMatchObject({ entryId: E3, failure: 'delivery_failed', checks: [] });
   });
 
-  it('an unpublished entry that was never published has nothing to check', () => {
-    const [t] = liveTargets(module, { bundle: current, previousBundle: null, requests: [{ id: 'q4', entryId: E4, action: 'unpublish', firstPublishedAt: null }] }, MEDIA);
+  it('an unpublished entry that no delivered release contained has nothing to check', () => {
+    const [t] = liveTargets(module, { bundle: current, previousBundle: null, requests: [{ id: 'q4', entryId: E4, action: 'unpublish', wasDelivered: false }] }, MEDIA);
     expect(t).toMatchObject({ entryId: E4, failure: null, checks: [], mediaUrls: [] });
   });
 
   // M5-01: a site may hold it (an older release, a failed release whose pointer was written), and
   // neither bundle says where to look, so it is never confirmed with nothing checked.
-  it('an unpublished entry published once, with no record to check, is a failure, never confirmed', () => {
-    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q4', entryId: E4, action: 'unpublish', firstPublishedAt: PUBLISHED }] }, MEDIA);
+  it('an unpublished entry a site may hold, with no record to check, is a failure, never confirmed', () => {
+    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q4', entryId: E4, action: 'unpublish', wasDelivered: true }] }, MEDIA);
     expect(t).toMatchObject({ entryId: E4, failure: 'withdrawal_unchecked', checks: [] });
     expect(t!.withdrawal).toBeUndefined();
   });
 
-  it('a publish and an unpublish coalesced into one build, the entry in neither bundle: the same failure', () => {
+  it('a publish and an unpublish coalesced into one build, a site having held the entry before: the same failure', () => {
     const [t] = liveTargets(
       module,
       {
         bundle: current,
         previousBundle: previous,
         requests: [
-          { id: 'q4a', entryId: E4, action: 'publish', firstPublishedAt: PUBLISHED },
-          { id: 'q4b', entryId: E4, action: 'unpublish', firstPublishedAt: PUBLISHED },
+          { id: 'q4a', entryId: E4, action: 'publish', wasDelivered: true },
+          { id: 'q4b', entryId: E4, action: 'unpublish', wasDelivered: true },
         ],
       },
       MEDIA,
@@ -141,8 +140,24 @@ describe('liveTargets', () => {
     expect(t!.withdrawal).toBeUndefined();
   });
 
-  it('a request that does not say whether the entry was published fails closed', () => {
-    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q4', entryId: E4, action: 'unpublish', firstPublishedAt: PUBLISHED } as never] }, MEDIA);
+  it('a publish and an unpublish coalesced into one build, no site ever having held the entry: nothing to check', () => {
+    const [t] = liveTargets(
+      module,
+      {
+        bundle: current,
+        previousBundle: previous,
+        requests: [
+          { id: 'q4a', entryId: E4, action: 'publish', wasDelivered: false },
+          { id: 'q4b', entryId: E4, action: 'unpublish', wasDelivered: false },
+        ],
+      },
+      MEDIA,
+    );
+    expect(t).toMatchObject({ entryId: E4, failure: null, checks: [], withdrawal: true });
+  });
+
+  it('a request that does not say whether a site held the entry fails closed', () => {
+    const [t] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q4', entryId: E4, action: 'unpublish', wasDelivered: true } as never] }, MEDIA);
     expect(t).toMatchObject({ failure: 'withdrawal_unchecked' });
   });
 
@@ -153,9 +168,9 @@ describe('liveTargets', () => {
         bundle: current,
         previousBundle: previous,
         requests: [
-          { id: 'q5', entryId: E2, action: 'publish', firstPublishedAt: PUBLISHED },
-          { id: 'q6', entryId: E2, action: 'unpublish', firstPublishedAt: PUBLISHED },
-          { id: 'q7', entryId: E1, action: 'publish', firstPublishedAt: PUBLISHED },
+          { id: 'q5', entryId: E2, action: 'publish', wasDelivered: true },
+          { id: 'q6', entryId: E2, action: 'unpublish', wasDelivered: true },
+          { id: 'q7', entryId: E1, action: 'publish', wasDelivered: true },
         ],
       },
       MEDIA,
@@ -175,27 +190,27 @@ describe('liveTargets', () => {
         bundle: current,
         previousBundle: previous,
         requests: [
-          { id: 'q10', entryId: E1, action: 'publish', firstPublishedAt: PUBLISHED },
-          { id: 'q11', entryId: E1, action: 'unpublish', firstPublishedAt: PUBLISHED },
+          { id: 'q10', entryId: E1, action: 'publish', wasDelivered: true },
+          { id: 'q11', entryId: E1, action: 'unpublish', wasDelivered: true },
         ],
       },
       MEDIA,
     );
     expect(t).toMatchObject({ entryId: E1, requestIds: ['q10', 'q11'], failure: 'still_published', checks: [], contentHash: null, mediaUrls: [] });
-    const [only] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q12', entryId: E1, action: 'unpublish', firstPublishedAt: PUBLISHED }] }, MEDIA);
+    const [only] = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q12', entryId: E1, action: 'unpublish', wasDelivered: true }] }, MEDIA);
     expect(only).toMatchObject({ failure: 'still_published', checks: [] });
   });
 
   it('a type without site pages has no checks, but its media is still checked', () => {
     const other = bundle(3, []);
     other.entries['page'] = [{ ...entry(E1, 'a', null, { image }) }];
-    const [t] = liveTargets(module, { bundle: other, previousBundle: null, requests: [{ id: 'q8', entryId: E1, action: 'publish', firstPublishedAt: PUBLISHED }] }, MEDIA);
+    const [t] = liveTargets(module, { bundle: other, previousBundle: null, requests: [{ id: 'q8', entryId: E1, action: 'publish', wasDelivered: true }] }, MEDIA);
     expect(t).toMatchObject({ failure: null, checks: [], mediaUrls: [image.url], contentHash: 'h-' + E1 });
   });
 
   it('a module whose checks throw gives a failure, not an exception', () => {
     const broken = { site: { news: { path: () => '/x', checks: () => { throw new Error('boom'); } } } } as unknown as ModuleManifest;
-    const [t] = liveTargets(broken, { bundle: current, previousBundle: null, requests: [{ id: 'q9', entryId: E1, action: 'publish', firstPublishedAt: PUBLISHED }] }, MEDIA);
+    const [t] = liveTargets(broken, { bundle: current, previousBundle: null, requests: [{ id: 'q9', entryId: E1, action: 'publish', wasDelivered: true }] }, MEDIA);
     expect(t).toMatchObject({ failure: 'checks_failed', checks: [] });
   });
 });
@@ -475,7 +490,7 @@ describe('confirmRelease: the public pointer', () => {
     number: 2,
     bundle: bundle(2, [entry(E1, 'a', null)]),
     previousBundle: null,
-    requests: [{ id: 'q1', entryId: E1, action: 'publish', firstPublishedAt: PUBLISHED }],
+    requests: [{ id: 'q1', entryId: E1, action: 'publish', wasDelivered: true }],
   };
   const workerSite = (id: string) => ({ id, base_url: site.origin, revalidate_url: `${site.origin}/api/revalidate/${id}`, webhook_secrets: ['leyndo'] });
 
@@ -538,7 +553,7 @@ describe('confirmRelease: the public pointer', () => {
       ...published,
       bundle: bundle(2, []),
       previousBundle: bundle(1, [entry(E2, 'b', null)]),
-      requests: [{ id: 'u2', entryId: E2, action: 'unpublish', firstPublishedAt: PUBLISHED }],
+      requests: [{ id: 'u2', entryId: E2, action: 'unpublish', wasDelivered: true }],
     };
     const state = {
       withdrawals: [{ entryId: E2, requestIds: ['u2'], checks: [{ path: '/n/b', expect: 'absent' }, { path: '/n', expect: 'absent' }], ownPath: '/n/b' }],
@@ -830,7 +845,7 @@ describe('confirmSite: retries after not_confirmed (M3-03)', () => {
     number: 2,
     bundle: bundle(2, [entry(E, 'a', '2026-01-01T00:00:00.000Z')]),
     previousBundle: null,
-    requests: [{ id: 'q1', entryId: E, action: 'publish', firstPublishedAt: PUBLISHED }],
+    requests: [{ id: 'q1', entryId: E, action: 'publish', wasDelivered: true }],
   };
   const workerSite = (): WorkerSite => ({ id: 's', base_url: site.origin, revalidate_url: `${site.origin}/api/revalidate`, webhook_secrets: ['leyndo'] });
   const webhooks = () => site.requests.filter((r) => r.method === 'POST').length;
@@ -943,9 +958,9 @@ describe('withdrawal state (W1)', () => {
         bundle: current,
         previousBundle: previous,
         requests: [
-          { id: 'q1', entryId: E1, action: 'publish', firstPublishedAt: PUBLISHED },
-          { id: 'q2', entryId: E2, action: 'unpublish', firstPublishedAt: PUBLISHED },
-          { id: 'q3', entryId: E3, action: 'unpublish', firstPublishedAt: null },
+          { id: 'q1', entryId: E1, action: 'publish', wasDelivered: true },
+          { id: 'q2', entryId: E2, action: 'unpublish', wasDelivered: true },
+          { id: 'q3', entryId: E3, action: 'unpublish', wasDelivered: false },
         ],
       },
       MEDIA,
@@ -955,7 +970,7 @@ describe('withdrawal state (W1)', () => {
       [E2, true],
       [E3, true],
     ]);
-    const still = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q4', entryId: E1, action: 'unpublish', firstPublishedAt: PUBLISHED }] }, MEDIA);
+    const still = liveTargets(module, { bundle: current, previousBundle: previous, requests: [{ id: 'q4', entryId: E1, action: 'unpublish', wasDelivered: true }] }, MEDIA);
     expect(still[0]).toMatchObject({ failure: 'still_published' });
     expect(still[0]!.withdrawal ?? false).toBe(false);
   });
@@ -967,8 +982,8 @@ describe('withdrawal state (W1)', () => {
         bundle: bundle(3, []),
         previousBundle: bundle(2, [entry(E1, 'a', null), entry(E2, 'b', null)]),
         requests: [
-          { id: 'u1', entryId: E1, action: 'unpublish', firstPublishedAt: PUBLISHED },
-          { id: 'u2', entryId: E2, action: 'unpublish', firstPublishedAt: PUBLISHED },
+          { id: 'u1', entryId: E1, action: 'unpublish', wasDelivered: true },
+          { id: 'u2', entryId: E2, action: 'unpublish', wasDelivered: true },
         ],
       },
       MEDIA,

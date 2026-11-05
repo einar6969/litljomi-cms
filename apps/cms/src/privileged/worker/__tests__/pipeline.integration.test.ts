@@ -1053,6 +1053,55 @@ describe('housekeeping hold: a withdrawal whose first live check missed', () => 
           await cleanup();
         }
       });
+
+      // §7.4: confirmed with nothing to check only when no delivered release ever held the entry.
+      describe('a publish and an unpublish coalesced into one build', () => {
+        const coalesced = async (entryId: string, publishRequest: string, t0: number) => {
+          expect((await processRequestById(publishRequest)).status).toBe('committed');
+          const withdrawn = await rpc<string>('request_unpublish', { p_entry_id: entryId });
+          expect((await processRequestById(withdrawn)).status).toBe('committed');
+          expect((await deliverTenant(TENANT.labak, { ...SLOW, now: () => t0 })).status).toBe('delivered');
+          return deliveryOf(withdrawn);
+        };
+
+        it('11. no delivered release ever held the entry: confirmed with nothing to check, and no alert', async () => {
+          const t0 = Date.now();
+          try {
+            // Failed builds of earlier tests are older than this entry, not within a build's 420 s of it
+            // (a publish that close to one counts as delivered: worker_entry_was_delivered).
+            await ownerQuery(`update cms.releases set created_at = now() - interval '1 hour' where tenant_id = $1 and status = 'failed'`, [TENANT.labak]);
+            const r = await requested('Aldrei á vef');
+            const d = await coalesced(r.entryId, r.requestId, t0);
+            expect(d).toMatchObject({ notify_status: 'ok', live_status: 'ok', last_error: null });
+            expect((await panel(r.entryId)).label).toBe(t.publish.removed);
+            await sweep({ ...fast, now: () => t0 + 61 * MINUTE });
+            expect(await withdrawalAlerts(d.release_id!)).toEqual([]);
+            expect((await panel(r.entryId)).label).toBe(t.publish.removed);
+          } finally {
+            await cleanup();
+          }
+        });
+
+        it('12. a delivered release held the entry: unconfirmed, even on a site with nothing left to find', async () => {
+          const t0 = Date.now();
+          try {
+            const r = await requested('Var á vef');
+            await processAndDeliver(r.requestId, fast);
+            const first = await rpc<string>('request_unpublish', { p_entry_id: r.entryId });
+            await processAndDeliver(first, fast);
+            expect(await deliveryOf(first)).toMatchObject({ live_status: 'ok' });
+            await supersede(Date.now(), 'Þriðja frétt');
+
+            const again = await rerequested(r.entryId, await draftVersion(r.entryId), 'Aftur í bili');
+            const d = await coalesced(r.entryId, again, t0);
+
+            expect(d).toMatchObject({ live_status: 'not_confirmed', last_error: { failures: [{ entryId: r.entryId, reason: 'withdrawal_unchecked' }] } });
+            expect((await panel(r.entryId)).label).not.toBe(t.publish.removed);
+          } finally {
+            await cleanup();
+          }
+        });
+      });
     });
 
     // M5-01, finding 2: the run is killed after the release was delivered. Killed in the poll: the
