@@ -9,6 +9,7 @@ import { randomBytes } from 'node:crypto';
 import { adminAuth, auth } from '../src/auth-api.ts';
 import { PERSONAS } from '../src/fixtures.ts';
 import { closeAll, ownerQuery } from '../src/sql.ts';
+// Also: arrange-pages and clean-pages, the fixtures of console-pages.spec.ts (M4-05).
 
 const { id, email } = PERSONAS.platform_admin;
 
@@ -34,6 +35,54 @@ const steps: Record<string, () => Promise<unknown>> = {
     const factors = await listFactors();
     const verified = factors.filter((factor) => factor.status === 'verified').length;
     return { verified, unverified: factors.length - verified };
+  },
+
+  // The fixtures of console-pages.spec.ts (M4-05): an active tenant with a site, a failed request,
+  // a failed release and a failed delivery, and a suspended tenant with nothing. The suspended one is
+  // named "paused", so only its status says "suspended". Rows of their own, so no seeded tenant
+  // changes state. Rerunnable: it clears first.
+  async 'arrange-pages'() {
+    await steps['clean-pages']!();
+    const [active] = await ownerQuery<{ id: string }>(
+      `insert into cms.tenants (slug, name) values ('console-fixture', 'Console fixture') returning id`,
+    );
+    await ownerQuery(`insert into cms.tenants (slug, name, status) values ('console-paused', 'Console paused', 'suspended')`);
+    const tenantId = active!.id;
+    const [site] = await ownerQuery<{ id: string }>(
+      `insert into cms.sites (tenant_id, base_url, revalidate_url, webhook_secret_ref)
+       values ($1, 'http://localhost:3299/fixture', 'http://localhost:3299/fixture/revalidate', gen_random_uuid()) returning id`,
+      [tenantId],
+    );
+    const [entry] = await ownerQuery<{ id: string }>(
+      `insert into cms.entries (tenant_id, type, created_by) values ($1, 'news', $2) returning id`,
+      [tenantId, PERSONAS.editor_labak.id],
+    );
+    const [release] = await ownerQuery<{ id: string }>(
+      `insert into cms.releases (tenant_id, number, status, error) values ($1, 1, 'failed', $2) returning id`,
+      [tenantId, { code: 'build_failed', step: 'previous_bundle' }],
+    );
+    await ownerQuery(
+      `insert into cms.publish_requests (tenant_id, entry_id, action, draft_version, requested_by, status, error)
+       values ($1, $2, 'publish', 1, $3, 'failed', $4)`,
+      [tenantId, entry!.id, PERSONAS.editor_labak.id, { code: 'invalid_data' }],
+    );
+    await ownerQuery(
+      `insert into cms.site_deliveries (release_id, site_id, tenant_id, notify_status, notify_attempts, last_error)
+       values ($1, $2, $3, 'failed', 4, $4)`,
+      [release!.id, site!.id, tenantId, { code: 'notify_failed', status: 500 }],
+    );
+    return { arranged: true };
+  },
+
+  async 'clean-pages'() {
+    const ids = `(select id from cms.tenants where slug in ('console-fixture', 'console-paused'))`;
+    for (const table of ['site_deliveries', 'publish_requests', 'releases', 'entries', 'sites']) {
+      await ownerQuery(`delete from cms.${table} where tenant_id in ${ids}`);
+    }
+    // The audit events the fixture's inserts caused (triggers write them, §4.7).
+    await ownerQuery(`delete from cms.audit_log where tenant_id in ${ids}`);
+    await ownerQuery(`delete from cms.tenants where slug in ('console-fixture', 'console-paused')`);
+    return { cleaned: true };
   },
 
   async 'password-sign-in'() {

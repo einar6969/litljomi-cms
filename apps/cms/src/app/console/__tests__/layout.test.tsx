@@ -16,7 +16,6 @@ vi.mock('@/lib/supabase/server', () => ({ createEditorClient: vi.fn(async () => 
 
 const { default: ConsoleLayout } = await import('../layout');
 const { default: GatedLayout } = await import('../(gated)/layout');
-const { default: ConsolePage } = await import('../(gated)/page');
 
 const SIGNED_IN = { data: { user: { id: 'u1' } }, error: null };
 const SIGNED_OUT = { data: { user: null }, error: { status: 401, code: 'no_authorization' } };
@@ -59,11 +58,5 @@ describe('the gated layout', () => {
   it('does not redirect for none: the console layout answers 404', async () => {
     access.consoleAccess.mockResolvedValue('none');
     await expect(GatedLayout({ children: 'child' })).resolves.toBeDefined();
-  });
-});
-
-describe('the console page', () => {
-  it('is a heading until M4-05 fills it in', () => {
-    expect(renderToStaticMarkup(ConsolePage())).toContain('<h1>Console</h1>');
   });
 });

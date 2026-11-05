@@ -127,7 +127,7 @@ select columns_are('api', 'console_releases',
 select columns_are('api', 'console_sites', array['id', 'tenant_id', 'base_url', 'active'], 'console_sites columns');
 select columns_are('api', 'console_deliveries',
   array['release_id', 'site_id', 'tenant_id', 'notify_status', 'notify_attempts', 'notified_at', 'live_status',
-        'live_confirmed_at', 'last_error_code', 'last_error_status', 'first_failed_at', 'next_attempt_at'],
+        'live_confirmed_at', 'last_error_code', 'last_error_status', 'first_failed_at', 'next_attempt_at', 'release_number'],
   'console_deliveries columns');
 select columns_are('api', 'console_audit',
   array['id', 'tenant_id', 'at', 'actor_id', 'action', 'target_type', 'target_id'], 'console_audit columns');
@@ -149,7 +149,7 @@ select set_eq($$
             ('console_requests', 'publish_requests'), ('console_requests', 'platform_admins'),
             ('console_releases', 'releases'), ('console_releases', 'platform_admins'),
             ('console_sites', 'sites'), ('console_sites', 'platform_admins'),
-            ('console_deliveries', 'site_deliveries'), ('console_deliveries', 'platform_admins'),
+            ('console_deliveries', 'site_deliveries'), ('console_deliveries', 'releases'), ('console_deliveries', 'platform_admins'),
             ('console_audit', 'audit_log'), ('console_audit', 'platform_admins') $$,
   'each view reads its operational table and platform_admins, and no content table');
 
@@ -254,13 +254,14 @@ select set_eq($$ select id, tenant_id, base_url, active from api.console_sites $
             (tests.k('1412'), tests.tenant('demo'), 'http://localhost:3412', false) $$,
   'admin at aal2: console_sites has both tenants, with id, base URL and active');
 select set_eq($$ select release_id, site_id, tenant_id, notify_status, notify_attempts, notified_at, live_status,
-                        live_confirmed_at, last_error_code, last_error_status, first_failed_at, next_attempt_at
+                        live_confirmed_at, last_error_code, last_error_status, first_failed_at, next_attempt_at,
+                        release_number
                  from api.console_deliveries $$,
   $$ values (tests.k('1421'), tests.k('1411'), tests.tenant('labak'), 'ok', 1, '2026-11-05 10:02+00'::timestamptz, 'ok',
-             '2026-11-05 10:03+00'::timestamptz, null::text, null::text, null::timestamptz, null::timestamptz),
+             '2026-11-05 10:03+00'::timestamptz, null::text, null::text, null::timestamptz, null::timestamptz, 1),
             (tests.k('1422'), tests.k('1412'), tests.tenant('demo'), 'failed', 4, null::timestamptz, 'pending',
              null::timestamptz, 'notify_failed', '500', '2026-11-05 11:05+00'::timestamptz,
-             '2026-11-05 12:00+00'::timestamptz) $$,
+             '2026-11-05 12:00+00'::timestamptz, 1) $$,
   'admin at aal2: console_deliveries has both tenants, with statuses, attempts, times and the last error''s code and status');
 select is_empty($$ select r.id from api.console_releases r where to_jsonb(r)::text like '%LEAKED%' $$,
   'a release whose error has a message shows no message through console_releases');
@@ -283,7 +284,12 @@ select set_has($$ select tenant_id from api.console_audit $$,
   'admin at aal2: console_audit covers both tenants and platform events');
 
 -- The views are read-only for everyone, the admin at aal2 included.
-select tests.console_refused('admin at aal2, delete', 'delete from api.%I', tests.console_all());
+-- console_deliveries joins releases, so it is not auto-updatable: the rewriter refuses a write with
+-- 55000 before the privilege check that gives the others 42501. Either way nothing is written.
+select tests.console_refused('admin at aal2, delete', 'delete from api.%I',
+  array(select v from unnest(tests.console_all()) as v where v <> 'console_deliveries'));
+select throws_ok($$ delete from api.console_deliveries $$, '55000', null,
+  'admin at aal2, delete: refused on console_deliveries (not updatable)');
 select throws_ok($$ update api.console_tenants set status = 'active' $$, '42501', null,
   'admin at aal2: update refused on console_tenants');
 select tests.act_as(tests.persona('outsider'), 'aal2');
