@@ -79,7 +79,8 @@ test.describe('sign-in', () => {
     await page.evaluate(() => document.fonts.ready);
     const fontsLoaded = await page.evaluate(() => [document.fonts.check('16px "Albert Sans"'), document.fonts.check('700 28px "Bricolage Grotesque"')]);
     expect(fontsLoaded, 'Albert Sans and Bricolage Grotesque loaded signed out').toEqual([true, true]);
-    const faces = await page.evaluate(() => [...document.fonts].map((f) => f.status));
+    // A face loads when something uses it, and the sign-in page has no monospace text.
+    const faces = await page.evaluate(() => [...document.fonts].filter((f) => f.family.replaceAll('"', '') !== 'JetBrains Mono').map((f) => f.status));
     expect(faces.length).toBeGreaterThan(0);
     expect(faces.every((s) => s === 'loaded'), `font faces: ${faces.join(',')}`).toBe(true);
     await shoot(page, 'login');
@@ -159,6 +160,10 @@ test.describe('labak: shell, list and news form', () => {
 
     await page.goto('/t/labak/news');
     await expect(page.getByRole('table')).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    const mono = await page.evaluate(() => [document.fonts.check('400 12.5px "JetBrains Mono"'), getComputedStyle(document.querySelector('time.mono')!).fontFamily]);
+    expect(mono[0], 'JetBrains Mono loaded for the list\'s times').toBe(true);
+    expect(mono[1]).toContain('JetBrains Mono');
     await shoot(page, 'list');
 
     // `/` jumps to the search box; Esc leaves it.

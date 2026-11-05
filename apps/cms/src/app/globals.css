@@ -6,9 +6,8 @@
  * text or a line. Everyday primary actions are ink, so green on a screen always concerns the live
  * site. Text that must read as the accent uses --accent-text.
  *
- * Sizes are fixed pixels. Bricolage Grotesque and Albert Sans are self-hosted (public/fonts,
- * SIL OFL 1.1, see public/fonts/OFL.txt); nothing is loaded from the network. JetBrains Mono joins
- * them when its file is in public/fonts; until then --mono falls back to the system's monospace.
+ * Sizes are fixed pixels. Bricolage Grotesque, Albert Sans and JetBrains Mono are self-hosted
+ * (public/fonts, SIL OFL 1.1, see public/fonts/OFL.txt); nothing is loaded from the network.
  */
 @import 'tailwindcss';
 
@@ -24,6 +23,23 @@
   font-family: 'Bricolage Grotesque';
   src: url('/fonts/BricolageGrotesque-VariableFont_opsz.woff2') format('woff2');
   font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Only for slugs, times, IDs and key hints. */
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/JetBrainsMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/JetBrainsMono-Medium.woff2') format('woff2');
+  font-weight: 500;
   font-style: normal;
   font-display: swap;
 }
