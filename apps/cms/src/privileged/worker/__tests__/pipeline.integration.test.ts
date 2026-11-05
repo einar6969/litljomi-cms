@@ -924,3 +924,41 @@ describe('housekeeping hold: a withdrawal whose first live check missed', () => 
     });
   });
 });
+
+describe('a tenant suspended with work in flight (M4-01, review focus 4)', () => {
+  const setStatus = async (status: 'active' | 'suspended') => {
+    const { error } = await secretClient().schema('api').rpc('admin_set_tenant_status', { p_tenant_id: TENANT.labak, p_status: status });
+    if (error) throw new Error(`admin_set_tenant_status: ${error.code} ${error.message}`);
+  };
+  const currentJson = async () => (await fetch(publicUrl('delivery', 'labak/current.json'), { cache: 'no-store' })).text();
+  const releaseCount = async () => (await ownerQuery<{ n: number }>('select count(*)::int as n from cms.releases where tenant_id = $1', [TENANT.labak]))[0]!.n;
+
+  it('refuses the pending request, keeps the last release public, and publishes a new request after reactivation', async () => {
+    const pending = await requested('Beiðni í bið við lokun');
+    const pointer = await currentJson();
+    const releases = await releaseCount();
+    const hooks = webhooks().length;
+
+    await setStatus('suspended');
+    try {
+      await processAndDeliver(pending.requestId, fast);
+      await sweep(fast);
+
+      expect(await ownerQuery('select status, error from cms.publish_requests where id = $1', [pending.requestId])).toEqual([{ status: 'rejected', error: { code: 'tenant_inactive' } }]);
+      expect(await ownerQuery('select published_rev_id from cms.entries where id = $1', [pending.entryId])).toEqual([{ published_rev_id: null }]);
+      expect(await currentJson()).toBe(pointer);
+      expect(await releaseCount()).toBe(releases);
+      expect(webhooks().length).toBe(hooks);
+      expect(news().some((e) => e.id === pending.entryId)).toBe(false);
+    } finally {
+      await setStatus('active');
+    }
+
+    const requestId = await rpc<string>('request_publish', { p_entry_id: pending.entryId, p_expected_draft_version: pending.version });
+    await processAndDeliver(requestId, fast);
+
+    expect(await deliveryOf(requestId)).toMatchObject({ status: 'committed', notify_status: 'ok', live_status: 'ok' });
+    expect(await currentJson()).not.toBe(pointer);
+    expect(news().some((e) => e.id === pending.entryId)).toBe(true);
+  });
+});

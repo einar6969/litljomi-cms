@@ -123,7 +123,8 @@ select set_eq($$ select t.trigger_name::text, t.event_manipulation::text, t.acti
             ('publish_requests_audit_update', 'UPDATE', 'AFTER', 'ROW', 'EXECUTE FUNCTION private.audit_publish_requests()'),
             ('releases_audit_update', 'UPDATE', 'AFTER', 'ROW', 'EXECUTE FUNCTION private.audit_releases()'),
             ('memberships_audit', 'INSERT', 'AFTER', 'ROW', 'EXECUTE FUNCTION private.audit_memberships()'),
-            ('memberships_audit', 'DELETE', 'AFTER', 'ROW', 'EXECUTE FUNCTION private.audit_memberships()') $$,
+            ('memberships_audit', 'DELETE', 'AFTER', 'ROW', 'EXECUTE FUNCTION private.audit_memberships()'),
+            ('tenants_audit_update', 'UPDATE', 'AFTER', 'ROW', 'EXECUTE FUNCTION private.audit_tenants()') $$,
   'audit triggers: events, timing and functions');
 
 -- ---------------------------------------------------------------------------

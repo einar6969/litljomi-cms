@@ -36,7 +36,7 @@ The repository is at /Users/einarzoega/litljomi-cms. Read, in this order:
 Then read only what you need. Rely on no earlier conversation.
 
 Rules until I say otherwise:
-- M4 is frozen. Don't plan or start it.
+- Take M4's state from `BRIEF.md`. Start no task until I say so.
 - Change nothing: no files, branches, settings, hosted systems or messages.
 - Don't start sessions or threads.
 - Read-only local commands and read-only `gh` are fine. Ask me before using the Vercel or Supabase connectors.
@@ -52,7 +52,7 @@ When you've finished reading:
 
 Einar reviews the answers, with the answer key held outside this repository. When Einar is satisfied, Einar says so in the new session, and it becomes the KING.
 
-Its first job is to propose priorities from `OPEN-ISSUES.md` and list what Einar must decide before M4 resumes. M4 resumes only when Einar authorizes it.
+Its first job is to propose priorities from `OPEN-ISSUES.md` and list what Einar must decide next.
 
 From then on, the KING updates `BRIEF.md` and `OPEN-ISSUES.md` at each milestone and records Einar's rulings in the repo the day they're made. When a KING session runs long, hand over early: update those two files and start a new session from this page.
 

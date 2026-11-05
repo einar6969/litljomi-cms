@@ -4,7 +4,7 @@
 |---|---|
 | Status | **Approved** by Einar on 2026-11-01 as the implementation baseline, subject to validating the assumptions in §11 and the security boundaries during development. Not yet implemented |
 | Date | 2026-11-01 |
-| Revisions | 2026-11-02 (Einar): passwordless sign-in is enforced by an Auth hook, and email changes need confirmation from both addresses (§4.2, §4.4, §4.5, §11.2; plan decisions 18 and 19); 2026-11-02 (Einar): `packages/rich-text` may depend on Zod and the MIT Tiptap core packages, with the editor configuration on a separate entry point that sites do not import (§3.1; plan decision 23); 2026-11-02 (Einar): `packages/schema` may also depend on `@litljomi/rich-text`'s main entry point, never its editor entry (§3.1; plan decision 24); 2026-11-02 (Einar): references are extracted by a recursive walk with jsonpath locations, cross-checked against `strict $.**._ref`, and `_ref` must be a canonical lowercase UUID in every layer (§4.3; plan decision 25); 2026-11-02 (Einar): `authenticated` and `service_role` may use `private` only to execute `private.extract_refs(jsonb)` (§4.5; plan decision 26); 2026-11-02 (Einar): document data is limited to 128 JSON nesting levels, and the reference walk skips reference-free subtrees (§4.3; plan decision 27); 2026-11-02 (Einar, C3): sites get the SDK and renderer as vendored `npm pack` files until a second site arrives (§9.1), and the staging project runs on Supabase Free until the production project is created (§2.2; plan decision 42); 2026-11-03 (Einar): sign-in is by email magic link only (§4.4; plan decision 43); 2026-11-05 (Einar): per-tenant exports run on demand from the CLI instead of nightly to an external provider, offboarding is parked, and three `admin_*` functions are added for webhook secret rotation, tenant suspension and editor revocation (§4.6, §8.3, §8.4, §10.1, §12, §13.2; plan decision 53) |
+| Revisions | 2026-11-02 (Einar): passwordless sign-in is enforced by an Auth hook, and email changes need confirmation from both addresses (§4.2, §4.4, §4.5, §11.2; plan decisions 18 and 19); 2026-11-02 (Einar): `packages/rich-text` may depend on Zod and the MIT Tiptap core packages, with the editor configuration on a separate entry point that sites do not import (§3.1; plan decision 23); 2026-11-02 (Einar): `packages/schema` may also depend on `@litljomi/rich-text`'s main entry point, never its editor entry (§3.1; plan decision 24); 2026-11-02 (Einar): references are extracted by a recursive walk with jsonpath locations, cross-checked against `strict $.**._ref`, and `_ref` must be a canonical lowercase UUID in every layer (§4.3; plan decision 25); 2026-11-02 (Einar): `authenticated` and `service_role` may use `private` only to execute `private.extract_refs(jsonb)` (§4.5; plan decision 26); 2026-11-02 (Einar): document data is limited to 128 JSON nesting levels, and the reference walk skips reference-free subtrees (§4.3; plan decision 27); 2026-11-02 (Einar, C3): sites get the SDK and renderer as vendored `npm pack` files until a second site arrives (§9.1), and the staging project runs on Supabase Free until the production project is created (§2.2; plan decision 42); 2026-11-03 (Einar): sign-in is by email magic link only (§4.4; plan decision 43); 2026-11-05 (Einar): per-tenant exports run on demand from the CLI instead of nightly to an external provider, offboarding is parked, and three `admin_*` functions are added for webhook secret rotation, tenant suspension and editor revocation (§4.6, §8.3, §8.4, §10.1, §12, §13.2; plan decision 53); 2026-11-05 (Einar): single-tenant restore is dropped, with its acceptance test (§8.4, §12, §13.2; plan decision 55); 2026-11-05 (Einar): the on-demand export is dropped too (§2.1, §8.4, §9.1, §10.1, §11.2, §12, §13.2; plan decision 56); 2026-11-05 (Einar): the console reads through `console_*` views, tenant status changes are audited, and `admin_create_tenant` is idempotent (§4.5, §4.6, §4.7; plan decision 58); 2026-11-05 (Einar): the repository is public (§9.1; plan decision 54) |
 | Owner | Einar Zoega, Litljómi ehf. |
 | Audience | Einar, and any future implementation session (human or Claude Code) |
 | Location | Written in the LABAK workspace (`project/`). Moves to `docs/architecture.md` in the CMS monorepo at milestone M0 and is maintained there |
@@ -106,7 +106,7 @@ Out of scope as a principle: **application data**. Bookings, member portals, for
 | Modules | Declare a tenant's content types, editor layout, site integration (URLs, paths) | No |
 | Worker | Strict validation, commit, release build, media publication, webhook delivery, live confirmation, retries | Yes (Supabase secret key) |
 | Preview endpoint | Serves draft content to a site in draft mode, against a signed token | Yes (Supabase secret key) |
-| Provisioning CLI | Creates tenants, sites, secrets, memberships; runs exports. Run by a platform admin locally | Yes (Supabase secret key), never deployed |
+| Provisioning CLI | Creates tenants, sites, secrets, memberships. Run by a platform admin locally | Yes (Supabase secret key), never deployed |
 | Supabase Postgres | Source of truth; enforces isolation, integrity and privileges | n/a |
 | Supabase Storage | Private originals, public published media, releases | n/a |
 | Sites | Render published content from releases; never call the CMS or Supabase API except preview | No Supabase credentials. Hold a webhook secret and a preview secret |
@@ -254,7 +254,7 @@ Column lists are the v1 minimum; implementation may add timestamps and indexes.
 - Membership is checked against the table on every request, never cached in token claims, so revocation is immediate.
 - Platform admins have **no implicit content access**. To work on a tenant's content they hold an explicit, audited membership in it.
 - Editors read the operational data of **their own tenants**: `tenants` (rows they are members of), `publish_requests`, `releases`, `site_deliveries`, and `sites` limited by column grant to non-secret columns. The editor needs these to resolve the tenant, check that it is active, find the preview route and show publication status.
-- Console reads: additional `SELECT`-only policies on `tenants`, `publish_requests`, `releases`, `sites` (non-secret columns), `site_deliveries` and `audit_log` across **all** tenants, requiring `platform_admins` membership **and** `auth.jwt()->>'aal' = 'aal2'`. No platform-admin clause appears on content tables (`entries`, `drafts`, `revisions`, `*_refs`, `assets`).
+- Console reads: additional `SELECT`-only policies on `tenants`, `publish_requests`, `releases`, `sites` (non-secret columns), `site_deliveries` and `audit_log` across **all** tenants, requiring `platform_admins` membership **and** `auth.jwt()->>'aal' = 'aal2'`. No platform-admin clause appears on content tables (`entries`, `drafts`, `revisions`, `*_refs`, `assets`). Because `cms` is not exposed, the console reads through `security_invoker` views in `api` (§4.6).
 
 **Grants for `authenticated` on `cms`.** `INSERT` and `UPDATE` are granted **per column**, so editors can never set worker-owned columns (`published_rev_id`, `published_draft_version`, publish timestamps, `public_path`, request `status`, `revision_id`, `release_id`).
 
@@ -294,7 +294,9 @@ Column lists are the v1 minimum; implementation may add timestamps and indexes.
 | `request_publish(entry_id, expected_draft_version)` | `authenticated` | Inserts a publish request |
 | `request_unpublish(entry_id)` | `authenticated` | Inserts an unpublish request |
 | `worker_*` (claim, commit, release, delivery functions) | `service_role` only | Privileged worker operations (§6) |
-| `admin_*`: `admin_create_tenant`, `admin_create_site`, `admin_add_membership`, `admin_remove_membership(tenant_id, user_id)`, `admin_set_tenant_status(tenant_id, status)`, `admin_set_webhook_secret(site_id, secret)`, `admin_set_preview_secret`, `admin_set_preview_url(site_id, url)`, `admin_outdated_drafts`, `admin_migrate_draft` | `service_role` only | Provisioning, incident operations and content migration by the CLI (§8.2, §8.4, §9.2). `admin_set_preview_url` sets or replaces a site's preview URL, or clears it with null; the URL must be https, or plain http only to a loopback host (`localhost`, `127.0.0.0/8`, `[::1]`), the token route's rule (§7.5). `admin_create_site` applies the same rule to its preview URL, which may also be null |
+| `admin_*`: `admin_create_tenant`, `admin_create_site`, `admin_add_membership`, `admin_remove_membership(tenant_id, user_id)`, `admin_set_tenant_status(tenant_id, status)`, `admin_set_webhook_secret(site_id, secret)`, `admin_set_preview_secret`, `admin_set_preview_url(site_id, url)`, `admin_outdated_drafts`, `admin_migrate_draft` | `service_role` only | Provisioning, incident operations and content migration by the CLI (§8.2, §8.4, §9.2). `admin_create_tenant` returns the existing tenant's id on a rerun with the same slug and name, and raises `slug_taken` when the name differs. `admin_set_preview_url` sets or replaces a site's preview URL, or clears it with null; the URL must be https, or plain http only to a loopback host (`localhost`, `127.0.0.0/8`, `[::1]`), the token route's rule (§7.5). `admin_create_site` applies the same rule to its preview URL, which may also be null |
+
+The console reads through `security_invoker` views in `api`, `SELECT` for `authenticated` only: `console_admin` (the caller's own `platform_admins` row), and `console_tenants`, `console_requests`, `console_releases`, `console_sites` (non-secret columns), `console_deliveries` and `console_audit`, which return rows only to a platform admin at `aal2`.
 
 This list is complete for v1 editor writes. All are `SECURITY INVOKER` with `search_path = ''` and schema-qualified names. `worker_*` and `admin_*` functions are not executable by `anon` or `authenticated`. Because the secret key bypasses RLS, `worker_*` functions perform their authorization checks explicitly (§6.2).
 
@@ -302,7 +304,7 @@ This list is complete for v1 editor writes. All are `SECURITY INVOKER` with `sea
 
 Audit events are written by **triggers**, not by callers, so an editor cannot choose what is recorded. The trigger sets `actor_id` from `auth.uid()` (or the worker's recorded requester) and `at` from the database clock.
 
-Audited in v1: entry creation, slug change, archive; asset registration, metadata change, archive; publish and unpublish requests; commits, rejections and supersessions; release delivery and failure; membership changes (made by the CLI). Draft autosaves are **not** audited; `drafts.updated_by` and `updated_at` record the last editor.
+Audited in v1: entry creation, slug change, archive; asset registration, metadata change, archive; publish and unpublish requests; commits, rejections and supersessions; release delivery and failure; membership changes and tenant status changes (made by the CLI). Draft autosaves are **not** audited; `drafts.updated_by` and `updated_at` record the last editor.
 
 `authenticated` holds `INSERT` on `audit_log` only so the triggers can run. Since `cms` is not exposed, the only route is through `api` functions, none of which writes to `audit_log` directly. The persona tests assert that `actor_id` cannot be set to another user.
 
@@ -547,13 +549,13 @@ Secrets are rotatable: the SDK accepts two webhook secrets during rotation.
 
 - Supabase projects in an EU region; data processing agreements with Supabase and Vercel.
 - Personal data held: editors' emails and names, audit history. Litljómi acts as processor for each client.
-- Offboarding a tenant (parked, not in any milestone; plan decision 53): export (content JSON and media), hand over, then delete the tenant's storage prefixes with the CLI and its rows with an owner-run SQL procedure (history tables are not deletable through the API).
+- Offboarding a tenant (parked, not in any milestone; plan decision 53; its export would be built then, plan decision 56): export (content JSON and media), hand over, then delete the tenant's storage prefixes with the CLI and its rows with an owner-run SQL procedure (history tables are not deletable through the API).
 
 ### 8.4 Operations
 
 - **Cron:** Vercel Cron every minute for the worker sweeper (requires Vercel Pro).
-- **Backups:** Supabase daily backups (Pro). A **per-tenant export** (all drafts, revisions, assets metadata and media files) runs on demand from the CLI and is not scheduled, so between exports no single-tenant copy and no copy outside the Supabase account exists (plan decision 53).
-- **Restore:** a single tenant is restored from its export into staging, verified, then into production with the CLI. Whole-project restore uses Supabase backups.
+- **Backups:** Supabase daily backups (Pro). There is no per-tenant export, so no single-tenant copy and no copy outside the Supabase account exists (plan decisions 53, 55 and 56).
+- **Restore:** whole-project restore uses Supabase backups, and restoring one tenant is not supported (plan decision 55).
 - **Monitoring and alerts:** worker failures and exhausted retries alert the platform admin (in M1 through the audit log and the server log; by email from M3). The console shows per-tenant request, release and delivery status.
 - **Incidents:** suspend a tenant (`status = suspended` stops publishing); revoke an editor (delete membership; immediate); roll back an entry (restore an older revision and publish); remove content urgently (unpublish; the sweep follows the withdrawing release with a housekeeping release, and the content leaves public storage within about an hour, or about two hours when a site's live check keeps failing, §7.2); rotate secrets.
 - **Upgrades:** dependency updates monthly; database migrations applied to staging first, with the full test suite, then production.
@@ -585,7 +587,7 @@ The database suite gates every migration and every deploy. Supabase's security a
 
 ### 9.1 Repositories
 
-**`litljomi-cms`** (new, private), pnpm workspaces and Turborepo:
+**`litljomi-cms`** (new, public by Einar's choice; plan decision 54), pnpm workspaces and Turborepo:
 
 ```
 apps/cms/                 Next.js: editor, console, worker, preview endpoint
@@ -594,7 +596,7 @@ packages/schema/          DSL, field kind definitions, content-type library
 packages/rich-text/       ProseMirror schema v1, React renderer, plain text
 packages/sdk/             site SDK
 modules/<tenant>/         manifest, types, fixtures, generated delivery types
-tools/cli/                provisioning, exports, migrations of content
+tools/cli/                provisioning, migrations of content
 supabase/                 migrations, pgTAP tests, seed for fixture tenants
 docs/                     this document, runbooks
 ```
@@ -627,7 +629,7 @@ docs/                     this document, runbooks
 - Snapshot delivery, signed revalidation webhooks, live confirmation, retries, per-entry rollback (restore and publish).
 - Preview through draft mode.
 - Platform console (read-only operational view) and provisioning CLI.
-- On-demand per-tenant exports from the CLI; alerts by email.
+- Alerts by email.
 
 ### 10.2 Excluded from v1
 
@@ -662,14 +664,14 @@ Scheduled publishing · approval workflows and multiple roles · multiple locale
 | Risk | Mitigation |
 |---|---|
 | Rich text and media are the most expensive components to build and maintain | Narrow node set; Tiptap core; images only; no per-use cropping |
-| One shared Supabase project: an RLS or grant mistake can expose other tenants | Catalog tests, persona matrix, no definer functions, composite FKs; tenant connection resolver and per-tenant exports allow moving a tenant to its own project |
+| One shared Supabase project: an RLS or grant mistake can expose other tenants | Catalog tests, persona matrix, no definer functions, composite FKs; the tenant connection resolver keeps the code ready to move a tenant to its own project, though no export tool exists yet |
 | Passwordless sign-in depends on Auth configuration: the hook can be switched off, passwords can still be set, and the password endpoint shows whether a guessed password is correct | The hook is enabled by the hosted runbook and verified on every hosted project (a password sign-in returns 403; no session records `password`); all sessions are signed out when it is first enabled; the editor offers email sign-in only |
 | The secret key is a master key for all tenants | Held only by the CMS server environment and the CLI; import rule; rotatable; sites never hold it |
 | One deployment updates all tenants at once, including regressions | Staging first; fixture tenants; full test suite gates deploys; feature flags per tenant where useful |
 | Single maintainer | This document, runbooks, tests as specification |
 | CDN or ISR caching delays | Live confirmation measures actual visibility rather than assuming it |
 | Scope creep into client-specific code | Extension points limited to field kinds and document actions; promotion rule |
-| Supabase or Vercel pricing or behaviour changes | Postgres-standard design; exports; snapshot format independent of Supabase |
+| Supabase or Vercel pricing or behaviour changes | Postgres-standard design; snapshot format independent of Supabase |
 | LABAK's requirements shaping the platform (a LABAK CMS by accident) | The vertical slice includes a second, deliberately different fixture tenant; LABAK's news type is a shared library type with overrides in `modules/labak`; core lint rules from day one; the promotion rule (§3.3) |
 | LABAK's launch depends on the Hub | Accepted: there is no urgency to launch. The site's existing `src/core/data/news` module is the seam where the SDK replaces repository content |
 
@@ -702,7 +704,9 @@ The design discussion went through several revisions. These earlier ideas are **
 | A delivery path that might depend on CMS uptime at request time | Sites depend on the CMS only for preview |
 | Platform admins with policy-level access to all tenants | Explicit memberships for content; MFA-gated read-only policies for console tables only |
 | Per-tenant branded auth emails via the Send Email hook | Out of v1; editors sign in at one Litljómi domain |
-| Nightly per-tenant exports to an external provider, chosen at M4 | Replaced by on-demand exports from the CLI (§8.4; plan decision 53) |
+| Nightly per-tenant exports to an external provider, chosen at M4 | Dropped (§8.4; plan decisions 53 and 56) |
+| On-demand per-tenant exports from the CLI | Dropped; built if a client leaves (§8.3, §8.4; plan decision 56) |
+| Single-tenant restore from an export | Dropped (§8.4; plan decision 55) |
 
 ---
 
@@ -728,7 +732,7 @@ Each milestone ends with its validation criteria met on CI and, where stated, on
 | **M1 Vertical slice (LABAK + demo)** | **Database:** the complete boundary (rule 1). **Auth:** magic link, invited editors. **Schema:** DSL, field registry, field kinds `text`, `date`, `image`, `link`, `richText` (v1 node set); draft and publish validators; projection; content hash. **Editor:** tenant routing, entry list per type, generated form, autosave with version check (basic conflict message), image upload to `media-private`, publish and unpublish, publication status. **Worker:** request → claim → validate and project → commit; full-bundle release with `revisionId` and `contentHash`; media copy to `media-public`; pointer; signed webhook; content-specific live check; fast-path trigger and per-minute sweeper with simple fixed retries; an entry whose projection fails is left out of the release (fail closed; the fallback rule comes in M3). **SDK:** release reading, revalidation handler, entry and release markers, rich-text renderer. **Sites:** a staging deployment of the LABAK site, from a branch, whose news pages read from the Hub's staging project (not production labak.is); the `demo` fixture site | Catalog, persona, integrity, concurrency and escalation suites pass for all tables. On staging, a LABAK test editor creates a news item with image and rich text, publishes, and sees all five states reach **Live** on the LABAK staging site within 60 s; editing it moves **Live** to the new hash; the image is public only after publish; unpublishing passes every `absent` check. Isolation in both directions, through the API and storage. A direct RPC with malformed content is never committed; a stale save is rejected; a draft changed after the request is `superseded`. With the CMS app stopped, both sites keep serving. A1–A5, A7, A11, A13–A15 pass. Lint rules pass |
 | **M2 Editor breadth** | All v1 field kinds; singletons and editor structure; list search and status filter; conflict-resolution UX; restore from revision; schema evolution (transforms, outdated-draft handling, snapshot check); focal point and alt-text editing; Icelandic copy throughout | E2E on staging at 375, 768 and 1440 px; a deliberate breaking schema change fails CI; restore and transforms tested; session expiry loses no work; A10 |
 | **M3 Publishing and delivery hardening** | Exponential retries for 24 hours and alerts; failed-entry fallback rules (§7.1); retention and public-media cleanup (§7.2); webhook re-send on stale hash; preview (token route, endpoint, draft mode); SDK support for Next.js 15 and 16 | The **Delivery** test suite (§8.5); preview cannot be obtained across tenants and is never cached; A6, A8, A9, A12 |
-| **M4 Operations** | Read-only platform console; idempotent provisioning CLI; on-demand per-tenant export from the CLI; single-tenant restore; secret rotation; tenant suspension and editor revocation from the CLI; runbooks | A fresh tenant provisioned from the runbook in under an hour; one tenant restored from export into staging and verified; a webhook secret rotated without failed deliveries |
+| **M4 Operations** | Read-only platform console; idempotent provisioning CLI; secret rotation; tenant suspension and editor revocation from the CLI; runbooks | A fresh tenant provisioned from the runbook in under an hour; a webhook secret rotated without failed deliveries |
 | **M5 Independent review** | Fresh-context security review of the database boundary, worker, preview and SDK | Findings resolved or explicitly accepted before real editors or real content go in |
 | **M6 LABAK integration complete** | Import of the 21 articles (Markdown → ProseMirror JSON); every LABAK site page that shows news reads from the SDK; `remotePatterns` allows exactly the `media-public` host (the site currently allows no remote images); editor guide in Icelandic | Every imported article matches its source word for word; the site renders the same pages as before; a test publish reaches **Live** on the LABAK staging site. Inviting real LABAK editors and launching the LABAK site are separate decisions by Einar, outside this milestone |
 

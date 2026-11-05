@@ -141,7 +141,11 @@ select set_eq($$ select p.proname::text, pg_catalog.pg_get_function_result(p.oid
             ('admin_outdated_drafts', 'TABLE(entry_id uuid, version integer, schema_version integer, data jsonb)'),
             ('admin_migrate_draft', 'integer'),
             -- M3-04 (105_alert_email).
-            ('worker_claim_alert_email', 'boolean') $$,
+            ('worker_claim_alert_email', 'boolean'),
+            -- M4-01 (113_m4_admin).
+            ('admin_set_webhook_secret', 'void'),
+            ('admin_set_tenant_status', 'void'),
+            ('admin_remove_membership', 'void') $$,
   'worker and admin functions: return types, and no others');
 select is((select pg_catalog.pg_get_function_arguments('api.worker_claim_requests(integer)'::regprocedure)),
   'p_limit integer DEFAULT 10', 'worker_claim_requests: p_limit defaults to 10');
@@ -835,7 +839,7 @@ select lives_ok($$ insert into ids select 'acme', api.admin_create_tenant('acme-
 select is((select row(slug, name, status)::text from cms.tenants where id = (select id from ids where name = 'acme')),
   row('acme-bakari', 'Acme bakarí', 'active')::text, 'the tenant is active');
 select throws_ok($$ select api.admin_create_tenant('acme-bakari', 'Annað') $$, 'P0001', 'slug_taken',
-  'admin_create_tenant: a taken slug is slug_taken');
+  'admin_create_tenant: a taken slug with another name is slug_taken (the same name returns the id, 113)');
 select throws_ok($$ select api.admin_create_tenant('Acme Bakari', 'Annað') $$, '23514', null,
   'admin_create_tenant: a malformed slug fails the slug check');
 select lives_ok($$ select api.admin_add_membership((select id from ids where name = 'acme'), tests.persona('outsider')) $$,

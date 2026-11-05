@@ -27,8 +27,9 @@ export async function seedIntegration(): Promise<void> {
   }
 
   await ownerQuery(
+    // A run killed while a test had suspended labak is healed here (M4-01).
     `insert into cms.tenants (id, slug, name) values ($1, 'labak', 'Landssamband bakarameistara'), ($2, 'demo', 'Demo')
-     on conflict (id) do nothing`,
+     on conflict (id) do update set status = 'active' where cms.tenants.status <> 'active'`,
     [TENANT.labak, TENANT.demo],
   );
 
