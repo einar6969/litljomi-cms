@@ -50,6 +50,12 @@
   "sandbox": {
     "enabled": true,
     "failIfUnavailable": true,
+    "excludedCommands": [
+      "gh *",
+      "git fetch *",
+      "git pull *",
+      "git push *"
+    ],
     "network": {
       "allowedDomains": ["registry.npmjs.org"],
       "allowUnixSockets": [
