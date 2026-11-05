@@ -61,11 +61,11 @@ These aren't in `deferred-minors.md`. "Open" was checked in code on 2026-11-05. 
 | S19 | P1 | Cloud threads have Supabase, Vercel and Zoho Mail connectors, gated only by asking first (Reported by the coordinator). "No hosted systems" is a behavioural rule there | Einar decides whether to remove them from the Project |
 | S20 | P1 | M2 and M3 had one security review of `61f6011` and no spec or quality review. Fix rounds and W1 were each reviewed alone | M5 must cover M2, M3 and the fixes as a whole |
 | S21 | P2 | Sign-out can't revoke a pending sign-in session; it stays valid until its tokens expire (`deferred-minors.md`, M5) | M5 |
-| S22 | P1 | A repeat unpublish cancels an unconfirmed withdrawal and shows false success. M5 finding 1 | Fix before real editors |
+| S22 | Closed | A repeat unpublish cancelled an unconfirmed withdrawal. M5 finding 1, fixed in PR #58, refusal confirmed on hosted (C7) | None |
 | S23 | P2 | W1 limit: replaced images aren't re-checked after a newer release | Decide in M5 |
 | S25 | P2 | A failed build's `releases.error` message can quote a fragment of published entry text, through `JSON.parse` errors. The same text reaches `audit_log.details` and possibly the alert email. `omitted[].error` is free text too. Schema validation can echo a crafted key (`packages/schema/src/fields/list.ts:46`) into `publish_requests.error`. `site_deliveries.last_error` holds site paths and media URLs. The console shows only codes, steps and statuses | Fix in M5: `message` should never quote a payload |
-| S26 | P2 | TOTP guesses have no account lockout, only Auth's rate limit (default 15 a minute). Accepted for now (decision 62). The hosted value wasn't read at acceptance (C6) | Read it in the dashboard. M5 reviews it before real clients |
-| S27 | P1 | M5's other Major findings: `docs/verification/m5-review.md`. Finding 10 is accepted (decision 65). Finding 7 is parked until a password system (decision 66) | `docs/plans/m5.md` |
+| S26 | P2 | TOTP guesses have no account lockout, only Auth's rate limit (default 15 a minute). Accepted for now (decision 62). The hosted value wasn't read at acceptance (C6), and it still hasn't been (C7) | Read it in the dashboard. M5 reviews it before real clients |
+| S27 | P1 | M5's other Major findings: `docs/verification/m5-review.md`. Finding 10 is accepted (decision 65). Finding 7 is parked until a password system (decision 66) | Fixes merged and on staging. Finding 9's hosted template and finding 6's dashboard check are open (C7) |
 | S24 | P2 | `main` has no branch protection. The merge rule and `main-guard` are behavioural and alert-only | Accept knowingly. While the repo is public, protection should need no GitHub Pro (not tested) |
 
 ## B. Verification gaps
