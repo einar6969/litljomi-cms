@@ -6,7 +6,7 @@ What's outstanding after M3, as of 2026-11-05 (`origin/main` at `eb4e85c`, stagi
 
 **Priority:** **P1** before real editors or content. **P2** before finishing the platform. **P3** when convenient.
 
-**IDs:** S, B, R, D and E are this file's. "A1–A15" always means the spec's assumptions (§11.1).
+**IDs:** S, B, R, D, E and M are this file's. "A1–A15" always means the spec's assumptions (§11.1).
 
 ## S. Security: implemented versus verified
 
@@ -57,7 +57,7 @@ These aren't in `deferred-minors.md`. "Open" was checked in code on 2026-11-05. 
 |---|---|---|---|
 | S16 | P1 | Triage the Minors marked Open or Not checked | Give M5 the result |
 | S17 | P1 | The staging Supabase secret key was pasted into a chat (C4). Rotation is deferred to before go-live (decision 47.2). It also sits in local transcripts | Rotate before go-live. Production gets fresh keys entered only by Einar |
-| S18 | P1 | The repository has been public since its creation on 2026-11-03, by Einar's choice, with GitHub secret scanning off. Einar states it holds no secrets; no scan has been run (decision 54) | Closed by Einar's ruling unless M5 asks for a scan |
+| S18 | P1 | The repository has been public since its creation on 2026-11-03, by Einar's choice, with GitHub secret scanning off. Einar states it holds no secrets; no scan has been run (decision 54) | Einar's statement stands in for a scan. For finishing, Einar accepts this or M5 runs the scan |
 | S19 | P1 | Cloud threads have Supabase, Vercel and Zoho Mail connectors, gated only by asking first (Reported by the coordinator). "No hosted systems" is a behavioural rule there | Einar decides whether to remove them from the Project |
 | S20 | P1 | M2 and M3 had one security review of `61f6011` and no spec or quality review. Fix rounds and W1 were each reviewed alone | M5 must cover M2, M3 and the fixes as a whole |
 | S21 | P2 | Sign-out can't revoke a pending sign-in session; it stays valid until its tokens expire (`deferred-minors.md`, M5) | M5 |
@@ -97,7 +97,7 @@ Left unchanged on purpose. The KING proposes corrections and Einar agrees them.
 | # | Record | Reality |
 |---|---|---|
 | D1 | `CLAUDE.md`: `state.json` is authoritative. `RESUME.md`: continue from `state.mjs` | `state.json` covers M1 tasks only, with `branch: m1/phase-1`. M2 and M3 live in PRs and C5 |
-| D2 | `CLAUDE.md` sources of truth list the spec and the M0–M1 plan | M2 and M3 plans aren't listed. The M0–M1 plan also holds every decision to 52 |
+| D2 | `CLAUDE.md` sources of truth list the spec and the M0–M1 plan | M2 and M3 plans aren't listed. The M0–M1 plan also holds every numbered decision |
 | D3 | Project instructions: only the coordinator merges, PASS for `security` PRs | The coordinator reports having no merge tool. `environment.md` requires a PASS for every PR |
 | D4 | #48 merged with no PASS. #46's PASS described only its last commit. #49 and #50 merged with no PASS and with CI refused | #46, #48 and #49 are docs, apart from #49's small edit to `CLAUDE.md`. #50 changed `.claude/settings.json`, on Einar's instruction. Confirmed on GitHub 2026-11-05 |
 | D5 | Decision 50 says Einar merges and the advisor checks each PR | The Nov 3 waiver, then the Nov 4 rule, replaced it. The waiver is in no repo doc |
@@ -135,7 +135,7 @@ From a read-only investigation. Decisions 53, 55 and 56 hold the scope. `docs/pl
 | Suspend, revoke | Suspension is enforced. `service_role` has the grants | `admin_set_tenant_status`, `admin_remove_membership`, CLI commands | None |
 | Console | RLS covers every console table at `aal2` | Routes, TOTP enrolment, MFA code, and a way to add a `platform_admins` row other than owner SQL | None |
 | Offboarding | Removing memberships before the Auth user is decided (decision 32) | Parked (decision 53). When it returns: the owner SQL, Vault cleanup, the storage delete, and what happens to audit rows | Audit rows |
-| Provisioning | `provision` refuses safely on a rerun (`slug_taken`, duplicate site) | Spec §9.2 says idempotent, and it refuses rather than continues | Whether a safe refusal meets the requirement |
+| Provisioning | `provision` refuses safely on a rerun (`slug_taken`, duplicate site) | Spec §9.2 says idempotent; reruns must finish the job (M4-02) | Settled: reruns succeed (decision 58) |
 
 Local verification: `pnpm lint`, `typecheck`, `test`, `check:slugs`, `check:schema` and `harness:test` run on the laptop. `pnpm db:test` and `pnpm test:integration` need `pnpm db:reset` first when the stack is behind on migrations. CI has no browser tests.
 

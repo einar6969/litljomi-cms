@@ -217,7 +217,7 @@ The validation criteria are in spec §13.2. Inviting real editors and launching 
 
 **A proposed definition of finished, for Einar to confirm:** M4's criteria met; M5 passed; production exists and has run the same acceptance as staging; every P1 in `OPEN-ISSUES.md` closed or accepted by Einar; and M6's test publish reaches Live on the LABAK site. Launching LABAK is a separate decision.
 
-**Decisions Einar still owes before M4:** `OPEN-ISSUES.md`, section E.
+**Decisions Einar still owes:** `OPEN-ISSUES.md`, section E.
 
 ## 8. Live surfaces
 

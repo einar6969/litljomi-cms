@@ -587,7 +587,7 @@ The database suite gates every migration and every deploy. Supabase's security a
 
 ### 9.1 Repositories
 
-**`litljomi-cms`** (new, private), pnpm workspaces and Turborepo:
+**`litljomi-cms`** (new, public by Einar's choice; plan decision 54), pnpm workspaces and Turborepo:
 
 ```
 apps/cms/                 Next.js: editor, console, worker, preview endpoint
@@ -664,7 +664,7 @@ Scheduled publishing · approval workflows and multiple roles · multiple locale
 | Risk | Mitigation |
 |---|---|
 | Rich text and media are the most expensive components to build and maintain | Narrow node set; Tiptap core; images only; no per-use cropping |
-| One shared Supabase project: an RLS or grant mistake can expose other tenants | Catalog tests, persona matrix, no definer functions, composite FKs; the tenant connection resolver keeps a tenant movable to its own project; no export tool exists yet |
+| One shared Supabase project: an RLS or grant mistake can expose other tenants | Catalog tests, persona matrix, no definer functions, composite FKs; the tenant connection resolver keeps the code ready to move a tenant to its own project, though no export tool exists yet |
 | Passwordless sign-in depends on Auth configuration: the hook can be switched off, passwords can still be set, and the password endpoint shows whether a guessed password is correct | The hook is enabled by the hosted runbook and verified on every hosted project (a password sign-in returns 403; no session records `password`); all sessions are signed out when it is first enabled; the editor offers email sign-in only |
 | The secret key is a master key for all tenants | Held only by the CMS server environment and the CLI; import rule; rotatable; sites never hold it |
 | One deployment updates all tenants at once, including regressions | Staging first; fixture tenants; full test suite gates deploys; feature flags per tenant where useful |
