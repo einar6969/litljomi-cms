@@ -282,7 +282,7 @@ printf '%s' "$WEBHOOK_SECRET" | vercel env add CMS_WEBHOOK_SECRETS production --
 unset WEBHOOK_SECRET
 ```
 
-If it printed `site <site-id>: already exists at https://<site-host>; ...`, the generated value was thrown away, so run `unset WEBHOOK_SECRET`. Vault keeps the stored secret. If the site's `CMS_WEBHOOK_SECRETS` is missing or wrong, never generate a new value: read the stored one with section 3's script and pipe it. That script is in section 3, under its "Decision pending" line: read that line first, because the script needs Einar's decision before first use. The pipe needs `--force`, because without it `vercel env add` refuses a variable that exists.
+If it printed `site <site-id>: already exists at https://<site-host>; ...`, the generated value was thrown away, so run `unset WEBHOOK_SECRET`. Vault keeps the stored secret. If the site's `CMS_WEBHOOK_SECRETS` is missing or wrong, never generate a new value: read the stored one with section 3's script and pipe it. That script is in section 3. The pipe needs `--force`, because without it `vercel env add` refuses a variable that exists.
 
 First check that the host belongs to the project. The output must name `<site-project>`. If it doesn't, stop. Confirm the output at execution time.
 
@@ -325,7 +325,7 @@ unset PREVIEW_SECRET
 
 **The site's old secret isn't known to anyone.** It was generated and piped (section 1), and Vercel doesn't show a sensitive value. Step 1 reads it from Vault into a variable, through the secret key, with no output.
 
-**Decision pending:** whether §8.2 allows this script is with Einar, and it needs his decision before first use.
+**Spec §8.2 allows this read (decision 63).**
 
 **Before you start.** Copy this script to `~/site-webhook-secret.sh`, once. It reads `.env.staging.local` as text, never executing it, with an identical copy of staging section 7.2's `env_value`. It prints `target:` to standard error, refuses to write the secret to a terminal, and stops unless the site's stored address is the host you give it. Einar only.
 
