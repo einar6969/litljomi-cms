@@ -1,5 +1,7 @@
 # Resuming execution
 
+A session coordinating the project as KING starts at `docs/king/START.md` instead.
+
 A new controller session does the following, in order, and relies on nothing from earlier conversations.
 
 1. Read `CLAUDE.md`, `docs/architecture.md` and `docs/plans/2026-11-01-m0-m1.md`.
