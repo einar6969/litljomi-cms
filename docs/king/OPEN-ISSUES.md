@@ -55,16 +55,17 @@ These aren't in `deferred-minors.md`. "Open" was checked in code on 2026-11-05. 
 
 | # | P | Item | Suggested next step |
 |---|---|---|---|
-| S16 | P1 | Triage the Minors marked Open or Not checked | Give M5 the result |
+| S16 | Closed | Minors triaged in `docs/verification/m5-review.md` | None |
 | S17 | P1 | The staging Supabase secret key was pasted into a chat (C4). Rotation is deferred to before go-live (decision 47.2). It also sits in local transcripts | Rotate before go-live. Production gets fresh keys entered only by Einar |
-| S18 | P1 | The repository has been public since its creation on 2026-11-03, by Einar's choice, with GitHub secret scanning off. Einar states it holds no secrets; no scan has been run (decision 54) | Einar's statement stands in for a scan. For finishing, Einar accepts this or M5 runs the scan |
+| S18 | Closed | The repository is public, by Einar's choice. M5's history scan found no real secret: 587 commits, regex and entropy (`m5-review.md`) | None |
 | S19 | P1 | Cloud threads have Supabase, Vercel and Zoho Mail connectors, gated only by asking first (Reported by the coordinator). "No hosted systems" is a behavioural rule there | Einar decides whether to remove them from the Project |
 | S20 | P1 | M2 and M3 had one security review of `61f6011` and no spec or quality review. Fix rounds and W1 were each reviewed alone | M5 must cover M2, M3 and the fixes as a whole |
 | S21 | P2 | Sign-out can't revoke a pending sign-in session; it stays valid until its tokens expire (`deferred-minors.md`, M5) | M5 |
-| S22 | P2 | W1 limit: any newer request for the entry stops the checks, even one that failed. A withdrawal still on the site then gets no alert | Decide in M5 |
+| S22 | P1 | A repeat unpublish cancels an unconfirmed withdrawal and shows false success. M5 finding 1 | Fix before real editors |
 | S23 | P2 | W1 limit: replaced images aren't re-checked after a newer release | Decide in M5 |
 | S25 | P2 | A failed build's `releases.error` message can quote a fragment of published entry text, through `JSON.parse` errors. The same text reaches `audit_log.details` and possibly the alert email. `omitted[].error` is free text too. Schema validation can echo a crafted key (`packages/schema/src/fields/list.ts:46`) into `publish_requests.error`. `site_deliveries.last_error` holds site paths and media URLs. The console shows only codes, steps and statuses | Fix in M5: `message` should never quote a payload |
 | S26 | P2 | TOTP guesses have no account lockout, only Auth's rate limit (default 15 a minute). Accepted for now (decision 62). The hosted value wasn't read at acceptance (C6) | Read it in the dashboard. M5 reviews it before real clients |
+| S27 | P1 | M5's other Major findings, 2 to 10: `docs/verification/m5-review.md` | Fix or accept before real editors |
 | S24 | P2 | `main` has no branch protection. The merge rule and `main-guard` are behavioural and alert-only | Accept knowingly. While the repo is public, protection should need no GitHub Pro (not tested) |
 
 ## B. Verification gaps
