@@ -118,7 +118,8 @@ All numbered decisions are in `docs/plans/2026-11-01-m0-m1.md`, despite its name
 | 56 | On-demand export dropped too. No per-tenant export exists |
 | 57 | M4 unfrozen. GitHub is for code and CI; docs stay local and reach GitHub in the next code PR |
 | 58 | M4 plan approved, test 1 runs without a live site, three small spec amendments |
-| 59 | Permission rules: plain `git` reads skip the prompt; all of `gh` prompts |
+| 59 | Permission rules for read-only `git`; replaced by 60 |
+| 60 | Full git autonomy: `git` and `gh` run with no prompt, outside the sandbox. Merge rule and gates are unchanged |
 
 **Known not to be in the numbered decisions:**
 
