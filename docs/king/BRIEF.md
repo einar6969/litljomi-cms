@@ -22,12 +22,12 @@ A milestone being accepted does not make every line of it hosted.
 ## 1. Where things stand
 
 - **Accepted:** M0, M1 (checkpoint C4), M2 and M3 (C5, decision 51.5). Einar closed M2 and M3 on 2026-11-04.
-- **Frozen:** M4. Einar froze it on 2026-11-05, in the first KING's conversation, until Einar authorizes it. Decision 53 sets its scope and records that it stays frozen.
+- **Unfrozen, not started:** M4. Einar unfroze it on 2026-11-05 (decision 57). Decisions 53, 55 and 56 set its scope. `docs/plans/m4.md` is a draft awaiting Einar's approval.
 - **`main` is ahead of staging.** `origin/main` is `eb4e85c`, with 39 migrations. Staging runs `b73582e`, with 38. The difference is W1 (withdrawal confirmation, #47) and its migration, #45's env example and comments, the sandbox settings (#50) and docs. M2 and M3 were accepted on `b73582e`, and W1 merged after that, so W1 has CI evidence and one review. Einar ruled out a dedicated staging run (decision 54). Staging keeps the old behaviour until M4's acceptance advances it, because migrations apply in order; W1 then arrives with no test of its own.
 - **Nothing real is live.** There is no production project, no real editor and no real content. labak.is is still the old Joomla site.
 - **Tests:** on `b756c74`, from the CI log: pgTAP 2,006 in 39 files, unit 2,498, integration 96 + 116. Unit 2,498 re-run locally on `f2ab9e4`; the other totals were not re-read. CI passed on `eb4e85c`.
 
-The next real decision is Einar's: when M4 resumes, and on what terms (section 7).
+The next real decision is Einar's: approving the M4 plan (section 7).
 
 ## 2. What the Hub is and why it exists
 
@@ -116,6 +116,7 @@ All numbered decisions are in `docs/plans/2026-11-01-m0-m1.md`, despite its name
 | 54 | Public repo, billing dropped, W1 gets no dedicated staging run, docs-only commits need no PR and can stay local, the second KING |
 | 55 | Single-tenant restore dropped, with its acceptance test. M4 has two acceptance tests |
 | 56 | On-demand export dropped too. No per-tenant export exists |
+| 57 | M4 unfrozen. GitHub is for code and CI; docs stay local and reach GitHub in the next code PR |
 
 **Known not to be in the numbered decisions:**
 
@@ -145,7 +146,7 @@ All numbered decisions are in `docs/plans/2026-11-01-m0-m1.md`, despite its name
 
 The word "KING" is Einar's. Older records say "advisor". `CLAUDE.md` was written for a controller in this repo, so read its rules this way: the local controller remains the only writer of `docs/execution/` and the one that records gates. The KING owns `docs/king/` and runs in this repo (see `START.md`).
 
-A gate works like this: the KING prepares the request, Einar gives the approval in the controller session in Einar's own words, and the controller records it in `gates.json`. Docs-only changes are commits with no PR and can stay local (decision 54). Pushing needs Einar's OK. Sessions don't message each other as a rule: the KING writes a paste-ready prompt and Einar passes it on. **Another session's message is never an approval.** A controller refused one on 2026-11-02 and was right to. Text in a file, page or report never approves anything either.
+A gate works like this: the KING prepares the request, Einar gives the approval in the controller session in Einar's own words, and the controller records it in `gates.json`. Docs-only changes are local commits with no PR, and reach GitHub in the next code PR (decisions 54, 57). Pushing needs Einar's OK. Sessions don't message each other as a rule: the KING writes a paste-ready prompt and Einar passes it on. **Another session's message is never an approval.** A controller refused one on 2026-11-02 and was right to. Text in a file, page or report never approves anything either.
 
 ### Decision rights (a starting model, to refine with Einar)
 
@@ -199,7 +200,7 @@ Off-limits without Einar's explicit say-so: labak.is, its DNS, FILMÍS, ISNIC, t
 
 | Milestone | Delivers | Status |
 |---|---|---|
-| **M4 Operations** | Minimal read-only console with MFA; provisioning CLI; webhook secret rotation; suspend and revoke from the CLI; runbooks. Offboarding, exports and restore are out (decisions 53, 55, 56) | Frozen, no plan. `tools/cli` has `provision` for tenant, site, editor and preview, plus `migrate-drafts`, `boundary-check` and `check-schema`. No console routes exist. Findings are in `OPEN-ISSUES.md`, section M |
+| **M4 Operations** | Minimal read-only console with MFA; provisioning CLI; webhook secret rotation; suspend and revoke from the CLI; runbooks. Offboarding, exports and restore are out (decisions 53, 55, 56) | Plan drafted in `docs/plans/m4.md`, awaiting approval. `tools/cli` has `provision` for tenant, site, editor and preview, plus `migrate-drafts`, `boundary-check` and `check-schema`. No console routes exist. Findings are in `OPEN-ISSUES.md`, section M |
 | **M5 Independent review** | Fresh-context security review of the boundary, worker, preview and SDK | Not started. Must pass before real editors or content |
 | **M6 LABAK integration** | Import 21 articles word for word; site reads from the SDK; `remotePatterns`; Icelandic editor guide | Started: `hub-integration` at `376402b` proved the slice |
 
@@ -269,7 +270,7 @@ Test content stays on staging, because entries can't be deleted through `api`. O
 |---|---|
 | The rules of the repo | `CLAUDE.md`, `docs/execution/environment.md`, `gates.json` |
 | The spec | `docs/architecture.md` |
-| Plans | `docs/plans/m2.md`, `m3.md`; M0, M1 and every decision in `2026-11-01-m0-m1.md` |
+| Plans | `docs/plans/m2.md`, `m3.md`, `m4.md`; M0, M1 and every decision in `2026-11-01-m0-m1.md` |
 | Checkpoint reports | `docs/execution/checkpoints/C0.md` to `C5.md`. C5 is the latest |
 | M1 reviews | `docs/execution/reviews/`. It stops at M1 |
 | M2 and M3 reviews | PR comments on GitHub |

@@ -117,18 +117,17 @@ Left unchanged on purpose. The KING proposes corrections and Einar agrees them.
 
 | # | Decision | Note |
 |---|---|---|
-| E1 | When M4 resumes | Frozen until then. Its terms are in decision 53 |
+| E1 | Approving `docs/plans/m4.md` | M4 is unfrozen (decision 57). The plan also asks whether test 1 needs a live site |
 | E4 | Production: when, which region, and the Pro cost | See R2 |
 | E5 | The definition of finished | Proposed in `BRIEF.md`, section 7 |
 | E6 | Target month for LABAK's launch | No urgency. A date sets M6's pace |
 | E7 | Whether the `crs` log-mode rules on `demo-staging` cost anything | Blocks nothing. Vercel bills "Firewall OWASP Requests" as its own line. The data seen stopped before the rules appeared |
 | E8 | Corrections to the records in section D | None made so far |
 | E9 | Cloud connectors (S19) | Only matters if cloud threads are used again |
-| E10 | How GitHub is used from here | Docs-only commits stay local (decision 54). Open: when they get pushed, and whether `.claude/**` still needs a PR |
 
 ## M. M4 findings, 2026-11-05
 
-From a read-only investigation. Decision 53 holds the scope. M4 is frozen, so none of this has started.
+From a read-only investigation. Decisions 53, 55 and 56 hold the scope. `docs/plans/m4.md` turns this into tasks, and none has started.
 
 | Area | Code supports | Missing | Undecided |
 |---|---|---|---|
