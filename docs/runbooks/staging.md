@@ -208,9 +208,9 @@ Three parts, in this order. G3.4 has already turned sign-up off (section 3).
 Locally this is proven by `tests/integration/src/service-role-timeout.test.ts` (and the role setting by `supabase/tests/database/095_worker_phase3.test.sql`): a secret-key REST call made to wait on two locks in turn, each wait shorter than the login role `authenticator`'s 8-second `lock_timeout`, is cancelled at about 10 s with `57014`, which only `service_role`'s 10 s can do (the authenticator's own 8 s would cancel it at about 8 s, and with no timeout the second lock wait would end with `55P03`). That test refuses a hosted stack, so the hosted equivalent is the same measurement by hand, before any tenant, editor or deployment exists (nothing else uses the tables then):
 - **Owner:** Einar, because the REST call needs the secret key (run like section 7.2) and the two SQL editor runs must start within seconds of it; the executor writes out the steps and reads back the results.
 - **Settings and verify,** each statement on its own:
-  1. **c1** (SQL editor): the role settings. Expected: `service_role` shows `statement_timeout=10s` (G3.2a); record what `authenticator` shows (locally `statement_timeout=8s` and `lock_timeout=8s`; confirm at execution time).
+  1. **c1** (SQL editor): the role settings. Expected: `service_role` shows `statement_timeout=10s` (G3.2a) and `authenticated` shows `statement_timeout=3s` (migration `20261105140000_editor_limits.sql`; if it doesn't, see operations section 8); record what `authenticator` shows (locally `statement_timeout=8s` and `lock_timeout=8s`; confirm at execution time).
      ```sql
-     select rolname, rolconfig from pg_roles where rolname in ('service_role', 'authenticator');
+     select rolname, rolconfig from pg_roles where rolname in ('service_role', 'authenticated', 'authenticator');
      ```
   2. **c2** (SQL editor, tab 1, started first): holds a lock on `cms.publish_requests` for 30 seconds.
      ```sql

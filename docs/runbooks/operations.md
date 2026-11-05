@@ -729,6 +729,24 @@ The first line after `git fetch` lists the migrations. The second lists what the
 
 **The next advance removes `data` from the entry views.** `20261105140100_view_data_removal.sql` breaks the deployed app until the new deployment is live, so entry pages show an error for the length of the build. That's acceptable on staging, and doesn't apply to a new production project, which starts with every migration.
 
+**The next advance adds length limits.** A row over a limit on `entries` or `assets` could not be published or withdrawn, so `20261105140000_editor_limits.sql` stops before it changes anything if it finds one, and `db push` fails with the constraint and the count. Run this first, read-only, in the SQL editor. It shows names and counts, no content.
+
+```sql
+select name, over from (
+  select 'entries_type_length' as name, count(*) as over from cms.entries where char_length(type) > 100
+  union all select 'entries_slug_length', count(*) from cms.entries where char_length(slug) > 200
+  union all select 'assets_filename_length', count(*) from cms.assets where char_length(filename) > 255
+  union all select 'assets_original_path_length', count(*) from cms.assets where char_length(original_path) > 400
+  union all select 'assets_default_alt_length', count(*) from cms.assets where char_length(default_alt) > 1000
+  union all select 'drafts_title_length', count(*) from cms.drafts where char_length(title) > 500
+  union all select 'revisions_title_length', count(*) from cms.revisions where char_length(title) > 500
+) c where over > 0;
+```
+
+It should return no rows. An `entries_` or `assets_` row stops the migration: don't run `db push`, and report. A `drafts_` or `revisions_` row doesn't stop it: `db push` prints a `WARNING` and leaves that limit unvalidated, so report it afterwards.
+
+The same migration lowers the `authenticated` statement timeout to 3 s. See **Verify** below.
+
 **W1 goes with the next advance.** Its migration `20261104180000_withdrawal_confirmation.sql` drops `api.worker_deliveries_to_retry` and creates it again with the same arguments. It has no dedicated staging run (decision 54), so it arrives untested on staging.
 
 **Confirm the link.** Einar's `supabase login` and `supabase link --project-ref <project-ref>` are already done; he types the database password only at the CLI's prompt. The next command must print the staging project's reference:
@@ -756,7 +774,22 @@ vercel ls --environment production --limit 1 --cwd ~/vercel-link/vefumsjon-stagi
 vercel ls --environment production --limit 1 --cwd ~/vercel-link/demo-staging
 ```
 
-Both show a new Ready deployment, of the commit you pushed. The CMS project's logs show `/api/cron/sweep` answering `200` each minute. A failed minute or two while the new deployment comes up is expected if a migration dropped something. If it goes on after both are Ready, stop and report.
+Both show a new Ready deployment, of the commit you pushed.
+
+The editor timeout took effect. In the SQL editor, `rolconfig` must contain `statement_timeout=3s`:
+
+```sql
+select rolconfig from pg_roles where rolname = 'authenticated';
+```
+
+If it doesn't, set it by hand with these two statements, each on its own, and check again. If the `alter role` is refused, stop and report.
+
+```sql
+alter role authenticated set statement_timeout = '3s';
+notify pgrst, 'reload config';
+```
+
+The CMS project's logs show `/api/cron/sweep` answering `200` each minute. A failed minute or two while the new deployment comes up is expected if a migration dropped something. If it goes on after both are Ready, stop and report.
 
 Then publish on `demo` and run the check in section 1.
 

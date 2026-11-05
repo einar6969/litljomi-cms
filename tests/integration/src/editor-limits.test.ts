@@ -1,13 +1,15 @@
 // M5-02 over real HTTP (findings 3, 4 and 5 of docs/verification/m5-review.md; spec §4.3, §4.5,
-// §4.6; decision 65): PostgREST can neither list `data` nor run a filter over it, one entry's data
-// comes only through the by-id functions, and oversized text is refused. Requests go through the
-// gateway with a real session, as an attacker's would. 116_editor_limits.test.sql pins the rest.
+// §4.6; decision 65): PostgREST can neither list `data` nor filter it across rows, a request sees
+// at most one document, through the by-id functions, and oversized text is refused. Requests go
+// through the gateway with a real session, as an attacker's would. 116_editor_limits.test.sql pins
+// the rest.
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { authHeaders, editorClient } from './clients.ts';
 import { env } from './env.ts';
 import { TENANT, type PersonaName } from './fixtures.ts';
-import { closeAll, ownerQuery } from './sql.ts';
+import { closeAll, closeClient, ownerQuery, pgAs } from './sql.ts';
 
 const rest = async (persona: PersonaName | 'anon', path: string, init: RequestInit = {}) => {
   const response = await fetch(`${env.apiUrl}/rest/v1/${path}`, {
@@ -61,15 +63,33 @@ describe('data cannot be read by list or filtered by regex', () => {
     expect(JSON.stringify(all.body)).not.toContain(MARK);
   });
 
-  it.each([
+  describe.each([
     ['entry_detail_by_id', 'p_entry_id', () => entryId],
     ['revision_detail_by_id', 'p_revision_id', () => revisionId],
-  ])('%s takes no filter, select or order over the result', async (fn, param, id) => {
-    const queries = ['data=match.x', 'data->>title=match.x', 'select=data', 'order=data', 'pgrst_scalar=match.x'];
-    for (const query of queries) {
-      const response = await rest('editor_labak', `rpc/${fn}?${param}=${id()}&${query}`);
-      expect(response.status, query).toBeGreaterThanOrEqual(400);
-    }
+  ])('%s', (fn, param, id) => {
+    it('has no result columns to filter, select or order by', async () => {
+      const queries = ['data=match.x', 'data->>title=match.x', 'select=data', 'order=data', 'pgrst_scalar=match.x'];
+      for (const query of queries) {
+        const response = await rest('editor_labak', `rpc/${fn}?${param}=${id()}&${query}`);
+        expect(response.status, query).toBeGreaterThanOrEqual(400);
+      }
+    });
+
+    // PostgREST can't turn this off per function: `->>` reaches into the one document.
+    it('lets a filter run over its one document, and a request sees no more than that', async () => {
+      const hit = await rest('editor_labak', `rpc/${fn}?${param}=${id()}&pgrst_scalar->>data=match.${MARK}`);
+      expect(hit.status).toBe(200);
+      expect(Array.isArray(hit.body)).toBe(false);
+      expect(hit.body.data).toEqual({ title: MARK });
+      const miss = await rest('editor_labak', `rpc/${fn}?${param}=${id()}&pgrst_scalar->>data=match.no-such-text`);
+      expect(miss.status).toBe(200);
+      expect(miss.body).toBeNull();
+    });
+
+    it('needs its id, so a filter cannot range over rows', async () => {
+      const response = await rest('editor_labak', `rpc/${fn}?pgrst_scalar->>data=match.${MARK}`);
+      expect(response.status).toBe(404);
+    });
   });
 
   it('entry_detail_by_id answers one value, even for an array of ids', async () => {
@@ -118,5 +138,43 @@ describe('oversized text is refused', () => {
   ])('%s past its limit', async (_name, send) => {
     const { error } = await send();
     expect(error?.code).toBe('23514');
+  });
+});
+
+describe('the editor statement timeout', () => {
+  it('cancels an editor request at 3 s with 57014, before the 8 s lock timeout', async () => {
+    const hold = await pgAs('owner');
+    try {
+      await hold.query('select 1 from cms.drafts where entry_id = $1 for update', [entryId]);
+      const started = Date.now();
+      const { error } = await call('save_draft', { p_entry_id: entryId, p_expected_version: 2, p_data: {}, p_schema_version: 1, p_title: 'T', p_sort_at: null });
+      const elapsed = Date.now() - started;
+      expect(error?.code).toBe('57014');
+      expect(elapsed).toBeGreaterThanOrEqual(2_500);
+      expect(elapsed).toBeLessThan(5_000);
+    } finally {
+      await closeClient(hold);
+    }
+  }, 15_000);
+});
+
+describe("the migration's preflight", () => {
+  const migration = readFileSync(new URL('../../../supabase/migrations/20261105140000_editor_limits.sql', import.meta.url), 'utf8');
+  const preflight = /^do \$\$[\s\S]*?^\$\$;$/m.exec(migration)![0];
+
+  it('stops on an entry over a limit, naming the constraint and the count, no value', async () => {
+    const owner = await pgAs('owner');
+    try {
+      await owner.query('alter table cms.entries drop constraint entries_slug_length');
+      await owner.query('update cms.entries set slug = $1 where id = $2', ['a'.repeat(201), entryId]);
+      const message = await owner.query(preflight).then(
+        () => 'no error',
+        (error: Error) => error.message,
+      );
+      expect(message).toContain('entries_slug_length: 1 row(s)');
+      expect(message).not.toContain('aaaa');
+    } finally {
+      await closeClient(owner);
+    }
   });
 });

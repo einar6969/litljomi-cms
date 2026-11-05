@@ -7,6 +7,7 @@
 --      under RLS: the persona matrix for both.
 --   3. Length limits on the text an editor writes, refused before the audit copy.
 --   4. A request's stored error is bounded before the audit trigger copies it.
+--   5. authenticated runs with a 3 s statement timeout.
 -- The same refusals over real HTTP are in tests/integration/src/editor-limits.test.ts.
 --
 -- Fixtures: personas and tenants from tests.seed(). labak news ce01 is published at revision de01,
@@ -14,7 +15,7 @@
 -- 00000000-0000-4000-8000-00000000xxxx, for assets and requests.
 begin;
 \ir _helpers.sql
-select plan(43);
+select plan(44);
 
 create function tests.k(p_key text) returns uuid
 language sql
@@ -58,7 +59,7 @@ select is_empty($$ select c.relname::text
   'no relation in api has a data column');
 
 -- ---------------------------------------------------------------------------
--- 2. The by-id reads. A scalar result: PostgREST has no column to filter, select or order by.
+-- 2. The by-id reads: one id, one document, so nothing can be read or filtered across rows.
 select set_eq($$ select p.proname::text, pg_catalog.pg_get_function_arguments(p.oid), pg_catalog.pg_get_function_result(p.oid),
             p.prosecdef, p.proretset, p.provolatile::text, p.proconfig
      from pg_catalog.pg_proc p
@@ -191,6 +192,11 @@ select results_eq($$ select status, error from cms.publish_requests where id in 
   'an oversized error keeps its code; an ordinary one is stored as it came');
 select is((select details -> 'error' from cms.audit_log where target_id = tests.k('e161') and action = 'publish_request.failed_validation'),
   '{"code": "invalid_data", "truncated": true}'::jsonb, 'the audit copy holds the bounded error');
+
+-- ---------------------------------------------------------------------------
+-- 5. The editor statement timeout; editor-limits.test.ts proves it over the REST API.
+select is((select setconfig from pg_catalog.pg_db_role_setting where setrole = 'authenticated'::regrole and setdatabase = 0),
+  array['statement_timeout=3s'], 'authenticated has statement_timeout = 3s as a role setting, in every database');
 
 select * from finish();
 rollback;
