@@ -111,7 +111,6 @@ Left unchanged on purpose. The KING proposes corrections and Einar agrees them.
 | D13 | The `staging` deploy switch | Not in the runbook |
 | D14 | The Hub's running log is in the LABAK workspace `CLAUDE.md` | A session opened in this repo doesn't load it. This folder replaces that role |
 | D15 | `gates.json`: G3 and G6 show top-level `status: approved` | Their closure sits in `extensions` rows, so the top-level status overstates them. G3's scope also still says Frankfurt (Reported by the onboarding session) |
-| D16 | `environment.md`: the merge rule covers every change | Decision 54 exempts docs-only commits. `environment.md` is still to be updated by a controller session |
 
 ## E. Waiting on Einar
 
