@@ -929,7 +929,7 @@ This section records how the first two tenants were set up. **For a new tenant, 
   printf '%s' "$WEBHOOK_SECRET" \
     | pnpm --silent --filter @litljomi/cli cli provision site --tenant-id '<tenant-id>' --base-url 'https://'"$SITE_PROJECT"'.litljomi.is' --revalidate-path '<revalidate-route>' --expect-ref '<project-ref>'
   ```
-  `SITE_PROJECT`: set once per site, next to its base URL: demo-staging for https://demo-staging.litljomi.is, labak-hub for https://labak-hub.litljomi.is The secret is never echoed; the command lines hold only the variable's name.
+  `SITE_PROJECT`: set once per site, next to its base URL: demo-staging for https://demo-staging.litljomi.is, labak-hub for https://labak-hub.litljomi.is. The secret is never echoed; the command lines hold only the variable's name.
   Read that output. Only if it printed `site: <site-id>`, run:
   ```sh
   printf '%s' "$WEBHOOK_SECRET" \
