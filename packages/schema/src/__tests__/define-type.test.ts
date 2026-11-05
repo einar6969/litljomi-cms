@@ -42,6 +42,14 @@ describe('defineType', () => {
     expect(n.queryColumns(null)).toEqual({ title: null, sortAt: null });
   });
 
+  it("cuts a title at the column's 500 characters, so a long heading is not refused on every save", () => {
+    const n = defineType({ name: 'n', version: 1, label: 'N', fields: { title: text({ label: 'T' }) }, preview: { title: 'title' }, orderBy: 'title' });
+    expect(n.queryColumns({ title: 'a'.repeat(500) }).title).toBe('a'.repeat(500));
+    expect(n.queryColumns({ title: 'a'.repeat(501) }).title).toBe('a'.repeat(500));
+    // Characters as the database counts them: an emoji is one, and is never split.
+    expect(n.queryColumns({ title: '😀'.repeat(501) }).title).toBe('😀'.repeat(500));
+  });
+
   it('promotes sort_at (a timestamp column) only from a date or datetime field: a type ordered by a text field saves none', () => {
     const byTitle = defineType({ name: 'n', version: 1, label: 'N', fields: { title: text({ label: 'T' }) }, preview: { title: 'title' }, orderBy: 'title' });
     expect(byTitle.queryColumns({ title: 'Lokað á morgun' })).toEqual({ title: 'Lokað á morgun', sortAt: null });

@@ -32,11 +32,11 @@ update cms.entries set first_published_at = now(), last_published_at = now() whe
 -- ---------------------------------------------------------------------------
 -- A labak editor sees labak's revisions, with the columns as stored.
 select tests.act_as(tests.persona('editor_labak'));
-select results_eq($$ select id, tenant_id, entry_id, draft_version, schema_version, data, title, requested_by, committed_at,
+select results_eq($$ select id, tenant_id, entry_id, draft_version, schema_version, title, requested_by, committed_at,
             is_published from api.revision_list where entry_id = tests.entry('c701') order by committed_at desc $$,
-  $$ values (tests.revision('d702'), tests.tenant('labak'), tests.entry('c701'), 4, 1, '{"title": "Önnur"}'::jsonb,
+  $$ values (tests.revision('d702'), tests.tenant('labak'), tests.entry('c701'), 4, 1,
              'Önnur'::text, tests.persona('revoked'), '2026-11-02 10:00+00'::timestamptz, true),
-            (tests.revision('d701'), tests.tenant('labak'), tests.entry('c701'), 2, 1, '{"title": "Fyrsta"}'::jsonb,
+            (tests.revision('d701'), tests.tenant('labak'), tests.entry('c701'), 2, 1,
              'Fyrsta'::text, tests.persona('editor_labak'), '2026-11-01 10:00+00'::timestamptz, false) $$,
   'revision_list: an entry''s revisions as stored; is_published only for the one the pointer names');
 select results_eq($$ select id, is_published from api.revision_list order by id $$,

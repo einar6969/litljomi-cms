@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
   tables: {} as Record<string, Answer>,
   rpc: {} as Record<string, Answer>,
   calls: [] as { name: string; args: unknown }[],
+  reads: [] as { name: string; args: unknown }[],
   queries: [] as { table: string; filters: [string, unknown][] }[],
 }));
 
@@ -28,7 +29,7 @@ const fake = {
     return chain;
   },
   async rpc(name: string, args: unknown) {
-    state.calls.push({ name, args });
+    (name.endsWith('_by_id') ? state.reads : state.calls).push({ name, args });
     return { data: null, error: null, status: 200, ...state.rpc[name] };
   },
 };
@@ -81,13 +82,16 @@ const TENANT_ID = '00000000-0000-4000-8000-0000000000f1';
 beforeEach(() => {
   state.user = { id: 'u1' };
   state.calls = [];
+  state.reads = [];
   state.queries = [];
   state.tables = {
     my_tenants: { data: { id: TENANT_ID, slug: SLUG, name: 'T', status: 'active' } },
     entry_list: { data: { id: ENTRY, tenant_id: TENANT_ID, type: TYPE.name } },
-    entry_detail: { data: { data: { heading: 'Lokað á morgun', body: 'Vegna veðurs', stray: 1 }, schema_version: 1, draft_version: 5 } },
   };
-  state.rpc = { save_draft: { data: 6 } };
+  state.rpc = {
+    save_draft: { data: 6 },
+    entry_detail_by_id: { data: { tenant_id: TENANT_ID, data: { heading: 'Lokað á morgun', body: 'Vegna veðurs', stray: 1 }, schema_version: 1, draft_version: 5 } },
+  };
 });
 
 describe('updateDraftSchemaAction', () => {
@@ -110,35 +114,33 @@ describe('updateDraftSchemaAction', () => {
     ]);
   });
 
-  it("reads the draft from entry_detail with the editor's session, filtered to the entry's own tenant", async () => {
+  it("reads the draft by id with the editor's session, and refuses a row of another tenant", async () => {
     await updateDraftSchemaAction(ENTRY, 5);
-    expect(state.queries.find((q) => q.table === 'entry_detail')).toEqual({
-      table: 'entry_detail',
-      filters: [
-        ['id', ENTRY],
-        ['tenant_id', TENANT_ID],
-      ],
-    });
+    expect(state.reads).toEqual([{ name: 'entry_detail_by_id', args: { p_entry_id: ENTRY } }]);
+    state.calls = [];
+    state.rpc.entry_detail_by_id = { data: { tenant_id: 'another', data: {}, schema_version: 1, draft_version: 5 } };
+    await expect(updateDraftSchemaAction(ENTRY, 5)).resolves.toEqual({ ok: false, code: 'error' });
+    expect(state.calls).toEqual([]);
   });
 
   it('upcasts from an intermediate version too', async () => {
-    state.tables.entry_detail = { data: { data: { name: 'Opið' }, schema_version: 2, draft_version: 5 } };
+    state.rpc.entry_detail_by_id = { data: { tenant_id: TENANT_ID, data: { name: 'Opið' }, schema_version: 2, draft_version: 5 } };
     await updateDraftSchemaAction(ENTRY, 5);
     expect((state.calls[0]!.args as { p_data: unknown }).p_data).toEqual({ title: 'Opið' });
   });
 
   it('a draft already at the current version (updated in another tab) is not saved again', async () => {
-    state.tables.entry_detail = { data: { data: { title: 'x' }, schema_version: 3, draft_version: 5 } };
+    state.rpc.entry_detail_by_id = { data: { tenant_id: TENANT_ID, data: { title: 'x' }, schema_version: 3, draft_version: 5 } };
     await expect(updateDraftSchemaAction(ENTRY, 5)).resolves.toEqual({ ok: true, version: 5 });
     expect(state.calls).toEqual([]);
   });
 
   it('a draft that moved on since the editor loaded it is a version conflict, without a save', async () => {
-    state.tables.entry_detail = { data: { data: { heading: 'x' }, schema_version: 1, draft_version: 7 } };
+    state.rpc.entry_detail_by_id = { data: { tenant_id: TENANT_ID, data: { heading: 'x' }, schema_version: 1, draft_version: 7 } };
     await expect(updateDraftSchemaAction(ENTRY, 5)).resolves.toEqual({ ok: false, code: 'version_conflict' });
     expect(state.calls).toEqual([]);
     // And one that moves on between the read and the save is refused by save_draft.
-    state.tables.entry_detail = { data: { data: { heading: 'x' }, schema_version: 1, draft_version: 5 } };
+    state.rpc.entry_detail_by_id = { data: { tenant_id: TENANT_ID, data: { heading: 'x' }, schema_version: 1, draft_version: 5 } };
     state.rpc.save_draft = { error: { code: 'P0001', message: 'version_conflict' } };
     await expect(updateDraftSchemaAction(ENTRY, 5)).resolves.toEqual({ ok: false, code: 'version_conflict' });
   });
@@ -147,13 +149,13 @@ describe('updateDraftSchemaAction', () => {
     state.tables.entry_list = { data: { id: ENTRY, tenant_id: TENANT_ID, type: BROKEN.name } };
     await expect(updateDraftSchemaAction(ENTRY, 5)).resolves.toEqual({ ok: false, code: 'upcast_failed' });
     state.tables.entry_list = { data: { id: ENTRY, tenant_id: TENANT_ID, type: TYPE.name } };
-    state.tables.entry_detail = { data: { data: {}, schema_version: 4, draft_version: 5 } };
+    state.rpc.entry_detail_by_id = { data: { tenant_id: TENANT_ID, data: {}, schema_version: 4, draft_version: 5 } };
     await expect(updateDraftSchemaAction(ENTRY, 5)).resolves.toEqual({ ok: false, code: 'upcast_failed' });
     expect(state.calls).toEqual([]);
   });
 
   it('upcast data the draft validator refuses is invalid, without a save', async () => {
-    state.tables.entry_detail = { data: { data: { heading: 12345 }, schema_version: 1, draft_version: 5 } };
+    state.rpc.entry_detail_by_id = { data: { tenant_id: TENANT_ID, data: { heading: 12345 }, schema_version: 1, draft_version: 5 } };
     const result = await updateDraftSchemaAction(ENTRY, 5);
     expect(result).toEqual({ ok: false, code: 'invalid' });
     expect(state.calls).toEqual([]);
@@ -179,12 +181,12 @@ describe('updateDraftSchemaAction', () => {
     state.tables.entry_list = { data: null };
     await expect(updateDraftSchemaAction(ENTRY, 5)).resolves.toEqual({ ok: false, code: 'error' });
     state.tables.entry_list = { data: { id: ENTRY, tenant_id: TENANT_ID, type: TYPE.name } };
-    state.tables.entry_detail = { data: null };
+    state.rpc.entry_detail_by_id = { data: null };
     await expect(updateDraftSchemaAction(ENTRY, 5)).resolves.toEqual({ ok: false, code: 'error' });
-    state.tables.entry_detail = { error: { code: 'XX000', message: 'boom' } };
+    state.rpc.entry_detail_by_id = { error: { code: 'XX000', message: 'boom' } };
     await expect(updateDraftSchemaAction(ENTRY, 5)).resolves.toEqual({ ok: false, code: 'error' });
     expect(state.calls).toEqual([]);
-    state.tables.entry_detail = { data: { data: { heading: 'x' }, schema_version: 1, draft_version: 5 } };
+    state.rpc.entry_detail_by_id = { data: { tenant_id: TENANT_ID, data: { heading: 'x' }, schema_version: 1, draft_version: 5 } };
     state.rpc.save_draft = { error: { code: '23514', message: 'new row violates check constraint' } };
     const result = await updateDraftSchemaAction(ENTRY, 5);
     expect(result).toEqual({ ok: false, code: 'error' });

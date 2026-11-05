@@ -26,7 +26,8 @@ export interface ContentType<F extends Record<string, AnyFieldKind> = any> exten
   publishValidator(): z.ZodObject<any>;
   /**
    * The `title` and `sort_at` columns. Each is the named field's value when it is a non-empty
-   * string and null otherwise, so a non-string field (a number, an image) yields null.
+   * string and null otherwise, so a non-string field (a number, an image) yields null. `title` is
+   * cut to the column's limit (§4.3).
    */
   queryColumns(data: unknown): { title: string | null; sortAt: string | null };
   /**
@@ -36,6 +37,13 @@ export interface ContentType<F extends Record<string, AnyFieldKind> = any> exten
    */
   upcast(data: unknown, fromVersion: number): unknown;
 }
+
+// The limit of drafts.title and revisions.title (§4.3), in characters as the database counts them:
+// a list label, so a longer heading is cut here rather than refused on every save and at publish.
+const MAX_TITLE_LENGTH = 500;
+
+const cutTitle = (title: string | null): string | null =>
+  title !== null && title.length > MAX_TITLE_LENGTH ? Array.from(title).slice(0, MAX_TITLE_LENGTH).join('') : title;
 
 export function defineType<F extends Record<string, AnyFieldKind>>(d: TypeDefinition<F>): ContentType<F> {
   assertFields('defineType', d.fields);
@@ -55,7 +63,7 @@ export function defineType<F extends Record<string, AnyFieldKind>>(d: TypeDefini
     // `sort_at` is a timestamp column (§4.3): only a date or datetime field can fill it. A type
     // ordered by another kind (the demo `notice`, by title) saves none, rather than a text value
     // the database refuses.
-    queryColumns: (data) => ({ title: column(data, d.preview.title), sortAt: datedOrderBy ? column(data, d.orderBy) : null }),
+    queryColumns: (data) => ({ title: cutTitle(column(data, d.preview.title)), sortAt: datedOrderBy ? column(data, d.orderBy) : null }),
     upcast: (data, fromVersion) => upcast(d, data, fromVersion),
   };
 }

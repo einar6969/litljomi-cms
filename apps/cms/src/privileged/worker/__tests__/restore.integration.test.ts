@@ -1,7 +1,7 @@
 // Restore from a revision, against the local stack (plan M2-16; spec §5.5 "Restore from a revision
 // copies its data into the draft (a normal versioned save). Revisions are never modified", §7.1
 // per-entry rollback). A demo notice is published as v1, edited and published as v2; v1 is restored
-// with the editor's own session (`restoreRevision`: read through api.revision_list, upcast, a
+// with the editor's own session (`restoreRevision`: read through api.revision_detail_by_id, upcast, a
 // normal versioned save) and published: the release carries v1's content under a new revisionId,
 // and no revision changes. An editor of the other tenant can neither list nor restore it. A
 // revision written at schema version 1 is restored at version 2 through the type's transform.
@@ -54,9 +54,10 @@ async function publish(id: string, version: number) {
 }
 
 const detail = async (id: string) => {
-  const { data, error } = await editor.from('entry_detail').select('data, schema_version, draft_version').eq('id', id).single();
-  if (error) throw new Error(`entry_detail: ${error.code}`);
-  return data as { data: unknown; schema_version: number; draft_version: number };
+  const { data, error } = await editor.rpc('entry_detail_by_id', { p_entry_id: id });
+  if (error) throw new Error(`entry_detail_by_id: ${error.code}`);
+  const { data: draft, schema_version, draft_version } = data as { data: unknown; schema_version: number; draft_version: number };
+  return { data: draft, schema_version, draft_version };
 };
 
 type RevisionRow = { id: string; draft_version: number; schema_version: number; data: unknown; hash: string };

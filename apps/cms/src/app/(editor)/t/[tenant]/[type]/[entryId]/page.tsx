@@ -6,6 +6,7 @@ import { describeFields } from '@/editor/form/descriptors';
 import { EntryForm } from '@/editor/form/EntryForm';
 import { OutdatedDraft } from '@/editor/form/OutdatedDraft';
 import { RESTORED_PARAM } from '@/editor/revisions';
+import { readEntryDetail } from '@/editor/server/entry-detail';
 import { loadRevisionHistory } from '@/editor/server/restore-revision';
 import { t } from '@/i18n/is';
 import { requireUserId } from '@/lib/auth/session';
@@ -18,19 +19,10 @@ type Props = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
-type Detail = {
-  data: unknown;
-  slug: string | null;
-  schema_version: number;
-  draft_version: number;
-  first_published_at: string | null;
-  status: 'draft' | 'published' | 'changed' | 'archived';
-};
-
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
-// One entry's form. The entry is read from api.entry_detail under the editor's session, filtered
-// to the tenant and type of the URL: a row of another tenant or type is simply not found.
+// One entry's form. The entry is read by id under the editor's session and held to the tenant and
+// type of the URL: a row of another tenant or type is simply not found.
 export default async function EntryPage({ params, searchParams }: Props) {
   const { tenant: slug, type: typeName, entryId } = await params;
   if (!z.uuid().safeParse(entryId).success) notFound();
@@ -42,16 +34,9 @@ export default async function EntryPage({ params, searchParams }: Props) {
   const client = await createEditorClient();
   // The form keeps unsaved changes under this user and names them in every save (M2-17).
   const userId = await requireUserId(client);
-  const { data, error } = await client
-    .from('entry_detail')
-    .select('data, slug, schema_version, draft_version, first_published_at, status')
-    .eq('id', entryId)
-    .eq('tenant_id', tenant.id)
-    .eq('type', type.name)
-    .maybeSingle();
-  if (error) throw new Error(`entry_detail: ${error.code}`);
-  if (!data) notFound();
-  const entry = data as Detail;
+  const { data: entry, error } = await readEntryDetail(client, entryId, tenant.id);
+  if (error) throw new Error(`entry_detail_by_id: ${error.code}`);
+  if (entry?.type !== type.name) notFound();
   // M2-16: the published revisions, for the history and restore. Not read for an outdated draft,
   // which shows no form until it is updated.
   const outdated = entry.schema_version < type.version;

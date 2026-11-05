@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { richTextDocSchema } from '@litljomi/rich-text';
 import { t } from '../src/i18n/is';
 import { createNews } from './support/editor';
-import { apiRows, editorHeadersOf, supabaseGet } from './support/editor-api';
+import { apiRows, editorHeadersOf, entryDetail, supabaseGet } from './support/editor-api';
 import { SUPABASE_URL } from './support/local';
 import { sessionState } from './support/session';
 import { expect, test } from './support/test';
@@ -82,7 +82,7 @@ test('uploads a JPEG privately, previews it, and saves a pasted Word-like body t
 
   await test.step('the saved draft validates against richTextDocSchema and keeps the image reference', async () => {
     type Detail = { data: { body?: unknown; image?: unknown } };
-    const saved = async () => (await apiRows<Detail>(editor, `entry_detail?select=data&id=eq.${entryId}`))[0]?.data;
+    const saved = async () => (await entryDetail<Detail>(editor, entryId)).data;
     await expect.poll(async () => (await saved())?.body !== undefined, SAVED).toBe(true);
     const data = (await saved())!;
     const parsed = richTextDocSchema.safeParse(data.body);
