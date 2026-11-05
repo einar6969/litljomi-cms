@@ -54,11 +54,16 @@
 --      failure. Once the first miss or failure is recorded the schedule is M3-02's as before. The
 --      state's shape is W1's, plus `unchecked`.
 --   6. api.worker_deliveries_to_retry leaves a pending delivery alone until that next attempt, and
---      past the 24 hours. A superseded delivery past them is listed with `expired` in its
+--      past the 24 hours. A superseded pending delivery past them is listed with `expired` in its
 --      withdrawal state: no run recorded a miss, so the worker ends it (no notification, no check)
---      and alerts (deliver.ts, confirmWithdrawals).
---   7. api.publication_status skips a superseded unpublish when it picks the request to show, so a
---      repeat never hides "live not confirmed" or "Tekið af vef" (§7.4), and appends
+--      and alerts (deliver.ts, confirmWithdrawals). A not_confirmed one runs its final attempt, and
+--      is expired an hour later only if every such run was killed. A delivery notified before the
+--      24 hours ended and killed gets one more run, so it is not left waiting; that run's own
+--      notification falls past them, so the bound holds.
+--   7. api.publication_status skips a superseded unpublish when it picks the request to show, and
+--      a publish superseded by a newer request when the latest committed request before it is an
+--      unpublish, so neither hides "live not confirmed" or "Tekið af vef" (§7.4). A publish the
+--      draft outran keeps its own "publish again". It also appends
 --      latest_request_id and latest_action, the entry's newest request shown or not: the panel that
 --      sent a repeat stops waiting for it, and a publish a repeat cancelled says so.
 --
@@ -377,7 +382,8 @@ begin
          and (sd.first_failed_at is null or p_now < sd.first_failed_at + interval '24 hours'))
      or (sd.notify_status = 'ok' and sd.live_status = 'pending'
          and sd.notified_at < p_now - interval '5 minutes'
-         and (sd.first_failed_at is null or p_now < sd.first_failed_at + interval '24 hours'))
+         and (sd.first_failed_at is null or p_now < sd.first_failed_at + interval '24 hours'
+              or sd.notified_at < sd.first_failed_at + interval '24 hours'))
      or (sd.notify_status = 'ok' and sd.live_status = 'not_confirmed' and sd.next_attempt_at <= p_now)
   union all
   -- An older (superseded) release's withdrawals that a site has not confirmed (W1).
@@ -391,7 +397,8 @@ begin
            'others', coalesce(sd.last_error -> 'withdrawals_others' = 'true'::jsonb, false),
            'alerted', sd.last_error ? 'withdrawal_alerted',
            'hourOver', coalesce(d.delivered_at <= p_now - interval '1 hour', false),
-           'expired', coalesce(sd.first_failed_at <= p_now - interval '24 hours', false))
+           'expired', coalesce(sd.first_failed_at <= p_now - case when sd.live_status = 'pending' then interval '24 hours'
+                                                                  else interval '25 hours' end, false))
   from latest l
   join cms.tenants t on t.id = l.tenant_id
   join cms.releases d on d.tenant_id = l.tenant_id and d.status = 'delivered' and d.number < l.number
@@ -532,6 +539,13 @@ from (
   )
     -- A repeat changed nothing: the state to show is the request before it.
     and not (pr.action = 'unpublish' and pr.status = 'superseded')
+    -- Nor did a publish a newer request cancelled, when the unpublish before it still applies.
+    and not (pr.action = 'publish' and pr.status = 'superseded' and pr.error ? 'newer_request_id'
+             and coalesce((select c.action = 'unpublish' from cms.publish_requests c
+                           where c.tenant_id = pr.tenant_id and c.entry_id = pr.entry_id
+                             and c.status = 'committed' and c.requested_at < pr.requested_at
+                           order by c.requested_at desc, c.id desc
+                           limit 1), false))
   order by pr.tenant_id, pr.entry_id, pr.requested_at desc, pr.id desc
 ) as r
 cross join lateral (

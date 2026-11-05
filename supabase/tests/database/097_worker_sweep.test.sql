@@ -152,12 +152,13 @@ select tests.act_as_service();
 select results_eq($$ select site_id, notify_status, live_status from api.worker_deliveries_to_retry(now()) $$,
   $$ values (tests.k('b972'), 'ok'::text, 'pending'::text) $$,
   'an ok notification whose live check stayed pending for over 5 minutes is returned');
--- ... unless the delivery's 24 hours since its first failure have run out.
+-- ... unless the delivery's 24 hours since its first failure ran out before it was notified (M5-01:
+-- one notified before they ended gets one more run, 115_withdrawal_safety).
 select tests.act_as_owner();
-update cms.site_deliveries set first_failed_at = now() - interval '24 hours' where release_id = tests.k('a972') and site_id = tests.k('b972');
+update cms.site_deliveries set first_failed_at = now() - interval '24 hours 10 minutes' where release_id = tests.k('a972') and site_id = tests.k('b972');
 select tests.act_as_service();
 select is_empty($$ select * from api.worker_deliveries_to_retry(now()) $$,
-  'a pending live check is not retried once 24 hours have passed since the delivery''s first failure');
+  'a pending live check notified after the 24 hours since the delivery''s first failure is not retried');
 select tests.act_as_owner();
 update cms.site_deliveries set first_failed_at = now() - interval '23 hours' where release_id = tests.k('a972') and site_id = tests.k('b972');
 select tests.act_as_service();

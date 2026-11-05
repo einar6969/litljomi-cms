@@ -100,7 +100,8 @@ export function displayState(row: PublicationStatusRow, options: DisplayOptions 
     case 'failed_validation':
       return invalidState(row, options.fieldLabels ?? {});
     case 'superseded':
-      // M5-01: the view skips a superseded repeat, so the publish it cancelled can be what is shown.
+      // M5-01: the view skips a superseded repeat, so the publish it cancelled can be what is shown,
+      // when no committed unpublish before it applies (then the view shows that unpublish).
       if (row.action === 'publish' && row.latest_action === 'unpublish') return { label: t.publish.cancelled, tone: 'neutral' };
       return { label: t.publish.superseded, tone: 'error' };
     case 'rejected':

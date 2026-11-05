@@ -1065,6 +1065,32 @@ describe('housekeeping hold: a withdrawal whose first live check missed', () => 
             await cleanup();
           }
         });
+
+        it('17. after a missed withdrawal, the publish first: both end superseded, and the first unpublish stays shown and checked', async () => {
+          const t0 = Date.now();
+          try {
+            const w = await missedWithdrawal('unpublish', t0);
+            keepPage(w);
+            revalidates = true;
+            const again = await rerequested(w.entryId, await draftVersion(w.entryId), 'Í flugi aftur');
+            const u = await rpc<string>('request_unpublish', { p_entry_id: w.entryId });
+
+            await processAndDeliver(again, { ...fast, now: () => t0 + 2 * MINUTE });
+            await processAndDeliver(u, { ...fast, now: () => t0 + 2 * MINUTE });
+
+            expect(await deliveryOf(again)).toMatchObject({ status: 'superseded', release_id: null });
+            expect(await deliveryOf(u)).toMatchObject({ status: 'superseded', release_id: null });
+            expect(await panel(w.entryId)).toMatchObject({ label: t.publish.notConfirmedRetrying, row: { request_id: w.requestId, latest_request_id: u } });
+
+            await supersede(t0 + 3 * MINUTE);
+            expect(await d_rows(w.release.id, t0 + 10 * MINUTE)).toHaveLength(1);
+            stalePages.clear();
+            await sweep({ ...fast, now: () => t0 + 10 * MINUTE });
+            expect(await panel(w.entryId)).toMatchObject({ label: t.publish.removed, row: { request_id: w.requestId } });
+          } finally {
+            await cleanup();
+          }
+        });
       });
 
       it('9. a publish and an unpublish coalesced into one build after a missed withdrawal stay unconfirmed, and alert', async () => {

@@ -21,7 +21,7 @@
 -- (a303, five minutes ago); active site b301.
 begin;
 \ir _helpers.sql
-select plan(80);
+select plan(87);
 
 create function tests.k(p_key text) returns uuid
 language plpgsql
@@ -226,6 +226,34 @@ update cms.publish_requests set status = 'pending' where id = tests.k('e352');
 select tests.act_as(tests.persona('editor_labak'));
 select results_eq($$ select request_id, latest_request_id from api.publication_status where entry_id = tests.entry('c305') $$,
   $$ values (tests.k('e352'), tests.k('e352')) $$, 'an unpublish on its way is shown as before');
+select tests.act_as_owner();
+
+-- A publish a repeat cancelled does not hide the committed unpublish before it: e351 is that
+-- unpublish, e353 the cancelled publish, e352 the repeat.
+update cms.publish_requests set status = 'superseded', error = jsonb_build_object('code', 'not_published') where id = tests.k('e352');
+insert into cms.publish_requests (id, tenant_id, entry_id, action, draft_version, requested_by, requested_at, status, error) values
+  (tests.k('e353'), tests.tenant('labak'), tests.entry('c305'), 'publish', 1, tests.persona('editor_labak'), now() - interval '90 seconds', 'superseded',
+   jsonb_build_object('code', 'superseded', 'newer_request_id', tests.k('e352')));
+select tests.act_as(tests.persona('editor_labak'));
+select results_eq($$ select request_id, action, status, latest_request_id from api.publication_status where entry_id = tests.entry('c305') $$,
+  $$ values (tests.k('e351'), 'unpublish', 'committed', tests.k('e352')) $$,
+  'U1, then P, then U2, all superseded but U1: U1''s state is shown');
+select tests.act_as_owner();
+-- A publish that the draft outran is not cancelled: its "publish again" stays.
+update cms.publish_requests set error = jsonb_build_object('code', 'superseded', 'requested_version', 1, 'validated_version', 1) where id = tests.k('e353');
+update cms.publish_requests set requested_at = now() - interval '100 seconds' where id = tests.k('e352');
+select tests.act_as(tests.persona('editor_labak'));
+select results_eq($$ select request_id from api.publication_status where entry_id = tests.entry('c305') $$,
+  $$ values (tests.k('e353')) $$, 'a publish the draft outran is still shown');
+select tests.act_as_owner();
+-- A committed publish after the unpublish: the unpublish no longer applies.
+update cms.publish_requests set requested_at = now() - interval '1 minute', error = jsonb_build_object('code', 'superseded', 'newer_request_id', tests.k('e352')) where id = tests.k('e353');
+update cms.publish_requests set requested_at = now() - interval '30 seconds' where id = tests.k('e352');
+insert into cms.publish_requests (id, tenant_id, entry_id, action, draft_version, requested_by, requested_at, status) values
+  (tests.k('e354'), tests.tenant('labak'), tests.entry('c305'), 'publish', 1, tests.persona('editor_labak'), now() - interval '90 seconds', 'committed');
+select tests.act_as(tests.persona('editor_labak'));
+select results_eq($$ select request_id from api.publication_status where entry_id = tests.entry('c305') $$,
+  $$ values (tests.k('e353')) $$, 'with a committed publish after the unpublish, the cancelled publish is shown');
 select tests.act_as_owner();
 delete from cms.publish_requests where entry_id = tests.entry('c305');
 
@@ -466,6 +494,21 @@ select tests.act_as_owner();
 delete from cms.site_deliveries where release_id = tests.k('a303');
 select tests.act_as_service();
 
+-- Notified just before the bound and killed: one more run, so it is not left waiting.
+select tests.act_as_owner();
+insert into cms.site_deliveries (release_id, site_id, tenant_id, notify_status, notify_attempts, notified_at, live_status, last_error, first_failed_at, next_attempt_at) values
+  (tests.k('a303'), tests.k('b301'), tests.tenant('labak'), 'ok', 9, now() - interval '10 minutes', 'pending',
+   '{"code": "notify_failed", "status": 500}', now() - interval '24 hours 1 minute', null);
+select tests.act_as_service();
+select ok(tests.listed('a303', 0), 'a delivery notified before the bound and killed is retried once past it');
+select tests.act_as_owner();
+update cms.site_deliveries set notified_at = now() - interval '6 minutes', first_failed_at = now() - interval '25 hours' where release_id = tests.k('a303');
+select tests.act_as_service();
+select ok(not tests.listed('a303', 0), 'and one notified past it, by that retry, is not: the bound holds');
+select tests.act_as_owner();
+delete from cms.site_deliveries where release_id = tests.k('a303');
+select tests.act_as_service();
+
 -- A notification keeps the next attempt within the bound.
 select tests.hold('a303', 'c303', -24 * 60 + 1);
 select is((select count(*)::int from api.worker_record_delivery(tests.k('a303'), tests.k('b301'), 'ok', null, null, now()) r), 1, 'a run notifies a minute before the bound');
@@ -485,6 +528,16 @@ select is((select r.withdrawal -> 'expired' from api.worker_deliveries_to_retry(
   'within the 24 hours it is not expired');
 select is((select r.withdrawal -> 'expired' from api.worker_deliveries_to_retry(now() + interval '24 hours') r where r.release_id = tests.k('a302')), 'true'::jsonb,
   'past them it is, so repeatedly killed runs end');
+select tests.act_as_owner();
+update cms.site_deliveries set live_status = 'not_confirmed', notify_status = 'ok', notified_at = now() where release_id = tests.k('a302');
+select tests.act_as_service();
+select is((select r.withdrawal -> 'expired' from api.worker_deliveries_to_retry(now() + interval '24 hours') r where r.release_id = tests.k('a302')), 'false'::jsonb,
+  'a not_confirmed delivery past them still runs its final attempt');
+select is((select r.withdrawal -> 'expired' from api.worker_deliveries_to_retry(now() + interval '25 hours') r where r.release_id = tests.k('a302')), 'true'::jsonb,
+  'and ends an hour on, if every run of it was killed');
+select tests.act_as_owner();
+update cms.site_deliveries set live_status = 'pending', notify_status = 'pending', notified_at = null where release_id = tests.k('a302');
+select tests.act_as_service();
 select is((select r.withdrawal ->> 'hourOver' from api.worker_deliveries_to_retry(now() + interval '51 minutes') r where r.release_id = tests.k('a302')), 'true',
   'and the hour ending lists it for the alert');
 select tests.act_as(tests.persona('editor_labak'));
