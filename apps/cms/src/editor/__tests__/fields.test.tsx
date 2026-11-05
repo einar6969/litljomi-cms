@@ -23,7 +23,6 @@ const { DateField } = await import('../form/fields/DateField');
 const { LinkField } = await import('../form/fields/LinkField');
 const { ImageField } = await import('../form/fields/ImageField');
 const { RichTextField } = await import('../form/fields/RichTextField');
-const { SlugField } = await import('../form/SlugField');
 const { EditorTenantProvider } = await import('../form/tenant-context');
 const { EntryForm } = await import('../form/EntryForm');
 const { describeFields } = await import('../form/descriptors');
@@ -124,71 +123,6 @@ describe('LinkField', () => {
     await render(<LinkField {...field} value={{ entry: { _ref: ENTRY, _kind: 'entry' } }} onChange={() => {}} />);
     expect(container.querySelector('[role="note"]')?.textContent).toBe(t.editor.entryLink);
     expect($('input')).toBeNull();
-  });
-});
-
-describe('SlugField', () => {
-  it.each([
-    [{ ok: false, code: 'slug_taken' }, t.editor.slug.taken],
-    [{ ok: false, code: 'slug_locked' }, t.editor.slug.locked],
-    [{ ok: false, code: 'invalid' }, t.editor.slug.invalid],
-    [{ ok: false, code: 'auth' }, t.editor.signedOut],
-    [{ ok: false, code: 'error' }, t.editor.slug.error],
-    [{ ok: true, slug: 'braud-arsins-2025' }, t.editor.slug.saved],
-  ])('shows the notice for %j', async (answer, text) => {
-    const setSlug = vi.fn(async () => answer as never);
-    await render(<SlugField entryId={ENTRY} initialSlug={null} title="Brauð ársins 2025" locked={false} setSlug={setSlug} />);
-    expect($('[data-testid="slug-suggestion"]')?.textContent).toContain('braud-arsins-2025');
-    await act(async () => $<HTMLButtonElement>('button')!.click());
-    expect(setSlug).toHaveBeenCalledWith(ENTRY, 'braud-arsins-2025');
-    expect($('[data-testid="slug-notice"]')?.textContent).toBe(text);
-  });
-
-  it('shows the suggestion as a placeholder, so typing gives exactly what was typed (decision 39.3)', async () => {
-    const setSlug = vi.fn(async (_id: string, slug: string) => ({ ok: true as const, slug }));
-    await render(<SlugField entryId={ENTRY} initialSlug={null} title="Brauð ársins 2025" locked={false} setSlug={setSlug} />);
-    const input = $<HTMLInputElement>('#slug')!;
-    expect(input.value).toBe('');
-    expect(input.placeholder).toBe('braud-arsins-2025');
-    await type(input, 'minn-texti');
-    expect(input.value).toBe('minn-texti');
-    await act(async () => $<HTMLButtonElement>('button')!.click());
-    expect(setSlug).toHaveBeenCalledWith(ENTRY, 'minn-texti');
-    expect(input.value).toBe('minn-texti');
-  });
-
-  it('saves the suggestion when the field is left empty, and shows a saved slug as the value', async () => {
-    const setSlug = vi.fn(async (_id: string, slug: string) => ({ ok: true as const, slug }));
-    await render(<SlugField entryId={ENTRY} initialSlug="eldri" title="Nýr titill" locked={false} setSlug={setSlug} />);
-    const input = $<HTMLInputElement>('#slug')!;
-    expect(input.value).toBe('eldri');
-    expect($<HTMLButtonElement>('button')!.disabled).toBe(true);
-    await type(input, '');
-    expect(input.placeholder).toBe('nyr-titill');
-    await act(async () => $<HTMLButtonElement>('button')!.click());
-    expect(setSlug).toHaveBeenCalledWith(ENTRY, 'nyr-titill');
-    expect(input.value).toBe('nyr-titill');
-  });
-
-  it('cannot save an empty field without a suggestion', async () => {
-    await render(<SlugField entryId={ENTRY} initialSlug={null} title="" locked={false} setSlug={vi.fn()} />);
-    expect($<HTMLButtonElement>('button')!.disabled).toBe(true);
-  });
-
-  it('shows the generic error when the action throws', async () => {
-    const setSlug = vi.fn(async () => {
-      throw new Error('network');
-    });
-    await render(<SlugField entryId={ENTRY} initialSlug={null} title="a" locked={false} setSlug={setSlug} />);
-    await act(async () => $<HTMLButtonElement>('button')!.click());
-    expect($('[data-testid="slug-notice"]')?.textContent).toBe(t.editor.slug.error);
-  });
-
-  it('is disabled with the locked notice once published', async () => {
-    await render(<SlugField entryId={ENTRY} initialSlug="a" title="a" locked setSlug={vi.fn()} />);
-    expect($<HTMLInputElement>('#slug')!.disabled).toBe(true);
-    expect(container.textContent).toContain(t.editor.slug.locked);
-    expect($('button')).toBeNull();
   });
 });
 
@@ -364,7 +298,7 @@ describe('RichTextField', () => {
     await render(<RichTextField {...field} value={undefined} onChange={vi.fn()} />);
     await until(() => expect(container.querySelector('[role="toolbar"]')).not.toBeNull());
     const toolbar = container.querySelector('[role="toolbar"]')!;
-    const labels = [...toolbar.querySelectorAll('button')].map((b) => b.textContent);
+    const labels = [...toolbar.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'));
     const r = t.editor.richText;
     expect(labels).toEqual([r.bold, r.italic, r.heading2, r.heading3, r.bulletList, r.orderedList, r.blockquote, r.hardBreak, r.link]);
     expect(container.querySelector('[role="textbox"]')?.getAttribute('aria-labelledby')).toBe('field-x-label');
@@ -435,8 +369,6 @@ describe('EntryForm', () => {
         titleKey="title"
         initialData={{ title: 'a', gallery: [1, 2] }}
         initialVersion={1}
-        initialSlug={null}
-        slugLocked={false}
       />,
     );
     expect($<HTMLInputElement>('#field-title')?.value).toBe('a');
@@ -454,8 +386,6 @@ describe('EntryForm', () => {
         titleKey="title"
         initialData={{ title: 'a', sourceLabel: 'Lesa fréttina' }}
         initialVersion={1}
-        initialSlug={null}
-        slugLocked={false}
       />,
     );
     const input = $<HTMLInputElement>('#field-sourceLabel');

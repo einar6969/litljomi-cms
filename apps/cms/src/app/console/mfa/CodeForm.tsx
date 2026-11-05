@@ -14,7 +14,7 @@ const INITIAL: CodeFormState = {};
 export function CodeForm() {
   const [state, action, pending] = useActionState(verifyCode, INITIAL);
   return (
-    <form action={action} className="flex flex-col gap-4">
+    <form action={action} className="flex flex-col gap-3.5">
       <Field label="Six-digit code" htmlFor="code" error={state.error}>
         <input
           id="code"
@@ -26,9 +26,10 @@ export function CodeForm() {
           maxLength={6}
           required
           aria-describedby={describedByOf('code', { error: state.error })}
+          className="code"
         />
       </Field>
-      <Button type="submit" variant="primary" disabled={pending}>
+      <Button type="submit" variant="primary" className="btn-wide" disabled={pending}>
         Verify
       </Button>
     </form>

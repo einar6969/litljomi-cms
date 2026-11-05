@@ -62,7 +62,7 @@ export async function hasSession(client: SupabaseClient): Promise<boolean> {
   }
 }
 
-export type EntryContext = { entryId: string; tenantId: string; tenantSlug: string; type: ContentType };
+export type EntryContext = { entryId: string; tenantId: string; tenantSlug: string; slug: string | null; type: ContentType };
 
 /**
  * The entry's tenant and content type, read with the editor's own session: the entry through
@@ -71,7 +71,7 @@ export type EntryContext = { entryId: string; tenantId: string; tenantSlug: stri
  * A database error is thrown, never read as "not found".
  */
 export async function loadEntryContext(client: SupabaseClient, entryId: string): Promise<EntryContext | null> {
-  const entry = await client.from('entry_list').select('id, tenant_id, type').eq('id', entryId).maybeSingle();
+  const entry = await client.from('entry_list').select('id, tenant_id, type, slug').eq('id', entryId).maybeSingle();
   if (entry.error) throw new Error(`entry_list: ${entry.error.code}`);
   if (!entry.data) return null;
   const tenant = await client.from('my_tenants').select('id, slug, status').eq('id', entry.data.tenant_id).maybeSingle();
@@ -79,5 +79,5 @@ export async function loadEntryContext(client: SupabaseClient, entryId: string):
   if (!tenant.data || !isActive(tenant.data)) return null;
   const type = getType(tenant.data.slug, entry.data.type);
   if (!type) return null;
-  return { entryId, tenantId: entry.data.tenant_id, tenantSlug: tenant.data.slug, type };
+  return { entryId, tenantId: entry.data.tenant_id, tenantSlug: tenant.data.slug, slug: entry.data.slug ?? null, type };
 }

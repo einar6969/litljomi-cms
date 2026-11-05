@@ -3,9 +3,10 @@
 import { richTextDocSchema } from '@litljomi/rich-text';
 import { richTextExtensions } from '@litljomi/rich-text/editor';
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { t } from '@/i18n/is';
 import { Button } from '@/ui/Button';
+import { Icon } from '@/ui/Icon';
 import { Notice } from '@/ui/Notice';
 import type { FieldProps } from '../field-registry';
 
@@ -21,8 +22,8 @@ export function RichTextField({ id, label, value, onChange }: FieldProps) {
   if (!initial.success) {
     // A stored document this editor cannot load is shown as a notice and saved back unchanged.
     return (
-      <div className="flex flex-col gap-1.5">
-        <span className="text-[15px] font-medium">{label}</span>
+      <div className="fld">
+        <span className="lab">{label}</span>
         <Notice role="note">{t.editor.richText.unreadable}</Notice>
       </div>
     );
@@ -60,8 +61,8 @@ function RichTextEditor({ id, label, initial, onChange }: EditorProps) {
   });
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <span id={labelId} className="text-[15px] font-medium">
+    <div className="fld">
+      <span id={labelId} className="lab">
         {label}
       </span>
       <div className="rt-box">
@@ -97,9 +98,9 @@ function Toolbar({ editor }: { editor: Editor }) {
   const [linkInvalid, setLinkInvalid] = useState(false);
 
   const chain = () => editor.chain().focus();
-  const toggle = (name: keyof typeof active, text: string, run: () => boolean) => (
-    <Button aria-pressed={active[name] === true} onMouseDown={(e) => e.preventDefault()} onClick={() => run()}>
-      {text}
+  const toggle = (name: keyof typeof active, text: string, run: () => boolean, glyph: ReactNode) => (
+    <Button aria-label={text} title={text} aria-pressed={active[name] === true} onMouseDown={(e) => e.preventDefault()} onClick={() => run()}>
+      {glyph}
     </Button>
   );
   const openLink = () => {
@@ -117,24 +118,24 @@ function Toolbar({ editor }: { editor: Editor }) {
   return (
     <div role="toolbar" aria-label={t.editor.richText.toolbar}>
       <div className="rt-group">
-        {toggle('bold', t.editor.richText.bold, () => chain().toggleBold().run())}
-        {toggle('italic', t.editor.richText.italic, () => chain().toggleItalic().run())}
+        {toggle('bold', t.editor.richText.bold, () => chain().toggleBold().run(), <Icon name="bold" />)}
+        {toggle('italic', t.editor.richText.italic, () => chain().toggleItalic().run(), <Icon name="italic" />)}
       </div>
       <div className="rt-group">
-        {toggle('heading2', t.editor.richText.heading2, () => chain().toggleHeading({ level: 2 }).run())}
-        {toggle('heading3', t.editor.richText.heading3, () => chain().toggleHeading({ level: 3 }).run())}
+        {toggle('heading2', t.editor.richText.heading2, () => chain().toggleHeading({ level: 2 }).run(), 'H2')}
+        {toggle('heading3', t.editor.richText.heading3, () => chain().toggleHeading({ level: 3 }).run(), 'H3')}
       </div>
       <div className="rt-group">
-        {toggle('bulletList', t.editor.richText.bulletList, () => chain().toggleBulletList().run())}
-        {toggle('orderedList', t.editor.richText.orderedList, () => chain().toggleOrderedList().run())}
-        {toggle('blockquote', t.editor.richText.blockquote, () => chain().toggleBlockquote().run())}
+        {toggle('bulletList', t.editor.richText.bulletList, () => chain().toggleBulletList().run(), <Icon name="bulletList" />)}
+        {toggle('orderedList', t.editor.richText.orderedList, () => chain().toggleOrderedList().run(), <Icon name="orderedList" />)}
+        {toggle('blockquote', t.editor.richText.blockquote, () => chain().toggleBlockquote().run(), <Icon name="quote" />)}
       </div>
       <div className="rt-group">
-        <Button onMouseDown={(e) => e.preventDefault()} onClick={() => chain().setHardBreak().run()}>
-          {t.editor.richText.hardBreak}
+        <Button aria-label={t.editor.richText.hardBreak} title={t.editor.richText.hardBreak} onMouseDown={(e) => e.preventDefault()} onClick={() => chain().setHardBreak().run()}>
+          <Icon name="hardBreak" />
         </Button>
-        <Button aria-pressed={active.link} aria-expanded={linkOpen} onMouseDown={(e) => e.preventDefault()} onClick={openLink}>
-          {t.editor.richText.link}
+        <Button aria-label={t.editor.richText.link} title={t.editor.richText.link} aria-pressed={active.link} aria-expanded={linkOpen} onMouseDown={(e) => e.preventDefault()} onClick={openLink}>
+          <Icon name="link" />
         </Button>
       </div>
       {linkOpen ? (
@@ -143,11 +144,13 @@ function Toolbar({ editor }: { editor: Editor }) {
             {t.editor.richText.linkUrl}
             <input type="text" inputMode="url" value={href} aria-invalid={linkInvalid} onChange={(e) => setHref(e.target.value)} />
           </label>
-          <Button variant="primary" onClick={applyLink}>
+          <Button size="sm" onClick={applyLink}>
             {t.editor.richText.setLink}
           </Button>
           {active.link ? (
             <Button
+              variant="danger"
+              size="sm"
               onClick={() => {
                 chain().extendMarkRange('link').unsetLink().run();
                 setLinkOpen(false);
@@ -156,7 +159,7 @@ function Toolbar({ editor }: { editor: Editor }) {
               {t.editor.richText.removeLink}
             </Button>
           ) : null}
-          {linkInvalid ? <span role="alert" className="w-full text-sm font-medium text-danger">{t.editor.invalidUrl}</span> : null}
+          {linkInvalid ? <span role="alert" className="err w-full">{t.editor.invalidUrl}</span> : null}
         </span>
       ) : null}
     </div>

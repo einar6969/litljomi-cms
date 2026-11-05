@@ -5,6 +5,7 @@ import { restoreRevisionAction, type RestoreRevisionResult } from '@/app/(editor
 import { t } from '@/i18n/is';
 import { Button } from '@/ui/Button';
 import { Notice } from '@/ui/Notice';
+import { StatusBadge } from '@/ui/StatusBadge';
 import { RESTORED_PARAM, type RevisionSummary } from '../revisions';
 
 type Props = {
@@ -27,8 +28,6 @@ type State =
   | { kind: 'confirm'; id: string }
   | { kind: 'restoring'; id: string }
   | { kind: 'unsaved' | 'conflict' | 'signed_out' | 'failed' | 'cannot' | 'done' };
-
-const NOTICE_COLUMN = 'flex flex-col items-start gap-3';
 
 /** Opens the entry page again with the restored marker, so the page reads the new draft and says so. */
 function reopenRestored() {
@@ -81,32 +80,36 @@ export function RevisionHistory({ entryId, revisions, version, disabled = false,
   };
 
   return (
-    <section aria-labelledby="revision-history" className="flex flex-col gap-3">
-      <h2 id="revision-history" className="text-[17px] font-semibold">
-        {h.title}
-      </h2>
+    <section aria-labelledby="revision-history" className="card sub">
+      <h2 id="revision-history">{h.title}</h2>
       {revisions.length === 0 ? (
         <p className="text-sm text-muted">{h.empty}</p>
       ) : (
-        <ol className="flex flex-col gap-3">
+        <ol>
           {revisions.map((r) => (
-            <li key={r.id} data-testid="revision" className="flex flex-col items-start gap-2 border-b border-hairline pb-3">
-              <p className="text-[15px]">
-                {h.publishedAt} <time dateTime={r.committedAt}>{when(r.committedAt)}</time> {r.mine ? h.byMe : h.byOther}
+            <li key={r.id} data-testid="revision" className="rev">
+              <p className="text-sm">
+                {h.publishedAt}{' '}
+                <time className="mono" dateTime={r.committedAt}>
+                  {when(r.committedAt)}
+                </time>{' '}
+                {r.mine ? h.byMe : h.byOther}
               </p>
-              {r.current ? <p className="text-sm font-medium">{h.current}</p> : null}
+              {r.current ? <StatusBadge tone="ok">{h.current}</StatusBadge> : null}
               {state.kind === 'confirm' && state.id === r.id ? (
-                <div className={NOTICE_COLUMN}>
+                <>
                   <p className="text-sm">{h.confirm}</p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button variant="primary" disabled={disabled} onClick={() => void run(r.id)}>
+                  <div className="acts">
+                    <Button variant="ink" size="sm" disabled={disabled} onClick={() => void run(r.id)}>
                       {h.confirmRestore}
                     </Button>
-                    <Button onClick={() => setState({ kind: 'idle' })}>{h.cancel}</Button>
+                    <Button size="sm" onClick={() => setState({ kind: 'idle' })}>
+                      {h.cancel}
+                    </Button>
                   </div>
-                </div>
+                </>
               ) : (
-                <Button disabled={disabled || busy} onClick={() => ask(r.id)}>
+                <Button size="sm" disabled={disabled || busy} onClick={() => ask(r.id)}>
                   {state.kind === 'restoring' && state.id === r.id ? h.restoring : h.restore}
                 </Button>
               )}
@@ -126,16 +129,18 @@ function Outcome({ kind }: { kind: State['kind'] }) {
       return <Notice role="alert">{h.unsaved}</Notice>;
     case 'conflict':
       return (
-        <Notice as="div" tone="error" role="alert" className={NOTICE_COLUMN}>
+        <Notice as="div" tone="error" role="alert">
           <strong>{t.editor.conflict}</strong>
-          <Button onClick={() => window.location.reload()}>{t.editor.reload}</Button>
+          <Button size="sm" onClick={() => window.location.reload()}>
+            {t.editor.reload}
+          </Button>
         </Notice>
       );
     case 'signed_out':
       return (
-        <Notice as="div" tone="error" role="alert" className={NOTICE_COLUMN}>
+        <Notice as="div" tone="error" role="alert">
           <strong>{t.editor.signedOut}</strong>
-          <a href="/login" target="_blank" rel="noreferrer" className="inline-flex min-h-[44px] items-center font-medium">
+          <a href="/login" target="_blank" rel="noreferrer">
             {t.editor.signIn}
           </a>
         </Notice>

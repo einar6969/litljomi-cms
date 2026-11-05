@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('next/navigation', () => ({
+  usePathname: () => '/',
   notFound: vi.fn(() => {
     throw new Error('NOT_FOUND');
   }),
@@ -27,7 +28,7 @@ beforeEach(() => {
 describe('the tenant layout', () => {
   it('checks the session, then shows an active tenant\'s pages', async () => {
     tenants.currentTenant.mockResolvedValue(TENANT);
-    expect(await render()).toBe('<p>content</p>');
+    expect(await render()).toContain('<p>content</p>');
     expect(session.requireUserId).toHaveBeenCalledOnce();
     expect(tenants.currentTenant).toHaveBeenCalledExactlyOnceWith('acme');
   });

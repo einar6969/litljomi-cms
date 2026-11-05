@@ -24,8 +24,8 @@ export function FieldInput({ field, id, label = field.label, value, onChange }: 
   const Component = fieldRegistry[field.kind];
   if (!Component) {
     return (
-      <div className="flex flex-col gap-1.5">
-        <span className="text-[15px] font-medium">{label}</span>
+      <div className="fld">
+        <span className="lab">{label}</span>
         <Notice role="note">{t.editor.unsupportedField}</Notice>
       </div>
     );

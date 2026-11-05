@@ -57,7 +57,7 @@ test('number, boolean, select and datetime inputs are keyboard-operable and auto
     await expect(doors).toHaveValue('2026-11-14T19:30');
   });
 
-  await expect(page.getByRole('main').getByRole('status')).toHaveText(t.editor.saved, SAVED);
+  await expect(page.getByRole('status')).toHaveText(t.editor.saved, SAVED);
 
   // The saved draft holds the typed values: they come back after a reload.
   await page.reload();
@@ -74,13 +74,13 @@ test('clearing the inputs saves an event without the values', async ({ page }) =
   await page.getByRole('group', { name: 'Free entry' }).getByRole('radio', { name: t.editor.boolean.yes }).check();
   await page.getByLabel('Category').selectOption('talk');
   await page.getByLabel('Doors open').fill('2026-12-01T18:00');
-  await expect(page.getByRole('main').getByRole('status')).toHaveText(t.editor.saved, SAVED);
+  await expect(page.getByRole('status')).toHaveText(t.editor.saved, SAVED);
 
   await page.getByLabel('Capacity').fill('');
   await page.getByRole('group', { name: 'Free entry' }).getByRole('radio', { name: t.editor.boolean.unset }).check();
   await page.getByLabel('Category').selectOption('');
   await page.getByLabel('Doors open').fill('');
-  await expect(page.getByRole('main').getByRole('status')).toHaveText(t.editor.saved, SAVED);
+  await expect(page.getByRole('status')).toHaveText(t.editor.saved, SAVED);
 
   await page.reload();
   await expect(page.getByLabel('Title')).toHaveValue('Fyrirlestur');

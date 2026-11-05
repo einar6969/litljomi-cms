@@ -177,8 +177,6 @@ describe('EntryForm with a reference field', () => {
         titleKey="title"
         initialData={{ title: 'a', related: { _ref: A, _kind: 'entry' } }}
         initialVersion={1}
-        initialSlug={null}
-        slugLocked={false}
       />,
     );
     await until(() => expect($<HTMLSelectElement>('#field-related')?.disabled).toBe(false));

@@ -90,7 +90,7 @@ async function type(input: HTMLInputElement | HTMLTextAreaElement, text: string)
 async function renderForm(initialVersion = 3) {
   await act(async () =>
     root.render(
-      <EntryForm tenant={TENANT} userId={USER} entryId={ENTRY} fields={FIELDS} titleKey="title" initialData={{ title: 'Upphaf' }} initialVersion={initialVersion} initialSlug={null} slugLocked={false} />,
+      <EntryForm tenant={TENANT} userId={USER} entryId={ENTRY} fields={FIELDS} titleKey="title" initialData={{ title: 'Upphaf' }} initialVersion={initialVersion} />,
     ),
   );
 }
@@ -312,7 +312,7 @@ describe('signing out (M2-17)', () => {
       root.render(
         <>
           <SignOutForm signOut={signOut} />
-          <EntryForm tenant={TENANT} userId={USER} entryId={ENTRY} fields={FIELDS} titleKey="title" initialData={{ title: 'Upphaf' }} initialVersion={3} initialSlug={null} slugLocked={false} />
+          <EntryForm tenant={TENANT} userId={USER} entryId={ENTRY} fields={FIELDS} titleKey="title" initialData={{ title: 'Upphaf' }} initialVersion={3} />
         </>,
       ),
     );

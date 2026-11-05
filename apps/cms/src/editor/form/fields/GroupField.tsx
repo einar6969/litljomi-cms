@@ -37,7 +37,7 @@ export function GroupField({ id, label, required, value, onChange, fields = [] }
   const error = storedInvalid ? t.editor.invalidStored : null;
   return (
     <FieldGroup id={id} label={label} required={required} error={error} describedBy={describedByOf(id, { error })}>
-      <div className="flex flex-col gap-5 border-l-2 border-hairline pl-4">
+      <div className="grp">
         {fields.map((field) => (
           <FieldInput key={field.key} field={field} id={`${id}-${field.key}`} value={current[field.key]} onChange={(next) => change(field.key, next)} />
         ))}

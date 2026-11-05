@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { consoleAccess } from '@/lib/console-access';
 import { latestReleases, listTenants, type Release, type Tenant } from '@/console/data';
 import { Notice } from '@/ui/Notice';
+import { ConsoleFrame } from '../_components/ConsoleFrame';
 import { ReleaseStatus } from '../_components/ReleaseStatus';
 import { Section } from '../_components/Section';
 import { TenantStatus } from '../_components/TenantStatus';
@@ -19,7 +20,8 @@ export default async function ConsolePage() {
   const latest = new Map<string, Release>(releases?.ok ? releases.rows.map((release) => [release.tenant_id, release]) : []);
 
   return (
-    <main className="flex flex-col gap-8 py-8">
+    <ConsoleFrame>
+    <main className="page">
       <h1>Console</h1>
       {releases && !releases.ok ? (
         <Notice tone="error" role="alert">
@@ -36,12 +38,12 @@ export default async function ConsolePage() {
           {
             header: 'Tenant',
             cell: (tenant) => (
-              <Link href={`/console/t/${encodeURIComponent(tenant.slug)}`} prefetch={false} className="inline-flex min-h-[44px] items-center font-semibold">
+              <Link href={`/console/t/${encodeURIComponent(tenant.slug)}`} prefetch={false} className="inline-flex min-h-[36px] items-center">
                 {tenant.name}
               </Link>
             ),
           },
-          { header: 'Slug', cell: (tenant) => tenant.slug },
+          { header: 'Slug', cell: (tenant) => <span className="mono">{tenant.slug}</span> },
           { header: 'Status', cell: (tenant) => <TenantStatus status={tenant.status} /> },
           {
             header: 'Latest release',
@@ -49,17 +51,18 @@ export default async function ConsolePage() {
               if (!releases?.ok) return '–';
               const release = latest.get(tenant.id);
               return release ? (
-                <span className="flex flex-col gap-1">
+                <span className="stack">
                   <span>Release {release.number}</span>
                   <ReleaseStatus status={release.status} code={release.error_code} step={release.error_step} />
                 </span>
               ) : (
-                'No release yet'
+                <span className="text-muted">No release yet</span>
               );
             },
           },
         ]}
       />
     </main>
+    </ConsoleFrame>
   );
 }

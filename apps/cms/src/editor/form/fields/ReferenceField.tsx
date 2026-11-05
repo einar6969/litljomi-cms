@@ -82,7 +82,7 @@ export function ReferenceField({ id, label, required, value, onChange, to = [] }
         </select>
       </Field>
       {failure ? (
-        <Button className="self-start" onClick={() => setAttempt((n) => n + 1)}>
+        <Button size="sm" className="self-start" onClick={() => setAttempt((n) => n + 1)}>
           {t.editor.retry}
         </Button>
       ) : null}

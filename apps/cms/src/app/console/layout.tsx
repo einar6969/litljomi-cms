@@ -10,5 +10,9 @@ import { createEditorClient } from '@/lib/supabase/server';
 export default async function ConsoleLayout({ children }: { children: ReactNode }) {
   await requireUserId(await createEditorClient());
   if ((await consoleAccess()) === 'none') notFound();
-  return <div lang="en">{children}</div>;
+  return (
+    <div lang="en" className="console">
+      {children}
+    </div>
+  );
 }

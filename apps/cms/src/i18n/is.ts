@@ -3,6 +3,11 @@ export const is = {
   app: {
     title: 'Litljómi vefumsjón',
     signOut: 'Skrá út',
+    help: 'Hjálp',
+    helpEmail: 'hello@litljomi.is',
+    breadcrumbs: 'Brauðmolar',
+    menu: 'Valmynd',
+    closeMenu: 'Loka valmynd',
   },
   login: {
     title: 'Innskráning',
@@ -14,6 +19,9 @@ export const is = {
     linkInvalid: 'Innskráningarhlekkurinn er ógildur eða útrunninn. Biddu um nýjan.',
     // After the first of an email change's two links (spec §4.4).
     emailChangeWaiting: 'Netfangið er staðfest. Breytingin tekur gildi þegar hitt netfangið hefur líka verið staðfest.',
+    // The ink panel's line; the second part is set in the accent.
+    panelLead: 'Þitt efni, ',
+    panelRest: 'á þínum vef.',
   },
   // The magic link's landing page (decision 41.1): only its button signs in.
   confirm: {
@@ -40,6 +48,7 @@ export const is = {
     inactiveBody: 'Ekki er hægt að breyta efni þessa vefs eins og er.',
     contentTypes: 'Efnisflokkar',
     navigation: 'Efni vefsins',
+    greeting: 'Góðan daginn.',
   },
   singleton: {
     opening: 'Opna…',
@@ -78,6 +87,7 @@ export const is = {
   editor: {
     saving: 'Vistar…',
     saved: 'Vistað',
+    notSaved: 'Ekki vistað',
     conflict: 'Annar notandi breytti færslunni',
     conflictBody: 'Breytingarnar þínar eru enn á skjánum en hafa ekki verið vistaðar. Berðu saman útgáfurnar og veldu hvora þú vilt halda.',
     reload: 'Hlaða aftur',
@@ -223,15 +233,9 @@ export const is = {
       invalid: 'Textinn inniheldur eitthvað sem ekki er hægt að vista. Síðasta gilda útgáfan er vistuð.',
       unreadable: 'Ekki er hægt að opna þennan texta hér. Gildi hans helst óbreytt.',
     },
+    // Named when a publish finds no slug; nobody sets one by hand.
     slug: {
       label: 'Slóð',
-      suggestion: 'Tillaga',
-      save: 'Vista slóð',
-      saved: 'Slóð vistuð',
-      taken: 'Slóðin er þegar í notkun',
-      locked: 'Slóðinni er læst eftir fyrstu birtingu',
-      invalid: 'Ógild slóð (lágstafir, tölur og bandstrik)',
-      error: 'Ekki tókst að vista slóðina. Reyndu aftur.',
     },
   },
   // Publication (spec §7.4; plan Task 25, decision 37.8). The labels are the spec's; no text may

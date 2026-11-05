@@ -382,8 +382,6 @@ describe('EntryForm with a list', () => {
         titleKey="title"
         initialData={{ title: 'Tónleikar', tags: items('a', 'b', 'c') }}
         initialVersion={1}
-        initialSlug={null}
-        slugLocked={false}
       />,
     );
     await press(handleOf(itemEls()[2]!), 'ArrowUp');
@@ -407,8 +405,6 @@ describe('EntryForm with a list', () => {
         titleKey="title"
         initialData={{ title: 'Tónleikar' }}
         initialVersion={1}
-        initialSlug={null}
-        slugLocked={false}
       />,
     );
     // Every demo event field has an input now.

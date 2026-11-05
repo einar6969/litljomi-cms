@@ -28,8 +28,8 @@ export function LinkField({ id, label, required, value, onChange }: FieldProps) 
   const [valid, setValid] = useState(true);
   if (isEntryLink(value)) {
     return (
-      <div className="flex flex-col gap-1.5">
-        <span className="text-[15px] font-medium">{label}</span>
+      <div className="fld">
+        <span className="lab">{label}</span>
         <Notice role="note">{t.editor.entryLink}</Notice>
       </div>
     );

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { requestPublishAction, requestUnpublishAction, type PublishActionResult } from '@/app/(editor)/t/[tenant]/publish-actions';
 import { t } from '@/i18n/is';
 import { createBrowserEditorClient } from '@/lib/supabase/browser';
@@ -25,6 +25,16 @@ type Props = {
   publish?: typeof requestPublishAction;
   unpublish?: typeof requestUnpublishAction;
   loadStatus?: (entryId: string) => Promise<PublicationStatusRow | null>;
+  /** Shown at the panel's foot: the preview button. */
+  children?: ReactNode;
+};
+
+/** The way to the site, as three segments under the status; only the steps that are on the way there have one. */
+const TRACKS: Readonly<Record<string, readonly [string, string, string]>> = {
+  [t.publish.inProgress]: ['now', '', ''],
+  [t.publish.revalidated]: ['on', 'now', ''],
+  [t.publish.notConfirmedRetrying]: ['on', 'on', 'now'],
+  [t.publish.live]: ['go', 'go', 'go'],
 };
 
 /** The entry's row of `api.publication_status`, read with the editor's own session (RLS). */
@@ -66,6 +76,7 @@ export function PublishPanel({
   publish = requestPublishAction,
   unpublish = requestUnpublishAction,
   loadStatus = loadPublicationStatus,
+  children,
 }: Props) {
   const [row, setRow] = useState<PublicationStatusRow | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -137,15 +148,22 @@ export function PublishPanel({
   const state: DisplayState | null = shown ?? (awaiting !== null ? IN_PROGRESS : null);
   const inFlight = busy || (state !== null && !isFinal(state));
 
+  const track = state ? TRACKS[state.label] : undefined;
+
   return (
-    <section aria-labelledby="publish-heading" className="flex flex-col gap-4 rounded-lg border border-hairline bg-recessed p-5">
-      <h2 id="publish-heading" className="text-xs font-semibold uppercase leading-4 tracking-wider text-muted">
-        {t.publish.heading}
-      </h2>
+    <section aria-labelledby="publish-heading" className="card pub">
+      <h2 id="publish-heading">{t.publish.heading}</h2>
       {/* Not role="status": the form's save status is the page's one status region. */}
-      <StatusBadge tone={state?.tone ?? 'pending'} data-testid="publish-state" data-tone={state?.tone ?? 'none'} aria-live="polite">
+      <StatusBadge as="p" look="state" tone={state?.tone ?? 'neutral'} data-testid="publish-state" data-tone={state?.tone ?? 'none'} aria-live="polite">
         {state?.label ?? t.publish.none}
       </StatusBadge>
+      {track ? (
+        <div className="track" aria-hidden="true">
+          {track.map((step, index) => (
+            <i key={index} className={step} />
+          ))}
+        </div>
+      ) : null}
       {state?.detail ? (
         <p data-testid="publish-detail" className="text-sm text-muted">
           {state.detail}
@@ -157,16 +175,17 @@ export function PublishPanel({
           {notice}
         </Notice>
       ) : null}
-      <div className="flex flex-wrap gap-3">
-        <Button variant="primary" className="max-sm:flex-1" disabled={disabled || inFlight} onClick={() => void send(() => publish(entryId, version))}>
+      <div className={published ? 'btns' : 'btns one'}>
+        <Button variant="primary" disabled={disabled || inFlight} onClick={() => void send(() => publish(entryId, version))}>
           {t.publish.publish}
         </Button>
         {published ? (
-          <Button variant="danger" className="max-sm:flex-1" disabled={inFlight} onClick={() => void send(() => unpublish(entryId))}>
+          <Button variant="danger" disabled={inFlight} onClick={() => void send(() => unpublish(entryId))}>
             {t.publish.unpublish}
           </Button>
         ) : null}
       </div>
+      {children}
     </section>
   );
 }

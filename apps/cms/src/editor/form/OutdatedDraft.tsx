@@ -21,7 +21,6 @@ type Props = {
 
 type State = 'idle' | 'updating' | 'done' | 'conflict' | 'signed_out' | 'failed' | 'cannot';
 
-const NOTICE_COLUMN = 'flex flex-col items-start gap-3';
 
 /**
  * The entry page for a draft written at an older schema version of its type (spec §5.3; plan
@@ -65,15 +64,17 @@ export function OutdatedDraft({ entryId, version, published, fieldLabels, update
   const canRetry = state !== 'conflict' && state !== 'cannot';
 
   return (
-    <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
-      <div className="flex min-w-0 flex-col gap-5">
-        <Notice as="div" tone="warning" role="alert" className={NOTICE_COLUMN}>
+    <div className="ed">
+      <div className="flex min-w-0 flex-col gap-4">
+        <Notice as="div" tone="warning" role="alert">
           <strong>{t.editor.outdated.title}</strong>
           <p>{t.editor.outdated.body}</p>
           {canRetry ? (
-            <Button variant="primary" disabled={busy} onClick={() => void run()}>
-              {busy ? t.editor.outdated.updating : t.editor.outdated.update}
-            </Button>
+            <div className="note-acts">
+              <Button variant="ink" size="sm" disabled={busy} onClick={() => void run()}>
+                {busy ? t.editor.outdated.updating : t.editor.outdated.update}
+              </Button>
+            </div>
           ) : null}
         </Notice>
         <Outcome state={state} />
@@ -94,14 +95,14 @@ function Outcome({ state }: { state: State }) {
   switch (state) {
     case 'conflict':
       return (
-        <Notice as="div" tone="error" role="alert" className={NOTICE_COLUMN}>
+        <Notice as="div" tone="error" role="alert">
           <strong>{t.editor.conflict}</strong>
           <Button onClick={() => window.location.reload()}>{t.editor.reload}</Button>
         </Notice>
       );
     case 'signed_out':
       return (
-        <Notice as="div" tone="error" role="alert" className={NOTICE_COLUMN}>
+        <Notice as="div" tone="error" role="alert">
           <strong>{t.editor.signedOut}</strong>
           <a href="/login" target="_blank" rel="noreferrer" className="inline-flex min-h-[44px] items-center font-medium">
             {t.editor.signIn}

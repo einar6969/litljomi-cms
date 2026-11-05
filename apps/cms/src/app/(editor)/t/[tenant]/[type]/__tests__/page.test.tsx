@@ -97,7 +97,7 @@ describe('the entry list search and status filter (M2-10)', () => {
     const html = await render({ q: 'Brauð "ársins"', status: 'archived' });
     const form = html.match(/<form[^>]*>/)?.[0] ?? '';
     for (const attr of ['role="search"', 'aria-label="Leit og sía"', 'method="get"', 'action="/t/acme/news"']) expect(form).toContain(attr);
-    expect(html).toMatch(/<label for="entry-search"[^>]*><span>Leita í titlum<\/span><input id="entry-search"[^>]*>/);
+    expect(html).toMatch(/<label for="entry-search"[^>]*>Leita í titlum<\/label>/);
     const input = html.match(/<input id="entry-search"[^>]*>/)?.[0] ?? '';
     for (const attr of ['name="q"', 'type="search"', 'value="Brauð &quot;ársins&quot;"']) expect(input).toContain(attr);
     expect(html).toMatch(/<option value="archived" selected="">Í skjalasafni<\/option>/);

@@ -6,6 +6,8 @@ import { previewUrl } from '@/editor/upload';
 import { t } from '@/i18n/is';
 import { createEditorClient } from '@/lib/supabase/server';
 import { currentTenant, isActive } from '@/lib/tenant';
+import { Icon } from '@/ui/Icon';
+import { TopBar } from '@/ui/TopBar';
 
 type Props = { params: Promise<{ tenant: string; assetId: string }> };
 
@@ -44,23 +46,28 @@ export default async function AssetPage({ params }: Props) {
   const asset = data as Row;
   const url = await previewUrl(client, asset.original_path);
   if (!url) throw new Error('asset preview: signing failed');
+  const tenantPath = `/t/${encodeURIComponent(tenant.slug)}`;
   return (
-    <main className="flex flex-col gap-4">
-      <p>
-        <Link href={`/t/${encodeURIComponent(tenant.slug)}`} className="inline-flex min-h-[44px] items-center text-[15px] font-medium">
-          {t.asset.back}
-        </Link>
-      </p>
-      <h1>{t.asset.title}</h1>
-      <AssetDetail
-        assetId={asset.id}
-        url={url}
-        filename={asset.filename}
-        width={asset.width}
-        height={asset.height}
-        focal={asset.focal_x !== null && asset.focal_y !== null ? { x: asset.focal_x, y: asset.focal_y } : null}
-        defaultAlt={asset.default_alt}
-      />
-    </main>
+    <>
+      <TopBar title={tenant.name} crumbs={[{ label: tenant.name, href: tenantPath, name: t.asset.back }, { label: t.asset.title }]} />
+      <main className="page">
+        <div>
+          <Link href={tenantPath} className="back">
+            <Icon name="chevronLeft" />
+            {t.asset.back}
+          </Link>
+          <h1>{t.asset.title}</h1>
+        </div>
+        <AssetDetail
+          assetId={asset.id}
+          url={url}
+          filename={asset.filename}
+          width={asset.width}
+          height={asset.height}
+          focal={asset.focal_x !== null && asset.focal_y !== null ? { x: asset.focal_x, y: asset.focal_y } : null}
+          defaultAlt={asset.default_alt}
+        />
+      </main>
+    </>
   );
 }

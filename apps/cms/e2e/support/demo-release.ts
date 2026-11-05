@@ -7,7 +7,7 @@
 //
 // Every URL this file reaches is loopback (requireLoopback; the browser context aborts anything
 // else, support/test.ts): the CMS, the demo site, and the local stack's public delivery bucket.
-import { randomBytes } from 'node:crypto';
+import { slugify } from '@litljomi/cms-schema/src/slugify.ts';
 import type { Page } from '@playwright/test';
 import { t } from '../../src/i18n/is';
 import { DEMO_DELIVERY_BASE_URL, DEMO_SITE_URL } from './demo-site';
@@ -34,17 +34,16 @@ export async function getJson<T>(url: string): Promise<T | null> {
 /** The demo tenant's public pointer, or null when it has no delivered release. */
 export const demoPointer = () => getJson<DemoPointer>(`${DEMO_DELIVERY_BASE_URL}/demo/current.json`);
 
-/** Creates a demo event with a fresh slug, fills its required fields and waits for the autosave. */
+/**
+ * Creates a demo event, fills its required fields and waits for the autosave, which also sets the
+ * slug from the title. The returned slug is exact for a title no earlier run has used.
+ */
 export async function newDemoEvent(page: Page, title: string): Promise<{ entryId: string; slug: string }> {
   const entryId = await createEvent(page);
-  const slug = `vidburdur-${randomBytes(5).toString('hex')}`;
   await page.getByLabel(TITLE).fill(title);
   await page.getByLabel(START).fill('2026-12-01');
   await expect(page.getByRole('status')).toHaveText(t.editor.saved, SAVED);
-  await page.getByLabel(t.editor.slug.label).fill(slug);
-  await page.getByRole('button', { name: t.editor.slug.save }).click();
-  await expect(page.getByTestId('slug-notice')).toHaveText(t.editor.slug.saved);
-  return { entryId, slug };
+  return { entryId, slug: slugify(title) };
 }
 
 /**

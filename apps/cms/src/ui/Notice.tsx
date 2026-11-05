@@ -1,22 +1,20 @@
 import type { HTMLAttributes } from 'react';
+import { Icon, type IconName } from './Icon';
 
 export type NoticeTone = 'info' | 'success' | 'warning' | 'error';
 
-const TONES: Record<NoticeTone, string> = {
-  info: 'border-l-muted',
-  success: 'border-l-accent',
-  warning: 'border-l-warning',
-  error: 'border-l-danger',
-};
+const ICONS: Record<NoticeTone, IconName> = { info: 'info', success: 'check', warning: 'warning', error: 'alert' };
+const TONES: Record<NoticeTone, string> = { info: '', success: 'note-success', warning: 'note-warning', error: 'note-error' };
 
 type Props = HTMLAttributes<HTMLElement> & { tone?: NoticeTone; as?: 'p' | 'div' };
 
-/** A message in a box with a coloured edge; the text is ink, the tone is the edge. */
-export function Notice({ tone = 'info', as: Tag = 'p', className = '', ...props }: Props) {
+/** A message in a tinted box: the tone is the fill and the icon, the words stay ink. */
+export function Notice({ tone = 'info', as: Tag = 'p', className = '', children, ...props }: Props) {
+  const Body = Tag === 'p' ? 'span' : 'div';
   return (
-    <Tag
-      className={`max-w-none rounded-lg border border-l-[6px] border-hairline bg-recessed px-4 py-3 text-[15px] text-ink ${TONES[tone]} ${className}`}
-      {...props}
-    />
+    <Tag className={`note ${TONES[tone]} ${className}`.replace(/\s+/g, ' ').trim()} {...props}>
+      <Icon name={ICONS[tone]} />
+      <Body className="note-body">{children}</Body>
+    </Tag>
   );
 }

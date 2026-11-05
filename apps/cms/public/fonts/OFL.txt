@@ -7,7 +7,10 @@ Albert Sans (AlbertSans-VariableFont_wght.woff2)
 Bricolage Grotesque (BricolageGrotesque-VariableFont_opsz.woff2)
   Copyright 2022 The Bricolage Grotesque Project Authors (https://github.com/ateliertriay/bricolage)
 
-Both are licensed under the SIL Open Font License, Version 1.1, reproduced below.
+JetBrains Mono 2.304 (JetBrainsMono-Regular.woff2, JetBrainsMono-Medium.woff2)
+  Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)
+
+All three are licensed under the SIL Open Font License, Version 1.1, reproduced below.
 They are served from this repository (/fonts/...); no font is loaded from the network.
 
 -----------------------------------------------------------

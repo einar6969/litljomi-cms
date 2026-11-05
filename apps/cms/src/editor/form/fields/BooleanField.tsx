@@ -23,9 +23,9 @@ export function BooleanField({ id, label, required, value, onChange }: FieldProp
   ];
   return (
     <FieldGroup id={id} label={label} required={required} error={error} describedBy={describedByOf(id, { error })}>
-      <div className="flex flex-wrap gap-x-6 gap-y-1">
+      <div className="seg">
         {choices.map((choice) => (
-          <label key={choice.key} className="inline-flex min-h-[44px] items-center gap-2 font-normal">
+          <label key={choice.key}>
             <input
               type="radio"
               id={`${id}-${choice.key}`}
@@ -34,7 +34,6 @@ export function BooleanField({ id, label, required, value, onChange }: FieldProp
               required={required}
               checked={error === null && current === choice.value}
               onChange={() => onChange(choice.value)}
-              className="size-5 accent-[var(--color-ink)]"
             />
             {choice.label}
           </label>

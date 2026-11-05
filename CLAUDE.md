@@ -2,6 +2,12 @@
 
 This repository holds Litljómi CMS Hub: one Litljómi-owned CMS platform (a Next.js CMS app over one Supabase project) that gives each client site an isolated editing environment. LABAK is the first tenant.
 
+## Frontend work
+
+UI work on `ui/` branches skips the KING process, subagents, reviewers, plan tasks, gates paperwork and `docs/execution/` bookkeeping. One session works directly.
+
+The session may run any local command, including the browser tests and the local CMS, and may commit freely on its branch.
+
 **Sources of truth, in order:**
 1. `docs/architecture.md`, the approved specification.
 2. `docs/plans/2026-11-01-m0-m1.md`, the M0–M1 implementation plan.
