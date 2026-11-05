@@ -34,6 +34,19 @@ export const arrangePages = () => run<{ arranged: true }>('arrange-pages');
 /** Removes them again. */
 export const cleanPages = () => run<{ cleaned: true }>('clean-pages');
 
+/** The tenant overview's states: a fixture tenant of the m4-probe module, with editor_demo a member. */
+export type OverviewState = 'proven' | 'no-site' | 'nothing-proven';
+export const arrangeOverview = (state: OverviewState) => run<{ arranged: string }>('arrange-overview', state);
+
+/** Removes the fixture tenant and its membership. */
+export const cleanOverview = () => run<{ cleaned: true }>('clean-overview');
+
+/** Takes SELECT on api.publication_status from editors on the local database, so the read really fails. */
+export const revokeStatusRead = () => run<{ revoked: true }>('revoke-status-read');
+
+/** Gives it back. */
+export const grantStatusRead = () => run<{ granted: true }>('grant-status-read');
+
 /** How many verified and unverified factors the admin has. */
 export const adminFactors = () => run<{ verified: number; unverified: number }>('factors');
 

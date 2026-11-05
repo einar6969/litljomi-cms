@@ -24,23 +24,54 @@ describe('StructureNav (M2-09; spec §3.2)', () => {
       <StructureNav
         tenantSlug="acme"
         structure={[
-          { type: 'settings', label: 'Stillingar', singleton: true },
           { group: 'Efni', items: [{ type: 'page', label: 'Síður' }, { type: 'news', label: 'Fréttir' }] },
-          { group: 'Annað', items: [{ type: 'staff', label: 'Starfsfólk' }] },
-          { type: 'footer', label: 'Fótur', singleton: true },
           { type: 'links', label: 'Tenglar' },
+          { group: 'Annað', items: [{ type: 'staff', label: 'Starfsfólk' }] },
         ]}
       />,
     );
-    expect(headings(html)).toEqual([t.tenant.contentTypes, 'Efni', 'Annað', t.tenant.contentTypes]);
+    expect(headings(html)).toEqual(['Efni', t.tenant.contentTypes, 'Annað']);
     expect(links(html)).toEqual([
-      ['/t/acme/settings', 'Stillingar'],
       ['/t/acme/page', 'Síður'],
       ['/t/acme/news', 'Fréttir'],
-      ['/t/acme/staff', 'Starfsfólk'],
-      ['/t/acme/footer', 'Fótur'],
       ['/t/acme/links', 'Tenglar'],
+      ['/t/acme/staff', 'Starfsfólk'],
     ]);
+  });
+
+  it('leaves the singletons to the Síður card, and a section left with nothing with them', () => {
+    const html = renderToStaticMarkup(
+      <StructureNav
+        tenantSlug="acme"
+        structure={[
+          { type: 'settings', label: 'Stillingar', singleton: true },
+          { group: 'Efni', items: [{ type: 'news', label: 'Fréttir' }, { type: 'about', label: 'Um okkur', singleton: true }] },
+          { group: 'Annað', items: [{ type: 'footer', label: 'Fótur', singleton: true }] },
+        ]}
+      />,
+    );
+    expect(headings(html)).toEqual(['Efni']);
+    expect(links(html)).toEqual([['/t/acme/news', 'Fréttir']]);
+  });
+
+  it('renders nothing when every type is a singleton', () => {
+    const html = renderToStaticMarkup(<StructureNav tenantSlug="acme" structure={[{ type: 'about', label: 'Um okkur', singleton: true }]} />);
+    expect(html).toBe('');
+  });
+
+  it('shows a card\'s count line outside its link, and leaves it out with no count', () => {
+    const html = renderToStaticMarkup(
+      <StructureNav
+        tenantSlug="acme"
+        structure={[{ type: 'news', label: 'Fréttir' }, { type: 'staff', label: 'Starfsfólk' }]}
+        counts={new Map([['news', { total: 24, drafts: 1 }]])}
+      />,
+    );
+    expect(html).toContain('<p class="meta-l">24 færslur, 1 uppkast</p>');
+    expect(html.match(/meta-l/g)).toHaveLength(1);
+    expect(links(html)).toEqual([['/t/acme/news', 'Fréttir'], ['/t/acme/staff', 'Starfsfólk']]);
+    const link = /<a href="\/t\/acme\/news"[^>]*>(.*?)<\/a>/.exec(html)![1];
+    expect(link).not.toContain('færslur');
   });
 
   it('encodes the tenant slug and type names in links', () => {

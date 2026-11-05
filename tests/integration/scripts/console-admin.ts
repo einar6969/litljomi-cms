@@ -11,9 +11,13 @@ import { adminAuth, auth, generateLinkSession } from '../src/auth-api.ts';
 import { PERSONAS } from '../src/fixtures.ts';
 import { closeAll, ownerQuery } from '../src/sql.ts';
 // Also: arrange-pages and clean-pages, the fixtures of console-pages.spec.ts (M4-05);
-// arrange-email-change, address-of <id> and remove-user <id>, those of sign-in-sessions.spec.ts (M5-03).
+// arrange-email-change, address-of <id> and remove-user <id>, those of sign-in-sessions.spec.ts (M5-03);
+// arrange-overview <state>, clean-overview, revoke-status-read and grant-status-read, those of the
+// tenant overview's screenshots in design.spec.ts.
 
 const { id, email } = PERSONAS.platform_admin;
+/** The module tenant of the overview's fixture; nothing seeds it, so the slug is free. */
+const OVERVIEW_TENANT = 'm4-probe';
 
 type Factor = { id: string; status: string };
 
@@ -85,6 +89,87 @@ const steps: Record<string, (arg?: string) => Promise<unknown>> = {
     await ownerQuery(`delete from cms.audit_log where tenant_id in ${ids}`);
     await ownerQuery(`delete from cms.tenants where slug in ('console-fixture', 'console-paused')`);
     return { cleaned: true };
+  },
+
+  // The tenant overview's states (design.spec.ts) that no seeded tenant can hold on demand: its demo
+  // tenant has changes and old failures from every run. A tenant of the m4-probe module, so the page
+  // has a real structure; no seeded tenant changes. editor_demo is a member only while it exists.
+  // `nothing-proven`: an active site and two drafts. `proven`: one of them published, every site
+  // confirmed. `no-site`: the same with its site inactive. Rerunnable: it clears first.
+  async 'arrange-overview'(state) {
+    if (state !== 'nothing-proven' && state !== 'proven' && state !== 'no-site') throw new Error(`unknown state: ${state}`);
+    await steps['clean-overview']!();
+    const editor = PERSONAS.editor_demo.id;
+    const [tenant] = await ownerQuery<{ id: string }>(`insert into cms.tenants (slug, name) values ($1, 'M4 probe') returning id`, [OVERVIEW_TENANT]);
+    const tenantId = tenant!.id;
+    await ownerQuery('insert into cms.memberships (tenant_id, user_id) values ($1, $2)', [tenantId, editor]);
+    const [site] = await ownerQuery<{ id: string }>(
+      `insert into cms.sites (tenant_id, base_url, revalidate_url, webhook_secret_ref, active)
+       values ($1, 'http://localhost:3299/overview', 'http://localhost:3299/overview/revalidate', gen_random_uuid(), $2) returning id`,
+      [tenantId, state !== 'no-site'],
+    );
+    const entry = async (type: string, title: string, singleton: boolean): Promise<string> => {
+      const [row] = await ownerQuery<{ id: string }>(
+        `insert into cms.entries (tenant_id, type, slug, singleton, created_by) values ($1, $2, $3, $4, $5) returning id`,
+        [tenantId, type, singleton ? null : `overview-${randomBytes(4).toString('hex')}`, singleton, editor],
+      );
+      await ownerQuery(
+        `insert into cms.drafts (entry_id, tenant_id, schema_version, data, title, updated_by) values ($1, $2, 1, $3, $4, $5)`,
+        [row!.id, tenantId, { title }, title, editor],
+      );
+      return row!.id;
+    };
+    const event = await entry('event', 'Opnunarhátíð vorsins', false);
+    await entry('event', 'Sumarhátíð', false);
+    await entry('site-info', 'Upplýsingar', true);
+    if (state === 'nothing-proven') return { arranged: state };
+    const [revision] = await ownerQuery<{ id: string }>(
+      `insert into cms.revisions (tenant_id, entry_id, draft_version, schema_version, data, title, requested_by)
+       values ($1, $2, 1, 1, $3, 'Opnunarhátíð vorsins', $4) returning id`,
+      [tenantId, event, { title: 'Opnunarhátíð vorsins' }, editor],
+    );
+    await ownerQuery(
+      `update cms.entries set published_rev_id = $2, published_draft_version = 1, first_published_at = now(), last_published_at = now() where id = $1`,
+      [event, revision!.id],
+    );
+    const [release] = await ownerQuery<{ id: string }>(
+      `insert into cms.releases (tenant_id, number, status, delivered_at) values ($1, 1, 'delivered', now()) returning id`,
+      [tenantId],
+    );
+    await ownerQuery(
+      `insert into cms.publish_requests (tenant_id, entry_id, action, draft_version, requested_by, status, revision_id, release_id)
+       values ($1, $2, 'publish', 1, $3, 'committed', $4, $5)`,
+      [tenantId, event, editor, revision!.id, release!.id],
+    );
+    await ownerQuery(
+      `insert into cms.site_deliveries (release_id, site_id, tenant_id, notify_status, live_status, live_confirmed_at)
+       values ($1, $2, $3, 'ok', 'ok', now())`,
+      [release!.id, site!.id, tenantId],
+    );
+    return { arranged: state };
+  },
+
+  async 'clean-overview'() {
+    const ids = `(select id from cms.tenants where slug = '${OVERVIEW_TENANT}')`;
+    await ownerQuery(`update cms.entries set published_rev_id = null where tenant_id in ${ids}`);
+    for (const table of ['site_deliveries', 'publish_requests', 'releases', 'revisions', 'drafts', 'entries', 'sites', 'memberships']) {
+      await ownerQuery(`delete from cms.${table} where tenant_id in ${ids}`);
+    }
+    await ownerQuery(`delete from cms.audit_log where tenant_id in ${ids}`);
+    await ownerQuery(`delete from cms.tenants where slug = '${OVERVIEW_TENANT}'`);
+    return { cleaned: true };
+  },
+
+  // A real failed read for the overview, which reads on the server, where a browser route cannot
+  // reach. The seed heals a run killed in between (tests/integration/src/seed.ts).
+  async 'revoke-status-read'() {
+    await ownerQuery('revoke select on api.publication_status from authenticated');
+    return { revoked: true };
+  },
+
+  async 'grant-status-read'() {
+    await ownerQuery('grant select on api.publication_status to authenticated');
+    return { granted: true };
   },
 
   // M5-03: a throwaway account, because an email change moves the address, with a change requested.

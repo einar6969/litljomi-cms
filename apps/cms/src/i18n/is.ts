@@ -50,6 +50,25 @@ export const is = {
     navigation: 'Efni vefsins',
     greeting: 'Góðan daginn.',
   },
+  // The tenant home's overview. `{n}` and `{d}` are numbers; which of the two words applies is
+  // decided in editor/overview.ts (singular when n ends in 1 but not in 11).
+  overview: {
+    viewSite: 'Skoða vef',
+    live: 'Í loftinu',
+    viewChanges: 'Skoða breytingar',
+    lastPublished: 'Síðast birt',
+    recent: 'Nýlegar breytingar',
+    pages: 'Síður',
+    upToDate: 'Vefurinn þinn er uppfærður.',
+    nothingPublished: 'Ekkert hefur verið birt enn.',
+    today: 'í dag',
+    yesterday: 'í gær',
+    waitingOne: '{n} breyting bíður birtingar.',
+    waitingMany: '{n} breytingar bíða birtingar.',
+    entriesOne: '{n} færsla',
+    entriesMany: '{n} færslur',
+    drafts: ', {d} uppkast',
+  },
   singleton: {
     opening: 'Opna…',
     openFailed: 'Ekki tókst að opna færsluna. Reyndu aftur.',

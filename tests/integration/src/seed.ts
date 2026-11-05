@@ -33,6 +33,9 @@ export async function seedIntegration(): Promise<void> {
     [TENANT.labak, TENANT.demo],
   );
 
+  // A run killed while design.spec.ts had revoked the overview's status read is healed here.
+  await ownerQuery('grant select on api.publication_status to authenticated');
+
   const rpc = async (fn: string, args: Record<string, unknown>) => {
     const { error } = await secret.schema('api').rpc(fn, args);
     if (error) throw new Error(`${fn}: ${error.code} ${error.message}`);
