@@ -26,7 +26,7 @@ A milestone being accepted does not make every line of it hosted.
 - **Nothing real is live.** There is no production project, no real editor and no real content. labak.is is still the old Joomla site.
 - **Tests:** on `b756c74`, from the CI log: pgTAP 2,006 in 39 files, unit 2,498, integration 96 + 116. Unit 2,498 re-run locally on `f2ab9e4`; the other totals were not re-read. CI passed on `eb4e85c`.
 
-The next real decision is Einar's: starting M5 (section 7).
+M5's review is done. Its fix round is `docs/plans/m5.md`.
 
 ## 2. What the Hub is and why it exists
 
@@ -123,6 +123,7 @@ All numbered decisions are in `docs/plans/2026-11-01-m0-m1.md`, despite its name
 | 62 | TOTP rate-limit risk accepted for the console; recheck at hosted acceptance and M5 |
 | 63 | M4 hosted acceptance approved, §8.2 names the operator's read of a webhook secret |
 | 64 | M4 accepted |
+| 65 | M5 fix plan approved. Agent access accepted as a risk: an agent can reach the secret key and `staging` |
 
 **Known not to be in the numbered decisions:**
 
