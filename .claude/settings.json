@@ -3,20 +3,8 @@
     "defaultMode": "acceptEdits",
     "disableBypassPermissionsMode": "disable",
     "allow": [
-      "Bash(git status*)",
-      "Bash(git log*)",
-      "Bash(git diff)",
-      "Bash(git diff *)",
-      "Bash(git show*)",
-      "Bash(git rev-parse *)",
-      "Bash(git merge-base *)",
-      "Bash(git ls-files*)",
-      "Bash(git for-each-ref*)",
-      "Bash(git worktree list*)",
-      "Bash(git branch --show-current)",
-      "Bash(git branch --list*)",
-      "Bash(git fetch origin)",
-      "Bash(git fetch --prune origin)"
+      "Bash(git *)",
+      "Bash(gh *)"
     ],
     "deny": [
       "Bash(sudo *)",
@@ -37,20 +25,13 @@
       "Edit(/.env.staging.local)",
       "Edit(/**/.env.staging.local)",
       "Write(/.env.staging.local)",
-      "Write(/**/.env.staging.local)"
+      "Write(/**/.env.staging.local)",
+      "Bash(git push * staging*)",
+      "Bash(git push *:staging*)",
+      "Bash(git -C * push * staging*)",
+      "Bash(git -C * push *:staging*)"
     ],
     "ask": [
-      "Bash(git push *)",
-      "Bash(git remote *)",
-      "Bash(git -C * push *)",
-      "Bash(git -C * remote *)",
-      "Bash(gh *)",
-      "Bash(git pull *)",
-      "Bash(git fetch *--upload-pack*)",
-      "Bash(git log *--output*)",
-      "Bash(git diff *--output*)",
-      "Bash(git show *--output*)",
-      "Bash(git diff *--no-index*)",
       "Bash(vercel *)",
       "Bash(netlify *)",
       "Bash(supabase link *)",
@@ -74,12 +55,12 @@
     "failIfUnavailable": true,
     "excludedCommands": [
       "gh *",
-      "git fetch *",
-      "git pull *",
-      "git push *"
+      "git *"
     ],
     "network": {
-      "allowedDomains": ["registry.npmjs.org"],
+      "allowedDomains": [
+        "registry.npmjs.org"
+      ],
       "allowUnixSockets": [
         "/Users/einarzoega/.orbstack/run/docker.sock",
         "/var/run/docker.sock"
