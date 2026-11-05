@@ -181,6 +181,11 @@
           "at": "2026-11-05",
           "scope": "M4 hosted acceptance (decision 63), on Supabase staging and Vercel staging projects only: Einar runs supabase db push (4 migrations) and pushes main to staging; Einar adds his platform admin row and enrols TOTP; test 1 fresh tenant with no live site, then suspend and revoke; test 2 rotates demo-staging's webhook secret; boundary-check rerun; read-only Supabase and Vercel connector checks. Excludes production, labak-hub, labak.is, DNS, firewall rules and forced misses. Ends when Einar accepts M4.",
           "note": "Einar in chat, 2026-11-05, answering \"Do you approve hosted acceptance and the §8.2 amendment?\" after the request listing nine steps: \"Approve both\"."
+        },
+        {
+          "at": "2026-11-05",
+          "scope": "Closed: the approval of decision 63 ended with this acceptance. A later hosted action needs a new approval.",
+          "note": "Einar in chat, 2026-11-05, answering \"Do you accept M4?\": \"Accept M4\"."
         }
       ],
       "amendments": [
@@ -301,6 +306,11 @@
           "at": "2026-11-05",
           "scope": "M4 hosted acceptance (decision 63), on Supabase staging and Vercel staging projects only: Einar runs supabase db push (4 migrations) and pushes main to staging; Einar adds his platform admin row and enrols TOTP; test 1 fresh tenant with no live site, then suspend and revoke; test 2 rotates demo-staging's webhook secret; boundary-check rerun; read-only Supabase and Vercel connector checks. Excludes production, labak-hub, labak.is, DNS, firewall rules and forced misses. Ends when Einar accepts M4.",
           "note": "Einar in chat, 2026-11-05, answering \"Do you approve hosted acceptance and the §8.2 amendment?\" after the request listing nine steps: \"Approve both\"."
+        },
+        {
+          "at": "2026-11-05",
+          "scope": "Closed: the approval of decision 63 ended with this acceptance. A later hosted action needs a new approval.",
+          "note": "Einar in chat, 2026-11-05, answering \"Do you accept M4?\": \"Accept M4\"."
         }
       ]
     },

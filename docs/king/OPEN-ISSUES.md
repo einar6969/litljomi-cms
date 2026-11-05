@@ -118,7 +118,7 @@ Left unchanged on purpose. The KING proposes corrections and Einar agrees them.
 
 | # | Decision | Note |
 |---|---|---|
-| E1 | Accepting M4 | C6 reports both tests passed |
+| E1 | Starting M5 | M4 is accepted (decision 64). The proposal is in the KING's report |
 | E4 | Production: when, which region, and the Pro cost | See R2 |
 | E5 | The definition of finished | Proposed in `BRIEF.md`, section 7 |
 | E6 | Target month for LABAK's launch | No urgency. A date sets M6's pace |
