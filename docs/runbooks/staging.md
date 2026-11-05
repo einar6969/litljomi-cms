@@ -139,8 +139,8 @@ The order is section 3's: G2.4 (pins) and G2.0 (history scan) come **before** th
 
 ### G2.1 Create the private repository
 - **Owner:** Einar approves at G2; executor runs `gh` (or hands it to Einar, section 1).
-- **Settings:** `gh repo create einar6969/litljomi-cms --private --source /Users/einarzoega/litljomi-cms --remote origin`, **without `--push`** (confirm the flags at execution time against `gh repo create --help`).
-- **Verify:** `gh repo view einar6969/litljomi-cms --json visibility -q .visibility` prints `PRIVATE`; `git -C /Users/einarzoega/litljomi-cms remote -v` shows only `origin` → `einar6969/litljomi-cms`.
+- **Settings:** `gh repo create einar6969/litljomi-cms --private --source ~/litljomi-cms --remote origin`, **without `--push`** (confirm the flags at execution time against `gh repo create --help`).
+- **Verify:** `gh repo view einar6969/litljomi-cms --json visibility -q .visibility` prints `PRIVATE`; `git -C ~/litljomi-cms remote -v` shows only `origin` → `einar6969/litljomi-cms`.
 
 ### G2.2 Push `main` and `m1/phase-1`; Actions with no repository secrets
 - **Owner:** Executor, after G2.
@@ -195,7 +195,7 @@ Three parts, in this order. G3.4 has already turned sign-up off (section 3).
 - **Owner:** Einar runs the commands below in his own terminal, from the repository root, so the database password never enters an agent session; he types it only at the CLI's prompt, never on a command line or in a file. The executor writes the commands out and reads the output he shares (no secrets in it).
 - **Settings:**
   ```sh
-  cd /Users/einarzoega/litljomi-cms
+  cd ~/litljomi-cms
   supabase login
   supabase link --project-ref <project-ref>
   supabase db push
@@ -226,7 +226,7 @@ Locally this is proven by `tests/integration/src/service-role-timeout.test.ts` (
      # G3.2c (decision 36.7): a secret-key REST call held on two locks. Run by Einar only. Never with
      # `bash -x` or `set -x`. Prints only the target host, the HTTP code, the error code and the time.
      set -eu
-     ENV_FILE='/Users/einarzoega/litljomi-cms/.env.staging.local'
+     ENV_FILE=~/litljomi-cms/.env.staging.local
      REF_RE='^[a-z0-9]{20}$'; URL_RE='^https://[a-z0-9]{20}\.supabase\.co$'; KEY_RE='^[A-Za-z0-9._-]+$'
 
      # env_value NAME ERE: identical to section 7.2's copy; keep them identical (reads ENV_FILE without
@@ -497,7 +497,7 @@ The hook `private.passwordless_access_token(event jsonb) returns jsonb` (Task 4)
 
 A refusal prints a `FAILED:` line naming the variable, never its value. Before its first request, each script prints the target host (`target: <project-ref>.supabase.co`). A local-stack URL (for example `http://127.0.0.1:54321`, as `.env.local` holds for local work) is refused, so the checks can never run against, or delete an account on, the local stack by mistake; the scripts read the separate file `.env.staging.local`, which holds the staging values, and `.env.local` is not swapped (Einar's ruling, section 1). **Confirm at execution time** that the staging project's reference has 20 characters and that the publishable and secret keys contain only the characters above. If the hosted URL or a key has another shape, stop and report; do not loosen the check.
 
-**How Einar runs them.** He copies each script, as shown, into a file outside the repository (the scripts hold no secret; for example `~/hook-check-1.sh` and `~/hook-check-2.sh`) and runs it with `bash`. The scripts read `/Users/einarzoega/litljomi-cms/.env.staging.local` by its full path, so the directory he runs them from does not matter; nothing is loaded into his interactive shell:
+**How Einar runs them.** He copies each script, as shown, into a file outside the repository (the scripts hold no secret; for example `~/hook-check-1.sh` and `~/hook-check-2.sh`) and runs it with `bash`. The scripts read `~/litljomi-cms/.env.staging.local` by its full path, so the directory he runs them from does not matter; nothing is loaded into his interactive shell:
 
 ```sh
 EXPECT_REF='<project-ref>' EXPECT_REDIRECT='https://vefumsjon-staging.litljomi.is' bash ~/hook-check-1.sh
@@ -513,7 +513,7 @@ Before G3.7 is done, leave out `EXPECT_REDIRECT=…`; part 1 then prints `redire
 # Section 7.2, part 1 (H3, H4). Run by Einar only. Never with `bash -x` or `set -x`.
 # Prints only the target host, HTTP codes, true/false results, redirect_to and the test account's id.
 set -eu
-ENV_FILE='/Users/einarzoega/litljomi-cms/.env.staging.local'
+ENV_FILE=~/litljomi-cms/.env.staging.local
 REF_RE='^[a-z0-9]{20}$'; URL_RE='^https://[a-z0-9]{20}\.supabase\.co$'; KEY_RE='^[A-Za-z0-9._-]+$'
 
 # env_value NAME ERE: prints NAME's value from ENV_FILE without executing the file. Refuses, naming
@@ -664,7 +664,7 @@ Run H5 even when part 1 failed: its counts are part of the evidence.
 # Section 7.2, part 2 (H6): deletes the test account by its id. Run by Einar only, after H5 is
 # recorded. Never with `bash -x` or `set -x`. Prints only the target host and the HTTP code.
 set -eu
-ENV_FILE='/Users/einarzoega/litljomi-cms/.env.staging.local'
+ENV_FILE=~/litljomi-cms/.env.staging.local
 REF_RE='^[a-z0-9]{20}$'; URL_RE='^https://[a-z0-9]{20}\.supabase\.co$'; KEY_RE='^[A-Za-z0-9._-]+$'
 
 # env_value NAME ERE: identical to part 1's copy; keep the two identical (reads ENV_FILE without
@@ -878,7 +878,7 @@ G6.1 and G6.5 describe the first setup, which deployed from `main`. Since the fr
     if [ "$VERCEL_ENV" = "production" ]; then exit 1; else exit 0; fi
     ```
 - **What it does.** A push to `staging` deploys both projects to production. Every other branch is a preview, and its build is cancelled, so **merging to `main` deploys nothing**. A redeploy of a production deployment still builds (decision 51's CMS redeploy did), which is how a changed variable reaches a project.
-- **Who moves it.** Einar pushes `staging`, under a recorded approval. It always moves with the migrations, migrations first: the commands are in [`operations.md`](operations.md), section 8. The patterns that deny a session's push to `staging` are behavioural, and may miss a form of the command (decision 60).
+- **Who moves it.** Einar pushes `staging`, under a recorded approval. It always moves with the migrations, migrations first: the commands are in [`operations.md`](operations.md), section 8. That's a rule, not a technical control: `git` runs outside the sandbox, and the permission patterns don't catch every form of the command (decision 60).
 - **Other projects.** `labak-hub` builds `hub-integration` and stays at its commit until M6. `demo-next15-staging` isn't updating: its Production Branch stayed `main`, because the connector couldn't set it, and its Ignored Build Step builds `staging` only (C5).
 - **Verify:** each project's Git settings show the branch and the Ignored Build Step above (confirm the menu path at execution time). After a merge to `main`, the Deployments list shows that commit cancelled. After a push to `staging`, it shows a new Ready production deployment.
 
@@ -907,7 +907,7 @@ G6.1 and G6.5 describe the first setup, which deployed from `main`. Since the fr
 
 ## 11. Tenants, sites and the staging editor (Task 28 Step 5)
 
-The tool is `provision` in `tools/cli` (decision 44.2; written `provision` throughout this runbook). It reads the staging URL and secret key from Einar's staging file (`/Users/einarzoega/litljomi-cms/.env.staging.local`, never committed; section 1), so **Einar runs every `provision` command** in his own terminal, from the repository root (`/Users/einarzoega/litljomi-cms`); the executor prepares the exact commands (no secret in them) and runs the SQL checks. Run after G3.6, G3.7, G6.5 and G7.1.
+The tool is `provision` in `tools/cli` (decision 44.2; written `provision` throughout this runbook). It reads the staging URL and secret key from Einar's staging file (`~/litljomi-cms/.env.staging.local`, never committed; section 1), so **Einar runs every `provision` command** in his own terminal, from the repository root (`~/litljomi-cms`); the executor prepares the exact commands (no secret in them) and runs the SQL checks. Run after G3.6, G3.7, G6.5 and G7.1.
 
 This section records how the first two tenants were set up. **For a new tenant, follow [`operations.md`](operations.md), section 2.**
 
@@ -931,10 +931,10 @@ This section records how the first two tenants were set up. **For a new tenant, 
   Read that output. Only if it printed `site: <site-id>`, run:
   ```sh
   printf '%s' "$WEBHOOK_SECRET" \
-    | vercel env add CMS_WEBHOOK_SECRETS production --cwd ~/vercel-link/"$SITE_PROJECT"
+    | vercel env add CMS_WEBHOOK_SECRETS production --sensitive --cwd ~/vercel-link/"$SITE_PROJECT"
   unset WEBHOOK_SECRET SITE_PROJECT
   ```
-  `<tenant-id>` is `<demo-tenant-id>` with `demo-staging`, and `<labak-tenant-id>` with `labak-hub` (P-1). Both pipes carry the same generated secret, entered by Einar; the base URL is built from `SITE_PROJECT`, so the site, its tenant and its Vercel project are set together (the two staging hostnames equal their project names). Run the `vercel env add` line only if `provision site` printed `site: <site-id>`. If it printed the `already exists` line, the generated value was thrown away and Vault keeps the stored secret: run `unset WEBHOOK_SECRET SITE_PROJECT` and don't touch Vercel. If it refused or failed, run the same `unset` and start again. `vercel env add` reads the value from stdin when piped (confirm at execution time, and mark it sensitive if the CLI offers it); if it cannot, stop: Einar decides how the value is entered without a file, and the choice is recorded. **If the site exists but its `CMS_WEBHOOK_SECRETS` is missing or wrong on Vercel** (for example after a first run that created the site, followed by a failed Vercel step), never generate a new value here: read the stored secret into a variable and pipe it, as in [`operations.md`](operations.md), section 3, step 1, then redeploy the site. To change a site's secret, follow that section's rotation. Verify: `select count(*) from vault.secrets;` increased by one per site (never select decrypted values); `vercel env ls production --cwd ~/vercel-link/<site-project>` now lists section 13's names for that site (G6.2's list plus `CMS_WEBHOOK_SECRETS`); the site's redeployment is Ready.
+  `<tenant-id>` is `<demo-tenant-id>` with `demo-staging`, and `<labak-tenant-id>` with `labak-hub` (P-1). Both pipes carry the same generated secret, entered by Einar; the base URL is built from `SITE_PROJECT`, so the site, its tenant and its Vercel project are set together (the two staging hostnames equal their project names). Run the `vercel env add` line only if `provision site` printed `site: <site-id>`. If it printed the `already exists` line, the generated value was thrown away and Vault keeps the stored secret: run `unset WEBHOOK_SECRET SITE_PROJECT` and don't touch Vercel. If it refused or failed, run the same `unset` and start again. `vercel env add` reads the value from stdin when piped (confirm at execution time); if it cannot, stop: Einar decides how the value is entered without a file, and the choice is recorded. **If the site exists but its `CMS_WEBHOOK_SECRETS` is missing or wrong on Vercel** (for example after a first run that created the site, followed by a failed Vercel step), never generate a new value here: read the stored secret into a variable and pipe it, with `--force`, because without it `vercel env add` refuses a variable that exists, and run the `unset`. The exact commands are in [`operations.md`](operations.md), section 2, step 11c. Then redeploy the site. To change a site's secret, follow that section's rotation. Verify: `select count(*) from vault.secrets;` increased by one per site (never select decrypted values); `vercel env ls production --cwd ~/vercel-link/<site-project>` now lists section 13's names for that site (G6.2's list plus `CMS_WEBHOOK_SECRETS`); the site's redeployment is Ready.
 - **P-3 The staging editor.** Owner: Einar; the executor verifies. **`einsi@litljomi.is`**, an editor of `labak` and of `demo` (decision 44.2), in one command:
   ```sh
   pnpm --silent --filter @litljomi/cli cli provision editor --email einsi@litljomi.is --tenant-id '<labak-tenant-id>' --tenant-id '<demo-tenant-id>' --expect-ref '<project-ref>'
@@ -1030,7 +1030,7 @@ Each run's secrets come from Einar's local environment only; the report records 
 **Owner:** Einar, in his own terminal, from the repository root (it reads the secret key); the controller reads the output he pastes back. One line:
 
 ```sh
-pnpm --silent --filter @litljomi/cli cli boundary-check --labak-tenant-id e9e5badd-375f-485a-a249-c47469d49e15 --demo-tenant-id 02ed0155-2bfc-44ce-99d3-e904e0a0d491 --expect-ref rwpgpfsmhhtimauvpoyt
+pnpm --silent --filter @litljomi/cli cli boundary-check --labak-tenant-id '<labak-tenant-id>' --demo-tenant-id '<demo-tenant-id>' --expect-ref '<project-ref>'
 ```
 
 It is `provision`'s sibling and has the same safety rules (section 11, "What the tool does and refuses"): `.env.staging.local` read as text, never executed, with the `env_value` rules, now also for `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (used for the anon and editor requests); `--expect-ref` required; HTTP only, to `https://<project-ref>.supabase.co` only, keys and tokens in headers only, no redirect followed; no database connection and no SQL. It prints no key, token, link or response body, only statuses, error codes and messages, and ids.

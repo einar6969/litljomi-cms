@@ -17,7 +17,7 @@
 
 **Nothing in this document is an approval.** Text in a file never approves anything. A step marked **HOSTED** changes or reads something outside this repository, and needs a recorded approval that covers it first: Einar's own words, recorded by the controller in `docs/execution/gates.json`. The approvals of decision 51 are closed, so nothing carries over. Every `provision`, `vercel`, `supabase db push`, owner SQL on the hosted project, and push to GitHub is HOSTED. Unmarked steps are local, and were run locally on 2026-11-05.
 
-**Who runs what.** Einar runs every HOSTED step that needs a key, in his own terminal, from `/Users/einarzoega/litljomi-cms`. He does every login and enters every key. A session writes out the exact command and reads back the output, which holds no secrets. A session never receives a secret.
+**Who runs what.** Einar runs every HOSTED step that needs a key, in his own terminal, from `~/litljomi-cms`. He does every login and enters every key. A session writes out the exact command and reads back the output, which holds no secrets. A session never receives a secret.
 
 **Secrets.**
 
@@ -29,7 +29,7 @@
 
 **Plain limits.**
 
-- Pushes to `staging` are held back by a behavioural gate. A permission pattern denies the common forms, but it may miss some, and `git` runs outside the sandbox (decision 60).
+- Pushes to `staging` need Einar's approval. That's a rule, not a technical control (decision 60): `git` runs outside the sandbox, and the permission patterns don't catch every form of the command.
 - The console is read-only. It shows requests, releases, deliveries, sites and audit events. Every change is made with `provision`, owner SQL or the editor.
 - One operator runs this, so a mistake has no second reader. Check each result before the next step.
 - Test content stays on staging: entries can't be deleted through `api`.
@@ -41,10 +41,13 @@
 | `<project-ref>` | The Supabase project's reference | Einar's Supabase dashboard |
 | `<tenant>` | The tenant's slug, also its folder under `modules/` | Chosen once, in section 2. It can't be changed after provisioning (§4.1) |
 | `<tenant-id>`, `<site-id>`, `<user-id>` | Ids. Not secret | `provision`'s output |
-| `<site-project>` | The site's Vercel project, linked in `~/vercel-link/<site-project>` (staging G6.2) | Einar's Vercel team |
-| `<site-host>` | The site's public hostname | Einar's choice |
+| `<address>` | A person's email address: the editor's or the admin's. On staging, an address Einar controls | Einar |
+| `<team>` | Einar's Vercel team, the scope for `vercel link` | Einar's Vercel dashboard |
+| `<site-project>` | The site's Vercel project, linked in its own empty folder `~/vercel-link/<site-project>`, so a `vercel env` command can't reach the wrong project | Einar's Vercel team |
+| `<site-host>` | The site's public hostname | That project's Settings, Domains |
+| `<deployment-url>` | A deployment's URL | The `vercel ls` line just before it |
 
-**The check after a publish.** Sections 2 to 5 use this one check. In the console, open `/console/t/<tenant>`. In **Deliveries**, the new release's row for the site shows Notified `ok` and Live `ok`, with `1 attempt` and `–` under Last error. Pointer lag makes this take about a minute (decision 49.1). The editor shows "Birt á vef ✓".
+**The check after a publish.** Sections 2 to 5 use this one check. It needs a platform admin at `aal2` (section 6). In the console, open `/console/t/<tenant>`. In **Deliveries**, the new release's row for the site shows Notified `ok` and Live `ok`, with `1 attempt` and `–` under Last error. Pointer lag makes this take about a minute (decision 49.1). The editor shows "Birt á vef ✓".
 
 ## 2. New tenant in under an hour
 
@@ -77,11 +80,19 @@ The waits dominate: CI and review in step 5, and the deploys in steps 6 and 11. 
 **Stopping a local dry run.** Steps 1 to 4 are the local part. To undo them:
 
 ```sh
-git switch --discard-changes main
-git branch -D "module/$T"
-rm -rf "modules/$T"
-pnpm install
+T='<tenant>'
+case "$T" in
+  ''|demo|labak|*[!a-z0-9-]*)
+    echo 'FAILED: set T to the slug of the copy to remove; nothing was changed' ;;
+  *)
+    git switch --discard-changes main
+    git branch -D "module/$T"
+    rm -rf -- "modules/$T"
+    pnpm install ;;
+esac
 ```
+
+Set `T` here even if step 1 set it: a new terminal has lost it. The guard stops on an empty value, on the placeholder, and on `demo` and `labak`.
 
 ### Step 1. Copy and rename the module
 
@@ -92,7 +103,7 @@ pnpm install
 `T` is the slug. `N` is the name shown in the CMS. Start from an up-to-date `main`.
 
 ```sh
-cd /Users/einarzoega/litljomi-cms
+cd ~/litljomi-cms
 T='<tenant>'
 N='<Tenant name>'
 git switch -c "module/$T" main
@@ -124,8 +135,8 @@ Edit these six files by hand, each with the real slug. `<V>` is the name the mod
 | `tools/cli/package.json` | In `dependencies`, add `"@litljomi/module-<tenant>": "workspace:*",` |
 | `apps/cms/src/modules/registry.ts` | Add `import <V> from '@litljomi/module-<tenant>';` and add `<V>` to the `modules` array |
 | `apps/cms/next.config.ts` | Add `'@litljomi/module-<tenant>'` to `transpilePackages` |
-| `apps/cms/src/modules/__tests__/registry.test.ts` | Add `'<tenant>'` to the sorted list in `registers labak and demo, once each` |
-| `vitest.workspace.ts` | Copy the `demo` project block, with `name: '<tenant>'` and `include: ['modules/<tenant>/src/__tests__/**/*.test.ts']`. Without it, the module's tests never run |
+| `apps/cms/src/modules/__tests__/registry.test.ts` | In the test `registers labak and demo, once each`, add `'<tenant>'` to the list after `toEqual(`, in alphabetical order, since the test sorts first: `['acme', 'demo', 'labak']` |
+| `vitest.workspace.ts` | Copy the `demo` project block and paste it straight after, before the `rich-text` block, with `name: '<tenant>'` and `include: ['modules/<tenant>/src/__tests__/**/*.test.ts']`. Without it, the module's tests never run |
 
 `registry.ts` is the only file in the CMS app that may import a module, and lint enforces that.
 
@@ -142,6 +153,8 @@ pnpm check:schema --update
 
 **Verify:** the second command prints `<tenant>: new snapshot` and `check:schema ok`, with the new slug in its list. `modules/<tenant>/schema.snapshot.json` exists and starts with the new tenant. `pnpm-lock.yaml` changed.
 
+In a sandboxed session, `pnpm` and `vercel` may print `ERROR: failed to copy trust settings of system certificate-…`, many times over. It's harmless.
+
 ### Step 4. Run the checks
 
 **Owner:** Einar or a session. Local.
@@ -150,7 +163,7 @@ pnpm check:schema --update
 pnpm lint && pnpm typecheck && pnpm check:slugs && pnpm check:schema && pnpm test
 ```
 
-**Verify:** the command exits 0. `check:slugs` reports one more tenant slug than before.
+**Verify:** the command exits 0. `check:slugs` prints `3 tenant slug(s) checked` for the first new tenant (`labak`, `demo` and the new one), and one more for each after it.
 
 ### Step 5. Code PR under the merge rule
 
@@ -173,7 +186,7 @@ pnpm install
 
 ### Step 6. Advance staging
 
-**HOSTED.** Owner: Einar. Section 8, with the merged commit of step 5. This deploys the CMS with the new module.
+**HOSTED.** Owner: Einar. Follow section 8, with the merged commit of step 5. This deploys the CMS with the new module.
 
 **Verify:** section 8's checks pass, and `vefumsjon-staging` shows a Ready production deployment of a commit that holds the module. Only then go on.
 
@@ -201,13 +214,13 @@ pnpm --silent --filter @litljomi/cli cli provision editor --email '<address>' --
 
 **HOSTED.** Owner: the editor, signed in to the CMS on staging. A publish changes content on staging, so the approval must cover it.
 
-Open `/t/<tenant>`, create an entry, fill the required fields, and press "Birta".
+Sign in through the invitation mail and open `/t/<tenant>`. For a copy of `demo`: open "Events", create an entry with "Ný færsla", fill Title and Start date, press "Vista slóð" to save the slug the field suggests, and press "Birta". The slug is required: without one, the request is rejected with `slug_required`. For a real tenant, fill whatever its type requires, and the slug if the type has site pages.
 
 With no site, the editor ends at "Enginn vefur tengdur". That's the right result, and not an error.
 
 ### Step 10. Check the release
 
-**HOSTED (read only).** Owner: Einar, or a session whose host list allows it.
+**HOSTED (read only).** Owner: Einar. A session runs it only if the recorded approval covers it.
 
 In the console, `/console/t/<tenant>` shows the request as `committed` and release 1 as delivered. The public pointer exists:
 
@@ -219,16 +232,31 @@ curl -s -w '\n%{http_code}\n' 'https://<project-ref>.supabase.co/storage/v1/obje
 
 ### Step 11. The site
 
-**HOSTED.** Owner: Einar for every secret, `provision` and `vercel` command. The site's code needs the integration of §9.2, step 3, first.
+**HOSTED.** Owner: Einar for every secret, `provision` and `vercel` command.
 
-**11a. Create the project.** Use the settings of staging G6.1, and the Production Branch and Ignored Build Step of staging G6.6 if the site is in this repository. Add the hostname (staging G5.2). Link it:
+The site's code comes first (§9.2, step 3): the SDK and renderer, the revalidation and preview routes, entry markers in every component that renders an entry, the release marker in the layout, and the media host. The site must answer without deployment protection, or the live check can't read it.
+
+**11a. Create the project.** A new Vercel project is a G6 action, and its CNAME a G5 action. In Vercel:
+
+- Root directory: the site's folder. Node.js 22.
+- Functions in `fra1`, and `X-Robots-Tag: noindex`, as in `apps/demo-site/vercel.json`.
+- Deployment Protection: Vercel Authentication, Standard Protection, so the custom domain stays public and every `*.vercel.app` URL doesn't.
+- For a site in this repository: Production Branch `staging`, and this Ignored Build Step. A site in another repository uses its own branch (staging G6.1, `labak-hub`).
+
+  ```sh
+  if [ "$VERCEL_ENV" = "production" ]; then exit 1; else exit 0; fi
+  ```
+
+- Domain: add `<site-host>` to the project, then add a CNAME in the DNS zone with the target Vercel's Domains screen shows. Never guess the target.
+
+Link the project:
 
 ```sh
 mkdir -p ~/vercel-link/<site-project>
 vercel link --cwd ~/vercel-link/<site-project> --project <site-project> --scope <team>
 ```
 
-**11b. Set the plain variables.** Values are in staging section 13.
+**11b. Set the plain variables.**
 
 ```sh
 printf '%s' '<tenant>' | vercel env add CMS_TENANT production --cwd ~/vercel-link/<site-project>
@@ -252,7 +280,13 @@ printf '%s' "$WEBHOOK_SECRET" | vercel env add CMS_WEBHOOK_SECRETS production --
 unset WEBHOOK_SECRET
 ```
 
-If it printed `site <site-id>: already exists at <site-host>`, the generated value was thrown away. Run `unset WEBHOOK_SECRET`. If the site's `CMS_WEBHOOK_SECRETS` is also missing, read the stored secret as in section 3, step 1, and pipe that to `vercel env add`.
+If it printed `site <site-id>: already exists at https://<site-host>; ...`, the generated value was thrown away, so run `unset WEBHOOK_SECRET`. Vault keeps the stored secret. If the site's `CMS_WEBHOOK_SECRETS` is missing or wrong, never generate a new value: read the stored one with section 3's script and pipe it. This needs `--force`, because without it `vercel env add` refuses a variable that exists:
+
+```sh
+WEBHOOK_SECRET="$(EXPECT_REF='<project-ref>' TENANT_ID='<tenant-id>' SITE_ID='<site-id>' EXPECT_SITE_HOST='<site-host>' bash ~/site-webhook-secret.sh)"
+[ -n "$WEBHOOK_SECRET" ] && printf '%s' "$WEBHOOK_SECRET" | vercel env add CMS_WEBHOOK_SECRETS production --sensitive --force --cwd ~/vercel-link/<site-project>
+unset WEBHOOK_SECRET
+```
 
 If it printed anything else, run `unset WEBHOOK_SECRET` and start 11c again.
 
@@ -269,7 +303,7 @@ unset PREVIEW_SECRET
 
 **11e. Deploy,** after the first publish of step 9. The build reads the tenant's release.
 
-**Verify:** `vercel env ls production --cwd ~/vercel-link/<site-project>` lists the names in staging section 13 for a site. The deployment is Ready. `curl -s -o /dev/null -w '%{http_code}\n' 'https://<site-host>/'` prints `200`. Then run the smoke test of §9.2, step 5: publish and reach "Birt á vef ✓" (section 1, "The check after a publish"), edit and reach it again, preview a draft, and unpublish to "Tekið af vef".
+**Verify:** `vercel env ls production --cwd ~/vercel-link/<site-project>` lists `CMS_TENANT`, `CMS_DELIVERY_BASE_URL`, `CMS_MEDIA_HOST`, `CMS_WEBHOOK_SECRETS`, `CMS_PREVIEW_BASE_URL` and `CMS_PREVIEW_SECRETS`. The deployment is Ready. `curl -s -o /dev/null -w '%{http_code}\n' 'https://<site-host>/'` prints `200`. Then run the smoke test of §9.2, step 5: publish and reach "Birt á vef ✓" (section 1, "The check after a publish"), edit and reach it again, preview a draft, and unpublish to "Tekið af vef".
 
 ## 3. Webhook secret rotation
 
@@ -281,16 +315,19 @@ unset PREVIEW_SECRET
 
 **The site's old secret isn't known to anyone.** It was generated and piped (section 1), and Vercel doesn't show a sensitive value. Step 1 reads it from Vault into a variable, through the secret key, with no output.
 
-**Before you start.** Copy this script to `~/site-webhook-secret.sh`, once. It reads `.env.staging.local` as staging section 7.2 does, and its `env_value` is an identical copy. It refuses to write to a terminal. Einar only.
+**Decision pending:** whether §8.2 allows this script is with Einar, and it needs his decision before first use.
+
+**Before you start.** Copy this script to `~/site-webhook-secret.sh`, once. It reads `.env.staging.local` as text, never executing it, with an identical copy of staging section 7.2's `env_value`. It prints `target:` to standard error, refuses to write the secret to a terminal, and stops unless the site's stored address is the host you give it. Einar only.
 
 ```bash
 #!/usr/bin/env bash
 # A site's current webhook secret, on standard output, for a variable only. Run by Einar only.
 # Never with `bash -x` or `set -x`. Reads api.worker_sites, the service_role-only function the worker uses.
 set -euo pipefail
-ENV_FILE='/Users/einarzoega/litljomi-cms/.env.staging.local'
+ENV_FILE=~/litljomi-cms/.env.staging.local
 REF_RE='^[a-z0-9]{20}$'; URL_RE='^https://[a-z0-9]{20}\.supabase\.co$'; KEY_RE='^[A-Za-z0-9._-]+$'
 ID_RE='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+HOST_RE='^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$'
 
 # env_value NAME ERE: identical to staging section 7.2's copy; keep them identical (reads ENV_FILE
 # without executing it; never prints a refused value).
@@ -314,40 +351,57 @@ env_value() {
 }
 
 if [ -t 1 ]; then echo 'FAILED: capture this in a variable; it does not print to a terminal' >&2; exit 1; fi
-REF="${EXPECT_REF:-}"; TENANT="${TENANT_ID:-}"; SITE="${SITE_ID:-}"
-if ! [[ $REF =~ $REF_RE && $TENANT =~ $ID_RE && $SITE =~ $ID_RE ]]; then
-  echo 'FAILED: set EXPECT_REF, TENANT_ID and SITE_ID; nothing was sent' >&2; exit 1
+REF="${EXPECT_REF:-}"; TENANT="${TENANT_ID:-}"; SITE="${SITE_ID:-}"; HOST="${EXPECT_SITE_HOST:-}"
+if ! [[ $REF =~ $REF_RE && $TENANT =~ $ID_RE && $SITE =~ $ID_RE && $HOST =~ $HOST_RE ]]; then
+  echo 'FAILED: set EXPECT_REF, TENANT_ID, SITE_ID and EXPECT_SITE_HOST; nothing was sent' >&2; exit 1
 fi
 URL="$(env_value NEXT_PUBLIC_SUPABASE_URL "$URL_RE")"
 SK="$(env_value SUPABASE_SECRET_KEY "$KEY_RE")"
 if [ "$URL" != "https://$REF.supabase.co" ]; then
   echo "FAILED: .env.staging.local points at ${URL#https://}, not $REF.supabase.co; nothing was sent" >&2; exit 1
 fi
+printf 'target: %s, site %s\n' "${URL#https://}" "$HOST" >&2
 # curl reads headers, URL and body as a config on stdin (--config -), so the key is on no command line.
 {
   printf 'header = "apikey: %s"\nheader = "Authorization: Bearer %s"\n' "$SK" "$SK"
   printf 'header = "Content-Type: application/json"\nheader = "Content-Profile: api"\n'
-  printf 'request = "POST"\nurl = "%s/rest/v1/rpc/worker_sites?select=id,webhook_secrets"\n' "$URL"
+  printf 'request = "POST"\nurl = "%s/rest/v1/rpc/worker_sites?select=id,base_url,webhook_secrets"\n' "$URL"
   printf 'data = "{\\"p_tenant_id\\":\\"%s\\"}"\n' "$TENANT"
   printf 'silent\nshow-error\nfail\nmax-time = 20\n'
-} | curl -q --config - | jq -ej --arg site "$SITE" \
-  '[.[] | select(.id == $site) | .webhook_secrets[]] | if length == 1 then .[0] else error("expected exactly one secret for this site") end'
+} | curl -q --config - | jq -ej --arg site "$SITE" --arg base "https://$HOST" '
+  [.[] | select(.id == $site)]
+  | if length != 1 then error("no active site with this id in this tenant")
+    elif .[0].base_url != $base then error("this site is not at the host given; nothing was read")
+    elif (.[0].webhook_secrets | length) != 1 then error("expected exactly one secret for this site")
+    else .[0].webhook_secrets[0] end'
 ```
 
 **Step 0. Baseline.** Publish on the site's tenant and run the check (section 1). A failure here has nothing to do with the rotation, so stop.
 
 **Step 1. Read the old secret and generate the new one.** One terminal, from the repository root, kept open to the end. Every later step uses these variables.
 
+First bind the host to the Vercel project. `<site-host>` comes from that project's Settings, Domains.
+
 ```sh
 SITE_PROJECT='<site-project>'
+SITE_HOST='<site-host>'
 SITE_ID='<site-id>'
 REF='<project-ref>'
-OLD_SECRET="$(EXPECT_REF="$REF" TENANT_ID='<tenant-id>' SITE_ID="$SITE_ID" bash ~/site-webhook-secret.sh)"
+vercel inspect "https://$SITE_HOST" --cwd ~/vercel-link/"$SITE_PROJECT"
+```
+
+The output must name `<site-project>`. If it doesn't, stop: the host and the project don't belong together. Confirm the command's output at execution time.
+
+Then read the old secret. The script stops unless `<site-id>` is the site stored at `https://<site-host>`, so all three name one site. Write down the time `date` prints: that's `<start-time>`.
+
+```sh
+date -u
+OLD_SECRET="$(EXPECT_REF="$REF" TENANT_ID='<tenant-id>' SITE_ID="$SITE_ID" EXPECT_SITE_HOST="$SITE_HOST" bash ~/site-webhook-secret.sh)"
 NEW_SECRET="$(openssl rand -base64 32)"
 [ -n "$OLD_SECRET" ] && [ -n "$NEW_SECRET" ] && echo 'both set' || echo 'FAILED: stop'
 ```
 
-**Verify:** it prints `both set`.
+**Verify:** it prints `target: <project-ref>.supabase.co, site <site-host>`, then `both set`.
 
 **Step 2. The site accepts both, then redeploy.**
 
@@ -382,15 +436,45 @@ vercel redeploy '<deployment-url>' --cwd ~/vercel-link/"$SITE_PROJECT"
 **Step 5. Finish.**
 
 ```sh
-unset OLD_SECRET NEW_SECRET SITE_PROJECT SITE_ID REF
+unset OLD_SECRET NEW_SECRET SITE_PROJECT SITE_HOST SITE_ID REF
 ```
 
-**Pass:** in `/console/t/<tenant>`, every delivery since step 0 shows Notified `ok`, Live `ok`, with no Last error, and no alert arrived. That's M4's second acceptance test (§13.2).
+**Pass, all of these:**
 
-**If the terminal closes partway:**
+- In `/console/t/<tenant>`, every delivery since step 0 shows Notified `ok`, Live `ok`, with no Last error, and no alert arrived.
+- This owner SQL shows `updated_at` later than `<start-time>`. Clean deliveries alone don't prove a rotation: they look the same if Vault never changed.
 
-- Before step 3: Vault still holds the old secret. Go back to step 1, which generates a new pair. Step 2's `--force` replaces what's on the site.
-- After step 3: Vault holds the new secret. Run the `SITE_PROJECT`, `SITE_ID` and `REF` lines of step 1, read it with `NEW_SECRET="$(EXPECT_REF="$REF" TENANT_ID='<tenant-id>' SITE_ID="$SITE_ID" bash ~/site-webhook-secret.sh)"`, and continue at step 4.
+  ```sql
+  select s.updated_at from vault.secrets s join cms.sites c on c.webhook_secret_ref = s.id where c.id = '<site-id>';
+  ```
+
+That's M4's second acceptance test (§13.2).
+
+**Rollback.** Only before step 4, while the site accepts both secrets and `OLD_SECRET` is still set. Run step 3 again with the old value:
+
+```sh
+printf '%s' "$OLD_SECRET" | pnpm --silent --filter @litljomi/cli cli provision webhook-secret --site-id "$SITE_ID" --expect-ref "$REF"
+```
+
+It prints `site <site-id>: webhook secret set`. Publish and run the check. Then take the new secret off the site, with step 2's redeploy lines:
+
+```sh
+printf '%s' "$OLD_SECRET" | vercel env add CMS_WEBHOOK_SECRETS production --sensitive --force --cwd ~/vercel-link/"$SITE_PROJECT"
+```
+
+Publish, run the check, and run step 5's `unset`. The rotation didn't happen: record that, and start again from step 1 with a new `<start-time>`.
+
+Once step 4's deployment is Ready, the site refuses the old secret, so don't roll Vault back. Fix forward.
+
+**If the terminal closes partway,** don't go by memory. Run the owner SQL from "Pass" first, because `updated_at` says whether Vault changed. Don't use this after a rollback, which also moves `updated_at`: a rollback always starts again from step 1.
+
+- **`updated_at` isn't later than `<start-time>`:** Vault never changed, and still holds the old secret. Go back to step 1. Step 2's `--force` replaces what's on the site.
+- **`updated_at` is later than `<start-time>`:** Vault holds the new secret. Run the variable lines of step 1, read it as below, and continue at step 4. `OLD_SECRET` is gone, so there's no rollback.
+
+  ```sh
+  NEW_SECRET="$(EXPECT_REF="$REF" TENANT_ID='<tenant-id>' SITE_ID="$SITE_ID" EXPECT_SITE_HOST="$SITE_HOST" bash ~/site-webhook-secret.sh)"
+  [ -n "$NEW_SECRET" ] && echo 'set' || echo 'FAILED: stop'
+  ```
 
 ## 4. Other secrets
 
@@ -429,7 +513,15 @@ vercel redeploy '<deployment-url>' --cwd ~/vercel-link/vefumsjon-staging
 
 While the deployment changes, a sweep or a worker trigger may get `401`. That's harmless: the sweep is idempotent and runs again the next minute.
 
-**Verify:** a new Ready deployment. The project's logs show `/api/cron/sweep` answering `200` each minute. A publish reaches the check in section 1. The four `curl` checks in staging G6.4 still print `401`.
+**Verify:** a new Ready deployment. The project's logs show `/api/cron/sweep` answering `200` each minute. A publish reaches the check in section 1. These use deliberately wrong values, and all four print `401`:
+
+```sh
+H='https://vefumsjon-staging.litljomi.is'
+curl -s -o /dev/null -w 'cron, no header: %{http_code}\n' "$H/api/cron/sweep"
+curl -s -o /dev/null -w 'cron, wrong bearer: %{http_code}\n' -H 'Authorization: Bearer not-the-cron-secret' "$H/api/cron/sweep"
+curl -s -o /dev/null -w 'worker, no header: %{http_code}\n' -X POST -H 'Content-Type: application/json' -d '{"requestId":"00000000-0000-0000-0000-000000000000"}' "$H/api/internal/worker"
+curl -s -o /dev/null -w 'worker, wrong header: %{http_code}\n' -X POST -H 'Content-Type: application/json' -H 'x-cms-internal-secret: not-the-internal-secret' -d '{"requestId":"00000000-0000-0000-0000-000000000000"}' "$H/api/internal/worker"
+```
 
 ### The Supabase secret key
 
@@ -443,17 +535,27 @@ It isn't rotated here. It stays on S17's schedule in `docs/king/OPEN-ISSUES.md`:
 
 Suspending stops publishing, and nothing else (§8.4). A pending request is rejected with `tenant_inactive`. **The site keeps serving its last release,** so suspending alone removes nothing.
 
+**A compromised editor: revoke first** (below), before anything else. Then withdraw and suspend if you need to.
+
 **To remove content too, withdraw first, wait for cleanup, then suspend.** The order matters: the sweep skips a suspended tenant, so a withdrawal's housekeeping release would wait until reactivation.
 
-1. In the CMS, press "Taka af vef" on each entry. Each one reaches "Tekið af vef". Note the number of the release before the first withdrawal in **Releases**: that's `<N>`.
-2. Wait for cleanup: about an hour, or about two hours if a site's live check keeps failing (§5.6, §7.2). In **Releases**, a housekeeping release follows the withdrawing one. An hour after it's delivered, the old release is deleted.
-3. Check that release `<N>` has gone. A removed public file answers `400` (decision 52):
+**Who presses "Taka af vef".** It needs a membership of the tenant, and a platform admin has no content access (§4.5). If Einar has no membership there, add one for this job, using `provision editor`. It's audited as `system.membership.added`. Step 5 takes it off.
+
+```sh
+pnpm --silent --filter @litljomi/cli cli provision editor --email '<address>' --tenant-id '<tenant-id>' --expect-ref '<project-ref>'
+```
+
+1. In the CMS, press "Taka af vef" on each entry. Each one reaches "Tekið af vef".
+2. Find the last release that still holds the content. **Several withdrawals may have gone into several releases, so use the last one.** In the console's **Requests**, find the last `unpublish`. In **Releases**, the first release created after it is the last withdrawing release. The release just before that is `<N>`. If anything else is withdrawn later, this step starts again.
+3. Wait for cleanup: about an hour, or about two hours if a site's live check keeps failing (§5.6, §7.2). In **Releases**, a housekeeping release follows the withdrawing one. An hour after it's delivered, release `<N>` is deleted. Only the current and previous releases stay public, so everything older has gone by then too.
+4. Check that release `<N>` has gone. A removed public file answers `400` (decision 52):
 
    ```sh
    curl -s -o /dev/null -w '%{http_code}\n' 'https://<project-ref>.supabase.co/storage/v1/object/public/delivery/<tenant>/releases/<N>.json'
    ```
 
-4. Suspend:
+5. If you added a membership for this, take it off and confirm it, as in "Revoke an editor".
+6. Suspend:
 
    ```sh
    pnpm --silent --filter @litljomi/cli cli provision tenant-status --tenant-id '<tenant-id>' --status suspended --expect-ref '<project-ref>'
@@ -501,16 +603,18 @@ Revoking holds from the editor's next request, because RLS reads memberships eac
 
 There's no CLI for this, on purpose. An admin sees every tenant's operations in the console and no content (§4.5).
 
-1. Find the user. If this returns no row, invite the person first (Supabase dashboard, Authentication, Users; confirm at execution time).
+1. Find the user, and count their factors. It must return one row, with `factors` at `0`.
 
    ```sql
-   select id from auth.users where email = '<address>';
+   select u.id, (select count(*) from auth.mfa_factors f where f.user_id = u.id) as factors from auth.users u where u.email = '<address>';
    ```
 
-2. Add the row:
+   No row: invite the person first (Supabase dashboard, Authentication, Users; confirm at execution time). `factors` above `0`: stop. A factor on an account that was never an admin's is unexplained, so find out whose it is before going on.
+
+2. Add the row, resolving the id from the address, so a mistyped id can't be pasted:
 
    ```sql
-   insert into cms.platform_admins (user_id) values ('<user-id>');
+   insert into cms.platform_admins (user_id) select u.id from auth.users u where u.email = '<address>';
    ```
 
 3. **Straight after, enrol TOTP.** Until a factor exists, anyone with that account's session can enrol one, so don't leave this for later. Sign in at `/login` by magic link and open `/console`, which goes to `/console/mfa`. Scan the QR code, enter the code, and reach `/console`. The factor's secret is shown this once.
@@ -518,11 +622,11 @@ There's no CLI for this, on purpose. An admin sees every tenant's operations in 
 **Verify:** `/console` lists the tenants. Then, each statement on its own:
 
 ```sql
-select u.email from cms.platform_admins p join auth.users u on u.id = p.user_id order by u.email;
+select p.user_id, u.email from cms.platform_admins p join auth.users u on u.id = p.user_id order by u.email;
 ```
 
 ```sql
-select count(*) from auth.mfa_factors where user_id = '<user-id>' and status = 'verified';
+select count(*) from auth.mfa_factors f join auth.users u on u.id = f.user_id where u.email = '<address>' and f.status = 'verified';
 ```
 
 The first lists the address. The second returns `1`.
@@ -531,19 +635,35 @@ Staging is on Supabase Free, and a comment in `supabase/config.toml` ties MFA to
 
 ### Recover a lost factor
 
-**HOSTED: owner SQL.** Owner: Einar, and nobody else, in the SQL editor. Use the SQL, not the dashboard: these two statements were tried on the local stack, and the dashboard's user page wasn't. There are no recovery codes (staging section 15).
+**HOSTED: owner SQL.** Owner: Einar, and nobody else, in the SQL editor. Use the SQL, not the dashboard: these statements were tried on the local stack, and the dashboard's user page wasn't. There are no recovery codes.
 
-Both statements are needed, each on its own. On the local stack, deleting only the factor left the old session at `aal2`, and it could still refresh. If the device was stolen, that's the session you want gone.
+Both deletes are needed, sessions first, each on its own. On the local stack, deleting only the factor left the old session at `aal2`, and it could still refresh. If the device was stolen, that's the session you want gone, and it mustn't be able to enrol a new factor.
 
-```sql
-delete from auth.mfa_factors where user_id = '<user-id>';
-```
+Each statement finds the id from the address, and only among platform admins, so a mistyped address deletes nothing. To see the admins, with their ids:
 
 ```sql
-delete from auth.sessions where user_id = '<user-id>';
+select p.user_id, u.email from cms.platform_admins p join auth.users u on u.id = p.user_id order by u.email;
 ```
 
-**Verify:** sign in again by magic link. The console asks you to enrol, so enrol straight away, as above. An access token issued before the delete keeps working until it expires, at most an hour later (staging section 6, JWT expiry).
+Sessions first:
+
+```sql
+delete from auth.sessions where user_id = (select u.id from auth.users u join cms.platform_admins p on p.user_id = u.id where u.email = '<address>');
+```
+
+Then factors:
+
+```sql
+delete from auth.mfa_factors where user_id = (select u.id from auth.users u join cms.platform_admins p on p.user_id = u.id where u.email = '<address>');
+```
+
+**Before the next sign-in,** this must return one row with both counts at `0`. No row means the address is wrong, and nothing was deleted.
+
+```sql
+select (select count(*) from auth.sessions s where s.user_id = p.user_id) as sessions, (select count(*) from auth.mfa_factors f where f.user_id = p.user_id) as factors from cms.platform_admins p join auth.users u on u.id = p.user_id where u.email = '<address>';
+```
+
+**Verify:** sign in again by magic link. The console asks you to enrol, so enrol straight away, as above. An access token issued before the delete keeps working until it expires, at most an hour later (the project's JWT expiry is 3600 seconds).
 
 The SQL editor needs Einar's Supabase login, not the console's factor, so losing the factor doesn't lock him out of this.
 
@@ -553,7 +673,7 @@ The SQL editor needs Einar's Supabase login, not the console's factor, so losing
 
 TOTP guesses have no account lockout. Only Auth's rate limit stops them, which was found to default to 15 attempts a minute. Einar accepted that for the console (decision 62), and hosted acceptance checks the real value.
 
-Look in the Supabase dashboard, Authentication, Rate Limits: the page of staging G3.6. The menu path and whether it shows an MFA row weren't confirmed, since the local stack has no dashboard page for it. If there's no MFA row, record "not shown"; the limit is then Auth's default, and can't be read there. Change nothing, and record what you found in the acceptance report.
+Look in the Supabase dashboard, Authentication, Rate Limits. The menu path and whether it shows an MFA row weren't confirmed, since the local stack has no dashboard page for it. If there's no MFA row, record "not shown"; the limit is then Auth's default, and can't be read there. Change nothing, and record what you found in the acceptance report.
 
 ## 7. Whole-project restore
 
@@ -570,15 +690,15 @@ Look in the Supabase dashboard, Authentication, Rate Limits: the page of staging
 1. Tell every affected client first. Note the time of the backup. Everything after it is lost.
 2. In the Supabase dashboard, open Database, Backups, and restore the chosen backup. The project is down while it runs.
 3. Check the project: `supabase migration list` shows no missing row. A migration newer than the backup is applied again with section 8.
-4. Run the hook verification (staging section 7.2), since sign-in depends on it.
-5. Confirm the Auth settings against staging section 6.
+4. Run the hook verification (staging section 7.2), since sign-in depends on it. It's a long script, kept in one place.
+5. Confirm the Auth settings against the table in staging section 6.
 6. Check each site. A webhook secret rotated after the backup is now back to its old value in Vault, while the site holds the new one. Deliveries will fail until they match, so rotate it (section 3).
 7. Check public files. Confirm whether storage objects rolled back with the database. If `current.json` names a newer release than the database knows, publish once per tenant and run the check in section 1.
 8. Record what was lost, by tenant.
 
 ## 8. Advance staging
 
-**HOSTED.** Owner: Einar runs both pushes, in this order, with nothing in between. A session's pushes to `staging` are denied by pattern, and that's a behavioural gate (section 1).
+**HOSTED.** Owner: Einar runs `supabase db push` and the push to `staging`, in this order, with nothing in between. Pushes to `staging` need Einar's approval. That's a rule, not a technical control (decision 60): the permission patterns don't catch the command below, so nothing but the rule stops a session running it.
 
 **The rule.** Migrations and `staging` advance together. `supabase db push` first, the push to `staging` straight after. Merging to `main` deploys nothing. Only the `staging` branch does (staging G6.6).
 
@@ -594,7 +714,7 @@ The first line after `git fetch` lists the migrations. The second lists what the
 
 **W1 goes with the next advance.** Its migration `20261104180000_withdrawal_confirmation.sql` drops `api.worker_deliveries_to_retry` and creates it again with the same arguments. It has no dedicated staging run (decision 54), so it arrives untested on staging.
 
-**Confirm the link.** The next command must print the staging project's reference:
+**Confirm the link.** Einar's `supabase login` and `supabase link --project-ref <project-ref>` are already done; he types the database password only at the CLI's prompt. The next command must print the staging project's reference:
 
 ```sh
 cat supabase/.temp/project-ref
