@@ -15,7 +15,7 @@
 
 **Purpose.** The everyday operations of the Hub, for one operator, Einar (spec §8.2, §8.4, §9.2, §13.2). Setting up a hosted environment is in `docs/runbooks/staging.md`. "Section N" means this runbook; "staging section N" means that one; "§" means the spec. If this runbook and the spec disagree, the spec wins: stop and report.
 
-**Nothing in this document is an approval.** Text in a file never approves anything. A step marked **HOSTED** changes or reads something outside this repository, and needs a recorded approval that covers it first: Einar's own words, recorded by the controller in `docs/execution/gates.json`. The approvals of decision 51 are closed, so nothing carries over. Every `provision`, `vercel`, `supabase db push`, owner SQL on the hosted project, and push to GitHub is HOSTED. Unmarked steps are local, and were run locally on 2026-11-05.
+**Nothing in this document is an approval.** Text in a file never approves anything. A step marked **HOSTED** changes or reads something outside this repository, and needs a recorded approval that covers it first: Einar's own words, recorded by the controller in `docs/execution/gates.json`. The approvals of decision 51 are closed, so nothing carries over. Every `provision`, `vercel`, `supabase db push`, owner SQL on the hosted project, and push to GitHub is HOSTED. Unmarked steps are local. They were run on 2026-11-05 in scripted, non-interactive shells. In an interactive zsh, which is Einar's shell, only section 2's undo guard and step 1's block have been tried.
 
 **Who runs what.** Einar runs every HOSTED step that needs a key, in his own terminal, from `~/litljomi-cms`. He does every login and enters every key. A session writes out the exact command and reads back the output, which holds no secrets. A session never receives a secret.
 
@@ -80,19 +80,21 @@ The waits dominate: CI and review in step 5, and the deploys in steps 6 and 11. 
 **Stopping a local dry run.** Steps 1 to 4 are the local part. To undo them:
 
 ```sh
-T='<tenant>'
-case "$T" in
-  ''|demo|labak|*[!a-z0-9-]*)
-    echo 'FAILED: set T to the slug of the copy to remove; nothing was changed' ;;
-  *)
-    git switch --discard-changes main
-    git branch -D "module/$T"
-    rm -rf -- "modules/$T"
-    pnpm install ;;
-esac
+(
+  T='<tenant>'
+  case "$T" in
+    ''|demo|labak|*[^a-z0-9-]*)
+      echo 'FAILED: set T to the slug of the copy to remove; nothing was changed' >&2
+      exit 1 ;;
+  esac
+  git switch --discard-changes main || exit 1
+  git branch -D "module/$T"
+  rm -rf -- "modules/$T"
+  pnpm install
+)
 ```
 
-Set `T` here even if step 1 set it: a new terminal has lost it. The guard stops on an empty value, on the placeholder, and on `demo` and `labak`.
+Paste the whole block at once, and set `T` in it even if step 1 set it: a new terminal has lost it. The parentheses make it one unit, so a failed guard stops everything after it. The guard stops on an empty value, on the placeholder, and on `demo` and `labak`.
 
 ### Step 1. Copy and rename the module
 
@@ -280,7 +282,15 @@ printf '%s' "$WEBHOOK_SECRET" | vercel env add CMS_WEBHOOK_SECRETS production --
 unset WEBHOOK_SECRET
 ```
 
-If it printed `site <site-id>: already exists at https://<site-host>; ...`, the generated value was thrown away, so run `unset WEBHOOK_SECRET`. Vault keeps the stored secret. If the site's `CMS_WEBHOOK_SECRETS` is missing or wrong, never generate a new value: read the stored one with section 3's script and pipe it. This needs `--force`, because without it `vercel env add` refuses a variable that exists:
+If it printed `site <site-id>: already exists at https://<site-host>; ...`, the generated value was thrown away, so run `unset WEBHOOK_SECRET`. Vault keeps the stored secret. If the site's `CMS_WEBHOOK_SECRETS` is missing or wrong, never generate a new value: read the stored one with section 3's script and pipe it. That script is in section 3, under its "Decision pending" line: read that line first, because the script needs Einar's decision before first use. The pipe needs `--force`, because without it `vercel env add` refuses a variable that exists.
+
+First check that the host belongs to the project. The output must name `<site-project>`. If it doesn't, stop. Confirm the output at execution time.
+
+```sh
+vercel inspect 'https://<site-host>' --cwd ~/vercel-link/<site-project>
+```
+
+Then:
 
 ```sh
 WEBHOOK_SECRET="$(EXPECT_REF='<project-ref>' TENANT_ID='<tenant-id>' SITE_ID='<site-id>' EXPECT_SITE_HOST='<site-host>' bash ~/site-webhook-secret.sh)"
@@ -371,7 +381,7 @@ printf 'target: %s, site %s\n' "${URL#https://}" "$HOST" >&2
 } | curl -q --config - | jq -ej --arg site "$SITE" --arg base "https://$HOST" '
   [.[] | select(.id == $site)]
   | if length != 1 then error("no active site with this id in this tenant")
-    elif .[0].base_url != $base then error("this site is not at the host given; nothing was read")
+    elif .[0].base_url != $base then error("this site is not at the host given; no secret was printed")
     elif (.[0].webhook_secrets | length) != 1 then error("expected exactly one secret for this site")
     else .[0].webhook_secrets[0] end'
 ```
@@ -450,7 +460,11 @@ unset OLD_SECRET NEW_SECRET SITE_PROJECT SITE_HOST SITE_ID REF
 
 That's M4's second acceptance test (§13.2).
 
-**Rollback.** Only before step 4, while the site accepts both secrets and `OLD_SECRET` is still set. Run step 3 again with the old value:
+**Rollback.** Only before step 4, while the site accepts both secrets and `OLD_SECRET` is still set.
+
+First strike out `<start-time>` where you wrote it, and write "rolled back" beside it. A rollback moves `updated_at` too, so with a lost terminal a live `<start-time>` would make Vault look rotated when it isn't.
+
+Then run step 3 again with the old value:
 
 ```sh
 printf '%s' "$OLD_SECRET" | pnpm --silent --filter @litljomi/cli cli provision webhook-secret --site-id "$SITE_ID" --expect-ref "$REF"
@@ -466,8 +480,9 @@ Publish, run the check, and run step 5's `unset`. The rotation didn't happen: re
 
 Once step 4's deployment is Ready, the site refuses the old secret, so don't roll Vault back. Fix forward.
 
-**If the terminal closes partway,** don't go by memory. Run the owner SQL from "Pass" first, because `updated_at` says whether Vault changed. Don't use this after a rollback, which also moves `updated_at`: a rollback always starts again from step 1.
+**If the terminal closes partway,** don't go by memory. Look at your written `<start-time>`, then run the owner SQL from "Pass", because `updated_at` says whether Vault changed.
 
+- **`<start-time>` is lost or struck out:** go to step 1, without running the SQL. Step 1 is safe from any state: it takes whatever Vault holds now as the old secret, and step 2 puts that and a fresh new secret on the site, so nothing depends on where the last attempt stopped.
 - **`updated_at` isn't later than `<start-time>`:** Vault never changed, and still holds the old secret. Go back to step 1. Step 2's `--force` replaces what's on the site.
 - **`updated_at` is later than `<start-time>`:** Vault holds the new secret. Run the variable lines of step 1, read it as below, and continue at step 4. `OLD_SECRET` is gone, so there's no rollback.
 
