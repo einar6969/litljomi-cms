@@ -214,3 +214,13 @@ Deferred by the M4 reviews. None is Critical or Major. See also `docs/king/OPEN-
 | M4-03 | `100_escalation` comment says 8 views; gate copied into six views; weak lower bound on `console_audit`; tenant-specific failure messages in `console-views.test.ts`; `afterAll` cleanup; `tests.k` repeated across files |
 | M4-04 | GET enrolment can replace an unverified factor, cross-site or in parallel; first-enrolment race with a stolen `aal1` session; no Back test after enrolment; layout guard can be skipped, so pages rely on the views; no test of Auth refusing a verified-factor change at `aal1`; shared `mfa` preamble; serial test's secret guard; weak layout assertion; leftover password on the local persona; `getSession` warning is noise, unless something reads `user` from it |
 | M4-05 | Deliveries Release column untested; dead `in` and `nullsFirst` in `fake-client.ts`; 50-tenant cap not stated on the overview, and past 50 sites a delivery can show "unknown" |
+
+## M5 (2026-11-05)
+
+Deferred by the M5 reviews. None is Critical or Major. The review's own Minors are summarised in `docs/verification/m5-review.md`.
+
+| Area | Minors |
+|---|---|
+| M5-01 | Panel keeps polling after a publish is hidden with a repeat unpublish from another tab; the first delivered release has no hold; the test 15 order (unpublish missed, publish in flight, second unpublish first) gives an honest unconfirmed state and one alert, and gives up a real check; a 420 s overcount; a finish-to-record window |
+| M5-03 | `/api` 404 carries no security headers; a crafted `/login?emailChange=waiting` shows a notice; cookies stay readable to the browser client; Zod's `allowsEval` tries `new Function` under the CSP (set `jitless` if editing fails); `policyViolations` reads the console only; the browser client's cookie write has unit tests only |
+| Review | Sticky draft cookie; a preview failure 500s the whole site in that browser; `next/image` caches signed draft media; the renderer trusts the bundle; published entries' shape; token route body size; a Vault decrypt per unsigned token; webhook secret length in the SDK; archived entries are publishable; `assets.id` is globally unique, so an id's existence shows; `admin_create_site` secret length; a signed upload token outlives revocation; `platform_admins` changes aren't audited |

@@ -1,5 +1,7 @@
 # M5 independent review, 2026-11-05
 
+**Closed:** every Major finding is fixed, reduced or accepted, and M5 is accepted (decision 69). Outcomes are in `docs/execution/checkpoints/C7.md`.
+
 Five fresh reviews of `main` at `4d078b5`: database boundary, worker and delivery, preview and SDK, editor app with auth, console and CLI, and known items with a history scan. Local only: no hosted system was touched. The KING confirmed findings 1 and 8 to 10 in the code. The rest are as reported, and the OTP and rate-limit items are reasoned, not measured.
 
 **Result: no Critical. No breach of tenant isolation, confidentiality, integrity or audit under any probe. No real secret in the history** (587 commits on 80 refs, plus 58 unreachable commits; S18 can close, within the limits of a regex and entropy scan).
