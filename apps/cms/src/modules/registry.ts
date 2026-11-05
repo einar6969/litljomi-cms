@@ -2,8 +2,9 @@
 import type { ContentType, ModuleManifest } from '@litljomi/cms-schema';
 import demo from '@litljomi/module-demo';
 import labak from '@litljomi/module-labak';
+import m4Probe from '@litljomi/module-m4-probe';
 
-export const modules: ModuleManifest[] = [labak, demo];
+export const modules: ModuleManifest[] = [labak, demo, m4Probe];
 
 /** The module of a tenant, by its slug. */
 export function getModule(slug: string): ModuleManifest | undefined {

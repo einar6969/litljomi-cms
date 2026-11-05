@@ -41,6 +41,9 @@ importers:
       '@litljomi/module-labak':
         specifier: workspace:*
         version: link:../../modules/labak
+      '@litljomi/module-m4-probe':
+        specifier: workspace:*
+        version: link:../../modules/m4-probe
       '@litljomi/rich-text':
         specifier: workspace:*
         version: link:../../packages/rich-text
@@ -165,6 +168,12 @@ importers:
         specifier: workspace:*
         version: link:../../packages/schema
 
+  modules/m4-probe:
+    dependencies:
+      '@litljomi/cms-schema':
+        specifier: workspace:*
+        version: link:../../packages/schema
+
   packages/rich-text:
     dependencies:
       '@tiptap/core':
@@ -270,6 +279,9 @@ importers:
       '@litljomi/module-labak':
         specifier: workspace:*
         version: link:../../modules/labak
+      '@litljomi/module-m4-probe':
+        specifier: workspace:*
+        version: link:../../modules/m4-probe
     devDependencies:
       vite-node:
         specifier: ^3.2.4
