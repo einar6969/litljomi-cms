@@ -28,6 +28,12 @@ async function run<T>(step: string): Promise<T> {
 /** Removes the admin's factors and sessions, so a rerun on the same stack enrols from nothing. */
 export const resetAdmin = () => run<{ reset: true }>('reset');
 
+/** Adds the console pages' fixture tenants (an active one with failures, a suspended one). */
+export const arrangePages = () => run<{ arranged: true }>('arrange-pages');
+
+/** Removes them again. */
+export const cleanPages = () => run<{ cleaned: true }>('clean-pages');
+
 /** How many verified and unverified factors the admin has. */
 export const adminFactors = () => run<{ verified: number; unverified: number }>('factors');
 
