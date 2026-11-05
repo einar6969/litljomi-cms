@@ -29,7 +29,7 @@ export function Section<T>({ id, title, noun, read, columns, rowKey }: Props<T>)
       ) : read.rows.length === 0 ? (
         <p className="text-muted">No {noun}.</p>
       ) : (
-        <div className="card tbl-s">
+        <div className="card tbl-s overflow-x-auto">
           <table className="tbl">
             <thead>
               <tr>

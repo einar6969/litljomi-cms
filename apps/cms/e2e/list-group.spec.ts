@@ -21,7 +21,7 @@ test('a group with a list: add, fill in, reorder by keyboard and remove, each au
   for (const name of ['Fyrsti', 'Annar']) {
     ids[name] = await createEvent(page);
     await page.getByLabel('Title').fill(`${name} ${run}`);
-    await expect(page.getByRole('main').getByRole('status')).toHaveText(t.editor.saved, SAVED);
+    await expect(page.getByRole('status')).toHaveText(t.editor.saved, SAVED);
   }
   const option = (name: string) => ({ label: `${name} ${run} (${t.entries.statuses.draft})` });
 
@@ -40,7 +40,7 @@ test('a group with a list: add, fill in, reorder by keyboard and remove, each au
     await highlights.getByRole('button', { name: t.editor.list.add }).click();
     await expect(highlights.getByRole('combobox', { name: item(2), exact: true })).toBeEnabled();
     await highlights.getByRole('combobox', { name: item(2), exact: true }).selectOption(option('Annar'));
-    await expect(page.getByRole('main').getByRole('status')).toHaveText(t.editor.saved, SAVED);
+    await expect(page.getByRole('status')).toHaveText(t.editor.saved, SAVED);
   });
 
   await test.step('move the second item up with the arrow key on its handle', async () => {
@@ -50,7 +50,7 @@ test('a group with a list: add, fill in, reorder by keyboard and remove, each au
     await expect(highlights.getByRole('combobox', { name: item(2), exact: true })).toHaveValue(ids.Fyrsti!);
     // Focus stays on the moved item's handle.
     await expect(highlights.getByRole('button', { name: fill(t.editor.list.handle, 1) })).toBeFocused();
-    await expect(page.getByRole('main').getByRole('status')).toHaveText(t.editor.saved, SAVED);
+    await expect(page.getByRole('status')).toHaveText(t.editor.saved, SAVED);
   });
 
   await page.reload();
@@ -63,7 +63,7 @@ test('a group with a list: add, fill in, reorder by keyboard and remove, each au
     await page.getByRole('button', { name: fill(t.editor.list.remove, 1) }).click();
     await expect(page.getByRole('combobox', { name: item(1), exact: true })).toHaveValue(ids.Fyrsti!);
     await expect(page.getByRole('combobox', { name: item(2), exact: true })).toHaveCount(0);
-    await expect(page.getByRole('main').getByRole('status')).toHaveText(t.editor.saved, SAVED);
+    await expect(page.getByRole('status')).toHaveText(t.editor.saved, SAVED);
   });
 
   await page.reload();

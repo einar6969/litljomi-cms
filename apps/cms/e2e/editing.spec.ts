@@ -207,7 +207,7 @@ for (const locale of ['is-IS', 'en-US']) {
       await date.focus();
       await page.keyboard.type(keys);
       await expect(date).toHaveValue('2026-11-14');
-      await expect(page.getByRole('main').getByRole('status')).toHaveText(t.editor.saved, SAVED);
+      await expect(page.getByRole('status')).toHaveText(t.editor.saved, SAVED);
       await page.reload();
       await expect(page.getByLabel(DATE)).toHaveValue('2026-11-14');
     });

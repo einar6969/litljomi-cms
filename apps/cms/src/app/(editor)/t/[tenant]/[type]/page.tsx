@@ -77,7 +77,8 @@ export default async function EntryListPage({ params, searchParams }: Props) {
         <SearchShortcut inputId="entry-search" />
         <div className="head">
           <h1>{heading}</h1>
-          <NewEntryButton tenantSlug={tenant.slug} type={type.name} />
+          {/* An empty list has its one action in the empty state. */}
+          {rows.length === 0 && !filtered ? null : <NewEntryButton tenantSlug={tenant.slug} type={type.name} />}
         </div>
         {rows.length === 0 && !filtered ? null : (
           <form role="search" aria-label={t.entries.filter.label} method="get" action={base} className="tools">
