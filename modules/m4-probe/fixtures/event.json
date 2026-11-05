@@ -1,0 +1,19 @@
+{
+  "title": "Opið hús",
+  "startDate": "2026-12-01",
+  "endDate": "2026-12-02",
+  "location": "Reykjavík",
+  "description": {
+    "type": "doc",
+    "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Allir velkomnir." }] }]
+  },
+  "registration": { "href": "https://example.is/skraning" },
+  "capacity": 120,
+  "freeEntry": true,
+  "category": "workshop",
+  "doorsOpen": "2026-12-01T17:30:00Z",
+  "program": {
+    "intro": "Dagskrá kvöldsins.",
+    "highlights": []
+  }
+}

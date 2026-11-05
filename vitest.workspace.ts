@@ -29,6 +29,12 @@ export default defineWorkspace([
   },
   {
     test: {
+      name: 'm4-probe',
+      include: ['modules/m4-probe/src/__tests__/**/*.test.ts'],
+    },
+  },
+  {
+    test: {
       name: 'rich-text',
       include: ['packages/rich-text/src/__tests__/**/*.test.{ts,tsx}'],
       environment: 'jsdom',

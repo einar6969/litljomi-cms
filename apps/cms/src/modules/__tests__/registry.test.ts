@@ -4,7 +4,7 @@ import { getModule, getType, modules } from '../registry';
 
 describe('module registry', () => {
   it('registers labak and demo, once each', () => {
-    expect(modules.map((m) => m.tenant).sort()).toEqual(['demo', 'labak']);
+    expect(modules.map((m) => m.tenant).sort()).toEqual(['demo', 'labak', 'm4-probe']);
   });
   it('finds a module by its tenant slug', () => {
     expect(getModule('labak')?.tenant).toBe('labak');
