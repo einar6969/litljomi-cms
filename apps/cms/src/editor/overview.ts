@@ -11,7 +11,7 @@ import { navSections, type NavItem } from './structure';
 /** A read that succeeded, or failed with its code only (never the database's message). */
 export type Read<T> = { ok: true; value: T } | { ok: false; code: string };
 
-/** The columns of `api.publication_status` the overview reads: what `displayState` uses for `pending`, `validating` and `committed`, and what `summarizeStatus` uses. */
+/** The columns of `api.publication_status` the overview reads: what `displayState` needs for a state's tone, and what `summarizeStatus` uses. */
 export const OVERVIEW_STATUS_FIELDS = [
   'entry_id',
   'action',
@@ -25,6 +25,7 @@ export const OVERVIEW_STATUS_FIELDS = [
   'sites_not_confirmed',
   'retries_exhausted',
   'live_retrying',
+  'latest_action',
 ] as const satisfies readonly (keyof PublicationStatusRow)[];
 
 export type OverviewStatusRow = Pick<PublicationStatusRow, (typeof OVERVIEW_STATUS_FIELDS)[number]>;
@@ -46,8 +47,9 @@ export type OverviewSite = { url: string | null };
 export type StatusSummary = {
   /** Entries whose latest publish every active site has confirmed. */
   proven: ReadonlySet<string>;
-  /** Entries whose latest request is on its way or went wrong, with that state. */
+  /** Entries whose latest request proves nothing and says why: on its way, gone wrong, or with no site to prove it on. */
   unproven: ReadonlyMap<string, DisplayState>;
+  /** An entry's latest request went wrong, or a site did not confirm it, retried or not. */
   failed: boolean;
   /** The newest `requested_at` among proven rows. */
   lastPublished: string | null;
@@ -64,7 +66,7 @@ export type Band = {
 
 type BandReads = { site: Read<OverviewSite | null>; changed: Read<string[]>; status: Read<StatusSummary> };
 
-/** The rest of a `PublicationStatusRow`: never read, and `displayState` looks at none of it for these statuses. */
+/** The rest of a `PublicationStatusRow`: never read. `error` and `missing_assets` only name a failure in detail; without them `displayState` gives the same tone. */
 const UNREAD: Omit<PublicationStatusRow, keyof OverviewStatusRow> = {
   request_id: '',
   tenant_id: '',
@@ -72,7 +74,6 @@ const UNREAD: Omit<PublicationStatusRow, keyof OverviewStatusRow> = {
   release_number: null,
   missing_assets: null,
   latest_request_id: '',
-  latest_action: 'publish',
 };
 
 const STATUS_TONE: Record<EntryStatus, BadgeTone> = { published: 'ok', changed: 'warning', archived: 'hollow', draft: 'neutral' };
@@ -118,14 +119,21 @@ export function summarizeStatus(rows: readonly OverviewStatusRow[]): StatusSumma
       proven.add(row.entry_id);
       if (lastPublished === null || Date.parse(row.requested_at) > Date.parse(lastPublished)) lastPublished = row.requested_at;
     }
-    if (state.tone === 'pending' || state.tone === 'error') unproven.set(row.entry_id, state);
-    if (state.tone === 'error') failed = true;
+    if (state.tone === 'pending' || state.tone === 'error' || state.tone === 'warning') unproven.set(row.entry_id, state);
+    if (state.tone === 'error' || (state.tone === 'pending' && row.sites_not_confirmed > 0)) failed = true;
   }
   return { proven, unproven, failed, lastPublished };
 }
 
-/** The entries that wait: with an unproven request first, then changed since their publication, in `changed`'s order. Each once. */
-export const waitingIds = (changed: readonly string[], summary: StatusSummary): string[] => [...new Set([...summary.unproven.keys(), ...changed])];
+/**
+ * The entries that wait: with a request on its way or gone wrong first, then changed since their
+ * publication, in `changed`'s order. Each once. "No site" does not wait, or n would grow by every
+ * published entry.
+ */
+export function waitingIds(changed: readonly string[], summary: StatusSummary): string[] {
+  const unproven = [...summary.unproven].filter(([, state]) => state.tone === 'pending' || state.tone === 'error').map(([id]) => id);
+  return [...new Set([...unproven, ...changed])];
+}
 
 /** Whether the band has reached "nothing proven, n = 0", the one place the published count decides. */
 export function needsPublishedCount({ site, changed, status }: BandReads): boolean {
@@ -158,7 +166,7 @@ export function deriveBand({ site, changed, status, published }: BandReads & { p
 }
 
 /**
- * What an entry's pill shows. An unproven request shows its own state, never green "Birt", and the
+ * What an entry's pill shows. An unproven request shows its own state, never "Birt", and the
  * `ok` tone needs that entry's proven row: a published entry without one is neutral, as it is when
  * the status read failed or was capped.
  */

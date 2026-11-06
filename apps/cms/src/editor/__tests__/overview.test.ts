@@ -31,6 +31,7 @@ const row = (overrides: Partial<OverviewStatusRow> = {}): OverviewStatusRow => (
   sites_not_confirmed: 0,
   retries_exhausted: false,
   live_retrying: false,
+  latest_action: 'publish',
   ...overrides,
 });
 
@@ -38,6 +39,11 @@ const pending = (entry_id: string) => row({ entry_id, status: 'pending', release
 const failed = (entry_id: string) => row({ entry_id, sites_live_ok: 0, retries_exhausted: true });
 const notConfirmed = (entry_id: string) => row({ entry_id, sites_live_ok: 0, sites_not_confirmed: 1 });
 const removed = (entry_id: string) => row({ entry_id, action: 'unpublish' });
+const retrying = (entry_id: string) => row({ entry_id, sites_live_ok: 0, sites_not_confirmed: 1, live_retrying: true });
+const noSite = (entry_id: string) => row({ entry_id, site_count: 0, sites_notified: 0, sites_live_ok: 0 });
+/** A request that ended before any release: the view's row has no release and no delivery. */
+const ended = (entry_id: string, overrides: Partial<OverviewStatusRow>) => row({ entry_id, release_status: null, sites_notified: 0, sites_live_ok: 0, ...overrides });
+const invalid = `${t.publish.invalid} ${t.publish.invalidGeneric}`;
 
 const ok = <T,>(value: T): Read<T> => ({ ok: true, value });
 const bad: Read<never> = { ok: false, code: '42501' };
@@ -84,6 +90,33 @@ describe('the waiting set', () => {
     expect(waitingIds([], summary).sort()).toEqual(['a', 'b']);
     expect(summary.failed).toBe(true);
   });
+
+  it('counts a request that ended in failure, of either action', () => {
+    const summary = summarizeStatus([
+      ended('a', { status: 'failed_validation' }),
+      ended('b', { status: 'failed' }),
+      ended('c', { status: 'rejected' }),
+      ended('d', { action: 'unpublish', status: 'failed' }),
+    ]);
+    expect(waitingIds([], summary).sort()).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('leaves out a no-site row, and keeps the changed entries, however many are published', () => {
+    const summary = summarizeStatus([noSite('a'), noSite('b'), noSite('c')]);
+    expect(waitingIds(['b', 'd'], summary)).toEqual(['b', 'd']);
+  });
+
+  it('leaves out a publish cancelled by an unpublish: neutral, and nothing failed', () => {
+    const summary = summarizeStatus([ended('a', { status: 'superseded', latest_action: 'unpublish' })]);
+    expect(waitingIds([], summary)).toEqual([]);
+    expect(summary.failed).toBe(false);
+  });
+
+  it('counts a superseded publish that no unpublish cancelled: the editor has to publish again', () => {
+    const summary = summarizeStatus([ended('a', { status: 'superseded' })]);
+    expect(waitingIds([], summary)).toEqual(['a']);
+    expect(summary.failed).toBe(true);
+  });
 });
 
 describe('the status summary', () => {
@@ -102,6 +135,17 @@ describe('the status summary', () => {
     const summary = summarizeStatus([removed('a')]);
     expect(summary.proven.size).toBe(0);
     expect(summary.lastPublished).toBeNull();
+  });
+
+  it.each([
+    ['a request still on its way', pending('a'), false],
+    ['a live check still running', row({ entry_id: 'a', sites_live_ok: 0 }), false],
+    ['one of two sites not confirmed, the other still checking', row({ entry_id: 'a', site_count: 2, sites_notified: 2, sites_live_ok: 0, sites_not_confirmed: 1 }), true],
+    ['a delivery not confirmed and checked again', retrying('a'), true],
+    ['an unpublish not confirmed and checked again', { ...retrying('a'), action: 'unpublish' as const }, true],
+    ['no site', noSite('a'), false],
+  ])('sets failed rightly for %s', (_name, input, expected) => {
+    expect(summarizeStatus([input]).failed).toBe(expected);
   });
 });
 
@@ -169,6 +213,35 @@ describe('the band, in order', () => {
       expect(result).toMatchObject({ heading: '1 breyting bíður birtingar.', tag: false, lastPublished: '2026-11-05T12:00:00+00:00', viewChanges: true });
     });
 
+    it('takes the tag away for a delivery not confirmed, and counts it in n', () => {
+      const result = band({ status: ok([row({ entry_id: 'x' }), retrying('y')]) });
+      expect(result).toMatchObject({ heading: waitingHeading(1), tag: false, lastPublished: '2026-11-05T12:00:00+00:00', viewChanges: true });
+    });
+
+    it('keeps the tag while a request is simply on its way', () => {
+      expect(band({ status: ok([row({ entry_id: 'x' }), pending('y')]) })).toMatchObject({ heading: waitingHeading(1), tag: true });
+    });
+
+    it.each([
+      ['failed_validation', ended('y', { status: 'failed_validation' })],
+      ['failed', ended('y', { status: 'failed' })],
+      ['rejected', ended('y', { status: 'rejected' })],
+      ['a failed unpublish', ended('y', { action: 'unpublish', status: 'failed' })],
+    ])('a latest request that ended %s: waiting, no tag', (_name, failure) => {
+      const result = band({ status: ok([row({ entry_id: 'x' }), failure]) });
+      expect(result).toMatchObject({ heading: waitingHeading(1), tag: false, lastPublished: '2026-11-05T12:00:00+00:00', viewChanges: true });
+    });
+
+    it('takes the tag away for a failed first publish too', () => {
+      const result = band({ status: ok([row({ entry_id: 'x' }), ended('new', { status: 'failed' })]) });
+      expect(result).toMatchObject({ heading: waitingHeading(1), tag: false, viewChanges: true });
+    });
+
+    it('a publish cancelled by an unpublish leaves the proof alone', () => {
+      const result = band({ status: ok([row({ entry_id: 'x' }), ended('y', { status: 'superseded', latest_action: 'unpublish' })]) });
+      expect(result).toMatchObject({ heading: UP_TO_DATE, tag: true, viewChanges: false });
+    });
+
     it('n > 0 with no proof: no tag and no last published', () => {
       expect(band({ status: ok([pending('a')]) })).toMatchObject({ heading: '1 breyting bíður birtingar.', tag: false, lastPublished: null, viewChanges: true });
     });
@@ -205,6 +278,34 @@ describe('the band, in order', () => {
       ['when the status read was capped', { status: capped, published: ok(0) }],
     ])('%s', (_name, input) => {
       expect(band(input).heading).not.toBe(UP_TO_DATE);
+    });
+
+    // Every way an entry's latest row can be an error, as the read returns it, beside every way the
+    // other rows can stand. Nothing else waits, so only that row can hold the words back.
+    const X = row({ entry_id: 'x' });
+    describe.each([
+      ['one proven entry', [X]],
+      ['proven entries and a withdrawn one', [X, row({ entry_id: 'x2' }), removed('w')]],
+      ['a proven entry and a cancelled publish', [X, ended('c', { status: 'superseded', latest_action: 'unpublish' })]],
+    ])('beside %s', (_name, others) => {
+      it.each([
+        ['failed_validation', ended('y', { status: 'failed_validation' })],
+        ['failed', ended('y', { status: 'failed' })],
+        ['rejected', ended('y', { status: 'rejected' })],
+        ['superseded', ended('y', { status: 'superseded' })],
+        ['a failed unpublish', ended('y', { action: 'unpublish', status: 'failed' })],
+        ['a rejected unpublish', ended('y', { action: 'unpublish', status: 'rejected' })],
+        ['a publish retried at the same version, failed after a failed delivery', ended('y', { status: 'failed_validation', requested_at: '2026-11-05T13:00:00+00:00' })],
+        ['left out of its release', row({ entry_id: 'y', omitted: true, sites_notified: 0, sites_live_ok: 0 })],
+        ['retries exhausted', failed('y')],
+        ['a build that kept failing', row({ entry_id: 'y', release_status: 'failed', sites_notified: 0, sites_live_ok: 0, retries_exhausted: true })],
+        ['not confirmed, no retry left', notConfirmed('y')],
+        ['an unpublish not confirmed', { ...notConfirmed('y'), action: 'unpublish' as const }],
+      ])('with a latest row: %s', (_state, failure) => {
+        const summary = summarizeStatus([...others, failure]);
+        expect(summary.unproven.get('y')?.tone).toBe('error');
+        expect(band({ status: ok([...others, failure]) })).toMatchObject({ heading: waitingHeading(1), tag: false, viewChanges: true });
+      });
     });
   });
 });
@@ -271,9 +372,32 @@ describe('the pills', () => {
   });
 
   it('gives "ok" only with proof: a published entry with no proven row is neutral', () => {
-    const noSite = ok(summarizeStatus([row({ entry_id: 'a', site_count: 0, sites_notified: 0, sites_live_ok: 0 })]));
-    expect(entryPill({ id: 'a', status: 'published' }, noSite)).toEqual({ label: t.entries.statuses.published, tone: 'neutral' });
-    expect(entryPill({ id: 'no-row', status: 'published' }, summary).tone).toBe('neutral');
+    expect(entryPill({ id: 'no-row', status: 'published' }, summary)).toEqual({ label: t.entries.statuses.published, tone: 'neutral' });
+  });
+
+  it.each([
+    ['failed validation', ended('y', { status: 'failed_validation' }), invalid],
+    ['failed', ended('y', { status: 'failed' }), t.publish.failed],
+    ['rejected', ended('y', { status: 'rejected' }), t.publish.rejected],
+    ['an unpublish that failed', ended('y', { action: 'unpublish', status: 'failed' }), t.publish.failed],
+  ])('shows a published entry whose latest request %s as that failure, never green', (_name, failure, label) => {
+    const status = ok(summarizeStatus([row({ entry_id: 'x' }), failure]));
+    expect(entryPill({ id: 'y', status: 'published' }, status)).toEqual({ label, tone: 'error' });
+  });
+
+  it('shows a delivery not confirmed as being retried', () => {
+    const status = ok(summarizeStatus([row({ entry_id: 'x' }), retrying('y')]));
+    expect(entryPill({ id: 'y', status: 'published' }, status)).toEqual({ label: t.publish.notConfirmedRetrying, tone: 'pending' });
+  });
+
+  it('says so when there is no site, with the warning tone, never "Birt"', () => {
+    const status = ok(summarizeStatus([noSite('a')]));
+    expect(entryPill({ id: 'a', status: 'published' }, status)).toEqual({ label: t.publish.noSite, tone: 'warning' });
+  });
+
+  it('shows a cancelled publish as the entry itself: neutral "Birt" with nothing proving it', () => {
+    const status = ok(summarizeStatus([ended('a', { status: 'superseded', latest_action: 'unpublish' })]));
+    expect(entryPill({ id: 'a', status: 'published' }, status)).toEqual({ label: t.entries.statuses.published, tone: 'neutral' });
   });
 });
 

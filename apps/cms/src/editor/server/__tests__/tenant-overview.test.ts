@@ -5,7 +5,7 @@ import type { StructureNode } from '@litljomi/cms-schema';
 import { describe, expect, it } from 'vitest';
 import { t } from '@/i18n/is';
 import type { SupabaseClient } from '@/lib/supabase/types';
-import { waitingHeading } from '../../overview';
+import { entryPill, waitingHeading } from '../../overview';
 import { loadTenantOverview, OVERVIEW_STATUS_COLUMNS } from '../tenant-overview';
 
 type Answer = { data?: unknown; error?: { code: string; message?: string } | null; count?: number | null };
@@ -89,8 +89,11 @@ const LIVE = {
   sites_not_confirmed: 0,
   retries_exhausted: false,
   live_retrying: false,
+  latest_action: 'publish',
 };
 const UNPROVEN = { ...LIVE, entry_id: 'e2', status: 'pending', release_status: null, sites_notified: 0, sites_live_ok: 0 };
+/** Entry e2's latest request ended before any release, in `status`. */
+const ENDED = (status: string, action = 'publish') => ({ ...UNPROVEN, status, action, latest_action: action });
 
 const isSite = (c: Call) => c.table === 'tenant_sites';
 const isStatus = (c: Call) => c.table === 'publication_status';
@@ -146,11 +149,19 @@ describe('the reads', () => {
     const status = calls.find(isStatus)!;
     expect(status.columns).toBe(OVERVIEW_STATUS_COLUMNS);
     expect(status.columns).toBe(
-      'entry_id, action, status, requested_at, release_status, omitted, site_count, sites_notified, sites_live_ok, sites_not_confirmed, retries_exhausted, live_retrying',
+      'entry_id, action, status, requested_at, release_status, omitted, site_count, sites_notified, sites_live_ok, sites_not_confirmed, retries_exhausted, live_retrying, latest_action',
     );
-    expect(status.in.status).toEqual(['pending', 'validating', 'committed']);
+    expect(status.columns.split(', ')).not.toContain('error');
+    expect(status.columns.split(', ')).not.toContain('missing_assets');
     expect(status.limit).toBe(1000);
     expect(status.options).toEqual({ count: 'exact' });
+  });
+
+  it('read every status row of the tenant: the tenant is the only filter', async () => {
+    const { client, calls } = fakeClient(healthy);
+    await load(client);
+    expect(calls.find(isStatus)).toMatchObject({ eq: { tenant_id: TENANT }, in: {}, is: {}, not: [] });
+    expect(Object.keys(calls.find(isStatus)!.eq)).toEqual(['tenant_id']);
   });
 
   it('read the first active site by URL', async () => {
@@ -247,6 +258,63 @@ describe('the reads', () => {
   it('reads no active site as "no site"', async () => {
     const { client } = withAnswers((c) => (isSite(c) ? { data: [] } : undefined));
     expect((await load(client)).band.heading).toBe(t.publish.noSite);
+  });
+});
+
+describe("an entry's latest request, as the view picks it", () => {
+  /** The view: the latest request of each entry is picked first, and a filter can only take rows away. */
+  const view = (found: Record<string, unknown>[]) => (c: Call) => {
+    if (!isStatus(c)) return undefined;
+    const allowed = c.in.status;
+    const data = allowed ? found.filter((row) => allowed.includes(row.status)) : found;
+    return { data, count: data.length };
+  };
+
+  it.each([
+    ['failed_validation', ENDED('failed_validation'), `${t.publish.invalid} ${t.publish.invalidGeneric}`],
+    ['failed', ENDED('failed'), t.publish.failed],
+    ['rejected', ENDED('rejected'), t.publish.rejected],
+    ['a failed unpublish', ENDED('failed', 'unpublish'), t.publish.failed],
+    ['a rejected unpublish', ENDED('rejected', 'unpublish'), t.publish.rejected],
+  ])('%s: the entry waits, the tag goes, and its pill says what happened', async (_name, failure, label) => {
+    const { client } = withAnswers(view([LIVE, failure]));
+    const overview = await load(client);
+    expect(overview.band).toMatchObject({ heading: waitingHeading(1), tag: false, viewChanges: true });
+    expect(entryPill({ id: 'e2', status: 'published' }, overview.status)).toEqual({ label, tone: 'error' });
+  });
+
+  it('lists a failed entry among the waiting ones', async () => {
+    const { client, calls } = withAnswers(view([LIVE, ENDED('failed_validation')]));
+    await load(client, { showWaiting: true });
+    expect(calls.find(isById)!.in.id).toEqual(['e2']);
+  });
+
+  it('takes the tag away for a delivery not confirmed, which stays in n', async () => {
+    const retrying = { ...LIVE, entry_id: 'e2', sites_live_ok: 0, sites_not_confirmed: 1, live_retrying: true };
+    const { client } = withAnswers(view([LIVE, retrying]));
+    expect((await load(client)).band).toMatchObject({ heading: waitingHeading(1), tag: false, viewChanges: true });
+  });
+
+  it('with no site, shows that on every published entry and counts only the changed ones', async () => {
+    const published = ['e1', 'e2', 'e3'].map((entry_id) => ({ ...LIVE, entry_id, site_count: 0, sites_notified: 0, sites_live_ok: 0 }));
+    const { client, calls } = withAnswers((c) =>
+      isSite(c) ? { data: [] } : isChanged(c) ? { data: [{ id: 'e3' }, { id: 'e4' }], count: 2 } : view(published)(c),
+    );
+    const overview = await load(client, { showWaiting: true });
+    expect(overview.band).toMatchObject({ heading: t.publish.noSite, tag: false, viewChanges: true });
+    expect(calls.find(isById)!.in.id).toEqual(['e3', 'e4']);
+    expect(entryPill({ id: 'e1', status: 'published' }, overview.status)).toEqual({ label: t.publish.noSite, tone: 'warning' });
+  });
+
+  it('reads the latest action, so a cancelled publish is neither waiting nor failed', async () => {
+    const cancelled = { ...ENDED('superseded'), latest_action: 'unpublish' };
+    const { client } = withAnswers(view([LIVE, cancelled]));
+    expect((await load(client)).band).toMatchObject({ heading: t.overview.upToDate, tag: true, viewChanges: false });
+  });
+
+  it('keeps failing closed when the tenant has more rows than the cap', async () => {
+    const { client } = withAnswers((c) => (isStatus(c) ? { data: [LIVE], count: 1001 } : undefined));
+    expect((await load(client)).band).toMatchObject({ heading: t.publish.statusUnavailable, tag: false, lastPublished: null, viewChanges: false });
   });
 });
 

@@ -587,7 +587,7 @@ test.describe('the tenant overview', () => {
 
     // The demo tenant keeps what earlier specs left, so what the band must say comes from the rows.
     // Computed with production `deriveBand`, so this checks the wiring; overview.test.ts pins the rules.
-    const rows = await apiRows<OverviewStatusRow>(editor, 'publication_status?status=in.(pending,validating,committed)');
+    const rows = await apiRows<OverviewStatusRow>(editor, 'publication_status');
     const changed = await apiRows<{ id: string }>(editor, 'entry_list?select=id&status=eq.changed');
     const expected = deriveBand({
       site: { ok: true, value: { url: DEMO_SITE_URL } },

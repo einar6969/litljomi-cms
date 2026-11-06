@@ -36,8 +36,6 @@ type Query = PromiseLike<Answer<unknown>>;
 
 const ENTRY_COLUMNS = 'id, type, title, status, updated_at';
 export const OVERVIEW_STATUS_COLUMNS = OVERVIEW_STATUS_FIELDS.join(', ');
-/** The statuses `displayState` can take further than a failure of the request itself. */
-const OPEN_STATUSES = ['pending', 'validating', 'committed'];
 const RECENT_LIMIT = 5;
 /** The `.in('id', ...)` list goes in the URL, so it stays short. */
 const WAITING_LIMIT = 50;
@@ -117,9 +115,9 @@ export async function loadTenantOverview(
     allRows<{ id: string }>(
       entries().select('id', { count: 'exact' }).eq('tenant_id', tenantId).eq('status', 'changed').order('updated_at', { ascending: false }).limit(MAX_ROWS),
     ),
-    allRows<OverviewStatusRow>(
-      client.from('publication_status').select(OVERVIEW_STATUS_COLUMNS, { count: 'exact' }).eq('tenant_id', tenantId).in('status', OPEN_STATUSES).limit(MAX_ROWS),
-    ),
+    // No status filter, ever: the view has already picked each entry's latest request, so a filter
+    // here does not fall back to an older one. It loses the entry, and with it the failure (§7.4).
+    allRows<OverviewStatusRow>(client.from('publication_status').select(OVERVIEW_STATUS_COLUMNS, { count: 'exact' }).eq('tenant_id', tenantId).limit(MAX_ROWS)),
     Promise.all(list.map(readCount)),
     singletons.length === 0
       ? ({ ok: true, value: [] } satisfies Read<OverviewEntry[]>)
