@@ -330,9 +330,10 @@ describe('the waiting view (?breytingar=1)', () => {
     expect(byId).toMatchObject({
       columns: 'id, type, title, status, updated_at',
       eq: { tenant_id: TENANT },
-      is: { archived_at: null },
       order: [['updated_at', { ascending: false }]],
     });
+    // The band counts archived entries that wait too, so this read must not filter them out.
+    expect(byId.is).toEqual({});
   });
 
   it('asks for the unproven entries first, then the newest changed ones, each once', async () => {

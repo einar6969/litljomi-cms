@@ -616,6 +616,13 @@ test.describe('the tenant overview', () => {
     await expect(tag(page)).toHaveCount(expected.tag ? 1 : 0);
     await expect(clear(page)).toBeVisible();
     await expect(recentRows(page).first()).toBeVisible();
+    // Every entry the band counts is listed, up to the bound of the read.
+    const waiting = Number((await heading(page).textContent())?.match(/^\d+/)?.[0]);
+    expect(waiting, 'n in the band heading').toBeGreaterThan(0);
+    await expect(recentRows(page)).toHaveCount(Math.min(waiting, 50));
+    // `notice` is outside the structure: its rows show the module's label, never the key.
+    const notices = recentRows(page).filter({ has: page.locator('a.t[href*="/notice/"]') });
+    await expect(notices.locator('.ov-type')).toHaveText(Array.from({ length: await notices.count() }, () => 'Notice'));
     await expectTapTargets(page);
     expect(await titleLines(page, title), 'the long title wraps at 1440 px').toBeGreaterThan(1);
     await expectLabelsBelowTitles(page);

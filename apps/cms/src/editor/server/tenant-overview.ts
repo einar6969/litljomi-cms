@@ -149,7 +149,6 @@ export async function loadTenantOverview(
             entries()
               .select(ENTRY_COLUMNS)
               .eq('tenant_id', tenantId)
-              .is('archived_at', null)
               .in('id', waiting.slice(0, WAITING_LIMIT))
               .order('updated_at', { ascending: false }),
           )
