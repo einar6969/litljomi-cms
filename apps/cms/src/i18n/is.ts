@@ -61,6 +61,7 @@ export const is = {
     pages: 'Síður',
     upToDate: 'Vefurinn þinn er uppfærður.',
     nothingPublished: 'Ekkert hefur verið birt enn.',
+    nothingOnSite: 'Ekkert er á vefnum eins og er.',
     today: 'í dag',
     yesterday: 'í gær',
     waitingOne: '{n} breyting bíður birtingar.',

@@ -100,7 +100,9 @@ const isStatus = (c: Call) => c.table === 'publication_status';
 const isChanged = (c: Call) => c.table === 'entry_list' && c.eq.status === 'changed';
 const isCount = (c: Call) => c.table === 'entry_list' && c.options?.head === true && c.eq.type !== undefined;
 const isDraftCount = (c: Call) => isCount(c) && c.eq.status === 'draft';
-const isPublishedCount = (c: Call) => c.table === 'entry_list' && c.options?.head === true && c.eq.type === undefined;
+const isPublishedCount = (c: Call) => c.table === 'entry_list' && c.options?.head === true && c.eq.type === undefined && c.in.status === undefined;
+const isCurrentlyPublished = (c: Call) => c.table === 'entry_list' && c.options?.head === true && c.in.status !== undefined;
+const isAbandoned = (c: Call) => c.table === 'entry_list' && c.not.some(([column]) => column === 'archived_at');
 const isSingletons = (c: Call) => c.table === 'entry_list' && !c.options && c.in.type !== undefined && c.limit === undefined;
 const isRecent = (c: Call) => c.table === 'entry_list' && !c.options && c.in.type !== undefined && c.limit === 5;
 const isById = (c: Call) => c.table === 'entry_list' && c.in.id !== undefined;
@@ -112,7 +114,8 @@ const healthy = (c: Call): Answer => {
   if (isChanged(c)) return { data: [], count: 0 };
   if (isDraftCount(c)) return { count: 1 };
   if (isCount(c)) return { count: 24 };
-  if (isPublishedCount(c)) return { count: 0 };
+  if (isPublishedCount(c) || isCurrentlyPublished(c)) return { count: 0 };
+  if (isAbandoned(c)) return { data: [], count: 0 };
   if (isSingletons(c)) return { data: [{ ...ENTRY, id: 's1', type: 'about' }] };
   if (isById(c) || isRecent(c)) return { data: [ENTRY] };
   throw new Error(`unexpected query on ${c.table}`);
@@ -217,10 +220,37 @@ describe('the reads', () => {
     expect(calls.find(isChanged)).toMatchObject({ columns: 'id', options: { count: 'exact' }, limit: 1000, order: [['updated_at', { ascending: false }]] });
   });
 
-  it('do not read the published count unless the band needs it', async () => {
+  it('read the archived entries that were never published, each time, with an exact count', async () => {
+    const { client, calls } = fakeClient(healthy);
+    await load(client);
+    const abandoned = calls.filter(isAbandoned);
+    expect(abandoned).toHaveLength(1);
+    expect(abandoned[0]).toMatchObject({ columns: 'id', options: { count: 'exact' }, limit: 1000, is: { first_published_at: null }, in: {} });
+    expect(abandoned[0]!.not).toEqual([['archived_at', 'is', null]]);
+    expect(Object.keys(abandoned[0]!.eq)).toEqual(['tenant_id']);
+    expect(abandoned[0]!.eq.tenant_id).toBe(TENANT);
+    expect(Object.keys(abandoned[0]!.is)).toEqual(['first_published_at']);
+  });
+
+  it('do not read the published counts unless the band needs them', async () => {
     const { client, calls } = fakeClient(healthy);
     await load(client);
     expect(calls.some(isPublishedCount)).toBe(false);
+    expect(calls.some(isCurrentlyPublished)).toBe(false);
+  });
+
+  it.each([
+    ['a change waits', (c: Call) => (isStatus(c) ? { data: [], count: 0 } : isChanged(c) ? { data: [{ id: 'a' }], count: 1 } : undefined)],
+    ['a request waits', (c: Call) => (isStatus(c) ? { data: [UNPROVEN], count: 1 } : undefined)],
+    ['there is no site', (c: Call) => (isStatus(c) ? { data: [], count: 0 } : isSite(c) ? { data: [] } : undefined)],
+    ['a read failed', (c: Call) => (isStatus(c) ? { data: [], count: 0 } : isChanged(c) ? DENIED : undefined)],
+    ['the status read failed', (c: Call) => (isStatus(c) ? DENIED : undefined)],
+    ['the archived read failed', (c: Call) => (isStatus(c) ? { data: [], count: 0 } : isAbandoned(c) ? DENIED : undefined)],
+  ])('do not read either count when %s', async (_name, override) => {
+    const { client, calls } = withAnswers(override);
+    await load(client);
+    expect(calls.some(isPublishedCount)).toBe(false);
+    expect(calls.some(isCurrentlyPublished)).toBe(false);
   });
 
   it('read the published count at "nothing proven, n = 0"', async () => {
@@ -229,6 +259,16 @@ describe('the reads', () => {
     expect(calls.find(isPublishedCount)).toMatchObject({ columns: 'id', options: { count: 'exact', head: true }, is: { archived_at: null } });
     expect(calls.find(isPublishedCount)!.not).toEqual([['first_published_at', 'is', null]]);
     expect(overview.band.heading).toBe(t.overview.nothingPublished);
+  });
+
+  it('read the currently-published count there too: head only, by tenant, the two published statuses', async () => {
+    const { client, calls } = withAnswers((c) => (isStatus(c) ? { data: [], count: 0 } : undefined));
+    await load(client);
+    const current = calls.filter(isCurrentlyPublished);
+    expect(current).toHaveLength(1);
+    expect(current[0]).toMatchObject({ columns: 'id', options: { count: 'exact', head: true }, in: { status: ['published', 'changed'] }, is: {}, not: [] });
+    expect(Object.keys(current[0]!.eq)).toEqual(['tenant_id']);
+    expect(current[0]!.eq.tenant_id).toBe(TENANT);
   });
 
   it('skip the type reads for a tenant with no structure, and still read the band', async () => {
@@ -318,6 +358,69 @@ describe("an entry's latest request, as the view picks it", () => {
   });
 });
 
+describe('archived entries that were never published', () => {
+  const statusOf = (...found: Record<string, unknown>[]) => (c: Call) => (isStatus(c) ? { data: found, count: found.length } : undefined);
+  const abandoned = (ids: string[]) => (c: Call) => (isAbandoned(c) ? { data: ids.map((id) => ({ id })), count: ids.length } : undefined);
+  const both = (first: (c: Call) => Answer | undefined, second: (c: Call) => Answer | undefined) => (c: Call) => first(c) ?? second(c);
+
+  it.each([['failed_validation'], ['failed'], ['rejected'], ['superseded']])('a request that ended %s leaves the band and the tag alone', async (status) => {
+    const { client } = withAnswers(both(statusOf(LIVE, ENDED(status)), abandoned(['e2'])));
+    expect((await load(client)).band).toMatchObject({ heading: t.overview.upToDate, tag: true, lastPublished: LIVE.requested_at, viewChanges: false });
+  });
+
+  it('are not in the waiting list', async () => {
+    const { client, calls } = withAnswers(both(statusOf(LIVE, ENDED('failed')), abandoned(['e2'])));
+    expect((await load(client, { showWaiting: true })).showingWaiting).toBe(false);
+    expect(calls.some(isById)).toBe(false);
+  });
+
+  it('keep counting while a request is on its way', async () => {
+    const { client } = withAnswers(both(statusOf(LIVE, UNPROVEN, ENDED('failed')), abandoned(['e2'])));
+    expect((await load(client)).band.heading).toBe(waitingHeading(1));
+  });
+
+  it('never cover an entry the read does not name: one published once keeps counting', async () => {
+    const once = { ...ENDED('failed'), entry_id: 'e3' };
+    const { client } = withAnswers(both(statusOf(LIVE, ENDED('failed'), once), abandoned(['e2'])));
+    expect((await load(client)).band).toMatchObject({ heading: waitingHeading(1), tag: false, viewChanges: true });
+  });
+
+  it.each([
+    ['failed', DENIED],
+    ['capped', { data: [{ id: 'e2' }], count: 1001 }],
+    ['with no count', { data: [{ id: 'e2' }], count: null }],
+  ])('when the read is %s, the status is unavailable to the pills as well', async (_name, answer) => {
+    const { client } = withAnswers(both(statusOf(LIVE, ENDED('failed')), (c) => (isAbandoned(c) ? answer : undefined)));
+    const overview = await load(client);
+    expect(overview.band).toMatchObject({ heading: t.publish.statusUnavailable, tag: false, lastPublished: null, viewChanges: false });
+    expect(overview.status.ok).toBe(false);
+    expect(entryPill({ id: 'e1', status: 'published' }, overview.status).tone).toBe('neutral');
+  });
+});
+
+describe('a tenant with nothing proven and nothing waiting', () => {
+  const NOTHING_ON_SITE = 'Ekkert er á vefnum eins og er.';
+  const counts = (published: Answer, current: Answer) => (c: Call) =>
+    isStatus(c) ? { data: [], count: 0 } : isPublishedCount(c) ? published : isCurrentlyPublished(c) ? current : undefined;
+
+  it('published once and none published now: nothing is on the site', async () => {
+    const { client } = withAnswers(counts({ count: 2 }, { count: 0 }));
+    expect((await load(client)).band).toEqual({ heading: NOTHING_ON_SITE, tag: false, lastPublished: null, viewChanges: false, siteUrl: 'https://example.test' });
+  });
+
+  it.each([
+    ['nothing ever published', { count: 0 }, { count: 0 }, t.overview.nothingPublished],
+    ['something published now', { count: 2 }, { count: 1 }, t.publish.statusUnavailable],
+    ['the published count failed', DENIED, { count: 0 }, t.publish.statusUnavailable],
+    ['the published count missing', { count: null }, { count: 0 }, t.publish.statusUnavailable],
+    ['the currently-published count failed', { count: 2 }, DENIED, t.publish.statusUnavailable],
+    ['the currently-published count missing', { count: 2 }, { count: null }, t.publish.statusUnavailable],
+  ])('%s', async (_name, published, current, heading) => {
+    const { client } = withAnswers(counts(published, current));
+    expect((await load(client)).band).toMatchObject({ heading, tag: false, lastPublished: null, viewChanges: false });
+  });
+});
+
 describe('capped and failed reads', () => {
   it.each([
     ['status capped', (c: Call) => (isStatus(c) ? { data: [LIVE], count: 1001 } : undefined)],
@@ -329,6 +432,9 @@ describe('capped and failed reads', () => {
     ['site failed', (c: Call) => (isSite(c) ? DENIED : undefined)],
     ['published count failed', (c: Call) => (isStatus(c) ? { data: [], count: 0 } : isPublishedCount(c) ? DENIED : undefined)],
     ['published count missing', (c: Call) => (isStatus(c) ? { data: [], count: 0 } : isPublishedCount(c) ? { count: null } : undefined)],
+    ['archived read failed', (c: Call) => (isAbandoned(c) ? DENIED : undefined)],
+    ['archived read capped', (c: Call) => (isAbandoned(c) ? { data: [{ id: 'a' }], count: 1001 } : undefined)],
+    ['archived read with no count', (c: Call) => (isAbandoned(c) ? { data: [], count: null } : undefined)],
   ])('%s: the band says the status is unavailable, never a smaller number', async (_name, override) => {
     const { client } = withAnswers(override);
     expect((await load(client)).band).toMatchObject({ heading: t.publish.statusUnavailable, tag: false, lastPublished: null, viewChanges: false });
@@ -440,6 +546,7 @@ describe('the waiting view (?breytingar=1)', () => {
     ['the changed read failed', (c: Call) => (isChanged(c) ? DENIED : undefined)],
     ['the status read failed', (c: Call) => (isStatus(c) ? DENIED : undefined)],
     ['the status read was capped', (c: Call) => (isStatus(c) ? { data: [LIVE], count: 2000 } : undefined)],
+    ['the archived read failed', (c: Call) => (isAbandoned(c) ? DENIED : undefined)],
   ])('falls back to the recent list when %s', async (_name, override) => {
     const { client, calls } = withAnswers(override);
     const overview = await load(client, { showWaiting: true });

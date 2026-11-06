@@ -72,7 +72,7 @@ const mapRead = <T, U>(read: Read<T>, fn: (value: T) => U): Read<U> => (read.ok 
  * (§4.5): RLS decides the rows, and every read is also scoped to the tenant. Each read fails on its
  * own into a result the page can show. No read selects `slug`, `data` or a column it does not use.
  *
- * Two reads wait for the first round. The published count runs only when the band has reached
+ * Some reads wait for the first round. The two published counts run only when the band has reached
  * "nothing proven, n = 0"; with `showWaiting`, the list is the waiting entries when there are any
  * and the recent entries otherwise, so one request never runs both.
  */
@@ -104,7 +104,7 @@ export async function loadTenantOverview(
     return total.ok && drafts.ok ? [type, { total: total.value, drafts: drafts.value }] : null;
   };
 
-  const [site, changed, status, counts, pageRows, firstRecent] = await Promise.all([
+  const [site, changed, status, abandoned, counts, pageRows, firstRecent] = await Promise.all([
     settle<OverviewSite | null>(
       client.from('tenant_sites').select('base_url').eq('tenant_id', tenantId).eq('active', true).order('base_url').limit(1),
       ({ data }) => {
@@ -118,6 +118,7 @@ export async function loadTenantOverview(
     // No status filter, ever: the view has already picked each entry's latest request, so a filter
     // here does not fall back to an older one. It loses the entry, and with it the failure (§7.4).
     allRows<OverviewStatusRow>(client.from('publication_status').select(OVERVIEW_STATUS_COLUMNS, { count: 'exact' }).eq('tenant_id', tenantId).limit(MAX_ROWS)),
+    allRows<{ id: string }>(entries().select('id', { count: 'exact' }).eq('tenant_id', tenantId).not('archived_at', 'is', null).is('first_published_at', null).limit(MAX_ROWS)),
     Promise.all(list.map(readCount)),
     singletons.length === 0
       ? ({ ok: true, value: [] } satisfies Read<OverviewEntry[]>)
@@ -134,13 +135,16 @@ export async function loadTenantOverview(
     showWaiting ? null : readRecent(),
   ]);
 
-  const summary = mapRead(status, summarizeStatus);
+  // The rows mean what they say only with both reads, so either one failing closes the status.
+  const abandonedIds = mapRead(abandoned, (found) => new Set(found.map((row) => row.id)));
+  const summary = abandonedIds.ok ? mapRead(status, (found) => summarizeStatus(found, abandonedIds.value)) : abandonedIds;
   const changedIds = mapRead(changed, (found) => found.map((row) => row.id));
   const bandReads = { site, changed: changedIds, status: summary };
   const waiting = changedIds.ok && summary.ok ? waitingIds(changedIds.value, summary.value) : [];
   const showingWaiting = showWaiting && waiting.length > 0;
 
-  const [recent, published] = await Promise.all([
+  const needsCounts = needsPublishedCount(bandReads);
+  const [recent, published, currentlyPublished] = await Promise.all([
     firstRecent ??
       (showingWaiting
         ? rows<OverviewEntry>(
@@ -151,14 +155,15 @@ export async function loadTenantOverview(
               .order('updated_at', { ascending: false }),
           )
         : readRecent()),
-    needsPublishedCount(bandReads)
+    needsCounts
       ? count(entries().select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).not('first_published_at', 'is', null).is('archived_at', null))
       : null,
+    needsCounts ? count(entries().select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).in('status', ['published', 'changed'])) : null,
   ]);
 
   const found = pageRows.ok ? pageRows.value : [];
   return {
-    band: deriveBand({ ...bandReads, published }),
+    band: deriveBand({ ...bandReads, published, currentlyPublished }),
     counts: new Map(counts.filter((entry) => entry !== null)),
     recent,
     showingWaiting,

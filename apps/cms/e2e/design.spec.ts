@@ -589,11 +589,13 @@ test.describe('the tenant overview', () => {
     // Computed with production `deriveBand`, so this checks the wiring; overview.test.ts pins the rules.
     const rows = await apiRows<OverviewStatusRow>(editor, 'publication_status');
     const changed = await apiRows<{ id: string }>(editor, 'entry_list?select=id&status=eq.changed');
+    const abandoned = await apiRows<{ id: string }>(editor, 'entry_list?select=id&archived_at=not.is.null&first_published_at=is.null');
     const expected = deriveBand({
       site: { ok: true, value: { url: DEMO_SITE_URL } },
       changed: { ok: true, value: changed.map((row) => row.id) },
-      status: { ok: true, value: summarizeStatus(rows) },
+      status: { ok: true, value: summarizeStatus(rows, new Set(abandoned.map((row) => row.id))) },
       published: null,
+      currentlyPublished: null,
     });
     expect(expected.viewChanges).toBe(true);
 
@@ -633,7 +635,7 @@ test.describe('the tenant overview', () => {
     await expect(clear(page)).toHaveCount(0);
   });
 
-  test('nothing waiting, a failed read, no site, nothing proven', async ({ page }) => {
+  test('nothing waiting, a failed read, no site, nothing proven, all withdrawn', async ({ page }) => {
     test.setTimeout(5 * 60_000);
     try {
       await arrangeOverview('proven');
@@ -682,6 +684,15 @@ test.describe('the tenant overview', () => {
       await expect(viewChanges(page)).toHaveCount(0);
       await expect(viewSite(page)).toBeVisible();
       await shoot(page, 'home-overview-nothing-proven');
+
+      await arrangeOverview('withdrawn');
+      await page.goto('/t/m4-probe');
+      await expect(heading(page)).toHaveText(t.overview.nothingOnSite);
+      await expect(tag(page)).toHaveCount(0);
+      await expect(lastPublished(page)).toHaveCount(0);
+      await expect(viewChanges(page)).toHaveCount(0);
+      await expect(viewSite(page)).toBeVisible();
+      await shoot(page, 'home-overview-withdrawn');
     } finally {
       await cleanOverview();
     }

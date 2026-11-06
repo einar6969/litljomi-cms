@@ -55,19 +55,24 @@ const band = (
     site: Read<{ url: string | null } | null>;
     changed: Read<string[]>;
     status: Read<OverviewStatusRow[]>;
+    abandoned: string[];
     published: Read<number> | null;
+    currentlyPublished: Read<number> | null;
   }> = {},
 ) => {
   const status = input.status ?? ok([]);
   return deriveBand({
     site: input.site ?? SITE,
     changed: input.changed ?? ok([]),
-    status: status.ok ? ok(summarizeStatus(status.value)) : status,
+    status: status.ok ? ok(summarizeStatus(status.value, new Set(input.abandoned))) : status,
     published: input.published ?? null,
+    currentlyPublished: input.currentlyPublished ?? null,
   });
 };
 
 const UP_TO_DATE = t.overview.upToDate;
+/** Einar's words, verbatim (2026-11-06). */
+const NOTHING_ON_SITE = 'Ekkert er á vefnum eins og er.';
 
 describe('the waiting set', () => {
   it('is the union of the changed ids and the unproven rows, each entry once', () => {
@@ -158,6 +163,7 @@ describe('the band, in order', () => {
       ['status failed', { status: bad }],
       ['status capped', { status: capped }],
       ['published count failed', { published: bad }],
+      ['currently-published count failed', { published: ok(2), currentlyPublished: bad }],
     ])('%s: "status unavailable", and nothing else that claims anything', (_name, input) => {
       const result = band({ ...input });
       expect(result.heading).toBe(t.publish.statusUnavailable);
@@ -247,20 +253,88 @@ describe('the band, in order', () => {
     });
 
     it('n = 0, nothing proven, nothing ever published: says so', () => {
-      expect(band({ published: ok(0) })).toMatchObject({ heading: t.overview.nothingPublished, tag: false, lastPublished: null, viewChanges: false });
+      const result = band({ published: ok(0), currentlyPublished: ok(0) });
+      expect(result).toMatchObject({ heading: t.overview.nothingPublished, tag: false, lastPublished: null, viewChanges: false });
     });
 
-    it('n = 0, nothing proven, something published: never reassures', () => {
-      expect(band({ published: ok(3) })).toMatchObject({ heading: t.publish.statusUnavailable, tag: false, lastPublished: null, viewChanges: false });
+    it('n = 0, nothing proven, published once and none published now: nothing is on the site', () => {
+      expect(band({ published: ok(3), currentlyPublished: ok(0) })).toEqual({
+        heading: NOTHING_ON_SITE,
+        tag: false,
+        lastPublished: null,
+        viewChanges: false,
+        siteUrl: 'https://example.test/',
+      });
     });
 
-    it('fails closed when the published count was not read', () => {
-      expect(band({ published: null }).heading).toBe(t.publish.statusUnavailable);
+    it('says the same when the withdrawals are the rows it has, each confirmed', () => {
+      const result = band({ status: ok([removed('a'), removed('b')]), published: ok(2), currentlyPublished: ok(0) });
+      expect(result).toMatchObject({ heading: NOTHING_ON_SITE, tag: false, lastPublished: null, viewChanges: false });
+    });
+
+    it('n = 0, nothing proven, something published now: never reassures', () => {
+      const result = band({ published: ok(3), currentlyPublished: ok(1) });
+      expect(result).toMatchObject({ heading: t.publish.statusUnavailable, tag: false, lastPublished: null, viewChanges: false });
+    });
+
+    it.each([
+      ['the published count failed', { published: bad, currentlyPublished: ok(0) }],
+      ['the published count was not read', { published: null, currentlyPublished: ok(0) }],
+      ['the currently-published count failed', { published: ok(3), currentlyPublished: bad }],
+      ['the currently-published count was not read', { published: ok(3), currentlyPublished: null }],
+      ['neither count was read', { published: null, currentlyPublished: null }],
+      ['nothing was ever published, and the currently-published count failed', { published: ok(0), currentlyPublished: bad }],
+      ['nothing was ever published, and the currently-published count was not read', { published: ok(0), currentlyPublished: null }],
+      ['the counts contradict each other', { published: ok(0), currentlyPublished: ok(1) }],
+    ])('fails closed when %s', (_name, counts) => {
+      const result = band(counts);
+      expect(result).toMatchObject({ heading: t.publish.statusUnavailable, tag: false, lastPublished: null, viewChanges: false });
+    });
+
+    it('keeps the site link with the new heading, only when the URL is usable', () => {
+      const counts = { published: ok(3), currentlyPublished: ok(0) };
+      expect(band({ ...counts, site: ok({ url: null }) })).toMatchObject({ heading: NOTHING_ON_SITE, siteUrl: null });
     });
 
     it('hides "Skoða vef" for an unusable URL, and the site still counts', () => {
       const result = band({ site: ok({ url: null }), status: ok([row()]) });
       expect(result).toMatchObject({ heading: UP_TO_DATE, siteUrl: null, tag: true });
+    });
+  });
+
+  describe('"nothing on the site" is impossible', () => {
+    const counts = { published: ok(3), currentlyPublished: ok(0) };
+    it.each([
+      ['while an entry is published', { ...counts, currentlyPublished: ok(1) }],
+      ['while a change waits', { ...counts, changed: ok(['a']) }],
+      ['with proof of a publication', { ...counts, status: ok([row()]) }],
+      ['while a publish is on its way', { ...counts, status: ok([pending('a')]) }],
+      ['with a failed row', { ...counts, status: ok([failed('a')]) }],
+      ['with a withdrawal on its way', { ...counts, status: ok([{ ...pending('a'), action: 'unpublish' as const }]) }],
+      ['with a withdrawal being checked again', { ...counts, status: ok([{ ...retrying('a'), action: 'unpublish' as const }]) }],
+      ['with a withdrawal not confirmed', { ...counts, status: ok([{ ...notConfirmed('a'), action: 'unpublish' as const }]) }],
+      ['with a failed withdrawal', { ...counts, status: ok([ended('a', { action: 'unpublish', status: 'failed' })]) }],
+      ['with no site', { ...counts, site: ok(null) }],
+      ['when the site read failed', { ...counts, site: bad }],
+      ['when the changed read failed', { ...counts, changed: bad }],
+      ['when the changed read was capped', { ...counts, changed: capped }],
+      ['when the status read failed', { ...counts, status: bad }],
+      ['when the status read was capped', { ...counts, status: capped }],
+      ['when the published count failed', { ...counts, published: bad }],
+      ['when the published count is missing', { ...counts, published: null }],
+      ['when the currently-published count failed', { ...counts, currentlyPublished: bad }],
+      ['when the currently-published count is missing', { ...counts, currentlyPublished: null }],
+    ])('%s', (_name, input) => {
+      expect(band(input).heading).not.toBe(NOTHING_ON_SITE);
+    });
+
+    it.each([
+      ['on its way', { ...pending('a'), action: 'unpublish' as const }],
+      ['checked again', { ...retrying('a'), action: 'unpublish' as const }],
+      ['not confirmed', { ...notConfirmed('a'), action: 'unpublish' as const }],
+    ])('an unconfirmed withdrawal, %s, is in n and never reaches the counts', (_name, withdrawal) => {
+      expect(band({ status: ok([withdrawal]) }).heading).toBe(waitingHeading(1));
+      expect(needsPublishedCount({ site: SITE, changed: ok([]), status: ok(summarizeStatus([withdrawal])) })).toBe(false);
     });
   });
 
@@ -307,6 +381,74 @@ describe('the band, in order', () => {
         expect(band({ status: ok([...others, failure]) })).toMatchObject({ heading: waitingHeading(1), tag: false, viewChanges: true });
       });
     });
+  });
+});
+
+describe('an entry archived before it was ever published', () => {
+  const proof = row({ entry_id: 'x' });
+
+  describe.each([
+    ['failed_validation', ended('gone', { status: 'failed_validation' })],
+    ['failed', ended('gone', { status: 'failed' })],
+    ['rejected', ended('gone', { status: 'rejected' })],
+    ['superseded', ended('gone', { status: 'superseded' })],
+  ])('with a latest request that ended %s', (_status, abandoned) => {
+    it('adds nothing to n, sets no failure, and is no state of the entry', () => {
+      const summary = summarizeStatus([proof, abandoned], new Set(['gone']));
+      expect(waitingIds([], summary)).toEqual([]);
+      expect(summary.failed).toBe(false);
+      expect(summary.unproven.has('gone')).toBe(false);
+      expect(summary.proven).toEqual(new Set(['x']));
+    });
+
+    it('leaves "Vefurinn þinn er uppfærður." and the tag reachable', () => {
+      const result = band({ status: ok([proof, abandoned]), abandoned: ['gone'] });
+      expect(result).toMatchObject({ heading: UP_TO_DATE, tag: true, lastPublished: proof.requested_at, viewChanges: false });
+    });
+
+    it('does not hold back "nothing published" either', () => {
+      const result = band({ status: ok([abandoned]), abandoned: ['gone'], published: ok(0), currentlyPublished: ok(0) });
+      expect(result).toMatchObject({ heading: t.overview.nothingPublished, tag: false, viewChanges: false });
+    });
+  });
+
+  // A sibling that is dropped, so each of these shows that the rule picks rows, not entries or tenants.
+  const dropped = ended('dropped', { status: 'failed' });
+
+  it.each([
+    ['pending', pending('gone'), true],
+    ['validating', ended('gone', { status: 'validating' }), true],
+    ['committed, a live check still running', row({ entry_id: 'gone', sites_live_ok: 0 }), true],
+    ['committed, its retries exhausted', failed('gone'), false],
+  ])('keeps counting a request that is %s', (_status, abandoned, tag) => {
+    const rows = [proof, dropped, abandoned];
+    const result = band({ status: ok(rows), abandoned: ['dropped', 'gone'] });
+    expect(result).toMatchObject({ heading: waitingHeading(1), tag, viewChanges: true });
+    expect(waitingIds([], summarizeStatus(rows, new Set(['dropped', 'gone'])))).toEqual(['gone']);
+  });
+
+  it('keeps counting a committed request that was proven', () => {
+    const summary = summarizeStatus([dropped, row({ entry_id: 'gone' })], new Set(['dropped', 'gone']));
+    expect(summary.proven).toEqual(new Set(['gone']));
+    expect(summary.unproven.has('dropped')).toBe(false);
+  });
+
+  it('fails closed on a status it does not know: only the four listed are ignored', () => {
+    const unknown = ended('gone', { status: 'new_status' as OverviewStatusRow['status'] });
+    const summary = summarizeStatus([dropped, unknown], new Set(['dropped', 'gone']));
+    expect(waitingIds([], summary)).toEqual(['gone']);
+    expect(summary.failed).toBe(true);
+  });
+
+  it.each([
+    ['failed', ended('once', { status: 'failed' })],
+    ['failed_validation', ended('once', { status: 'failed_validation' })],
+    ['rejected', ended('once', { status: 'rejected' })],
+    ['superseded', ended('once', { status: 'superseded' })],
+    ['a failed unpublish', ended('once', { action: 'unpublish', status: 'failed' })],
+  ])('an archived entry that was published once keeps counting: %s', (_status, latest) => {
+    const result = band({ status: ok([proof, dropped, latest]), abandoned: ['dropped'] });
+    expect(result).toMatchObject({ heading: waitingHeading(1), tag: false, viewChanges: true });
   });
 });
 

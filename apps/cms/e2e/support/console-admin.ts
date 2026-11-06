@@ -35,7 +35,7 @@ export const arrangePages = () => run<{ arranged: true }>('arrange-pages');
 export const cleanPages = () => run<{ cleaned: true }>('clean-pages');
 
 /** The tenant overview's states: a fixture tenant of the m4-probe module, with editor_demo a member. */
-export type OverviewState = 'proven' | 'no-site' | 'nothing-proven';
+export type OverviewState = 'proven' | 'no-site' | 'nothing-proven' | 'withdrawn';
 export const arrangeOverview = (state: OverviewState) => run<{ arranged: string }>('arrange-overview', state);
 
 /** Removes the fixture tenant and its membership. */

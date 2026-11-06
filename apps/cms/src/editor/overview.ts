@@ -5,7 +5,7 @@
 import type { StructureNode } from '@litljomi/cms-schema';
 import { t } from '@/i18n/is';
 import type { BadgeTone } from '@/ui/StatusBadge';
-import { displayState, type DisplayState, type PublicationStatusRow } from './publish/status';
+import { displayState, type DisplayState, type PublicationStatusRow, type RequestStatus } from './publish/status';
 import { navSections, type NavItem } from './structure';
 
 /** A read that succeeded, or failed with its code only (never the database's message). */
@@ -76,6 +76,9 @@ const UNREAD: Omit<PublicationStatusRow, keyof OverviewStatusRow> = {
   latest_request_id: '',
 };
 
+/** The requests that ended with nothing on its way. Any other status keeps counting, one this file does not know included. */
+const ENDED_STATUSES: ReadonlySet<RequestStatus> = new Set<RequestStatus>(['failed_validation', 'failed', 'rejected', 'superseded']);
+
 const STATUS_TONE: Record<EntryStatus, BadgeTone> = { published: 'ok', changed: 'warning', archived: 'hollow', draft: 'neutral' };
 
 const isSingular = (n: number): boolean => n % 10 === 1 && n % 100 !== 11;
@@ -107,13 +110,21 @@ export function usableSiteUrl(baseUrl: string): string | null {
   }
 }
 
-/** Sorts the rows by what they prove. The one §7.4 derivation is `displayState`. */
-export function summarizeStatus(rows: readonly OverviewStatusRow[]): StatusSummary {
+/**
+ * Sorts the rows by what they prove. The one §7.4 derivation is `displayState`.
+ *
+ * `abandoned` holds the entries archived without ever being published. An ended request of one says
+ * nothing about the site and can never be cleared, so it is left out. The rule stops at entries
+ * never published: on an archived entry that was published once, a newer failed row can hide a
+ * withdrawal that was never confirmed, so that row keeps counting and the band fails closed.
+ */
+export function summarizeStatus(rows: readonly OverviewStatusRow[], abandoned: ReadonlySet<string> = new Set()): StatusSummary {
   const proven = new Set<string>();
   const unproven = new Map<string, DisplayState>();
   let failed = false;
   let lastPublished: string | null = null;
   for (const row of rows) {
+    if (abandoned.has(row.entry_id) && ENDED_STATUSES.has(row.status)) continue;
     const state = displayState({ ...row, ...UNREAD });
     if (row.action === 'publish' && state.tone === 'ok') {
       proven.add(row.entry_id);
@@ -135,7 +146,7 @@ export function waitingIds(changed: readonly string[], summary: StatusSummary): 
   return [...new Set([...unproven, ...changed])];
 }
 
-/** Whether the band has reached "nothing proven, n = 0", the one place the published count decides. */
+/** Whether the band has reached "nothing proven, n = 0", the one place the two published counts decide. */
 export function needsPublishedCount({ site, changed, status }: BandReads): boolean {
   if (!site.ok || !changed.ok || !status.ok || site.value === null) return false;
   return status.value.proven.size === 0 && waitingIds(changed.value, status.value).length === 0;
@@ -146,10 +157,16 @@ export function needsPublishedCount({ site, changed, status }: BandReads): boole
  * and only then what the rows prove. "Vefurinn þinn er uppfærður." needs an active site, every read,
  * nothing waiting and a proven row.
  */
-export function deriveBand({ site, changed, status, published }: BandReads & { published: Read<number> | null }): Band {
+export function deriveBand({
+  site,
+  changed,
+  status,
+  published,
+  currentlyPublished,
+}: BandReads & { published: Read<number> | null; currentlyPublished: Read<number> | null }): Band {
   const siteUrl = site.ok ? (site.value?.url ?? null) : null;
   const closed = { heading: t.publish.statusUnavailable, tag: false, lastPublished: null, viewChanges: false, siteUrl };
-  if (!site.ok || !changed.ok || !status.ok || published?.ok === false) return closed;
+  if (!site.ok || !changed.ok || !status.ok || published?.ok === false || currentlyPublished?.ok === false) return closed;
   const n = waitingIds(changed.value, status.value).length;
   const viewChanges = n > 0;
   if (site.value === null) return { ...closed, heading: t.publish.noSite, viewChanges };
@@ -161,8 +178,9 @@ export function deriveBand({ site, changed, status, published }: BandReads & { p
   };
   if (n > 0) return { ...open, heading: waitingHeading(n) };
   if (status.value.proven.size > 0) return { ...open, heading: t.overview.upToDate };
-  // Something was published and nothing proves it, or the count is missing: never reassure.
-  return published?.value === 0 ? { ...open, heading: t.overview.nothingPublished } : closed;
+  // Something is published and nothing proves it, or a count is missing: never reassure.
+  if (!published || !currentlyPublished || currentlyPublished.value > 0) return closed;
+  return { ...open, heading: published.value === 0 ? t.overview.nothingPublished : t.overview.nothingOnSite };
 }
 
 /**

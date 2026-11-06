@@ -95,9 +95,10 @@ const steps: Record<string, (arg?: string) => Promise<unknown>> = {
   // tenant has changes and old failures from every run. A tenant of the m4-probe module, so the page
   // has a real structure; no seeded tenant changes. editor_demo is a member only while it exists.
   // `nothing-proven`: an active site and two drafts. `proven`: one of them published, every site
-  // confirmed. `no-site`: the same with its site inactive. Rerunnable: it clears first.
+  // confirmed. `no-site`: the same with its site inactive. `withdrawn`: as `proven`, then unpublished
+  // in a newer release, every site confirmed. Rerunnable: it clears first.
   async 'arrange-overview'(state) {
-    if (state !== 'nothing-proven' && state !== 'proven' && state !== 'no-site') throw new Error(`unknown state: ${state}`);
+    if (state !== 'nothing-proven' && state !== 'proven' && state !== 'no-site' && state !== 'withdrawn') throw new Error(`unknown state: ${state}`);
     await steps['clean-overview']!();
     const editor = PERSONAS.editor_demo.id;
     const [tenant] = await ownerQuery<{ id: string }>(`insert into cms.tenants (slug, name) values ($1, 'M4 probe') returning id`, [OVERVIEW_TENANT]);
@@ -145,6 +146,22 @@ const steps: Record<string, (arg?: string) => Promise<unknown>> = {
       `insert into cms.site_deliveries (release_id, site_id, tenant_id, notify_status, live_status, live_confirmed_at)
        values ($1, $2, $3, 'ok', 'ok', now())`,
       [release!.id, site!.id, tenantId],
+    );
+    if (state !== 'withdrawn') return { arranged: state };
+    await ownerQuery(`update cms.entries set published_rev_id = null, published_draft_version = null where id = $1`, [event]);
+    const [withdrawal] = await ownerQuery<{ id: string }>(
+      `insert into cms.releases (tenant_id, number, status, delivered_at) values ($1, 2, 'delivered', now()) returning id`,
+      [tenantId],
+    );
+    await ownerQuery(
+      `insert into cms.publish_requests (tenant_id, entry_id, action, requested_by, status, release_id)
+       values ($1, $2, 'unpublish', $3, 'committed', $4)`,
+      [tenantId, event, editor, withdrawal!.id],
+    );
+    await ownerQuery(
+      `insert into cms.site_deliveries (release_id, site_id, tenant_id, notify_status, live_status, live_confirmed_at)
+       values ($1, $2, $3, 'ok', 'ok', now())`,
+      [withdrawal!.id, site!.id, tenantId],
     );
     return { arranged: state };
   },
