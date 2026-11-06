@@ -43,6 +43,8 @@ const retrying = (entry_id: string) => row({ entry_id, sites_live_ok: 0, sites_n
 const noSite = (entry_id: string) => row({ entry_id, site_count: 0, sites_notified: 0, sites_live_ok: 0 });
 /** A request that ended before any release: the view's row has no release and no delivery. */
 const ended = (entry_id: string, overrides: Partial<OverviewStatusRow>) => row({ entry_id, release_status: null, sites_notified: 0, sites_live_ok: 0, ...overrides });
+/** A publish an unpublish cancelled: neutral, and the row the view shows in front of that unpublish. */
+const cancelled = (entry_id: string) => ended(entry_id, { status: 'superseded', latest_action: 'unpublish' });
 const invalid = `${t.publish.invalid} ${t.publish.invalidGeneric}`;
 
 const ok = <T,>(value: T): Read<T> => ({ ok: true, value });
@@ -314,6 +316,7 @@ describe('the band, in order', () => {
       ['with a withdrawal being checked again', { ...counts, status: ok([{ ...retrying('a'), action: 'unpublish' as const }]) }],
       ['with a withdrawal not confirmed', { ...counts, status: ok([{ ...notConfirmed('a'), action: 'unpublish' as const }]) }],
       ['with a failed withdrawal', { ...counts, status: ok([ended('a', { action: 'unpublish', status: 'failed' })]) }],
+      ['beside a cancelled publish', { ...counts, status: ok([cancelled('a')]) }],
       ['with no site', { ...counts, site: ok(null) }],
       ['when the site read failed', { ...counts, site: bad }],
       ['when the changed read failed', { ...counts, changed: bad }],
@@ -335,6 +338,27 @@ describe('the band, in order', () => {
     ])('an unconfirmed withdrawal, %s, is in n and never reaches the counts', (_name, withdrawal) => {
       expect(band({ status: ok([withdrawal]) }).heading).toBe(waitingHeading(1));
       expect(needsPublishedCount({ site: SITE, changed: ok([]), status: ok(summarizeStatus([withdrawal])) })).toBe(false);
+    });
+
+    it('a cancelled publish can stand in front of a withdrawal never confirmed: the band claims nothing', () => {
+      expect(summarizeStatus([cancelled('a')]).cancelledPublish).toBe(true);
+      expect(band({ ...counts, status: ok([cancelled('a')]) })).toEqual({
+        heading: t.publish.statusUnavailable,
+        tag: false,
+        lastPublished: null,
+        viewChanges: false,
+        siteUrl: 'https://example.test/',
+      });
+    });
+
+    it('a confirmed withdrawal is no cancelled publish: the heading stays', () => {
+      expect(summarizeStatus([removed('a')]).cancelledPublish).toBe(false);
+      expect(band({ ...counts, status: ok([removed('a')]) }).heading).toBe(NOTHING_ON_SITE);
+    });
+
+    it("an abandoned entry's cancelled row is skipped: the heading stays", () => {
+      expect(summarizeStatus([cancelled('gone')], new Set(['gone'])).cancelledPublish).toBe(false);
+      expect(band({ ...counts, status: ok([cancelled('gone')]), abandoned: ['gone'] }).heading).toBe(NOTHING_ON_SITE);
     });
   });
 

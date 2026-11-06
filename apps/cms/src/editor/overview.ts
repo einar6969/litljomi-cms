@@ -51,6 +51,8 @@ export type StatusSummary = {
   unproven: ReadonlyMap<string, DisplayState>;
   /** An entry's latest request went wrong, or a site did not confirm it, retried or not. */
   failed: boolean;
+  /** A publish an unpublish cancelled was counted. Its row can stand in front of a withdrawal never confirmed. */
+  cancelledPublish: boolean;
   /** The newest `requested_at` among proven rows. */
   lastPublished: string | null;
 };
@@ -122,6 +124,7 @@ export function summarizeStatus(rows: readonly OverviewStatusRow[], abandoned: R
   const proven = new Set<string>();
   const unproven = new Map<string, DisplayState>();
   let failed = false;
+  let cancelledPublish = false;
   let lastPublished: string | null = null;
   for (const row of rows) {
     if (abandoned.has(row.entry_id) && ENDED_STATUSES.has(row.status)) continue;
@@ -132,8 +135,9 @@ export function summarizeStatus(rows: readonly OverviewStatusRow[], abandoned: R
     }
     if (state.tone === 'pending' || state.tone === 'error' || state.tone === 'warning') unproven.set(row.entry_id, state);
     if (state.tone === 'error' || (state.tone === 'pending' && row.sites_not_confirmed > 0)) failed = true;
+    if (row.action === 'publish' && row.status === 'superseded' && state.tone === 'neutral') cancelledPublish = true;
   }
-  return { proven, unproven, failed, lastPublished };
+  return { proven, unproven, failed, cancelledPublish, lastPublished };
 }
 
 /**
@@ -180,7 +184,9 @@ export function deriveBand({
   if (status.value.proven.size > 0) return { ...open, heading: t.overview.upToDate };
   // Something is published and nothing proves it, or a count is missing: never reassure.
   if (!published || !currentlyPublished || currentlyPublished.value > 0) return closed;
-  return { ...open, heading: published.value === 0 ? t.overview.nothingPublished : t.overview.nothingOnSite };
+  if (published.value === 0) return { ...open, heading: t.overview.nothingPublished };
+  // A cancelled publish can hide a withdrawal never confirmed, so it may still be on the site (§7.4).
+  return status.value.cancelledPublish ? closed : { ...open, heading: t.overview.nothingOnSite };
 }
 
 /**

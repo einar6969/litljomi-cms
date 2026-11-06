@@ -610,6 +610,9 @@ test.describe('the tenant overview', () => {
     await expect(recentRows(page).first()).toBeVisible();
     await expect(clear(page)).toHaveCount(0);
     await expectTapTargets(page);
+    // On the plain list: the entry just created is the newest there, whatever the demo tenant holds.
+    expect(await titleLines(page, title), 'the long title wraps at 1440 px').toBeGreaterThan(1);
+    await expectLabelsBelowTitles(page);
     await shoot(page, 'home-overview-populated');
 
     await viewChanges(page).click();
@@ -626,7 +629,6 @@ test.describe('the tenant overview', () => {
     const notices = recentRows(page).filter({ has: page.locator('a.t[href*="/notice/"]') });
     await expect(notices.locator('.ov-type')).toHaveText(Array.from({ length: await notices.count() }, () => 'Notice'));
     await expectTapTargets(page);
-    expect(await titleLines(page, title), 'the long title wraps at 1440 px').toBeGreaterThan(1);
     await expectLabelsBelowTitles(page);
     await shoot(page, 'home-overview-changes');
 
