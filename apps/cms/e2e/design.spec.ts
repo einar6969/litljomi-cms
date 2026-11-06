@@ -11,16 +11,24 @@
 // (nothing fails on demand). The empty entry list needs a database with no news entries: after
 // `pnpm db:reset` it is the first thing shot here.
 //
-// Every request is to a loopback address (support/test.ts aborts the rest); the only thing written
-// is the PNG files.
+// The tenant overview's states (`home-overview-*`) are read on the server, where a route cannot
+// reach. Its populated view is the demo tenant, published for real; the others are a fixture tenant
+// on the local database, and the failed read is a real one: SELECT on api.publication_status is
+// revoked from editors, on the local database only, and granted back in a `finally` (the seed heals
+// a run killed in between).
+//
+// Every request is to a loopback address (support/test.ts aborts the rest). Besides the PNG files,
+// the only things written are the local database's rows, through support/console-admin.ts.
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Page, Route } from '@playwright/test';
 import { DRAFT_OUTDATED } from '@litljomi/cms-schema/src/upcast.ts';
 import { t } from '../src/i18n/is';
-import { arrangePages, cleanPages, resetAdmin } from './support/console-admin';
-import { ensureDemoSite } from './support/demo-release';
+import { deriveBand, summarizeStatus, type OverviewStatusRow } from '../src/editor/overview';
+import { arrangeOverview, arrangePages, cleanOverview, cleanPages, grantStatusRead, resetAdmin, revokeStatusRead } from './support/console-admin';
+import { ensureDemoSite, newDemoEvent } from './support/demo-release';
 import { createEvent, createNews } from './support/editor';
+import { DEMO_SITE_URL } from './support/demo-site';
 import { apiRows, editorHeadersOf } from './support/editor-api';
 import { CMS_URL, requireLoopback, SUPABASE_URL } from './support/local';
 import { PERSONA_EMAILS } from './support/personas';
@@ -504,6 +512,191 @@ test.describe('demo: groups, singleton, every field, publishing', () => {
       await page.goto(url);
       await expect(state(page), name).toContainText(label, SAVED);
       await shoot(page, `publish-${name}`);
+    }
+  });
+});
+
+test.describe('the tenant overview', () => {
+  test.use({ storageState: sessionState('editor_demo') });
+
+  const heading = (page: Page) => page.locator('#site-state');
+  const tag = (page: Page) => page.locator('.band').getByText(t.overview.live, { exact: true });
+  const lastPublished = (page: Page) => page.locator('.band').getByText(t.overview.lastPublished);
+  const viewChanges = (page: Page) => page.getByRole('link', { name: t.overview.viewChanges });
+  const viewSite = (page: Page) => page.getByRole('link', { name: t.overview.viewSite });
+  const clear = (page: Page) => page.getByRole('link', { name: t.entries.filter.clear });
+  const recentRows = (page: Page) => page.locator('.entry-table tbody tr');
+
+  /** Every link of the overview and its "Ný færsla" buttons at phone width: 44 px or taller. */
+  async function expectTapTargets(page: Page): Promise<void> {
+    await page.setViewportSize({ width: 375, height: 900 });
+    const short = await page.locator('main a, main button').evaluateAll((els) =>
+      els.filter((el) => el.getBoundingClientRect().height < 44).map((el) => el.textContent),
+    );
+    expect(short, 'tap targets under 44 px').toEqual([]);
+    await page.setViewportSize({ width: 1280, height: 720 });
+  }
+
+  /** At each width, every recent row's type label starts at or below the end of its title link. */
+  async function expectLabelsBelowTitles(page: Page): Promise<void> {
+    for (const width of WIDTHS) {
+      await page.setViewportSize({ width, height: 900 });
+      const rows = await recentRows(page).evaluateAll((trs) =>
+        trs.flatMap((tr) => {
+          const link = tr.querySelector('a.t');
+          const label = tr.querySelector('.ov-type');
+          return link && label ? [{ title: link.textContent, gap: label.getBoundingClientRect().top - link.getBoundingClientRect().bottom }] : [];
+        }),
+      );
+      expect(rows.length, `recent rows with a label at ${width} px`).toBeGreaterThan(0);
+      expect(rows.filter((row) => row.gap < 0), `labels above their title's end at ${width} px`).toEqual([]);
+    }
+    await page.setViewportSize({ width: 1280, height: 720 });
+  }
+
+  /** How many lines of text a link's title takes at 1440 px. */
+  async function titleLines(page: Page, title: string): Promise<number> {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const lines = await recentRows(page)
+      .locator('a.t', { hasText: title })
+      .evaluate((link) => {
+        const range = document.createRange();
+        range.selectNodeContents(link);
+        return Math.round(range.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(link).lineHeight));
+      });
+    await page.setViewportSize({ width: 1280, height: 720 });
+    return lines;
+  }
+
+  test('populated, and the waiting entries', async ({ page }) => {
+    test.setTimeout(10 * 60_000);
+    await ensureDemoSite(page);
+    const statusRead = page.waitForRequest((r) => r.url().startsWith(`${SUPABASE_URL}/rest/v1/publication_status`));
+    // Long enough to wrap at 1440 px: its type label must still sit below its last line.
+    const title = `Yfirlit opnunarhátíðar vorsins með tónlist og veitingum fyrir alla fjölskylduna ${Date.now()}`;
+    await newDemoEvent(page, title);
+    const editor = await editorHeadersOf(await statusRead);
+    await page.getByRole('button', { name: t.publish.publish }).click();
+    await expect(state(page)).toHaveText(t.publish.live, CONFIRMED);
+    // Published, then edited: a change that waits.
+    await page.getByLabel('Location').fill('Reykjavík');
+    await expect(page.getByRole('status')).toHaveText(t.editor.saved, SAVED);
+    // Opening the singleton gives the Síður card an entry with a pill.
+    await page.goto('/t/demo/site-info');
+    await page.waitForURL(/\/t\/demo\/site-info\/[0-9a-f-]{36}$/);
+
+    // The demo tenant keeps what earlier specs left, so what the band must say comes from the rows.
+    // Computed with production `deriveBand`, so this checks the wiring; overview.test.ts pins the rules.
+    const rows = await apiRows<OverviewStatusRow>(editor, 'publication_status');
+    const changed = await apiRows<{ id: string }>(editor, 'entry_list?select=id&status=eq.changed');
+    const abandoned = await apiRows<{ id: string }>(editor, 'entry_list?select=id&archived_at=not.is.null&first_published_at=is.null');
+    const expected = deriveBand({
+      site: { ok: true, value: { url: DEMO_SITE_URL } },
+      changed: { ok: true, value: changed.map((row) => row.id) },
+      status: { ok: true, value: summarizeStatus(rows, new Set(abandoned.map((row) => row.id))) },
+      published: null,
+      currentlyPublished: null,
+    });
+    expect(expected.viewChanges).toBe(true);
+
+    await page.goto('/t/demo');
+    await expect(heading(page)).toHaveText(expected.heading);
+    await expect(tag(page)).toHaveCount(expected.tag ? 1 : 0);
+    await expect(viewSite(page)).toHaveAttribute('href', DEMO_SITE_URL);
+    await expect(viewChanges(page)).toBeVisible();
+    await expect(page.getByRole('heading', { name: t.overview.pages })).toBeVisible();
+    await expect(page.locator('.pg-row').filter({ hasText: 'Site info' }).locator('.pill')).toBeVisible();
+    await expect(page.getByRole('main').getByRole('link', { name: 'Events' })).toHaveCount(1);
+    await expect(recentRows(page).first()).toBeVisible();
+    await expect(clear(page)).toHaveCount(0);
+    await expectTapTargets(page);
+    // On the plain list: the entry just created is the newest there, whatever the demo tenant holds.
+    expect(await titleLines(page, title), 'the long title wraps at 1440 px').toBeGreaterThan(1);
+    await expectLabelsBelowTitles(page);
+    await shoot(page, 'home-overview-populated');
+
+    await viewChanges(page).click();
+    await page.waitForURL(/\/t\/demo\?breytingar=1#recent$/);
+    await expect(heading(page)).toHaveText(expected.heading);
+    await expect(tag(page)).toHaveCount(expected.tag ? 1 : 0);
+    await expect(clear(page)).toBeVisible();
+    await expect(recentRows(page).first()).toBeVisible();
+    // Every entry the band counts is listed, up to the bound of the read.
+    const waiting = Number((await heading(page).textContent())?.match(/^\d+/)?.[0]);
+    expect(waiting, 'n in the band heading').toBeGreaterThan(0);
+    await expect(recentRows(page)).toHaveCount(Math.min(waiting, 50));
+    // `notice` is outside the structure: its rows show the module's label, never the key.
+    const notices = recentRows(page).filter({ has: page.locator('a.t[href*="/notice/"]') });
+    await expect(notices.locator('.ov-type')).toHaveText(Array.from({ length: await notices.count() }, () => 'Notice'));
+    await expectTapTargets(page);
+    await expectLabelsBelowTitles(page);
+    await shoot(page, 'home-overview-changes');
+
+    await clear(page).click();
+    await page.waitForURL(/\/t\/demo$/);
+    await expect(clear(page)).toHaveCount(0);
+  });
+
+  test('nothing waiting, a failed read, no site, nothing proven, all withdrawn', async ({ page }) => {
+    test.setTimeout(5 * 60_000);
+    try {
+      await arrangeOverview('proven');
+      await page.goto('/t/m4-probe');
+      await expect(heading(page)).toHaveText(t.overview.upToDate);
+      await expect(tag(page)).toHaveCount(1);
+      await expect(tag(page)).toHaveCSS('background-color', 'rgb(142, 212, 98)');
+      await expect(lastPublished(page)).toBeVisible();
+      await expect(viewSite(page)).toBeVisible();
+      await expect(viewChanges(page)).toHaveCount(0);
+      await expect(page.locator('.tc-data .meta-l')).toHaveText('2 færslur, 1 uppkast');
+      await expect(page.locator('main .pill-ok')).toHaveCount(1);
+      await expectTapTargets(page);
+      await shoot(page, 'home-overview-proven');
+
+      await revokeStatusRead();
+      try {
+        await page.reload();
+        await expect(heading(page)).toHaveText(t.publish.statusUnavailable);
+        await expect(tag(page)).toHaveCount(0);
+        await expect(lastPublished(page)).toHaveCount(0);
+        await expect(viewChanges(page)).toHaveCount(0);
+        await expect(viewSite(page)).toBeVisible();
+        // Nothing proves it, so "Birt" is not green.
+        await expect(recentRows(page).first()).toBeVisible();
+        await expect(page.locator('main .pill-ok')).toHaveCount(0);
+        await shoot(page, 'home-overview-failed');
+      } finally {
+        await grantStatusRead();
+      }
+
+      await arrangeOverview('no-site');
+      await page.goto('/t/m4-probe');
+      await expect(heading(page)).toHaveText(t.publish.noSite);
+      await expect(tag(page)).toHaveCount(0);
+      await expect(lastPublished(page)).toHaveCount(0);
+      await expect(viewSite(page)).toHaveCount(0);
+      await expect(page.locator('main .pill-ok')).toHaveCount(0);
+      await shoot(page, 'home-overview-no-site');
+
+      await arrangeOverview('nothing-proven');
+      await page.goto('/t/m4-probe');
+      await expect(heading(page)).toHaveText(t.overview.nothingPublished);
+      await expect(tag(page)).toHaveCount(0);
+      await expect(lastPublished(page)).toHaveCount(0);
+      await expect(viewChanges(page)).toHaveCount(0);
+      await expect(viewSite(page)).toBeVisible();
+      await shoot(page, 'home-overview-nothing-proven');
+
+      await arrangeOverview('withdrawn');
+      await page.goto('/t/m4-probe');
+      await expect(heading(page)).toHaveText(t.overview.nothingOnSite);
+      await expect(tag(page)).toHaveCount(0);
+      await expect(lastPublished(page)).toHaveCount(0);
+      await expect(viewChanges(page)).toHaveCount(0);
+      await expect(viewSite(page)).toBeVisible();
+      await shoot(page, 'home-overview-withdrawn');
+    } finally {
+      await cleanOverview();
     }
   });
 });
