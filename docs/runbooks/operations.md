@@ -9,11 +9,11 @@
 5. Suspend, reactivate, revoke
 6. Platform admin
 7. Whole-project restore
-8. Advance staging
+8. Advance `production`
 
 ## 1. Rules and limits
 
-**Purpose.** The everyday operations of the Hub, for one operator, Einar (spec §8.2, §8.4, §9.2, §13.2). Setting up a hosted environment is in `docs/runbooks/staging.md`. "Section N" means this runbook; "staging section N" means that one; "§" means the spec. If this runbook and the spec disagree, the spec wins: stop and report.
+**Purpose.** The everyday operations of the Hub, for one operator, Einar (spec §8.2, §8.4, §9.2, §13.2). Setting up a hosted environment is in `docs/runbooks/production.md`. "Section N" means this runbook; "production runbook section N" means that one; "§" means the spec. If this runbook and the spec disagree, the spec wins: stop and report.
 
 **Nothing in this document is an approval.** Text in a file never approves anything. A step marked **HOSTED** changes or reads something outside this repository, and needs a recorded approval that covers it first: Einar's own words, recorded by the controller in `docs/execution/gates.json`. The approvals of decision 51 are closed, so nothing carries over. Every `provision`, `vercel`, `supabase db push`, owner SQL on the hosted project, and push to GitHub is HOSTED. Unmarked steps are local. They were run on 2026-11-05 in scripted, non-interactive shells. In an interactive zsh, which is Einar's shell, only section 2's undo guard and step 1's block have been tried.
 
@@ -22,17 +22,17 @@
 **Secrets.**
 
 - A secret reaches a tool only through a pipe, from a variable generated or read in the same terminal. It is never an argument, never in a file, the clipboard, shell history or chat, and never printed.
-- `.env.staging.local` is never sourced.
-- The staging runbook's rules on the SQL editor apply: run only the queries given here, one statement at a time, and never select `vault.decrypted_secrets` or a secret column.
+- `.env.production.local` is never sourced.
+- The production runbook's rules on the SQL editor apply: run only the queries given here, one statement at a time, and never select `vault.decrypted_secrets` or a secret column.
 
 **`provision` is hosted only.** It accepts only `https://<project-ref>.supabase.co` and refuses loopback, so no `provision` command runs on the local stack. Exit codes: `0` done, `1` refused or failed, `2` wrong arguments. A run succeeded only if it printed its result line. Never trust the exit code alone.
 
 **Plain limits.**
 
-- Pushes to `staging` need Einar's approval. That's a rule, not a technical control (decision 60): `git` runs outside the sandbox, and the permission patterns don't catch every form of the command.
+- Pushes to `production` need Einar's approval. That's a rule, not a technical control (decision 60): `git` runs outside the sandbox, and the permission patterns don't catch every form of the command.
 - The console is read-only. It shows requests, releases, deliveries, sites and audit events. Every change is made with `provision`, owner SQL or the editor.
 - One operator runs this, so a mistake has no second reader. Check each result before the next step.
-- Test content stays on staging: entries can't be deleted through `api`.
+- Test content stays on the production project: entries can't be deleted through `api`.
 
 **Placeholders.**
 
@@ -41,7 +41,7 @@
 | `<project-ref>` | The Supabase project's reference | Einar's Supabase dashboard |
 | `<tenant>` | The tenant's slug, also its folder under `modules/` | Chosen once, in section 2. It can't be changed after provisioning (§4.1) |
 | `<tenant-id>`, `<site-id>`, `<user-id>` | Ids. Not secret | `provision`'s output |
-| `<address>` | A person's email address: the editor's or the admin's. On staging, an address Einar controls | Einar |
+| `<address>` | A person's email address: the editor's or the admin's. For a test tenant, an address Einar controls | Einar |
 | `<team>` | Einar's Vercel team, the scope for `vercel link` | Einar's Vercel dashboard |
 | `<site-project>` | The site's Vercel project, linked in its own empty folder `~/vercel-link/<site-project>`, so a `vercel env` command can't reach the wrong project | Einar's Vercel team |
 | `<site-host>` | The site's public hostname | That project's Settings, Domains |
@@ -51,9 +51,9 @@
 
 ## 2. New tenant in under an hour
 
-**Order (§9.2, decision 45.1):** module PR merged, advance staging (migrations first, branch straight after), provision the tenant and invite the editor, publish once, then the optional site. The CMS has the module before anyone can sign in to the tenant. A site's build fails while its tenant has no release, on purpose.
+**Order (§9.2, decision 45.1):** module PR merged, advance `production` (migrations first, branch straight after), provision the tenant and invite the editor, publish once, then the optional site. The CMS has the module before anyone can sign in to the tenant. A site's build fails while its tenant has no release, on purpose.
 
-**In the M4 acceptance run, the module PR must reach `staging` before provisioning.** Don't run step 7 until step 6 has a Ready CMS deployment of the merged commit.
+**In the M4 acceptance run, the module PR had to reach `staging` (now `production`) before provisioning; the same holds for every new tenant.** Don't run step 7 until step 6 has a Ready CMS deployment of the merged commit.
 
 **The site is optional** for M4's test 1 (decision 58). Without it, the test ends at step 10.
 
@@ -66,10 +66,10 @@
 | 3 | `pnpm install` and the snapshot | Local | 1 min |
 | 4 | Run the checks | Local | 1 min |
 | 5 | Code PR under the merge rule | HOSTED (GitHub) | 15 min, mostly waiting for CI and review |
-| 6 | Advance staging | HOSTED | 6 min, mostly waiting for the deploy |
+| 6 | Advance `production` | HOSTED | 6 min, mostly waiting for the deploy |
 | 7 | Provision the tenant | HOSTED | 1 min |
 | 8 | Invite the editor | HOSTED | 1 min |
-| 9 | Publish once | HOSTED (the editor, on staging) | 5 min |
+| 9 | Publish once | HOSTED (the editor, in the CMS) | 5 min |
 | 10 | Check the release | HOSTED (read only) | 2 min |
 | | **Without a site** | | **38 min** |
 | 11 | The site | HOSTED | 12 min, mostly waiting for the deploy |
@@ -186,11 +186,11 @@ git pull --ff-only origin main
 pnpm install
 ```
 
-### Step 6. Advance staging
+### Step 6. Advance `production`
 
 **HOSTED.** Owner: Einar. Follow section 8, with the merged commit of step 5. This deploys the CMS with the new module.
 
-**Verify:** section 8's checks pass, and `vefumsjon-staging` shows a Ready production deployment of a commit that holds the module. Only then go on.
+**Verify:** section 8's checks pass, and `vefstjorn` shows a Ready production deployment of a commit that holds the module. Only then go on.
 
 ### Step 7. Provision the tenant
 
@@ -204,7 +204,7 @@ pnpm --silent --filter @litljomi/cli cli provision tenant '<tenant>' --name '<Te
 
 ### Step 8. Invite the editor
 
-**HOSTED.** Owner: Einar. On staging, the editor is an address Einar controls.
+**HOSTED.** Owner: Einar. For a test tenant, the editor is an address Einar controls.
 
 ```sh
 pnpm --silent --filter @litljomi/cli cli provision editor --email '<address>' --tenant-id '<tenant-id>' --expect-ref '<project-ref>'
@@ -214,7 +214,7 @@ pnpm --silent --filter @litljomi/cli cli provision editor --email '<address>' --
 
 ### Step 9. Publish once
 
-**HOSTED.** Owner: the editor, signed in to the CMS on staging. A publish changes content on staging, so the approval must cover it.
+**HOSTED.** Owner: the editor, signed in to the CMS. A publish changes content on the production project, so the approval must cover it.
 
 Sign in through the invitation mail and open `/t/<tenant>`. For a copy of `demo`: open "Events", create an entry with "Ný færsla", fill Title and Start date, press "Vista slóð" to save the slug the field suggests, and press "Birta". The slug is required: without one, the request is rejected with `slug_required`. For a real tenant, fill whatever its type requires, and the slug if the type has site pages.
 
@@ -243,7 +243,7 @@ The site's code comes first (§9.2, step 3): the SDK and renderer, the revalidat
 - Root directory: the site's folder. Node.js 22.
 - Functions in `fra1`, and `X-Robots-Tag: noindex`, as in `apps/demo-site/vercel.json`.
 - Deployment Protection: Vercel Authentication, Standard Protection, so the custom domain stays public and every `*.vercel.app` URL doesn't.
-- For a site in this repository: Production Branch `staging`, and this Ignored Build Step. A site in another repository uses its own branch (staging G6.1, `labak-hub`).
+- For a site in this repository: Production Branch `production`, and this Ignored Build Step. A site in another repository uses its own branch (production runbook G6.1, `labak-hub`).
 
   ```sh
   if [ "$VERCEL_ENV" = "production" ]; then exit 1; else exit 0; fi
@@ -327,19 +327,19 @@ unset PREVIEW_SECRET
 
 **Spec §8.2 allows this read (decision 63).**
 
-**Before you start.** Copy this script to `~/site-webhook-secret.sh`, once. It reads `.env.staging.local` as text, never executing it, with an identical copy of staging section 7.2's `env_value`. It prints `target:` to standard error, refuses to write the secret to a terminal, and stops unless the site's stored address is the host you give it. Einar only.
+**Before you start.** Copy this script to `~/site-webhook-secret.sh`, once. It reads `.env.production.local` as text, never executing it, with an identical copy of production runbook section 7.2's `env_value`. It prints `target:` to standard error, refuses to write the secret to a terminal, and stops unless the site's stored address is the host you give it. Einar only.
 
 ```bash
 #!/usr/bin/env bash
 # A site's current webhook secret, on standard output, for a variable only. Run by Einar only.
 # Never with `bash -x` or `set -x`. Reads api.worker_sites, the service_role-only function the worker uses.
 set -euo pipefail
-ENV_FILE=~/litljomi-cms/.env.staging.local
+ENV_FILE=~/litljomi-cms/.env.production.local
 REF_RE='^[a-z0-9]{20}$'; URL_RE='^https://[a-z0-9]{20}\.supabase\.co$'; KEY_RE='^[A-Za-z0-9._-]+$'
 ID_RE='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 HOST_RE='^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$'
 
-# env_value NAME ERE: identical to the copy in staging section G3.2c, under section 7.4's rules; keep them identical (reads ENV_FILE
+# env_value NAME ERE: identical to the copy in production runbook section G3.2c, under section 7.4's rules; keep them identical (reads ENV_FILE
 # without executing it; never prints a refused value).
 env_value() {
   local assigned="^[[:space:]]*(export[[:space:]]+)?$1[[:space:]]*=" allowed="$2" line value='' n=0 plain=0
@@ -351,11 +351,11 @@ env_value() {
     fi
   done < "$ENV_FILE"
   if [ "$n" -ne 1 ] || [ "$plain" -ne 1 ]; then
-    echo "FAILED: $1 must be on exactly one plain $1=value line in .env.staging.local (found $n); nothing was sent" >&2
+    echo "FAILED: $1 must be on exactly one plain $1=value line in .env.production.local (found $n); nothing was sent" >&2
     return 1
   fi
   if ! [[ $value =~ $allowed ]]; then
-    echo "FAILED: $1 in .env.staging.local has an unexpected form (value not shown); nothing was sent" >&2; return 1
+    echo "FAILED: $1 in .env.production.local has an unexpected form (value not shown); nothing was sent" >&2; return 1
   fi
   printf '%s' "$value"
 }
@@ -368,7 +368,7 @@ fi
 URL="$(env_value NEXT_PUBLIC_SUPABASE_URL "$URL_RE")"
 SK="$(env_value SUPABASE_SECRET_KEY "$KEY_RE")"
 if [ "$URL" != "https://$REF.supabase.co" ]; then
-  echo "FAILED: .env.staging.local points at ${URL#https://}, not $REF.supabase.co; nothing was sent" >&2; exit 1
+  echo "FAILED: .env.production.local points at ${URL#https://}, not $REF.supabase.co; nothing was sent" >&2; exit 1
 fi
 printf 'target: %s, site %s\n' "${URL#https://}" "$HOST" >&2
 # curl reads headers, URL and body as a config on stdin (--config -), so the key is on no command line.
@@ -517,13 +517,13 @@ unset PREVIEW_SECRET
 
 ### Internal and cron secrets
 
-**HOSTED.** Owner: Einar. Both live on the CMS only, and nobody needs to know their values (staging section 12). Do them one at a time.
+**HOSTED.** Owner: Einar. Both live on the CMS only, and nobody needs to know their values (production runbook section 12). Do them one at a time.
 
 ```sh
-openssl rand -base64 32 | vercel env add CRON_SECRET production --sensitive --force --cwd ~/vercel-link/vefumsjon-staging
-openssl rand -base64 32 | vercel env add CMS_INTERNAL_SECRET production --sensitive --force --cwd ~/vercel-link/vefumsjon-staging
-vercel ls --environment production --limit 1 --cwd ~/vercel-link/vefumsjon-staging
-vercel redeploy '<deployment-url>' --cwd ~/vercel-link/vefumsjon-staging
+openssl rand -base64 32 | vercel env add CRON_SECRET production --sensitive --force --cwd ~/vercel-link/vefstjorn
+openssl rand -base64 32 | vercel env add CMS_INTERNAL_SECRET production --sensitive --force --cwd ~/vercel-link/vefstjorn
+vercel ls --environment production --limit 1 --cwd ~/vercel-link/vefstjorn
+vercel redeploy '<deployment-url>' --cwd ~/vercel-link/vefstjorn
 ```
 
 While the deployment changes, a sweep or a worker trigger may get `401`. That's harmless: the sweep is idempotent and runs again the next minute.
@@ -540,9 +540,9 @@ curl -s -o /dev/null -w 'worker, wrong header: %{http_code}\n' -X POST -H 'Conte
 
 ### The Supabase secret key
 
-**HOSTED.** Owner: Einar creates the key and enters it; a session does the rest. Rotated once on 2026-11-12 (`docs/plans/production.md` step 3, closing S17). The CMS's key is the secret key named `cms_prod_2026_11`. It lives only in `SUPABASE_SECRET_KEY` on the Vercel project `vefumsjon-staging` (production) and in Einar's `.env.staging.local` for `tools/cli`. The legacy JWT keys (`anon`, `service_role`) are disabled in the `apikey` header; nothing in the Hub uses them.
+**HOSTED.** Owner: Einar creates the key and enters it; a session does the rest. Rotated once on 2026-11-12 (`docs/plans/production.md` step 3, closing S17). The CMS's key is the secret key named `cms_prod_2026_11`. It lives only in `SUPABASE_SECRET_KEY` on the Vercel project `vefstjorn` (production) and in Einar's `.env.production.local` for `tools/cli`. The legacy JWT keys (`anon`, `service_role`) are disabled in the `apikey` header; nothing in the Hub uses them.
 
-1. **Einar** creates a new secret key in the Supabase dashboard (Project Settings, API Keys, Secret keys), named `cms_prod_<yyyy>_<mm>`, and sets it as `SUPABASE_SECRET_KEY` on `vefumsjon-staging` (production) and in `.env.staging.local`. Nobody else sees it.
+1. **Einar** creates a new secret key in the Supabase dashboard (Project Settings, API Keys, Secret keys), named `cms_prod_<yyyy>_<mm>`, and sets it as `SUPABASE_SECRET_KEY` on `vefstjorn` (production) and in `.env.production.local`. Nobody else sees it.
 2. Redeploy the CMS (as above).
 3. **Verify the new key is in use:** the project's API logs (Logs, or the connector's `query_logs` over `edge_logs`) show the sweep's requests every minute with the new key's prefix (`request.sb.apikey.apikey.prefix`), answering `200`, and none with the old prefix after the deployment. Publish a change on `demo`; it reaches Live.
 4. **Delete the old key** in the dashboard. Both keys may be named alike (a publishable key and a secret key were both called `default`), so pick it by its prefix, in the Secret keys list. Publish once more; it reaches Live.
@@ -651,7 +651,7 @@ select count(*) from auth.mfa_factors f join auth.users u on u.id = f.user_id wh
 
 The first lists the address. The second returns `1`.
 
-TOTP works on Supabase Free: M4's hosted run proved it on staging (C6). If it doesn't, stop and report.
+TOTP works on Supabase Free: M4's hosted run proved it on this project, then called staging (C6). If it doesn't, stop and report.
 
 ### Recover a lost factor
 
@@ -701,7 +701,7 @@ Look in the Supabase dashboard, Authentication, Rate Limits. The menu path and w
 
 **The facts (§8.4, decision 55).**
 
-- Supabase's daily backups need the Pro plan. **Staging is on Free, so it has no backups** and can't be restored. Pro is a cost, and Einar's decision.
+- Supabase's daily backups need the Pro plan. **The production project is on Free, so it has no backups** and can't be restored. Pro is a cost, and Einar's decision.
 - A restore is of the whole project, so it **rolls back every tenant**. One tenant can't be restored alone, and no per-tenant export exists (decision 56). To undo one tenant's mistake with an older entry version, restore that revision in the editor and publish it (§8.4). That's the only way that touches one tenant.
 - It rolls back the database, including memberships, audit rows and the secrets in Vault.
 
@@ -710,27 +710,29 @@ Look in the Supabase dashboard, Authentication, Rate Limits. The menu path and w
 1. Tell every affected client first. Note the time of the backup. Everything after it is lost.
 2. In the Supabase dashboard, open Database, Backups, and restore the chosen backup. The project is down while it runs.
 3. Check the project: `supabase migration list` shows no missing row. A migration newer than the backup is applied again with section 8.
-4. Run the hook verification (staging section 7.2), since sign-in depends on it. It's a long script, kept in one place.
-5. Confirm the Auth settings against the table in staging section 6.
+4. Run the hook verification (production runbook section 7.2), since sign-in depends on it. It's a long script, kept in one place.
+5. Confirm the Auth settings against the table in production runbook section 6.
 6. Check each site. A webhook secret rotated after the backup is now back to its old value in Vault, while the site holds the new one. Deliveries will fail until they match, so rotate it (section 3).
 7. Check public files. Confirm whether storage objects rolled back with the database. If `current.json` names a newer release than the database knows, publish once per tenant and run the check in section 1.
 8. Record what was lost, by tenant.
 
-## 8. Advance staging
+## 8. Advance `production`
 
-**HOSTED.** Owner: Einar runs `supabase db push` and the push to `staging`, in this order, with nothing in between. Pushes to `staging` need Einar's approval. That's a rule, not a technical control (decision 60): the permission patterns don't catch the command below, so nothing but the rule stops a session running it.
+**HOSTED.** Owner: Einar runs `supabase db push` and the push to `production`, in this order, with nothing in between. Pushes to `production` need Einar's approval. That's a rule, not a technical control (decision 60): the permission patterns don't catch the command below, so nothing but the rule stops a session running it.
 
-**The rule.** Migrations and `staging` advance together. `supabase db push` first, the push to `staging` straight after. Merging to `main` deploys nothing. Only the `staging` branch does (staging G6.6).
+**The rule.** Migrations and `production` advance together. `supabase db push` first, the push to `production` straight after. Merging to `main` deploys nothing. Only the `production` branch (named `staging` until 2026-11-12) does (production runbook G6.6).
 
 **Before you start, read what's going out.** A migration that drops a function the old worker calls breaks the sweep until the new worker is live. On 2026-11-04 that cost one failed sweep minute. Migrations are forward-only.
 
 ```sh
 git fetch origin
-git diff --name-only origin/staging origin/main -- supabase/migrations
-git diff --name-only origin/staging origin/main -- supabase/migrations | xargs grep -inE '^[[:space:]]*drop[[:space:]]+(function|view|table)'
+git diff --name-only origin/production origin/main -- supabase/migrations
+git diff --name-only origin/production origin/main -- supabase/migrations | xargs grep -inE '^[[:space:]]*drop[[:space:]]+(function|view|table)'
 ```
 
 The first line after `git fetch` lists the migrations. The second lists what they drop. Each drop in the list needs a look. If no migration is listed, the second prints nothing and `db push` has nothing to do.
+
+**History (2026-11-05).** The next three notes were written for the advance after M3, when the project was called staging; those migrations are applied. They show what to look for in a migration.
 
 **The next advance removes `data` from the entry views.** `20261105140100_view_data_removal.sql` breaks the deployed app until the new deployment is live, so entry pages show an error for the length of the build. That's acceptable on staging, and doesn't apply to a new production project, which starts with every migration.
 
@@ -754,7 +756,7 @@ The same migration lowers the `authenticated` statement timeout to 3 s. See **Ve
 
 **W1 goes with the next advance.** Its migration `20261104180000_withdrawal_confirmation.sql` drops `api.worker_deliveries_to_retry` and creates it again with the same arguments. It has no dedicated staging run (decision 54), so it arrives untested on staging.
 
-**Confirm the link.** Einar's `supabase login` and `supabase link --project-ref <project-ref>` are already done; he types the database password only at the CLI's prompt. The next command must print the staging project's reference:
+**Confirm the link.** Einar's `supabase login` and `supabase link --project-ref <project-ref>` are already done; he types the database password only at the CLI's prompt. The next command must print the production project's reference:
 
 ```sh
 cat supabase/.temp/project-ref
@@ -765,18 +767,18 @@ cat supabase/.temp/project-ref
 ```sh
 supabase db push
 supabase migration list
-git push origin origin/main:refs/heads/staging
+git push origin origin/main:refs/heads/production
 ```
 
-`supabase db push` lists what it will apply and asks to confirm. `supabase migration list` must show no local version with an empty remote column. If `db push` fails, stop: don't push `staging`, and report. Never `supabase config push` (staging G3.2b).
+`supabase db push` lists what it will apply and asks to confirm. `supabase migration list` must show no local version with an empty remote column. If `db push` fails, stop: don't push `production`, and report. Never `supabase config push` (production runbook G3.2b).
 
-Never force the push to `staging`. It must be a fast-forward.
+Never force the push to `production`. It must be a fast-forward.
 
 **Verify:**
 
 ```sh
-vercel ls --environment production --limit 1 --cwd ~/vercel-link/vefumsjon-staging
-vercel ls --environment production --limit 1 --cwd ~/vercel-link/demo-staging
+vercel ls --environment production --limit 1 --cwd ~/vercel-link/vefstjorn
+vercel ls --environment production --limit 1 --cwd ~/vercel-link/vefstjorn-demo
 ```
 
 Both show a new Ready deployment, of the commit you pushed.

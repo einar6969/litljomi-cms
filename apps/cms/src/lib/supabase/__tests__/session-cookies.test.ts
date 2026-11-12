@@ -33,7 +33,7 @@ describe('sessionCookieOptions', () => {
 });
 
 describe('serverCookiesAreSecure', () => {
-  it.each(['https://vefumsjon-staging.litljomi.is', 'https://cms.litljomi.is/', '', 'http://cms.litljomi.is', 'http://localhost.evil.example', 'http://localhost@evil.example'])(
+  it.each(['https://vefstjorn.is', 'https://cms.litljomi.is/', '', 'http://cms.litljomi.is', 'http://localhost.evil.example', 'http://localhost@evil.example'])(
     'is true for CMS_PUBLIC_URL=%j',
     (url) => {
       vi.stubEnv('CMS_PUBLIC_URL', url);

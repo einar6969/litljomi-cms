@@ -1,5 +1,5 @@
-// `provision`: tenants, sites and editors on the hosted staging project (plan Task 28 Step 5,
-// decision 44; runbook docs/runbooks/staging.md section 11). Run by Einar only, in his own terminal.
+// `provision`: tenants, sites and editors on the hosted production project (plan Task 28 Step 5,
+// decision 44; runbook docs/runbooks/production.md section 11). Run by Einar only, in his own terminal.
 //
 // Safety rules (decision 44, runbook sections 1 and 7.4; all but the stdin rule live in ./hosted.ts,
 // shared with `boundary-check`):

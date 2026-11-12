@@ -1,8 +1,8 @@
 # Open issues
 
-What's outstanding, as of 2026-11-12 after the production move (`docs/verification/production.md`; `staging` at `a772423`). Earlier rows keep their own dates. The KING owns this list and prioritizes it with Einar. It sits beside `docs/execution/deferred-minors.md` and doesn't replace it.
+What's outstanding, as of 2026-11-12 after the production move (`docs/verification/production.md`; `production` at `a772423`). Earlier rows keep their own dates. The KING owns this list and prioritizes it with Einar. It sits beside `docs/execution/deferred-minors.md` and doesn't replace it.
 
-**Evidence words:** **Hosted** ran on staging, and the record says so. **CI** has tests that pass on the local stack, never asserted on staging. **Code** exists, with no specific check behind this statement. **Reported** was said by someone and not re-checked.
+**Evidence words:** **Hosted** ran on the hosted Supabase project (called staging until 2026-11-12, production since), and the record says so. **CI** has tests that pass on the local stack, never asserted on the hosted project. **Code** exists, with no specific check behind this statement. **Reported** was said by someone and not re-checked.
 
 **Priority:** **P1** before real editors or content. **P2** before finishing the platform. **P3** when convenient.
 
@@ -64,7 +64,7 @@ These aren't in `deferred-minors.md`. "Open" was checked in code on 2026-11-05. 
 | S22 | Closed | A repeat unpublish cancelled an unconfirmed withdrawal. M5 finding 1, fixed in PR #58, refusal confirmed on hosted (C7) | None |
 | S23 | P2 | W1 limit: replaced images aren't re-checked after a newer release | Decide in M5 |
 | S25 | P2 | A failed build's `releases.error` message can quote a fragment of published entry text, through `JSON.parse` errors. The same text reaches `audit_log.details` and possibly the alert email. `omitted[].error` is free text too. Schema validation can echo a crafted key (`packages/schema/src/fields/list.ts:46`) into `publish_requests.error`. `site_deliveries.last_error` holds site paths and media URLs. The console shows only codes, steps and statuses | Fix in M5: `message` should never quote a payload |
-| S28 | P2 | **Password sign-in (decision 72), live on staging since 2026-11-12 (`docs/verification/pw-staging.md`).** Guessing is limited only per IP address: about 150 attempts per 5 minutes, shared with session refresh (decision 72.4). Guesses spread over many addresses are unlimited, and there is no CAPTCHA and no password rule beyond length 6. All accepted by Einar (decisions 72, 72.4). Supabase's Team plan has a per-account lockout hook (decision 73, suggestion 15, a cost decision). M5 finding 7 is closed by signing in from the browser, so the limit counts the editor's own address | Prove the per-address limit on staging during the password rollout (`docs/plans/passwords.md`, Hosted) |
+| S28 | P2 | **Password sign-in (decision 72), live on the production project since 2026-11-12 (`docs/verification/pw-production.md`).** Guessing is limited only per IP address: about 150 attempts per 5 minutes, shared with session refresh (decision 72.4). Guesses spread over many addresses are unlimited, and there is no CAPTCHA and no password rule beyond length 6. All accepted by Einar (decisions 72, 72.4). Supabase's Team plan has a per-account lockout hook (decision 73, suggestion 15, a cost decision). M5 finding 7 is closed by signing in from the browser, so the limit counts the editor's own address | Prove the per-address limit on the hosted project during the password rollout (`docs/plans/passwords.md`, Hosted) |
 | S29 | Closed | No sign-out on the set-password page (PW-03 security review). Fixed in PR #66 (`a772423`, on staging): `/auth/password` has the sign-out, which also clears the set-password step | None |
 | S30 | P3 | An oversized `next` (about 4 KB) in a link makes the browser drop the set-password step cookie, so the step is skipped silently. Only the link’s holder can do it, to their own session (PW-03 security review, Minor) | Cap `next` at, say, 2,000 characters in `safeRedirectPath` |
 | S31 | P3 | After R7, a confirm-link POST that still carries an expired (but refreshable) session signs in without the M3-14 question, and "Skipta um aðgang" then doesn’t revoke the replaced session at Auth: the server can’t load an expired session any more. The window is narrow (the GET goes through `/auth/refresh` first; `KeepSessionFresh` refreshes before expiry). Also: if `/auth/refresh` hangs, its history entry keeps the confirm link’s token hash (sent nowhere; `no-referrer`) (S29/R7 security review, Minors). And a sign-out from a browser whose clock is well behind the server’s may not revoke the session at Auth (auth-js decides expiry by the browser clock); the device is still signed out (S29/R7 security re-review, Minor) | Revoke from the browser on the confirm page too, if it matters before real editors |
@@ -80,13 +80,13 @@ These aren't in `deferred-minors.md`. "Open" was checked in code on 2026-11-05. 
 |---|---|---|---|
 | B1 | Closed | W1 has never run on staging, and `demo` release 17 won't clear by itself. Einar ruled out a dedicated staging run (decision 54). W1 reached staging with M4's acceptance (C6) | None, by ruling. It gets no test of its own |
 | B2 | Closed | A1–A4 reran on staging: 71 passed, 0 failed (C6) | None |
-| B3 | P2 | Security advisor ran on staging: one warning, leaked password protection, not applicable (C6) | Run on production |
-| B4 | P2 | Serving with the CMS down passed on staging once, at M1 (paused 38 s, `m1-report.md` criterion 8). Not rerun since, and not in §8.5's E2E form | Repeat before go-live |
-| B5 | P2 | Four §8.5 fallback cases are CI only, by ruling (decision 52). Two more are partial on staging (C5's table). An image replacement with a missed check is CI only (decision 51.1) | None needed unless M5 asks |
+| B3 | P2 | Security advisor ran on the hosted project (C6, then called staging): one warning, leaked password protection, not applicable (C6) | Run on production |
+| B4 | P2 | Serving with the CMS down passed on the hosted project once, at M1 (paused 38 s, `m1-report.md` criterion 8). Not rerun since, and not in §8.5's E2E form | Repeat before go-live |
+| B5 | P2 | Four §8.5 fallback cases are CI only, by ruling (decision 52). Two more are partial on the hosted project (C5's table). An image replacement with a missed check is CI only (decision 51.1) | None needed unless M5 asks |
 | B6 | P2 | Go-live items not yet done: Einar's phone check; the email change confirmed by both addresses; the inverted sign-in check of runbook section 7.2 (decision 72; replaces the password-403 re-run); image 404 to 200; `current.json` overwrite; DMARC; `*.vercel.app` domains; key check after entry. The full list is in C4 | Before LABAK's go-live |
 | B7 | P2 | The production path has never run: fresh Pro project, migrations, Auth, SMTP, cron, secrets | Part of creating production |
 | B8 | P2 | The staging E2E suite is only on local branch `acceptance/m2-m3`, on no remote. `apps/cms/test-results-staging/` is untracked beside it. Decision 51.2 keeps it off `main` because of its key handling | Open item, left as it is. Moving it to `main` needs key handling through `tools/cli`. C5 lists its Minors |
-| B9 | P3 | `demo-next15-staging` is inactive and won't update when `staging` advances | Re-check spec A12 if the SDK's site contract changes |
+| B9 | Closed | `demo-next15-staging` was inactive and didn't update with the deploy branch. Deleted on 2026-11-12, with its two inactive `cms.sites` records | Re-check spec A12 if the SDK's site contract changes |
 
 ## R. Risks
 
@@ -96,11 +96,11 @@ These aren't in `deferred-minors.md`. "Open" was checked in code on 2026-11-05. 
 | R2 | Accepted | Production is the existing Free project `rwpgpfsmhhtimauvpoyt` at `vefstjorn.is`, live since 2026-11-12 (decisions 74 and 76, `docs/verification/production.md`). **No backups:** a lost or damaged database has no restore. **No staging:** migrations and Auth changes go straight to production, after the local stack. The Free plan's limits apply (and Free projects may pause when idle; check Supabase's current terms) | Revisit before a second client or real content of value: Pro with backups, and a staging project |
 | R3 | Closed | GitHub Actions billing. The repo is public for free CI. Einar dropped this as a concern (decision 54), and CI passed on `eb4e85c`. If `ci` jobs fail within seconds, read the annotations | None |
 | R4 | P2 | Rulings in the coordinator's chat may exist nowhere else. It has no known export | Record them the same day from now on |
-| R5 | P3 | One maintainer, one model at every level, one laptop holding local transcripts and the staging env file | Known and accepted so far |
+| R5 | P3 | One maintainer, one model at every level, one laptop holding local transcripts and the production env file (`.env.production.local`) | Known and accepted so far |
 | R7 | Closed | The CMS proxy refreshed expired sessions from the server’s address, so forged expired cookies could use up the shared refresh limit for every editor. Fixed on `fix/S29-R7-sessions` (PR #66, `a772423`, on staging since 2026-11-12): server-side clients refuse `grant_type=refresh_token`; the browser keeps sessions fresh on every signed-in page; an expired page navigation refreshes in the browser through `/auth/refresh`. A test proves a forged expired cookie makes no server refresh; sign-out signs out in the browser first so it still revokes after expiry | None |
 | R8 | P3 | Local stack: Kong serves the email templates through per-file mounts, so after a branch switch that rewrites `supabase/templates/` it serves deleted files and Auth silently sends its English defaults (found in PW-02). `CLAUDE.md` now says to restart the stack | None beyond the rule; hosted templates live in the dashboard |
 | R9 | P3 | Test isolation: `console-views.test.ts` (audit window) and `storage-boundary.test.ts` (`delivery/labak/current.json`) fail after the browser suite has run on the same local database; both pass after `pnpm db:reset` (PW-03). `design.spec.ts` "publishing for real" is flaky (failed twice, passed on rerun) | Make the two tests independent of leftover data; find the flake |
-| R10 | P2 | No staging browser suite exists any more (`apps/cms/e2e-staging` is gone), so runbook 7.3 step 10 and future hosted acceptance have no browser coverage. Staging's Auth audit log returned no rows during the rollout | Decide whether to restore a staging suite; check the hosted Auth audit-log setting |
+| R10 | P2 | No hosted browser suite exists any more (`apps/cms/e2e-staging` is gone), so runbook 7.3 step 10 and future hosted acceptance have no browser coverage. The hosted project's Auth audit log returned no rows during the rollout | Decide whether to restore a hosted browser suite; check the hosted Auth audit-log setting |
 | R6 | P3 | The `deliver.test.ts` flake (`BRIEF.md`, Traps). The `ci` failures with no logs on first runs of `938128a` were GitHub refusing the jobs | Fix the flake |
 
 ## D. Record discrepancies
@@ -133,7 +133,7 @@ Left unchanged on purpose. The KING proposes corrections and Einar agrees them.
 | E4 | Closed | Production: decided (decision 74) and done (decision 76, `docs/verification/production.md`) |
 | E5 | The definition of finished | Proposed in `BRIEF.md`, section 7 |
 | E6 | Target month for LABAK's launch | No urgency. A date sets M6's pace |
-| E7 | Whether the `crs` log-mode rules on `demo-staging` cost anything | Blocks nothing. Vercel bills "Firewall OWASP Requests" as its own line. The data seen stopped before the rules appeared |
+| E7 | Whether the `crs` log-mode rules on `vefstjorn-demo` (formerly `demo-staging`) cost anything | Blocks nothing. Vercel bills "Firewall OWASP Requests" as its own line. The data seen stopped before the rules appeared |
 | E8 | Corrections to the records in section D | None made so far |
 | E9 | Cloud connectors (S19) | Only matters if cloud threads are used again |
 

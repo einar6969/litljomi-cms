@@ -10,8 +10,8 @@ const REF = 'abcdefghij0123456789';
 const ORIGIN = `https://${REF}.supabase.co`;
 const SK = 'sb_secret_TESTONLYkey-0123456789_abc.def';
 const PK = 'sb_publishable_TESTONLYpk-9876543210_xyz';
-const ENV_FILE = '/test/.env.staging.local';
-const DEFAULT_ENV_FILE = '/Users/einarzoega/litljomi-cms/.env.staging.local';
+const ENV_FILE = '/test/.env.production.local';
+const DEFAULT_ENV_FILE = '/Users/einarzoega/litljomi-cms/.env.production.local';
 const LABAK = '11111111-1111-4111-8111-111111111111';
 const DEMO = '22222222-2222-4222-8222-222222222222';
 const JPEG = [0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0xff, 0xd9];
@@ -19,7 +19,7 @@ const LABAK_EMAIL = 'einsi+a-labak@litljomi.is';
 const DEMO_EMAIL = 'einsi+a-demo@litljomi.is';
 
 const goodEnv = [
-  '# staging',
+  '# production',
   `NEXT_PUBLIC_SUPABASE_URL=${ORIGIN}`,
   `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${PK}`,
   `SUPABASE_SECRET_KEY=${SK}`,
@@ -44,7 +44,7 @@ const pgError = (status: number, code: string, message: string) => json(status, 
 const storageError = (statusCode: string, error: string, message: string) => json(400, { statusCode, error, message });
 
 // ---------------------------------------------------------------------------------------------
-// A fake staging project with the boundary the local suite proves (state persists across runs).
+// A fake production project with the boundary the local suite proves (state persists across runs).
 
 interface Entry {
   id: string;
@@ -91,7 +91,7 @@ function principal(c: Call): Principal {
 const isMember = (w: World, tenant: string, user: string) => w.memberships.has(`${tenant}:${user}`);
 const denied = (p: Principal) => pgError(p.kind === 'anon' ? 401 : 403, '42501', 'permission denied for function');
 
-function staging(w: World): Handler {
+function production(w: World): Handler {
   return (c) => {
     const p = principal(c);
     if (p.kind === 'bad') return json(401, { message: 'bad credentials' });
@@ -244,7 +244,7 @@ async function run(
   opts: { env?: string | null; world?: World; handler?: (base: Handler) => Handler; noNetwork?: boolean } = {},
 ): Promise<Run> {
   const world = opts.world ?? newWorld();
-  const base = staging(world);
+  const base = production(world);
   const handler = opts.handler ? opts.handler(base) : base;
   const result: Run = { code: -1, out: [], err: [], lines: [], calls: [], fileReads: 0, world };
   const deps: BoundaryCheckDeps = {
@@ -337,7 +337,7 @@ describe('boundary-check: arguments', () => {
     ['a repeated flag', [...args, '--labak-tenant-id', LABAK]],
     ['an unknown flag', [...args, '--local']],
     ['a positional argument', [...args, 'extra']],
-    ['a relative --env-file', ['boundary-check', '--labak-tenant-id', LABAK, '--demo-tenant-id', DEMO, '--expect-ref', REF, '--env-file=.env.staging.local']],
+    ['a relative --env-file', ['boundary-check', '--labak-tenant-id', LABAK, '--demo-tenant-id', DEMO, '--expect-ref', REF, '--env-file=.env.production.local']],
   ])('refuses %s with usage (exit 2), before reading anything', async (_name, a) => {
     const r = await run(a, { noNetwork: true });
     expect(r.code).toBe(2);
@@ -364,7 +364,7 @@ describe('boundary-check: the target project', () => {
   it.each([['short'], ['ABCDEFGHIJ0123456789'], ['']])('refuses --expect-ref %j before reading the env file', async (ref) => {
     const r = await run(['boundary-check', '--labak-tenant-id', LABAK, '--demo-tenant-id', DEMO, '--expect-ref', ref], { noNetwork: true });
     expect(r.code).toBe(1);
-    expect(r.err.join('\n')).toContain('FAILED: --expect-ref');
+    expect(r.err.join('\n')).toContain("FAILED: --expect-ref must be the hosted project's reference (20 lowercase letters or digits); nothing was sent");
     expect(r.fileReads).toBe(0);
     expect(r.calls).toHaveLength(0);
   });
@@ -409,7 +409,7 @@ describe('boundary-check: the target project', () => {
   });
 });
 
-describe('boundary-check: a staging project that holds the boundary', () => {
+describe('boundary-check: a production project that holds the boundary', () => {
   it('passes every check, prints the target first and the RESULT line last, and exits 0', async () => {
     const r = await run(args);
     expect(r.err).toEqual([]);

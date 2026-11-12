@@ -17,7 +17,7 @@ import { closeAll, ownerQuery } from './sql.ts';
 
 const REF = 'migratedraftstest000';
 const ORIGIN = `https://${REF}.supabase.co`;
-const ENV_FILE = '/test/.env.staging.local';
+const ENV_FILE = '/test/.env.production.local';
 
 let editor: SupabaseClient;
 

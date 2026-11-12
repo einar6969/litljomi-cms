@@ -98,7 +98,7 @@ Do this only after step 1 verifies.
    - **§2.2:** one Free project as production (decision 74), the domain `vefstjorn.is`, and the accepted no-backup and no-staging risks.
    - **§10.3** (backups): replace "Supabase daily backups (Pro)" with the accepted risk.
    - Every `cms.litljomi.is`: change to `vefstjorn.is`.
-2. **Runbooks:** the hosts and the new key in `docs/runbooks/staging.md` and `operations.md`. Rename them only if it's quick.
+2. **Runbooks:** the hosts and the new key in `docs/runbooks/production.md` and `operations.md`. Rename them only if it's quick.
 3. **`docs/king/OPEN-ISSUES.md`:** close S17, R2 and E4; add the accepted risks.
 4. **`docs/king/BRIEF.md`:** update "Where things stand".
 5. Push the docs to `main`.
