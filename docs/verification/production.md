@@ -85,7 +85,7 @@ Einar confirmed all three. Memberships removed (`einsi+a-labak` from `labak`, `e
 | Demo site host | `https://demo.vefstjorn.is` | `demo-staging.litljomi.is` | Einar's CNAME `demo` → `529d21ae137f44ca.vercel-dns-017.com.`; certificate valid to 2027-02-10; `x-robots-tag: noindex`; old host 308 to the new one. `cms.sites` `8cead364…`: base, revalidate and preview URLs on the new host. No site variable names its own host |
 | Git branch | `production` | `staging` | GitHub rename (no open PRs targeted it; the ruleset covers `main` only) |
 | Vercel Production Branch | `production` on `vefstjorn` and `vefstjorn-demo` | `staging` | Set in the dashboard (no API for it); API reads back `production`. The Ignored Build Step checks `VERCEL_ENV`, not a branch, so it is unchanged |
-| Env file for `tools/cli` | `.env.production.local` | `.env.staging.local` | PR #68 changes the default; Einar renames his file |
+| Env file for `tools/cli` | `.env.production.local` | `.env.staging.local` | PR #68 changes the default; Einar renamed his file (only `.env.production.local` exists, git-ignored; contents not read) |
 | Runbook, record | `docs/runbooks/production.md`, `docs/verification/pw-production.md` | `staging.md`, `pw-staging.md` | PR #68, every link fixed |
 
 - PR #68 (`chore/rename-production`, head `169a4e9`), merged as `b8c702c`: combined review PASS (Minors fixed on `main` after); unit 3341, integration 152, pgTAP 2622 passed; browser suite 80 passed plus R9's flaky publish test on rerun; CI green.
