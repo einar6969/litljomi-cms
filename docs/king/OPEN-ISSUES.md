@@ -1,6 +1,6 @@
 # Open issues
 
-What's outstanding after M3, as of 2026-11-05 (`origin/main` at `eb4e85c`, staging at `b73582e`). The KING owns this list and prioritizes it with Einar. It sits beside `docs/execution/deferred-minors.md` and doesn't replace it.
+What's outstanding, as of 2026-11-12 after the production move (`docs/verification/production.md`; `staging` at `a772423`). Earlier rows keep their own dates. The KING owns this list and prioritizes it with Einar. It sits beside `docs/execution/deferred-minors.md` and doesn't replace it.
 
 **Evidence words:** **Hosted** ran on staging, and the record says so. **CI** has tests that pass on the local stack, never asserted on staging. **Code** exists, with no specific check behind this statement. **Reported** was said by someone and not re-checked.
 
@@ -56,7 +56,7 @@ These aren't in `deferred-minors.md`. "Open" was checked in code on 2026-11-05. 
 | # | P | Item | Suggested next step |
 |---|---|---|---|
 | S16 | Closed | Minors triaged in `docs/verification/m5-review.md` | None |
-| S17 | P1 | The Supabase secret key was pasted into a chat (C4), and the project is now production (decision 74). It also sits in local transcripts | `docs/plans/production.md` step 3: Einar enters a fresh key; the old one is deleted; legacy JWT keys disabled if unused |
+| S17 | Closed | The Supabase secret key was pasted into a chat (C4). Rotated on 2026-11-12: Einar entered `cms_prod_2026_11`, the old key is deleted, and the legacy `anon` and `service_role` keys are disabled (`docs/verification/production.md`) | None; S33 is the residual |
 | S18 | Closed | The repository is public, by Einar's choice. M5's history scan found no real secret: 587 commits, regex and entropy (`m5-review.md`) | None |
 | S19 | P1 | Cloud threads have Supabase, Vercel and Zoho Mail connectors, gated only by asking first (Reported by the coordinator). "No hosted systems" is a behavioural rule there | Einar decides whether to remove them from the Project |
 | S20 | P1 | M2 and M3 had one security review of `61f6011` and no spec or quality review. Fix rounds and W1 were each reviewed alone | M5 must cover M2, M3 and the fixes as a whole |
@@ -70,6 +70,8 @@ These aren't in `deferred-minors.md`. "Open" was checked in code on 2026-11-05. 
 | S31 | P3 | After R7, a confirm-link POST that still carries an expired (but refreshable) session signs in without the M3-14 question, and "Skipta um aðgang" then doesn’t revoke the replaced session at Auth: the server can’t load an expired session any more. The window is narrow (the GET goes through `/auth/refresh` first; `KeepSessionFresh` refreshes before expiry). Also: if `/auth/refresh` hangs, its history entry keeps the confirm link’s token hash (sent nowhere; `no-referrer`) (S29/R7 security review, Minors). And a sign-out from a browser whose clock is well behind the server’s may not revoke the session at Auth (auth-js decides expiry by the browser clock); the device is still signed out (S29/R7 security re-review, Minor) | Revoke from the browser on the confirm page too, if it matters before real editors |
 | S26 | P2 | TOTP guesses have no account lockout, only Auth's rate limit (default 15 a minute). Accepted for now (decision 62). The dashboard doesn't show the hosted value (C7) | Measure it or accept it before real clients |
 | S27 | Closed | M5's other Major findings: fixed, reduced or accepted (C7, decision 69). Finding 10 is accepted (decision 65). Finding 7 is parked until a password system (decision 66) | None |
+| S32 | P1 | **SendGrid click tracking rewrites the Auth emails' links** (found 2026-11-12, production step 6). The invite and reset links arrive as `u53709994.ct.sendgrid.net/ls/click…` redirects, so each `token_hash` link passes through SendGrid's tracker and its click logs, and the editor sees a SendGrid address instead of `vefstjorn.is`. Sign-in still needs the confirm page's POST, so a scanner's GET signs no one in | Either Einar turns click tracking off in SendGrid (Settings, Tracking; it affects all mail on that account), or the templates mark their links `clicktracking="off"` (a template change: repo, hosted templates, local stack restart). Recommended: the template attribute, so the setting can't drift |
+| S33 | P2 | The legacy JWT keys are disabled in the `apikey` header, but the dashboard says they "remain valid as a JWT": the previous signing key (HS256 shared secret) is still listed under "Previously used keys" for verifying tokens, so a leaked legacy `service_role` JWT may still verify as a bearer token. Signing moved to ECC P-256 ten days ago, so no live session token depends on the old key | Revoke the previous HS256 key (JWT Keys page) after checking that Supabase's own management traffic (seen using `supabase_admin` JWTs) doesn't rely on it; Einar decides |
 | S24 | P2 | `main` has no branch protection. The merge rule and `main-guard` are behavioural and alert-only | Accept knowingly. While the repo is public, protection should need no GitHub Pro (not tested) |
 
 ## B. Verification gaps
@@ -91,7 +93,7 @@ These aren't in `deferred-minors.md`. "Open" was checked in code on 2026-11-05. 
 | # | P | Risk | Note |
 |---|---|---|---|
 | R1 | P2 | SDK version is still 0.1.0 after 8 commits since M1 (2 of them merges), and LABAK vendors the older 0.1.0. Same version, different code | Bump it, and refresh or publish it before M6 (decision 42.4) |
-| R2 | Decided | Production is the existing Free project `rwpgpfsmhhtimauvpoyt` at `vefstjorn.is` (decision 74); no backups and no staging, both accepted for now | `docs/plans/production.md` |
+| R2 | Accepted | Production is the existing Free project `rwpgpfsmhhtimauvpoyt` at `vefstjorn.is`, live since 2026-11-12 (decisions 74 and 76, `docs/verification/production.md`). **No backups:** a lost or damaged database has no restore. **No staging:** migrations and Auth changes go straight to production, after the local stack. The Free plan's limits apply (and Free projects may pause when idle; check Supabase's current terms) | Revisit before a second client or real content of value: Pro with backups, and a staging project |
 | R3 | Closed | GitHub Actions billing. The repo is public for free CI. Einar dropped this as a concern (decision 54), and CI passed on `eb4e85c`. If `ci` jobs fail within seconds, read the annotations | None |
 | R4 | P2 | Rulings in the coordinator's chat may exist nowhere else. It has no known export | Record them the same day from now on |
 | R5 | P3 | One maintainer, one model at every level, one laptop holding local transcripts and the staging env file | Known and accepted so far |
@@ -128,7 +130,7 @@ Left unchanged on purpose. The KING proposes corrections and Einar agrees them.
 | # | Decision | Note |
 |---|---|---|
 | E1 | Starting M5 | M4 is accepted (decision 64). The proposal is in the KING's report |
-| E4 | Decided | Production: decision 74 | `docs/plans/production.md` |
+| E4 | Closed | Production: decided (decision 74) and done (decision 76, `docs/verification/production.md`) |
 | E5 | The definition of finished | Proposed in `BRIEF.md`, section 7 |
 | E6 | Target month for LABAK's launch | No urgency. A date sets M6's pace |
 | E7 | Whether the `crs` log-mode rules on `demo-staging` cost anything | Blocks nothing. Vercel bills "Firewall OWASP Requests" as its own line. The data seen stopped before the rules appeared |

@@ -21,12 +21,13 @@ A milestone being accepted does not make every line of it hosted.
 
 ## 1. Where things stand
 
-As of 2026-11-12 (evening).
+As of 2026-11-12 (evening, after the production move).
 
 - **Accepted milestones:** M0, M1 (C4), M2 and M3 (C5), M4 (C6), M5 (C7). M6 (LABAK) is **parked** (decision 74).
 - **Done on 2026-11-12:** the UI level-up (#61) and tenant overview (#62); password sign-in (decision 72, #63–#65), rolled out and verified on the Supabase project (`docs/verification/pw-staging.md`); S29 and R7 (#66): sign-out on the set-password page, and the CMS server never refreshes a session.
-- **The Supabase project `rwpgpfsmhhtimauvpoyt` is now production** (decision 74), on the Free plan, with no backups (accepted) and no separate staging. It runs `staging` = `a772423` (the `staging` branch is the Vercel production switch; the name is historical). The CMS still answers at `vefumsjon-staging.litljomi.is` until the domain moves.
-- **Next:** `docs/plans/production.md`: move the CMS to **`vefstjorn.is`**, rotate the secret key, remove test accounts, verify. Then onboard a **new client** (Einar provides the details).
+- **Production is live at `https://vefstjorn.is`** (decisions 74 and 76; `docs/verification/production.md`, 2026-11-12). The Supabase project `rwpgpfsmhhtimauvpoyt` is production, on the Free plan, with no backups and no separate staging (both accepted, R2). It runs `staging` = `a772423` (the `staging` branch is the Vercel production switch; the name is historical). `vefumsjon-staging.litljomi.is` redirects to `vefstjorn.is`. The secret key is fresh (`cms_prod_2026_11`, S17 closed), the legacy JWT keys are disabled, and the only account is `einsi@litljomi.is`.
+- **Open from the production run:** S32 (SendGrid click tracking rewrites the Auth links; P1 before real editors) and S33 (the old HS256 signing key still verifies tokens; Einar decides on revoking it).
+- **Next:** onboard a **new client**. Ask Einar for the client's name and site, where the site's code lives and how it's hosted, what content they edit, and who their editors are.
 - **How agents work:** decision 75. No sandbox, full git and CLI autonomy; `CLAUDE.md` "Autonomy" lists the few things that need Einar's word. The G0–G7 gates and `gates.json` are history.
 - **Nothing real is live yet:** no real editor and no real content. labak.is is still the old Joomla site.
 
@@ -227,7 +228,7 @@ The validation criteria are in spec §13.2. Inviting real editors and launching 
 
 **Finishing the platform also needs these, which no milestone owns:**
 
-- A production Supabase project, `cms.litljomi.is`, the Pro plan, production Auth and SMTP. M0 listed them; decision 42 deferred them. Choose the region deliberately (see Traps).
+- Production: done on 2026-11-12 on the existing Free project at `vefstjorn.is` (decisions 74 and 76). Still deferred: the Pro plan with backups, and a separate staging project (R2).
 - A published SDK or a refreshed vendored copy (`OPEN-ISSUES.md`, R1).
 - The hosted checks waiting in `OPEN-ISSUES.md`.
 
@@ -244,9 +245,9 @@ No secrets here. Secrets live in Vercel, Vault and Einar's `.env.staging.local`.
 | Surface | Value |
 |---|---|
 | Repository | `einar6969/litljomi-cms`, public since creation, by Einar's choice (decision 54) |
-| Supabase staging | `rwpgpfsmhhtimauvpoyt`, Free, `eu-west-1` |
+| Supabase (production) | `rwpgpfsmhhtimauvpoyt`, Free, `eu-west-1`, no backups |
 | Vercel team | `team_QumUyzagQwAqXmpItxceUQ5C` |
-| CMS | `vefumsjon-staging`, https://vefumsjon-staging.litljomi.is |
+| CMS | `vefumsjon-staging`, https://vefstjorn.is (`www.vefstjorn.is` and `vefumsjon-staging.litljomi.is` redirect to it) |
 | Demo site | `demo-staging`, https://demo-staging.litljomi.is, site `8cead364…`, the only active `demo` site |
 | LABAK slice | `labak-hub`, https://labak-hub.litljomi.is, site `e5b6dbba…`, branch `hub-integration` at `376402b` |
 | Next.js 15 fixture | `demo-next15-staging`, site `280f4415…` inactive. Project kept, not updating |

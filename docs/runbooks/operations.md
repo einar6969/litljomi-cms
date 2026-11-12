@@ -304,7 +304,7 @@ If it printed anything else, run `unset WEBHOOK_SECRET` and start 11c again.
 
 ```sh
 pnpm --silent --filter @litljomi/cli cli provision preview-url --site-id '<site-id>' --preview-url 'https://<site-host>/api/cms/preview' --expect-ref '<project-ref>'
-printf '%s' 'https://vefumsjon-staging.litljomi.is' | vercel env add CMS_PREVIEW_BASE_URL production --cwd ~/vercel-link/<site-project>
+printf '%s' 'https://vefstjorn.is' | vercel env add CMS_PREVIEW_BASE_URL production --cwd ~/vercel-link/<site-project>
 PREVIEW_SECRET="$(openssl rand -base64 32)"
 printf '%s' "$PREVIEW_SECRET" | pnpm --silent --filter @litljomi/cli cli provision preview-secret --site-id '<site-id>' --expect-ref '<project-ref>'
 printf '%s' "$PREVIEW_SECRET" | vercel env add CMS_PREVIEW_SECRETS production --sensitive --cwd ~/vercel-link/<site-project>
@@ -531,7 +531,7 @@ While the deployment changes, a sweep or a worker trigger may get `401`. That's 
 **Verify:** a new Ready deployment. The project's logs show `/api/cron/sweep` answering `200` each minute. A publish reaches the check in section 1. These use deliberately wrong values, and all four print `401`:
 
 ```sh
-H='https://vefumsjon-staging.litljomi.is'
+H='https://vefstjorn.is'
 curl -s -o /dev/null -w 'cron, no header: %{http_code}\n' "$H/api/cron/sweep"
 curl -s -o /dev/null -w 'cron, wrong bearer: %{http_code}\n' -H 'Authorization: Bearer not-the-cron-secret' "$H/api/cron/sweep"
 curl -s -o /dev/null -w 'worker, no header: %{http_code}\n' -X POST -H 'Content-Type: application/json' -d '{"requestId":"00000000-0000-0000-0000-000000000000"}' "$H/api/internal/worker"
@@ -540,7 +540,12 @@ curl -s -o /dev/null -w 'worker, wrong header: %{http_code}\n' -X POST -H 'Conte
 
 ### The Supabase secret key
 
-It isn't rotated here. It stays on S17's schedule in `docs/king/OPEN-ISSUES.md`: before go-live (decision 47.2).
+**HOSTED.** Owner: Einar creates the key and enters it; a session does the rest. Rotated once on 2026-11-12 (`docs/plans/production.md` step 3, closing S17). The CMS's key is the secret key named `cms_prod_2026_11`. It lives only in `SUPABASE_SECRET_KEY` on the Vercel project `vefumsjon-staging` (production) and in Einar's `.env.staging.local` for `tools/cli`. The legacy JWT keys (`anon`, `service_role`) are disabled in the `apikey` header; nothing in the Hub uses them.
+
+1. **Einar** creates a new secret key in the Supabase dashboard (Project Settings, API Keys, Secret keys), named `cms_prod_<yyyy>_<mm>`, and sets it as `SUPABASE_SECRET_KEY` on `vefumsjon-staging` (production) and in `.env.staging.local`. Nobody else sees it.
+2. Redeploy the CMS (as above).
+3. **Verify the new key is in use:** the project's API logs (Logs, or the connector's `query_logs` over `edge_logs`) show the sweep's requests every minute with the new key's prefix (`request.sb.apikey.apikey.prefix`), answering `200`, and none with the old prefix after the deployment. Publish a change on `demo`; it reaches Live.
+4. **Delete the old key** in the dashboard. Both keys may be named alike (a publishable key and a secret key were both called `default`), so pick it by its prefix, in the Secret keys list. Publish once more; it reaches Live.
 
 ## 5. Suspend, reactivate, revoke
 

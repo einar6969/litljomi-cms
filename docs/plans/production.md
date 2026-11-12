@@ -1,6 +1,6 @@
 # Production on vefstjorn.is: plan
 
-> **Status: APPROVED by Einar on 2026-11-12 (decision 76).** Written from decisions 74 and 75. Execute from step 0.
+> **Status: DONE on 2026-11-12** (approved as decision 76). The record is `docs/verification/production.md`; findings S32 and S33 are in `docs/king/OPEN-ISSUES.md`.
 
 **Goal:** the CMS runs as production at **`https://vefstjorn.is`**, on the existing Supabase project, with a fresh secret key and no test accounts, ready for the first new client (decision 74's next step).
 
