@@ -45,6 +45,15 @@ export interface EntrySummary {
   title: string | null;
   path: string | null;
 }
+
+/** A video field's value: a link to the video on its provider, with a title and a still image. */
+export interface PublicVideo {
+  provider: 'youtube' | 'vimeo';
+  id: string;
+  url: string;
+  title: string;
+  still: PublicAsset | null;
+}
 `;
 
 /**

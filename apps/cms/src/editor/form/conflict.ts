@@ -16,6 +16,13 @@ function canonical(value: unknown): string {
   ) ?? 'undefined';
 }
 
+/** A video field's stored value (A11): exactly `{ url, title, still }`. */
+const isVideo = (value: Record<string, unknown>): value is { url: string; title: string; still: Record<string, unknown> | null } =>
+  Object.keys(value).length === 3 &&
+  typeof value.url === 'string' &&
+  typeof value.title === 'string' &&
+  (value.still === null || isObject(value.still));
+
 const shortId = (ref: unknown) => (typeof ref === 'string' ? ref.slice(0, 8) : '');
 
 function describe(value: unknown): string {
@@ -34,6 +41,11 @@ function describe(value: unknown): string {
     return typeof value.alt === 'string' && value.alt !== '' ? `${image}: ${value.alt}` : image;
   }
   if (value._kind === 'entry') return `${t.editor.resolve.entry} ${shortId(value._ref)}`;
+  if (isVideo(value)) {
+    const parts = [value.title, value.url].filter((s) => s !== '');
+    if (value.still !== null) parts.push(describe(value.still));
+    return `${t.editor.resolve.video}: ${parts.length === 0 ? t.editor.resolve.empty : parts.join(', ')}`;
+  }
   if (typeof value.href === 'string') return value.href;
   if (isObject(value.entry)) return describe(value.entry);
   const parts = Object.values(value).filter((v) => v !== undefined);
@@ -42,7 +54,8 @@ function describe(value: unknown): string {
 
 /**
  * A short, readable text of a field value for the conflict view: rich text by its text, an image by
- * its asset (first eight characters of its id) and alt, a list or group by its values.
+ * its asset (first eight characters of its id) and alt, a video by its title, address and still, a
+ * list or group by its values.
  */
 export function describeValue(value: unknown): string {
   const text = describe(value);

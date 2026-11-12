@@ -27,6 +27,8 @@ export type FieldDescriptor = {
   of?: FieldDescriptor;
   /** A group's nested fields, in order (M2-15). */
   fields?: FieldDescriptor[];
+  /** A video field's still image: required on publish, or optional (A11). */
+  still?: 'required' | 'optional';
 };
 
 const isChoice = (x: unknown): x is SelectChoice =>
@@ -39,8 +41,8 @@ const isKind = (x: unknown): x is AnyFieldKind =>
 function describeField(key: string, field: AnyFieldKind): FieldDescriptor {
   // Kind-specific options: `max` on text, number and list fields, `multiline` on text, `min` on
   // number and list, `integer` on number, `options` on select, `to` on reference, `of` on list,
-  // `fields` on group. Each is passed only when the field has it.
-  const { max, multiline, min, integer, options, to, of, fields } = field as {
+  // `fields` on group, `still` on video. Each is passed only when the field has it.
+  const { max, multiline, min, integer, options, to, of, fields, still } = field as {
     max?: unknown;
     multiline?: unknown;
     min?: unknown;
@@ -49,6 +51,7 @@ function describeField(key: string, field: AnyFieldKind): FieldDescriptor {
     to?: unknown;
     of?: unknown;
     fields?: unknown;
+    still?: unknown;
   };
   return {
     key,
@@ -66,6 +69,7 @@ function describeField(key: string, field: AnyFieldKind): FieldDescriptor {
     // marked required.
     ...(field.kind === 'list' && isKind(of) ? { of: { ...describeField(key, of), required: true } } : {}),
     ...(field.kind === 'group' && typeof fields === 'object' && fields !== null ? { fields: describeFieldSet(fields as Record<string, AnyFieldKind>) } : {}),
+    ...(field.kind === 'video' ? { still: still === 'required' ? ('required' as const) : ('optional' as const) } : {}),
   };
 }
 
