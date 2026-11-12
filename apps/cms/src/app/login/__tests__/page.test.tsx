@@ -6,6 +6,12 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('../SignInForm', () => ({
   SignInForm: ({ next }: { next?: string }) => <form data-next={next === undefined ? 'none' : next} />,
 }));
+// Whether the page reaches the sign-in actions on the server (see the test at the end).
+const actions = vi.hoisted(() => ({ loaded: false }));
+vi.mock('../actions', () => {
+  actions.loaded = true;
+  return {};
+});
 
 const { default: LoginPage } = await import('../page');
 const { t } = await import('@/i18n/is');
@@ -43,5 +49,11 @@ describe('the sign-in page', () => {
 
   it.each([{}, { error: 'other' }, { emailChange: 'waiting' }])('says nothing about a link for %j', async (query) => {
     expect(await render(query)).not.toContain(t.login.linkInvalid);
+  });
+
+  // A sign-out posted after the session expired is sent on to /login by the proxy, with its action
+  // id; it runs only if /login registers it, which the page's server-side import of ./actions does.
+  it('reaches the sign-in actions on the server, so a sign-out sent on to /login still runs', () => {
+    expect(actions.loaded).toBe(true);
   });
 });
