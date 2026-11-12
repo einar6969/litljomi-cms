@@ -22,6 +22,7 @@ A milestone being accepted does not make every line of it hosted.
 ## 1. Where things stand
 
 - **Accepted:** M0, M1 (checkpoint C4), M2 and M3 (C5, decision 51.5), M4 (C6, decision 64), M5 (C7, decision 69).
+- **Password sign-in (decision 72), 2026-11-12:** PW-01 (#63) and PW-02 (#64) merged; PW-03 and PW-04 in one PR; then the staging rollout, pre-approved by decision 73 rule 2. Staging still serves magic-link sign-in until that rollout.
 - **Staging matches `main`** at `9d31159`, with 45 migrations, the M5 fixes included. Later docs commits on `main` don't affect it.
 - **Nothing real is live.** There is no production project, no real editor and no real content. labak.is is still the old Joomla site.
 - **Tests:** on `b756c74`, from the CI log: pgTAP 2,006 in 39 files, unit 2,498, integration 96 + 116. Unit 2,498 re-run locally on `f2ab9e4`; the other totals were not re-read. CI passed on `eb4e85c`.
@@ -129,6 +130,11 @@ All numbered decisions are in `docs/plans/2026-11-01-m0-m1.md`, despite its name
 | 68 | M5 hosted verification approved |
 | 69 | M5 accepted |
 | 70 | One docs-only PR, #60, merged before CI finished. Merge rule otherwise unchanged |
+| 72 | Password sign-in replaces the magic link. No CAPTCHA, no password rules beyond length 6. Plan `docs/plans/passwords.md` |
+| 72.1 | Auth reports every email link as `otp`, so magic links are stopped in the email (no link, no code), not in the hook |
+| 72.3 | Email codes are 10 digits; the sign-up confirmation email carries no link |
+| 72.4 | Password sign-in runs in the browser, so Auth's limit counts the editor's address (M5 finding 7) |
+| 73 | Working rules for speed: review scaled to risk, standing staging approval inside an approved plan (G3, G6), batched copy, one agent on the local stack. Also in `CLAUDE.md` |
 
 **Known not to be in the numbered decisions:**
 
