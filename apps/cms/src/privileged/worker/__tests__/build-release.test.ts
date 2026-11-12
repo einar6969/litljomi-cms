@@ -81,11 +81,20 @@ const pair = defineType({
   preview: { title: 'target' },
   orderBy: 'target',
 });
+// A12: a type whose entries editors put in order (spec §5.1).
+const card = defineType({
+  name: 'card',
+  version: 1,
+  label: 'Spjald',
+  fields: { title: text({ label: 'Titill' }) },
+  preview: { title: 'title' },
+  orderBy: 'manual',
+});
 const testModule = defineModule({
   tenant: 'prufa',
   locale: 'is',
   branding: { name: 'Prufa' },
-  types: [article, pair],
+  types: [article, pair, card],
   structure: [],
   site: { article: { path: (e) => `/greinar/${e.slug}`, checks: () => [] } },
 });
@@ -128,6 +137,8 @@ type SnapEntry = {
   sort_at: string | null;
   first_published_at: string;
   last_published_at: string;
+  /** A12: the entry's place among the snapshot's entries of its type (absent from a database before A12). */
+  order_rank?: number;
   refs: Array<{ path: string; kind: 'entry' | 'asset'; id: string }>;
 };
 const entry = (id: string, data: Record<string, unknown>, o: Partial<SnapEntry> = {}): SnapEntry => ({
@@ -1089,5 +1100,68 @@ describe('supabaseReleaseStorage', () => {
     await expect(
       supabaseReleaseStorage(client).upload('delivery', 'x', new Uint8Array(), { cacheControl: 'x', contentType: 'application/json', upsert: false }),
     ).rejects.toThrow(/already exists/);
+  });
+});
+
+describe('buildRelease: manually ordered types (A12; spec §5.1, §7.2)', () => {
+  it("lists a manually ordered type's entries by the snapshot's order_rank, and every other type as the snapshot lists them", async () => {
+    snapshot.entries = [
+      entry(E1, { title: 'Eitt' }, { order_rank: 2 }),
+      entry(E2, { title: 'Tvö' }, { order_rank: 1 }),
+      entry(E1.replace(/^1/, '4'), { title: 'Fjögur' }, { type: 'card', schema_version: 1, order_rank: 3 }),
+      entry(E2.replace(/^2/, '5'), { title: 'Fimm' }, { type: 'card', schema_version: 1, order_rank: 1 }),
+      entry(E3, { title: 'Þrjú' }, { type: 'card', schema_version: 1, order_rank: 2 }),
+    ];
+    snapshot.assets = [];
+
+    const { status, bundle } = await build();
+
+    expect(status).toBe('delivered');
+    expect(bundle!.format).toBe(1);
+    expect(bundle!.entries['card']!.map((e) => e.title)).toEqual(['Fimm', 'Þrjú', 'Fjögur']);
+    // Not manually ordered: the snapshot's order (by entry id), whatever its ranks say.
+    expect(bundle!.entries['article']!.map((e) => e.title)).toEqual(['Eitt', 'Tvö']);
+    // The order is in the list only: no record gains a field, and sortAt is left alone.
+    for (const e of bundle!.entries['card']!) {
+      expect(Object.keys(e)).toEqual(['id', 'revisionId', 'contentHash', 'slug', 'title', 'sortAt', 'firstPublishedAt', 'lastPublishedAt', 'schemaVersion', 'data']);
+      expect(e.sortAt).toBeNull();
+    }
+  });
+
+  it('keeps the snapshot order of a manually ordered type when the database gives no ranks (before the A12 migration)', async () => {
+    snapshot.entries = [entry(E1, { title: 'Eitt' }, { type: 'card', schema_version: 1 }), entry(E2, { title: 'Tvö' }, { type: 'card', schema_version: 1 })];
+    snapshot.assets = [];
+
+    const { bundle } = await build();
+
+    expect(bundle!.entries['card']!.map((e) => e.title)).toEqual(['Eitt', 'Tvö']);
+  });
+
+  it("an entry reused from the previous release keeps its place in the type's order", async () => {
+    // Written at a version newer than the type's: it cannot be upcast, so the previous projection of
+    // the same revision is reused (§7.1).
+    const reused = entry(E3, { title: 'Gamalt' }, { type: 'card', schema_version: 2, order_rank: 1 });
+    withPreviousRelease();
+    const old = {
+      id: E3,
+      revisionId: reused.revision_id,
+      contentHash: 'h',
+      slug: reused.slug,
+      title: 'Gamalt',
+      sortAt: null,
+      firstPublishedAt: '2026-11-01T10:00:00.000Z',
+      lastPublishedAt: '2026-11-02T10:00:00.123Z',
+      schemaVersion: 1,
+      data: { title: 'Gamalt' },
+    };
+    mem.put('delivery/prufa/releases/2.json', { format: 1, tenant: 'prufa', release: 2, generatedAt: STAMP, entries: { card: [old] } });
+    snapshot.entries = [entry(E1, { title: 'Eitt' }, { type: 'card', schema_version: 1, order_rank: 2 }), reused];
+    snapshot.assets = [];
+
+    const { status, bundle, fallback } = await build();
+
+    expect(status).toBe('delivered');
+    expect(fallback?.map((f) => f.entryId)).toEqual([E3]);
+    expect(bundle!.entries['card']!.map((e) => e.id)).toEqual([E3, E1]);
   });
 });

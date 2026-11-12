@@ -123,6 +123,23 @@
         "heading": "text"
       }
     },
+    "partner": {
+      "version": 1,
+      "transforms": [],
+      "fields": {
+        "title": {
+          "kind": "text",
+          "required": true,
+          "multiline": false
+        },
+        "website": {
+          "kind": "link",
+          "required": false,
+          "entryTypes": null
+        }
+      },
+      "retired": {}
+    },
     "site-info": {
       "version": 1,
       "transforms": [],

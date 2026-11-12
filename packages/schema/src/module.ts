@@ -10,7 +10,10 @@ export interface SiteEntry {
 
 /** The published entries of one release. */
 export interface ReleaseView {
-  /** Entries of the type, sorted by `sortAt` descending. */
+  /**
+   * Entries of the type, sorted by `sortAt` descending; a manually ordered type's (`orderBy:
+   * 'manual'`, §5.1) in the editors' order, as the bundle lists them.
+   */
   entries(type: string): SiteEntry[];
 }
 

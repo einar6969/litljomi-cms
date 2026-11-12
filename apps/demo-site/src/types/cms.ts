@@ -55,3 +55,8 @@ export interface SiteInfoEntry {
   title: string | null;
   tagline: string | null;
 }
+
+export interface PartnerEntry {
+  title: string | null;
+  website: { href: string } | { entry: EntrySummary | null } | null;
+}

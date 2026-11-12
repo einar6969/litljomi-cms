@@ -20,7 +20,7 @@
 // (M3-08: the pointer lag, a measured limitation).
 // M5-01: a release's withdrawal state is stored on each delivery before that wait, so a run killed
 // during the poll or the live window leaves a row the sweep retries and alerts on.
-import type { LiveCheck, ModuleManifest, ReleaseView, SiteEntry } from '@litljomi/cms-schema';
+import { isManuallyOrdered, type LiveCheck, type ModuleManifest, type ReleaseView, type SiteEntry } from '@litljomi/cms-schema';
 import type { Bundle, BundleEntry } from '@litljomi/cms-sdk';
 import { getModule } from '@/modules/registry';
 import { supabaseUrl } from '../../lib/supabase/env';
@@ -123,17 +123,25 @@ function unconfirmedState(targets: LiveTarget[]): { withdrawals: StoredWithdrawa
   return withdrawals.length > 0 ? { withdrawals: withdrawals.map(stored), withdrawals_others: targets.some(beyondWithdrawalChecks) } : null;
 }
 
-/** A bundle as the module's `checks` see it: each type's entries by sortAt descending. */
-export function releaseView(bundle: Bundle | null): ReleaseView {
+/**
+ * A bundle as the module's `checks` see it: each type's entries by sortAt descending, except a
+ * manually ordered type's (`manual`, A12), which keep the bundle's order: the editors' order, as
+ * the build wrote it (§7.2).
+ */
+export function releaseView(bundle: Bundle | null, manual: ReadonlySet<string> = new Set()): ReleaseView {
   return {
     entries(type: string): SiteEntry[] {
       const list = bundle && Object.hasOwn(bundle.entries, type) ? (bundle.entries[type] ?? []) : [];
-      return list
-        .map((e) => siteEntry(type, e))
-        .sort((a, b) => (a.sortAt === b.sortAt ? 0 : a.sortAt === null ? 1 : b.sortAt === null ? -1 : a.sortAt < b.sortAt ? 1 : -1));
+      const entries = list.map((e) => siteEntry(type, e));
+      if (manual.has(type)) return entries;
+      return entries.sort((a, b) => (a.sortAt === b.sortAt ? 0 : a.sortAt === null ? 1 : b.sortAt === null ? -1 : a.sortAt < b.sortAt ? 1 : -1));
     },
   };
 }
+
+/** The names of the module's manually ordered types (A12). */
+export const manualTypes = (module: Pick<ModuleManifest, 'types'>): ReadonlySet<string> =>
+  new Set(module.types.filter((t) => isManuallyOrdered(t)).map((t) => t.name));
 
 const siteEntry = (type: string, e: BundleEntry): SiteEntry => ({ id: e.id, type, slug: e.slug, sortAt: e.sortAt });
 
@@ -187,8 +195,9 @@ export function liveTargets(
 ): LiveTarget[] {
   const byEntry = new Map<string, LinkedRequest[]>();
   for (const r of release.requests) byEntry.set(r.entryId, [...(byEntry.get(r.entryId) ?? []), r]);
-  const current = releaseView(release.bundle);
-  const previous = release.previousBundle ? releaseView(release.previousBundle) : null;
+  const manual = manualTypes(module);
+  const current = releaseView(release.bundle, manual);
+  const previous = release.previousBundle ? releaseView(release.previousBundle, manual) : null;
 
   return [...byEntry].map(([entryId, requests]): LiveTarget => {
     const base = { entryId, requestIds: requests.map((r) => r.id), failure: null, checks: [], ownPath: '', contentHash: null, mediaUrls: [] };

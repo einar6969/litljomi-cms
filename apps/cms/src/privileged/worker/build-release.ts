@@ -29,6 +29,7 @@ import {
   ProjectionError,
   UpcastError,
   entryContentHash,
+  isManuallyOrdered,
   projectEntry,
   type ContentType,
   type ModuleManifest,
@@ -148,6 +149,12 @@ type SnapshotEntry = {
   sort_at: string | null;
   first_published_at: string;
   last_published_at: string;
+  /**
+   * The entry's place (from 1) among the snapshot's entries of its type, in the order editors give
+   * a manually ordered type (A12, migration 20261112230000_manual_order). Absent from a database
+   * without that migration.
+   */
+  order_rank?: number;
   refs: Array<{ path: string; kind: 'entry' | 'asset'; id: string }>;
 };
 type SnapshotAsset = ContextAsset & { original_path: string; archived: boolean };
@@ -602,6 +609,7 @@ function projectAll(
     (entries[e.type] ??= []).push(b);
     for (const r of e.refs) if (r.kind === 'asset') referenced.add(r.id);
   }
+  sortManuallyOrdered(entries, snapshot.entries, types);
   const failedEntry = (e: SnapshotEntry): OmittedEntry => ({
     entryId: e.entry_id,
     requestIds: snapshot.requests.filter((r) => r.entry_id === e.entry_id).map((r) => r.id),
@@ -614,6 +622,24 @@ function projectAll(
     .map((e): FallbackEntry => ({ ...failedEntry(e), fromRelease: previousBundle!.release }));
   const referencedAssets = snapshot.assets.filter((a) => referenced.has(a.id) && !a.archived && validAsset(a));
   return { entries, omitted, fallback, referencedAssets };
+}
+
+/**
+ * Each type's entries are in the snapshot's order (by entry id), except that a manually ordered
+ * type's are sorted by the snapshot's `order_rank`, the editors' order (A12; §5.1, §7.2: the order
+ * is the list's, never a field of the record). The sort is stable, so entries without a rank (a
+ * database before A12) keep the snapshot's order.
+ */
+function sortManuallyOrdered(entries: Record<string, BundleEntry[]>, list: SnapshotEntry[], types: Map<string, ContentType>): void {
+  const ranks = new Map(list.map((e) => [e.entry_id, e.order_rank]));
+  const rank = (id: string) => {
+    const r = ranks.get(id);
+    return typeof r === 'number' && Number.isFinite(r) ? r : Number.MAX_SAFE_INTEGER;
+  };
+  for (const [name, records] of Object.entries(entries)) {
+    const type = types.get(name);
+    if (type !== undefined && isManuallyOrdered(type)) records.sort((a, b) => rank(a.id) - rank(b.id));
+  }
 }
 
 /**

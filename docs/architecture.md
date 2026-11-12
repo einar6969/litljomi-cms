@@ -198,7 +198,7 @@ Column lists are the v1 minimum; implementation may add timestamps and indexes.
 | `tenants` | `id`, `slug` (unique), `name`, `status` (`active`, `suspended`) | — |
 | `memberships` | `(tenant_id, user_id)` PK, `role`, `created_at`, `created_by` | `role` is an enum with the single v1 value `editor` |
 | `platform_admins` | `user_id` PK | — |
-| `entries` | `id`, `tenant_id`, `type`, `slug` (nullable), `singleton`, `published_rev_id` (nullable), `published_draft_version` (nullable), `first_published_at`, `last_published_at`, `created_at/by`, `archived_at` | Partial unique `(tenant_id, type, slug)` where `slug IS NOT NULL AND archived_at IS NULL`. Slug is immutable once `first_published_at` is set (trigger). `published_rev_id` must reference a revision of the same entry and tenant (composite FK). `type` is at most 100 characters and `slug` at most 200 |
+| `entries` | `id`, `tenant_id`, `type`, `slug` (nullable), `singleton`, `published_rev_id` (nullable), `published_draft_version` (nullable), `first_published_at`, `last_published_at`, `created_at/by`, `archived_at`, `order_key` (nullable, §5.1) | Partial unique `(tenant_id, type, slug)` where `slug IS NOT NULL AND archived_at IS NULL`. Slug is immutable once `first_published_at` is set (trigger). `published_rev_id` must reference a revision of the same entry and tenant (composite FK). `type` is at most 100 characters and `slug` at most 200. `order_key` is a finite numeric with at most 1,000 decimal places |
 | `drafts` | `entry_id` PK, `tenant_id`, `schema_version`, `data` jsonb, `title`, `sort_at`, `version` int, `updated_at/by` | `data` is a JSON object under a size limit (1 MB). `title` is at most 500 characters. `version` increments by exactly 1 on every update, and `data` cannot change without it (trigger) |
 | `revisions` | `id`, `tenant_id`, `entry_id`, `draft_version`, `schema_version`, `data`, `title`, `sort_at`, `requested_by`, `committed_at` | **Append-only**: `anon`, `authenticated` and `service_role` have no `UPDATE` or `DELETE`. Only the table owner (migrations) retains them. `title` is at most 500 characters |
 | `draft_refs` | `tenant_id`, `entry_id`, `path`, `target_entry_id` or `target_asset_id` (exactly one) | Rebuilt by trigger on every draft write. Same-tenant FKs |
@@ -223,7 +223,7 @@ Column lists are the v1 minimum; implementation may add timestamps and indexes.
 | `drafts.version = entries.published_draft_version` | published |
 | `drafts.version > entries.published_draft_version` | published, with unpublished changes |
 
-**Query columns.** `title` and `sort_at` are promoted from the document using the type's `preview.title` and `orderBy` mapping, written on drafts by the save path and on revisions by the worker. A title past the column's limit is cut to it, so a long heading is never refused on save or at publish. They are generic platform columns, never per-tenant. Everything else is filtered inside the JSON, scoped by `(tenant_id, type)`. No GIN indexes and no full-text search in v1.
+**Query columns.** `title` and `sort_at` are promoted from the document using the type's `preview.title` and `orderBy` mapping, written on drafts by the save path and on revisions by the worker. A title past the column's limit is cut to it, so a long heading is never refused on save or at publish. They are generic platform columns, never per-tenant. Everything else is filtered inside the JSON, scoped by `(tenant_id, type)`. No GIN indexes and no full-text search in v1. The manual order of a type's entries (§5.1) is not a query column: it is `entries.order_key`, which belongs to the entry rather than to a draft or a revision.
 
 ### 4.4 Authentication
 
@@ -265,7 +265,7 @@ Column lists are the v1 minimum; implementation may add timestamps and indexes.
 
 | Table | Grant |
 |---|---|
-| `entries` | `SELECT`; `INSERT (tenant_id, type, slug, singleton, created_by)`; `UPDATE (slug, archived_at)` |
+| `entries` | `SELECT`; `INSERT (tenant_id, type, slug, singleton, created_by)`; `UPDATE (slug, archived_at, order_key)` |
 | `drafts` | `SELECT`; `INSERT (entry_id, tenant_id, schema_version, data, title, sort_at, updated_by)`; `UPDATE (data, schema_version, title, sort_at, updated_at, updated_by)`. `version` is set by trigger only |
 | `draft_refs` | `SELECT`, `INSERT`, `DELETE`, with the same tenant policies as `drafts`. The ref-extraction trigger runs as the invoking role and needs them; `cms` is not exposed, so the only route is through `api` functions |
 | `revision_refs`, `revisions` | `SELECT` (written only by the worker) |
@@ -295,6 +295,7 @@ Column lists are the v1 minimum; implementation may add timestamps and indexes.
 | `save_draft(entry_id, expected_version, data, schema_version, title, sort_at)` | `authenticated` | Updates the draft only if `version = expected_version`; otherwise returns a conflict |
 | `set_slug(entry_id, slug)` | `authenticated` | Changes the slug before first publish |
 | `archive_entry(entry_id)` | `authenticated` | Allowed only when not published |
+| `move_entry(entry_id, target_id, place)` | `authenticated` | Moves the entry just `before` or just `after` another entry of the same tenant and type (§5.1). The tenant and type come from the moved entry's row; `not_found` for an entry or target the caller cannot see, `forbidden` for a target of another tenant or type, the entry itself or an archived entry, `tenant_inactive` unless the tenant is active. Writes the moved entry's `order_key` only |
 | `register_asset(asset_id, tenant_id, original_path, metadata)` | `authenticated` | Records an uploaded original (§5.6). Rejects a path that is not `{tenant_id}/{asset_id}/…` |
 | `update_asset(asset_id, focal_x, focal_y, default_alt)` | `authenticated` | Edits asset metadata |
 | `update_asset_text(asset_id, default_alt, caption, credit)` | `authenticated` | Edits a file's three texts (§5.6) |
@@ -316,7 +317,7 @@ This list is complete for v1 editor writes. All are `SECURITY INVOKER` with `sea
 
 Audit events are written by **triggers**, not by callers, so an editor cannot choose what is recorded. The trigger sets `actor_id` from `auth.uid()` (or the worker's recorded requester) and `at` from the database clock.
 
-Audited in v1: entry creation, slug change, archive; asset registration, metadata change (focal point, default alt, caption and credit; recording a thumbnail is not audited), archive; publish and unpublish requests; commits, rejections and supersessions; release delivery and failure; membership changes and tenant status changes (made by the CLI). Draft autosaves are **not** audited; `drafts.updated_by` and `updated_at` record the last editor.
+Audited in v1: entry creation, slug change, archive, move (`entry.moved`, §5.1); asset registration, metadata change (focal point, default alt, caption and credit; recording a thumbnail is not audited), archive; publish and unpublish requests; commits, rejections and supersessions; release delivery and failure; membership changes and tenant status changes (made by the CLI). Draft autosaves are **not** audited; `drafts.updated_by` and `updated_at` record the last editor.
 
 `authenticated` holds `INSERT` on `audit_log` only so the triggers can run. Since `cms` is not exposed, the only route is through `api` functions, none of which writes to `audit_log` directly. The persona tests assert that `actor_id` cannot be set to another user.
 
@@ -354,6 +355,13 @@ defineType({
 | `title` / `sort_at` mapping | Save path and worker |
 
 **Adding a field needs no database migration**: change the module, deploy. Old documents lack the field; it must be optional or have a default.
+
+**Order.** `orderBy` names the field a type's entries are listed by; a date or datetime field also fills `sort_at` (§4.3). **`orderBy: 'manual'`** instead lets editors put the type's entries in order (a type ordered this way may not have a field named `manual`). The order is not in the document and not versioned: it is `entries.order_key`, changed only by `api.move_entry` (§4.6), which moves one entry just before or just after another of the same tenant and type, and `sort_at` stays null. Changing a type's `orderBy` needs no migration and no transform.
+
+- **Position.** Entries are listed by their position, ascending, then by id. An entry nobody has moved has no `order_key`; its position is minus its creation time in seconds, plus a fraction below 3·10⁻⁸ s taken from its id. So the newest comes first, a new entry comes first until someone moves it, and the entries of a type that becomes manually ordered start newest first with nothing written to them.
+- **A move writes the moved entry only:** a number strictly between its new neighbours' positions (exact `numeric`, so there is always room). No other row is renumbered; gaps are never filled or closed. To the front, the key lands between the first entry and minus the current time less 10⁻⁷ s, so a later entry still comes first; to the end, between the last entry and that plus 1. Moves of a type are serialized, so two never choose the same key. Two positions can be equal only for two unmoved entries created in the same microsecond whose ids end alike; the list then orders them by id, and a move into the space between exactly those two is refused. Archived entries are never a neighbour and cannot be moved.
+- **Editor.** The type's list shows that order and moves an entry by dragging it, by its handle's arrow keys or by its move buttons, saved at once; the title search and the status filter still apply, and a move in a filtered list is relative to the entries shown. References to entries of the type, and lists of references, are unchanged: their order is the document's.
+- **Delivery.** The bundle lists the type's entries in that order (§7.2), read when the release is built, so a move reaches the sites with the tenant's next release.
 
 ### 5.2 v1 field kinds
 
@@ -480,6 +488,7 @@ current.json
 ```
 
 - `revisionId` is the revision the projection was built from, which the fallback rule in §7.1 depends on.
+- **Order within a type.** A manually ordered type's entries (§5.1) are listed in the editors' order, as it stands when the release is built; the module's site checks see them in the same order. Every other type's entries are in no promised order (today by entry id), and site checks see them by `sortAt`, descending. No record carries the order and `sortAt` is untouched, so the format stays `1` and a move changes no `contentHash`.
 - `contentHash` is a SHA-256 over a canonical serialisation of the entry's complete projected record, including resolved asset URLs and referenced entries' summaries. The worker computes it at build time. Sites never compute it; they only echo it in entry markers (§7.3). Any change that alters what a site receives for the entry changes the hash.
 - Bundles: `cache-control: public, max-age=31536000, immutable`.
 - Pointer: `cache-control: public, max-age=30` (CDN freshness is an assumption to test, §11).

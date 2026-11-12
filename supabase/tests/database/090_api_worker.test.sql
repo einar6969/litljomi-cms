@@ -664,7 +664,8 @@ select is((select j -> 'tenant' from snap), jsonb_build_object('id', tests.tenan
 select is(array(select (x ->> 'entry_id')::uuid from snap, jsonb_array_elements(j -> 'entries') as x order by 1),
   array[tests.entry('c910'), tests.entry('c911'), tests.entry('c913'), tests.entry('c920'), tests.entry('c926')],
   'entries: exactly the published, not archived labak entries (not unpublished c907, archived c925, demo or drafts)');
-select is((select x from snap, jsonb_array_elements(j -> 'entries') as x where x ->> 'entry_id' = tests.entry('c910')::text),
+-- A12 added order_rank to each entry (118_manual_order checks it); the rest of the object is as before.
+select is((select x - 'order_rank' from snap, jsonb_array_elements(j -> 'entries') as x where x ->> 'entry_id' = tests.entry('c910')::text),
   (select jsonb_build_object('entry_id', e.id, 'type', 'news', 'slug', 'nakvaem', 'revision_id', r.id,
             'schema_version', 1, 'data', d.data, 'title', 'T', 'sort_at', '2025-06-01 00:00:00+00'::timestamptz,
             'first_published_at', now(), 'last_published_at', now(),

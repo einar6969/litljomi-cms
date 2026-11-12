@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isSingleton, structureItems, type AnyFieldKind, type ReleaseView, type SiteEntry } from '@litljomi/cms-schema';
+import { isManuallyOrdered, isSingleton, structureItems, type AnyFieldKind, type ReleaseView, type SiteEntry } from '@litljomi/cms-schema';
 import fixture from '../../fixtures/event.json';
 import demo from '../index.ts';
 
@@ -8,10 +8,10 @@ const e: SiteEntry = { id: '00000000-0000-4000-8000-000000000001', type: 'event'
 const release = (present: boolean): ReleaseView => ({ entries: (t) => (t === 'event' && present ? [e] : []) });
 
 describe('demo module', () => {
-  it('declares the tenant and three types, event, the schema-evolution test type notice and the singleton site-info; there is no news type', () => {
+  it('declares the tenant and four types, event, the schema-evolution test type notice, the singleton site-info and the manually ordered partner; there is no news type', () => {
     expect(demo.tenant).toBe('demo');
-    expect(demo.types.map((t) => t.name)).toEqual(['event', 'notice', 'site-info']);
-    expect(structureItems(demo).map((s) => s.type)).toEqual(['event', 'site-info']);
+    expect(demo.types.map((t) => t.name)).toEqual(['event', 'notice', 'site-info', 'partner']);
+    expect(structureItems(demo).map((s) => s.type)).toEqual(['event', 'partner', 'site-info']);
     expect(demo.structure[0]).toMatchObject({ group: 'Content' });
     expect(isSingleton(demo, 'site-info')).toBe(true);
     expect(isSingleton(demo, 'event')).toBe(false);
@@ -30,6 +30,18 @@ describe('demo module', () => {
     expect(Object.values<AnyFieldKind>(event.fields).some((f) => f.kind === 'image')).toBe(false);
     expect(event.orderBy).toBe('startDate');
     expect(event.version).toBe(1);
+  });
+  it('has one manually ordered type, partner, in the Content group and with no site pages (A12)', () => {
+    const partner = demo.types.find((t) => t.name === 'partner')!;
+    expect(demo.types.filter((t) => isManuallyOrdered(t)).map((t) => t.name)).toEqual(['partner']);
+    expect(partner.orderBy).toBe('manual');
+    expect(partner.version).toBe(1);
+    expect(demo.structure[0]).toMatchObject({ group: 'Content', items: [{ type: 'event' }, { type: 'partner', label: 'Partners' }] });
+    expect(isSingleton(demo, 'partner')).toBe(false);
+    expect(demo.site.partner).toBeUndefined();
+    expect(partner.publishValidator().safeParse({ title: 'Samstarfsaðili' }).success).toBe(true);
+    expect(partner.publishValidator().safeParse({}).success).toBe(false);
+    expect(partner.queryColumns({ title: 'Samstarfsaðili' })).toEqual({ title: 'Samstarfsaðili', sortAt: null });
   });
   it('has an optional reference to another event (plan M2-04)', () => {
     const related = event.fields.related as AnyFieldKind & { to: readonly string[] };

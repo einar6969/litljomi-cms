@@ -116,7 +116,7 @@ create temporary table editor_views (name text primary key, cols text[]) on comm
 insert into editor_views values
   ('my_tenants', array['id', 'slug', 'name', 'status']),
   ('entry_list', array['id', 'tenant_id', 'type', 'slug', 'title', 'sort_at', 'draft_version', 'published_draft_version',
-                       'status', 'archived_at', 'updated_at', 'first_published_at']), -- M2-10 appended first_published_at
+                       'status', 'archived_at', 'updated_at', 'first_published_at', 'order_position']), -- M2-10 appended first_published_at, A12 order_position
   -- M5-02 removed data (20261105140100_view_data_removal.sql; 116_editor_limits).
   ('entry_detail', array['id', 'tenant_id', 'type', 'slug', 'schema_version', 'draft_version',
                          'published_draft_version', 'first_published_at', 'status']),
