@@ -87,7 +87,14 @@ Asked: "Approve Track A and the five library decisions as recommended?" Einar: "
 
 - **Track A goes in:** A1–A8 and A10. A8 is verified on Vercel before any fix. A9 (a second admin language) only if DLD asks.
 - **The five library decisions, as recommended:** no video files; no copyable file URLs; one web-sized published copy instead of several sizes (B3, later); PDF only for documents; a changed caption waits for the next publish in the first version.
-- **Track B is not approved.** Nothing in it is built until Einar says so. That includes B7 (a `video` field kind) and B10 (manual ordering), so the content model is drafted without them: a video is a link and a still image, and project order is a number field.
+- **Track B is not approved.** Nothing in it is built until Einar says so.
+
+### 2026-11-12: two rows moved to Track A
+
+Einar: "**add B7 and B10 to track A**".
+
+- The `video` field kind is now A11 and manual ordering of entries is A12. Both are approved and are built before DLD's module, because a field's kind cannot change later.
+- The content model uses them: a video is a `video` field, and project order is set by dragging, not by a number field.
 
 ### Gates still ahead, each needing Einar
 
