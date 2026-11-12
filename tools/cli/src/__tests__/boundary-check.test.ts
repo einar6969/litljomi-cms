@@ -111,21 +111,24 @@ function staging(w: World): Handler {
       if (p.kind !== 'secret') return json(403, { code: 403, error_code: 'not_admin', msg: 'User not allowed' });
       const id = w.users.get(body.email as string);
       if (id === undefined) return json(404, { code: 404, error_code: 'user_not_found', msg: 'User not found' });
+      const type = body.type as string;
       return json(200, {
         id,
         email: body.email,
-        action_link: `${ORIGIN}/auth/v1/verify?token=hash-${id}&type=magiclink`,
+        action_link: `${ORIGIN}/auth/v1/verify?token=hash-${type}-${id}&type=${type}`,
         email_otp: 'otp-918273',
-        hashed_token: `hash-${id}`,
-        verification_type: 'magiclink',
+        hashed_token: `hash-${type}-${id}`,
+        verification_type: type,
         redirect_to: 'https://cms.example.is',
       });
     }
     if (c.path === '/auth/v1/verify' && c.method === 'POST') {
       if (p.kind !== 'anon') return json(400, { msg: 'unexpected key' });
       const hash = body.token_hash as string;
-      const id = hash?.startsWith('hash-') ? hash.slice(5) : '';
-      if (body.type !== 'magiclink' || ![...w.users.values()].includes(id)) return json(403, { code: 403, error_code: 'otp_expired', msg: 'Token has expired' });
+      const prefix = `hash-${body.type as string}-`;
+      const id = hash?.startsWith(prefix) ? hash.slice(prefix.length) : '';
+      // A token hash verifies only as the type it was generated for.
+      if (![...w.users.values()].includes(id)) return json(403, { code: 403, error_code: 'otp_expired', msg: 'Token has expired' });
       const token = `tok-${id}-${w.nextId++}`;
       w.tokens.add(token);
       return json(200, { access_token: token, token_type: 'bearer', expires_in: 3600, refresh_token: `refresh-${id}`, user: { id } });
@@ -462,16 +465,18 @@ describe('boundary-check: a staging project that holds the boundary', () => {
     expect([...r.world.memberships].sort()).toEqual([`${DEMO}:${demoId}`, `${LABAK}:${labakId}`].sort());
     expect(r.out).toContain(`test user ${LABAK_EMAIL}: ${labakId} (created)`);
     expect(r.out).toContain(`test user ${DEMO_EMAIL}: ${demoId} (created)`);
-    // Sessions: generate_link with the secret key, verify with the publishable key only.
+    // Sessions: a recovery link from generate_link with the secret key (it sends no email), verified
+    // by POST with the publishable key only; the sign-in hook allows it as otp (decision 72.1).
+    // The test editors have no password.
     const links = r.calls.filter((c) => c.path === '/auth/v1/admin/generate_link');
     expect(links.map((c) => c.json)).toEqual([
-      { type: 'magiclink', email: LABAK_EMAIL },
-      { type: 'magiclink', email: DEMO_EMAIL },
+      { type: 'recovery', email: LABAK_EMAIL },
+      { type: 'recovery', email: DEMO_EMAIL },
     ]);
     for (const c of r.calls.filter((x) => x.path === '/auth/v1/verify')) {
       expect(c.headers.get('apikey')).toBe(PK);
       expect(c.headers.get('Authorization')).toBeNull();
-      expect(c.json).toEqual({ type: 'magiclink', token_hash: expect.stringMatching(/^hash-/) });
+      expect(c.json).toEqual({ type: 'recovery', token_hash: expect.stringMatching(/^hash-recovery-/) });
     }
   });
 
@@ -614,7 +619,17 @@ describe('boundary-check: setup refusals', () => {
       },
     });
     expect(r.code).toBe(1);
-    expect(r.err.join('\n')).toContain(`FAILED: setup: magic link for ${LABAK_EMAIL}: network error (ECONNRESET)`);
+    expect(r.err.join('\n')).toContain(`FAILED: setup: recovery link for ${LABAK_EMAIL}: network error (ECONNRESET)`);
+  });
+
+  it('stops when Auth refuses the sign-in (for example a hook that refuses otp), and runs no check', async () => {
+    const r = await run(args, {
+      handler: (base) => (c) =>
+        c.path === '/auth/v1/verify' ? json(403, { code: 403, error_code: 'unexpected_failure', msg: 'Sign-in not allowed' }) : base(c),
+    });
+    expect(r.code).toBe(1);
+    expect(r.err.join('\n')).toContain(`FAILED: setup: sign-in for ${LABAK_EMAIL}: HTTP 403 unexpected_failure Sign-in not allowed`);
+    expect(r.lines.filter((l) => /^(PASS|FAIL) /.test(l))).toEqual([]);
   });
 });
 
@@ -842,7 +857,7 @@ describe('boundary-check: redaction', () => {
         return async (c) => {
           const res = await base(c);
           if (c.path === '/auth/v1/verify') token = ((await res.clone().json()) as { access_token: string }).access_token;
-          if (c.path === '/rest/v1/rpc/admin_add_membership') return pgError(400, 'XX000', `bad hash-${uuid(1001)} ${token} ${SK}`);
+          if (c.path === '/rest/v1/rpc/admin_add_membership') return pgError(400, 'XX000', `bad hash-recovery-${uuid(1001)} ${token} ${SK}`);
           return res;
         };
       },

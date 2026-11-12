@@ -7,7 +7,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { PREVIEW_TOKEN_TTL_SECONDS, verifyPreviewToken } from '@litljomi/cms-sdk';
-import { anonClient, editorClient, retryRateLimited, secretClient } from '../../../../../../tests/integration/src/clients.ts';
+import { anonClient, editorClient, secretClient, signInPersona } from '../../../../../../tests/integration/src/clients.ts';
 import { env } from '../../../../../../tests/integration/src/env.ts';
 import { PERSONAS, TENANT, type PersonaName } from '../../../../../../tests/integration/src/fixtures.ts';
 import { closeAll, ownerQuery } from '../../../../../../tests/integration/src/sql.ts';
@@ -60,12 +60,8 @@ async function createEntry(persona: PersonaName, tenant: keyof typeof TENANT): P
 
 /** A session of its own (not the cached persona's), so ending it affects no other test. */
 async function freshSession(persona: PersonaName): Promise<{ client: SupabaseClient; accessToken: string }> {
-  const link = await secretClient().auth.admin.generateLink({ type: 'magiclink', email: PERSONAS[persona].email });
-  if (link.error) throw new Error(`generateLink: ${link.error.message}`);
-  const client = anonClient();
-  const verified = await retryRateLimited(() => client.auth.verifyOtp({ type: 'magiclink', token_hash: link.data.properties.hashed_token }));
-  if (verified.error || !verified.data.session) throw new Error(`verifyOtp: ${verified.error?.message ?? 'no session'}`);
-  return { client, accessToken: verified.data.session.access_token };
+  const { client, session } = await signInPersona(persona);
+  return { client, accessToken: session.access_token };
 }
 
 beforeAll(async () => {

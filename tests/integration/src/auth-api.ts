@@ -1,5 +1,5 @@
 // Raw Supabase Auth HTTP calls, the local mailbox (Mailpit), TOTP and PKCE for
-// auth-passwordless.test.ts. Ported from the N1 probes
+// auth-sign-in.test.ts and the other Auth tests. Ported from the N1 probes
 // (docs/verification/n1-probes/*.mjs), which are kept byte-identical as evidence;
 // this is the code that runs. Local stack only (env.ts refuses anything else).
 import crypto from 'node:crypto';
@@ -57,7 +57,11 @@ const RUN = Date.now().toString(36);
 let counter = 0;
 const created: string[] = [];
 
-export type TestUser = { id: string; email: string; inviteTokenHash?: string };
+/**
+ * A throwaway user. An invited one has no password yet, only its invitation's token hash; any other
+ * is confirmed and has a random password of its own (a local test value, never printed).
+ */
+export type TestUser = { id: string; email: string; password?: string; inviteTokenHash?: string };
 
 export async function newUser(prefix: string, { invite = false } = {}): Promise<TestUser> {
   const email = `${prefix}-${RUN}-${++counter}@test.local`;
@@ -67,10 +71,23 @@ export async function newUser(prefix: string, { invite = false } = {}): Promise<
     created.push(r.json.id);
     return { id: r.json.id, email, inviteTokenHash: r.json.hashed_token };
   }
-  const r = await adminAuth('/admin/users', { body: { email, email_confirm: true } });
+  const password = crypto.randomBytes(18).toString('base64url');
+  const r = await adminAuth('/admin/users', { body: { email, email_confirm: true, password } });
   if (r.status !== 200) throw new Error(`create ${email}: ${brief(r)}`);
   created.push(r.json.id);
-  return { id: r.json.id, email };
+  return { id: r.json.id, email, password };
+}
+
+/** POST /token?grant_type=password, as an editor signs in (spec §4.4), retried on 429. */
+export const passwordSignIn = (email: string, password: string): Promise<AuthResponse> =>
+  retry429(() => auth('/token?grant_type=password', { body: { email, password } }));
+
+/** A session of a throwaway user with a password; fails unless Auth answers 200. */
+export async function passwordSession(user: TestUser): Promise<AuthResponse> {
+  if (user.password === undefined) throw new Error(`${user.email} has no password`);
+  const r = await passwordSignIn(user.email, user.password);
+  if (r.status !== 200) throw new Error(`password sign-in ${user.email}: ${brief(r)}`);
+  return r;
 }
 
 export async function deleteThrowawayUsers(ids: string[] = created.splice(0)) {
@@ -82,7 +99,10 @@ export async function deleteThrowawayUsers(ids: string[] = created.splice(0)) {
   }
 }
 
-/** A session through admin generate_link and POST /verify with the hashed token. */
+/**
+ * POST /verify with the hashed token of an admin generate_link. Auth reports it as `otp`, which the
+ * sign-in hook allows (decision 72.1), so either type signs in; only the secret key can make one.
+ */
 export async function generateLinkSession(email: string, type: 'magiclink' | 'recovery'): Promise<AuthResponse> {
   const link = await adminAuth('/admin/generate_link', { body: { type, email } });
   if (link.status !== 200) throw new Error(`generate_link ${type}: ${brief(link)}`);
@@ -120,8 +140,9 @@ export async function waitMail(to: string, n = 1): Promise<MailMessage[]> {
 const hrefs = (msg: MailMessage) => [...msg.HTML.matchAll(/href="([^"]+)"/g)].map((m) => m[1]!.replace(/&amp;/g, '&'));
 
 /**
- * The CMS link of a magic-link, invitation or email-change mail (decision 41.1): the CMS's
- * `/auth/confirm` page with the token hash and type, built from `{{ .SiteURL }}`.
+ * The CMS link of an invitation or email-change mail (decision 41.1): the CMS's `/auth/confirm`
+ * page with the token hash and type, built from `{{ .SiteURL }}`. The magic-link mail has none
+ * (decision 72.1).
  */
 export const confirmLink = (msg: MailMessage): URL => {
   const link = hrefs(msg).find((h) => URL.canParse(h) && new URL(h).pathname === '/auth/confirm');
@@ -134,7 +155,7 @@ export const tokenHashOf = (msg: MailMessage) => confirmLink(msg).searchParams.g
  * Supabase Auth's own GET /verify URL for a token hash (what `{{ .ConfirmationURL }}` links to), so
  * the redirect flows stay covered now that the templates link to the CMS instead.
  */
-export const verifyUrlFor = (tokenHash: string, type: 'magiclink' | 'invite' | 'email_change'): string =>
+export const verifyUrlFor = (tokenHash: string, type: 'magiclink' | 'recovery' | 'invite' | 'email_change'): string =>
   `${env.apiUrl}/auth/v1/verify?${new URLSearchParams({ token: tokenHash, type })}`;
 
 /** GET of an emailed /verify link without following the redirect: its Location. */

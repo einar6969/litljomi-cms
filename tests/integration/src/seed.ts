@@ -12,18 +12,30 @@
 //   - revoked's membership deletion and the cms.platform_admins row: owner SQL,
 //     since no admin function covers them.
 import { secretClient } from './clients.ts';
-import { DEMO_SITE, PERSONAS, PERSONA_NAMES, TENANT } from './fixtures.ts';
+import { DEMO_SITE, PERSONAS, PERSONA_NAMES, PERSONA_PASSWORD, TENANT } from './fixtures.ts';
 import { ownerQuery } from './sql.ts';
 
 export async function seedIntegration(): Promise<void> {
   const secret = secretClient();
 
+  // Every persona signs in with PERSONA_PASSWORD (PW-01). A user seeded before it had a password, or
+  // whose password a test changed, gets it again; a matching one is left alone, because the admin
+  // API's password update would end the persona's other sessions.
   for (const name of PERSONA_NAMES) {
     const { id, email } = PERSONAS[name];
-    const exists = await ownerQuery('select 1 from auth.users where id = $1', [id]);
-    if (exists.length > 0) continue;
-    const { error } = await secret.auth.admin.createUser({ id, email, email_confirm: true });
-    if (error) throw new Error(`createUser ${name}: ${error.message}`);
+    const users = await ownerQuery<{ matches: boolean }>(
+      `select coalesce(encrypted_password <> '' and encrypted_password = extensions.crypt($2, encrypted_password), false) as matches
+       from auth.users where id = $1`,
+      [id, PERSONA_PASSWORD],
+    );
+    const user = users[0];
+    if (user === undefined) {
+      const { error } = await secret.auth.admin.createUser({ id, email, email_confirm: true, password: PERSONA_PASSWORD });
+      if (error) throw new Error(`createUser ${name}: ${error.message}`);
+    } else if (!user.matches) {
+      const { error } = await secret.auth.admin.updateUserById(id, { password: PERSONA_PASSWORD });
+      if (error) throw new Error(`updateUserById ${name}: ${error.message}`);
+    }
   }
 
   await ownerQuery(

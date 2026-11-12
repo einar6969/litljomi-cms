@@ -184,6 +184,9 @@ enable_anonymous_sign_ins = false
 # Allow/disallow testing manual linking of accounts
 enable_manual_linking = false
 # Passwords shorter than this value will be rejected as weak. Minimum 6, recommended 8 or more.
+# Litljómi: no password rules beyond Auth's minimum (spec §4.4; Einar, 2026-11-12): 6, no
+# character requirements. The leaked-password check has no setting here and the local Auth
+# leaves it off; on a hosted project it stays off in the dashboard.
 minimum_password_length = 6
 # Passwords that do not meet the following requirements will be rejected as weak. Supported values
 # are: `letters_digits`, `lower_upper_letters_digits`, `lower_upper_letters_digits_symbols`
@@ -235,7 +238,11 @@ secure_password_change = true
 # Controls the minimum amount of time that must pass before sending another signup confirmation or password reset email.
 max_frequency = "1s"
 # Number of characters used in the email OTP.
-otp_length = 6
+# Litljómi: 10, the longest Auth allows (spec §4.4; decision 72.3). Auth makes a code for every
+# magic-link, code, sign-up confirmation, recovery and invite request, POST /verify accepts it
+# though no mail carries it, and every token-hash link is the hash of such a code; at 10 digits
+# none can be guessed within its hour. Hosted projects take the same length.
+otp_length = 10
 # Number of seconds before the email OTP expires (defaults to 1 hour).
 otp_expiry = 3600
 
@@ -255,6 +262,12 @@ otp_expiry = 3600
 [auth.email.template.magic_link]
 subject = "Innskráning í Litljómi vefumsjón"
 content_path = "./supabase/templates/magic_link.html"
+
+# Auth sends the sign-up confirmation to a pending invitee whenever anyone asks it to resend one.
+# Like the magic-link mail, it carries no link, token hash or code (decision 72.3).
+[auth.email.template.confirmation]
+subject = "Innskráning í Litljómi vefumsjón"
+content_path = "./supabase/templates/confirmation.html"
 
 [auth.email.template.invite]
 subject = "Þér er boðið í Litljómi vefumsjón"
@@ -301,11 +314,13 @@ max_frequency = "5s"
 # uri = "pg-functions://postgres/auth/before-user-created-hook"
 
 # This hook runs before a token is issued and allows you to add additional claims based on the authentication method used.
-# Litljómi: the passwordless hook refuses every non-email sign-in, passwords included
-# (spec §4.4; decision 18). Must stay enabled here and on every hosted project.
+# Litljómi: the sign-in hook issues tokens only for a password, otp (every link verified by token
+# hash), TOTP step-up and refresh (spec §4.4; PW-01, replacing decision 18's passwordless hook).
+# Magic links and email codes are stopped in the magic_link template, which carries no link, token
+# hash or code (decision 72.1). Must stay enabled here and on every hosted project.
 [auth.hook.custom_access_token]
 enabled = true
-uri = "pg-functions://postgres/private/passwordless_access_token"
+uri = "pg-functions://postgres/private/sign_in_access_token"
 
 # Configure one of the supported SMS providers: `twilio`, `twilio_verify`, `messagebird`, `textlocal`, `vonage`.
 [auth.sms.twilio]

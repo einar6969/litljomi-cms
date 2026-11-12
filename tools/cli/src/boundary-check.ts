@@ -264,20 +264,21 @@ async function setUpEditor(s: Session, role: Role, tenantId: string, slug: strin
     throw new Failure(`FAILED: setup: test user ${email}: ${created.detail}`);
   }
 
-  // A session through the real OTP path, as tests/integration/src/clients.ts and runbook section
-  // 7.2 (H4) do: admin generate_link (sends no email), then verify the hashed token.
-  const link = await s.send(auth(admin, '/auth/v1/admin/generate_link', { type: 'magiclink', email }));
+  // A session through a recovery link, one of the links editors sign in with (spec §4.4): admin
+  // generate_link (sends no email), then POST /verify with the hashed token, which Auth reports as
+  // otp and the sign-in hook allows (decision 72.1). The test editors have no password and get none.
+  const link = await s.send(auth(admin, '/auth/v1/admin/generate_link', { type: 'recovery', email }));
   const linkBody = (link.kind === 'response' ? link.body : null) as Record<string, unknown> | null;
   for (const k of ['hashed_token', 'action_link', 'email_otp']) s.secret(linkBody?.[k]);
-  if (!isOk(link)) throw new Failure(`FAILED: setup: magic link for ${email}: ${link.detail}`);
+  if (!isOk(link)) throw new Failure(`FAILED: setup: recovery link for ${email}: ${link.detail}`);
   const userId = linkBody?.id;
   const hashed = linkBody?.hashed_token;
   if (typeof userId !== 'string' || !UUID_RE.test(userId) || typeof hashed !== 'string' || hashed === '') {
-    throw new Failure(`FAILED: setup: magic link for ${email}: unexpected response`);
+    throw new Failure(`FAILED: setup: recovery link for ${email}: unexpected response`);
   }
-  if (createdId !== undefined && createdId !== userId) throw new Failure(`FAILED: setup: magic link for ${email} is not for the created user ${createdId}`);
+  if (createdId !== undefined && createdId !== userId) throw new Failure(`FAILED: setup: recovery link for ${email} is not for the created user ${createdId}`);
 
-  const verified = await s.send(auth(s.anon, '/auth/v1/verify', { type: 'magiclink', token_hash: hashed }));
+  const verified = await s.send(auth(s.anon, '/auth/v1/verify', { type: 'recovery', token_hash: hashed }));
   const session = (verified.kind === 'response' ? verified.body : null) as Record<string, unknown> | null;
   s.secret(session?.access_token);
   s.secret(session?.refresh_token);
