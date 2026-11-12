@@ -75,12 +75,13 @@ test.describe('A6: archive an entry that is not published', () => {
 test.describe('A10: editor fixes from the probe', () => {
   test('a required field is marked in the form; an optional one is not (§14, 1)', async ({ page }) => {
     await createEvent(page);
-    const label = (name: string) => page.locator('label.fld').filter({ has: page.getByLabel(name, { exact: true }) });
+    const label = (name: string) => page.getByRole('textbox', { name, exact: true }).locator('xpath=ancestor::label[1]');
     await expect(label(TITLE).locator('[data-required-marker]')).toBeVisible();
     await expect(label('Start date').locator('[data-required-marker]')).toBeVisible();
     await expect(label('Location').locator('[data-required-marker]')).toHaveCount(0);
-    // The marker is not part of the field's name.
-    await expect(page.getByLabel(TITLE, { exact: true })).toBeVisible();
+    // The marker is not part of the field's accessible name (it is aria-hidden); getByLabel reads the
+    // label's text, so the role query is the one that says what assistive technology hears.
+    await expect(page.getByRole('textbox', { name: TITLE, exact: true })).toBeVisible();
   });
 
   test('the panel reads the status before it claims anything, and an edit after publishing is "Óbirtar breytingar" (§14, 10 and 11)', async ({ page }) => {
@@ -149,7 +150,8 @@ test.describe('A10: editor fixes from the probe', () => {
 
     await paste(page, DESCRIPTION, '<table><tr><td>CellA1</td><td>CellB1</td></tr></table><p><img src="file:///C:/mynd.png"></p>');
     await expect(page.getByTestId('field-description-paste-note')).toHaveText(t.editor.richText.droppedBoth);
-    await expect(box.locator('p', { hasText: 'CellA1' })).toHaveText('CellA1');
+    // The pasted slice's first paragraph joins the item the cursor is in ("Kaka"), as pasting does.
+    await expect(box.locator('p', { hasText: 'CellA1' })).toHaveText(/CellA1$/);
     await expect(box.locator('p', { hasText: 'CellB1' })).toHaveText('CellB1');
     await saved(page);
   });
