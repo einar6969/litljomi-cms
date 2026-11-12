@@ -28,13 +28,15 @@ The living record of onboarding DLD (Dagný Land Design) as a tenant. A later se
 
 **Merge order once a stack is back:** #74, then #75 (re-run its CI), #70, #73, #72. Each needs a pass on its final head. Then advance `production` once, migrations first.
 
-## Blocked: the Mac's disk
+## Disk and stacks (2026-11-12, 20:45)
 
-At 19:25 on 2026-11-12 the disk filled (about 3.5 GB free of 228 GB) and OrbStack's VM stopped, taking both local stacks down. Docker has not come back. Einar was asked whether the npm cache (4.2 GB) may be cleared; no answer yet.
+The Mac's disk filled at 19:25 and stopped Docker. Einar allowed the npm cache to be cleared ("Yes, clear it"); with that and the session's build folders removed, about 8 GB is free. Docker is back. Slot 1 was reset and carries the merged library migration. Slot 2 is stopped and its volumes removed.
 
-- After space is freed: start OrbStack, then `pnpm db:start` and `pnpm db:reset` (the VM logged write errors as it stopped).
-- Slot 2 was never stopped cleanly. From its worktree `.claude/worktrees/wf_853cb4ed-21f-1`: `CMS_STACK_SLOT=2 pnpm db:stop --no-backup`.
-- The DLD site worktrees and the probe clone are in the session scratchpad and can be deleted; their work is on the pushed branches.
+- **8 GB is enough for one stack, not safely for two.** Docker holds about 3 GB of unused images; pruning them is Einar's call, since they may belong to other projects.
+- The main checkout needed `CI=true pnpm install` after the merges (pnpm refuses to purge `node_modules` without a terminal).
+- The DLD site worktrees in the session scratchpad have no `node_modules` any more; `npm ci` restores them.
+
+**Merged since the table above:** #74 (library L1, `82b5813`) and #72 (second stack, `b97dbb1`). **In flight:** #75 (its integration test fails against a real stack; a fix agent iterates on CI), #70 (one integration test and the unrun browser spec; an agent holds slot 1), #73 (updated with `main`; browser specs still unrun).
 
 ## Probe results, 2026-11-12
 

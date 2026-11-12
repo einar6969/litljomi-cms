@@ -31,6 +31,18 @@ export { boolean, type BooleanOptions } from './fields/boolean.ts';
 export { select, type SelectOption, type SelectOptions, type SelectField } from './fields/select.ts';
 export { link, type LinkOptions, type LinkValue, type LinkProjected, type LinkField } from './fields/link.ts';
 export { image, type ImageOptions, type ImageValue } from './fields/image.ts';
+export {
+  MAX_VIDEO_TITLE_LENGTH,
+  normaliseVideoUrl,
+  parseVideoUrl,
+  video,
+  type PublicVideo,
+  type StillOption,
+  type VideoField,
+  type VideoOptions,
+  type VideoProvider,
+  type VideoValue,
+} from './fields/video.ts';
 export { richText, type RichTextOptions } from './fields/rich-text.ts';
 export { reference, type ReferenceOptions, type ReferenceValue, type ReferenceField } from './fields/reference.ts';
 export { group, type GroupOptions, type GroupField } from './fields/group.ts';

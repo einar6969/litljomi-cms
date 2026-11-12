@@ -164,6 +164,7 @@ export const is = {
       no: 'Nei',
       image: 'Mynd',
       entry: 'Færsla',
+      video: 'Myndband',
     },
     signedOut: 'Innskráningin er útrunnin',
     signedOutBody: 'Breytingarnar þínar eru geymdar í þessum flipa. Skráðu þig inn aftur í nýjum flipa; þær vistast sjálfkrafa þegar þú kemur aftur hingað.',
@@ -262,6 +263,19 @@ export const is = {
       focalSaved: 'Þungamiðja vistuð',
       details: 'Upplýsingar um myndina (opnast í nýjum flipa)',
       updateError: 'Ekki tókst að vista. Reyndu aftur.',
+    },
+    // A11: the video input. `{provider}` and `{id}` are filled in by the field.
+    video: {
+      url: 'Slóð myndbandsins',
+      help: 'Límdu inn slóð myndbands á YouTube eða Vimeo.',
+      recognised: 'Myndband á {provider}: {id}',
+      unknown: 'Þetta er ekki slóð myndbands á YouTube eða Vimeo.',
+      title: 'Titill myndbandsins',
+      still: 'Kyrrmynd',
+      providers: {
+        youtube: 'YouTube',
+        vimeo: 'Vimeo',
+      },
     },
     reference: {
       none: '— Engin færsla valin —',

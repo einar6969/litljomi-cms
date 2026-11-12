@@ -357,7 +357,9 @@ defineType({
 
 ### 5.2 v1 field kinds
 
-`text` (single and multi-line), `slug` (entry-level column, see §4.3), `number`, `boolean`, `date` / `datetime` (stored as ISO strings), `select`, `link` (external URL or entry reference), `image` (asset reference with per-use `alt`), `reference` (to entries of given types), `list` (of any field kind, reorderable), `group`, `richText`.
+`text` (single and multi-line), `slug` (entry-level column, see §4.3), `number`, `boolean`, `date` / `datetime` (stored as ISO strings), `select`, `link` (external URL or entry reference), `image` (asset reference with per-use `alt`), `video` (a provider link with a still image, below), `reference` (to entries of given types), `list` (of any field kind, reorderable), `group`, `richText`.
+
+**`video`** is a link to a video hosted on YouTube or Vimeo, never an uploaded file (§10.2). Stored as `{ url, title, still }`: the address (the editor normalises a pasted one: `https://` added, `http:` raised, canonical form), a title, and a still image stored exactly as an `image` value (`{ _ref, _kind: 'asset', alt }`) or `null`. The provider and the video's id are not stored; they are derived from `url`, so better parsing later needs no data change. Options: `label`, `required`, and `still: 'required' | 'optional'` (default `'optional'`). Drafts check the shape only. Publishing requires an `https:` address that parses to a known provider and id (YouTube: `youtube.com` with or without `www.` or `m.` at `/watch?v=`, `/embed/`, `/shorts/` or `/live/`, or `youtu.be/`, with an 11-character id of letters, digits, `_` and `-`; Vimeo: `vimeo.com/<digits>`, with or without `www.`, or `player.vimeo.com/video/<digits>`; other query parameters and the fragment are ignored), a title of 1 to 200 characters, and the still when the option requires it. Delivered as `{ provider: 'youtube' | 'vimeo', id, url, title, still }`, with `url` in canonical form and `still` resolved exactly as an `image` field is (`null` when there is none or it cannot resolve). The still is an asset reference inside the value, so it is extracted, validated and copied to `media-public` like any other (§4.3, §5.6). Making the still required is a breaking change (§5.3).
 
 ### 5.3 Schema evolution
 
@@ -646,7 +648,7 @@ docs/                     this document, runbooks
 
 ### 10.2 Excluded from v1
 
-Scheduled publishing · approval workflows and multiple roles · multiple locales per tenant · real-time collaborative editing · history inside drafts · slug changes after publish (and redirect management) · per-use image cropping · video and document uploads beyond images · full-text search and GIN indexes · `pg_jsonschema` validation · custom editor pages, lifecycle hooks or tenant tables · runtime-loaded modules · per-tenant email branding · more than one bundle file per release · a separate artifact host outside Supabase · a dedicated worker database role · tenant self-service (inviting editors, managing sites) · web-based provisioning · application data of any kind.
+Scheduled publishing · approval workflows and multiple roles · multiple locales per tenant · real-time collaborative editing · history inside drafts · slug changes after publish (and redirect management) · per-use image cropping · video and document uploads beyond images (a video is a `video` field: a YouTube or Vimeo link with a still image, §5.2; no video file is stored or served) · full-text search and GIN indexes · `pg_jsonschema` validation · custom editor pages, lifecycle hooks or tenant tables · runtime-loaded modules · per-tenant email branding · more than one bundle file per release · a separate artifact host outside Supabase · a dedicated worker database role · tenant self-service (inviting editors, managing sites) · web-based provisioning · application data of any kind.
 
 ---
 

@@ -16,6 +16,13 @@ function canonical(value: unknown): string {
   ) ?? 'undefined';
 }
 
+/** A video field's stored value (A11): exactly `{ url, title, still }`. */
+const isVideo = (value: Record<string, unknown>): value is { url: string; title: string; still: Record<string, unknown> | null } =>
+  Object.keys(value).length === 3 &&
+  typeof value.url === 'string' &&
+  typeof value.title === 'string' &&
+  (value.still === null || isObject(value.still));
+
 const shortId = (ref: unknown) => (typeof ref === 'string' ? ref.slice(0, 8) : '');
 
 /** A list field's stored items, `[{ _key, value }]` (M2-15): the key is the form's, never the editor's. */
@@ -49,6 +56,11 @@ function describe(value: unknown, nested = false): string {
     return typeof value.alt === 'string' && value.alt !== '' ? `${image}: ${value.alt}` : image;
   }
   if (value._kind === 'entry') return `${t.editor.resolve.entry} ${shortId(value._ref)}`;
+  if (isVideo(value)) {
+    const parts = [value.title, value.url].filter((s) => s !== '');
+    if (value.still !== null) parts.push(describe(value.still));
+    return `${t.editor.resolve.video}: ${parts.length === 0 ? t.editor.resolve.empty : parts.join(', ')}`;
+  }
   if (typeof value.href === 'string') return value.href;
   if (isObject(value.entry)) return describe(value.entry, true);
   const parts = Object.entries(value)
@@ -66,8 +78,8 @@ const cut = (text: string, from: number): string => {
 
 /**
  * A short, readable text of a field value for the conflict view: rich text by its text, an image by
- * its asset (first eight characters of its id) and alt, a group by its values, a list by its items'
- * values, one numbered line each.
+ * its asset (first eight characters of its id) and alt, a video by its title, address and still, a
+ * group by its values, a list by its items' values, one numbered line each.
  */
 export function describeValue(value: unknown): string {
   return cut(describe(value), 0);

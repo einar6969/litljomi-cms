@@ -45,6 +45,15 @@ describe('demo module', () => {
     const tooMany = Array.from({ length: 11 }, (_, i) => ({ ...highlight, _key: `h${i}` }));
     expect(event.publishValidator().safeParse({ ...fixture, program: { highlights: tooMany } }).success).toBe(false);
   });
+  it('has an optional list of videos in its program group, the still optional (A11)', () => {
+    const program = event.fields.program as AnyFieldKind & { fields: Record<string, AnyFieldKind & { of?: AnyFieldKind & { still?: string }; max?: number }> };
+    expect(program.fields.videos).toMatchObject({ kind: 'list', required: false, max: 3 });
+    expect(program.fields.videos!.of).toMatchObject({ kind: 'video', required: false, still: 'optional' });
+    const clip = { _key: 'v1', value: { url: 'https://vimeo.com/76979871', title: 'Opnunin', still: null } };
+    expect(event.publishValidator().safeParse({ ...fixture, program: { videos: [clip] } }).success).toBe(true);
+    const unknown = { ...clip, value: { ...clip.value, url: 'https://example.com/1' } };
+    expect(event.publishValidator().safeParse({ ...fixture, program: { videos: [unknown] } }).success).toBe(false);
+  });
   it('has an optional field of each scalar kind, filled in its fixture (M2-03)', () => {
     const byKind = Object.fromEntries(Object.entries<AnyFieldKind>(event.fields).map(([k, f]) => [f.kind, { key: k, f }]));
     for (const kind of ['number', 'boolean', 'select', 'datetime']) {

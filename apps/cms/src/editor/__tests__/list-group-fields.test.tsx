@@ -108,7 +108,7 @@ describe('the field registry', () => {
     expect(fieldRegistry.group).toBe(GroupField);
   });
 
-  it("describes the demo event's program group with its nested list of references", () => {
+  it("describes the demo event's program group with its nested lists of references and videos", () => {
     const program = describeFields(getType('demo', 'event')!).find((f) => f.key === 'program');
     expect(program).toEqual({
       key: 'program',
@@ -126,6 +126,8 @@ describe('the field registry', () => {
           // Publish refuses an empty item, so each item is marked required.
           of: { key: 'highlights', kind: 'reference', label: 'Event', required: true, to: ['event'] },
         },
+        // A11: the video kind inside a list inside a group.
+        { key: 'videos', kind: 'list', label: 'Videos', required: false, max: 3, of: { key: 'videos', kind: 'video', label: 'Video', required: true, still: 'optional' } },
       ],
     });
     // Only plain data crosses to the client.
