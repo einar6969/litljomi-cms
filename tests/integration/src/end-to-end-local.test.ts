@@ -4,7 +4,8 @@
 //
 //   1. makes sure the demo tenant has a delivered release (the site's build reads it), publishing a
 //      first event through the CMS if needed;
-//   2. starts the demo site on port 3101, the seeded demo site's URL, with the seeded webhook secret;
+//   2. starts the demo site on the seeded demo site's URL (port 3101 on stack slot 1), with the seeded
+//      webhook secret;
 //   3. publishes /events/x as editor_demo through the `api` functions (the editor UI is Phase 4) and
 //      triggers the worker with POST /api/internal/worker, as the editor's action will;
 //   4. waits for the demo site's delivery of that release: live_status must be 'ok' (confirmed);
@@ -45,7 +46,7 @@ const SITE_BUILDS = [
 ] as const;
 
 const SLUG = 'x';
-const SITE_URL = DEMO_SITE.baseUrl; // http://localhost:3101
+const SITE_URL = DEMO_SITE.baseUrl; // http://localhost:3101 on stack slot 1
 /** next.config.ts needs an https media host; demo events have no images, so a reserved test name. */
 const MEDIA_HOST = 'media.example.test';
 const INTERNAL_SECRET = randomBytes(24).toString('hex');
@@ -238,7 +239,7 @@ describe.each(SITE_BUILDS)('local end to end (editor_demo → worker → demo si
     const nextBin = join(nextDir, 'dist', 'bin', 'next');
     const siteBuild = run(process.execPath, [nextBin, 'build'], siteDir, siteEnv);
     if ((await siteBuild.done) !== 0) throw new Error(`demo-site (Next.js ${build.major}) next build failed:\n${siteBuild.output().slice(-4000)}`);
-    site = run(process.execPath, [nextBin, 'start', '-p', '3101'], siteDir, siteEnv);
+    site = run(process.execPath, [nextBin, 'start', '-p', new URL(SITE_URL).port], siteDir, siteEnv);
     await waitUntilServing(site, `${SITE_URL}/events`, `the demo site (Next.js ${build.major})`);
   }, 900_000);
   afterAll(async () => {

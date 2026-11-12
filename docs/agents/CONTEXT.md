@@ -28,7 +28,7 @@ Read this instead of exploring. `CLAUDE.md` is already in your context; this add
 
 - **Generic.** No tenant or client name in `apps/cms/src` or `packages/` (`pnpm check:slugs`). Client-specific things live in `modules/<tenant>` and in the client's own site.
 - **Production has no backups.** Migrations are additive and forward-only: no dropped object, no changed signature, new checks only on new nullable columns.
-- **The local stack is shared.** Use it only if your brief says you hold it. Without it you may run `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm check:slugs`, `pnpm check:schema`. Not `pnpm db:*`, `pnpm test:integration`, `pnpm test:delivery` or the browser suite. Write the browser spec anyway and say it was not run.
+- **The local stacks are shared.** There are two slots: slot 1 (`CMS_STACK_SLOT` unset) and slot 2 (`CMS_STACK_SLOT=2` on every `pnpm db:*`, `pnpm test:integration`, `pnpm test:delivery`, seed and browser command, run from your own worktree; `pnpm db:slot` prints its ports). Use a slot only if your brief says you hold it, and never stop, reset or reconfigure the other. Without one you may run `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm check:slugs`, `pnpm check:schema`. Not `pnpm db:*`, `pnpm test:integration`, `pnpm test:delivery` or the browser suite. Write the browser spec anyway and say it was not run.
 - **Never** read `.env*`, touch the hosted project, run anything `--linked`, deploy, or merge.
 - **Editor-facing strings** go in `is.ts` in Icelandic and are listed in your report as DRAFT. Einar approves them in one batch.
 - **Versions.** A PR that changes a shipped file of `packages/sdk` or `packages/rich-text` raises that package's version (`docs/runbooks/operations.md` §2, step 11).

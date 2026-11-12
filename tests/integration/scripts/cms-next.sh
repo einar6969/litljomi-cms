@@ -4,7 +4,9 @@
 # time, from `supabase status -o env`, and exist only in this process's environment: nothing is
 # written to a file, and the TypeScript test that starts this script never reads or names the
 # secret key (the secret-key lint rule, spec §3.1, §8.1). Refuses a stack that is not on loopback.
-# The caller passes CMS_INTERNAL_SECRET, CRON_SECRET and CMS_PUBLIC_URL in the environment.
+# The caller passes CMS_INTERNAL_SECRET, CRON_SECRET and CMS_PUBLIC_URL in the environment. The stack
+# is the one CMS_STACK_SLOT names: `supabase status` runs through tools/stack/supabase.ts, which gives
+# the CLI that slot's overrides.
 #
 # The CMS's Playwright run starts this script outside the Bash sandbox, on the condition that it
 # reaches only loopback and this repository (decision 37.3). So the CLIs' own network calls are off
@@ -28,7 +30,7 @@ export NEXT_TELEMETRY_DISABLED=1
 # `supabase status` (no Docker, no stack, a CLI error) is shown, not hidden. The CLI writes the keys
 # to stdout only: with CLI 2.121.0 its stderr carries status lines and warnings ("Stopped services:
 # …", a deprecation notice) or the error, never a key (checked 2026-11-03, M2-02).
-status=$(cd "$root" && supabase status -o env) || {
+status=$(node "$root/tools/stack/supabase.ts" status -o env) || {
   echo "cms-next.sh: 'supabase status -o env' failed (see its message above); is the local stack running (pnpm db:start)?" >&2
   exit 1
 }

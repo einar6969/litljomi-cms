@@ -19,14 +19,15 @@ import {
   adminAuth, auth, brief, claims, clearMail, confirmLink, deleteThrowawayUsers, mailsTo, newUser, passwordSession, passwordSignIn, pkce,
   requestEmail, sleep, totp, waitMail, type MailMessage,
 } from './auth-api.ts';
+import { stack } from './env.ts';
 import { closeAll, ownerQuery } from './sql.ts';
 
 /** The method Auth reports for every link verified by token hash, which the sign-in hook allows (decision 72.1). */
 const LINK_METHODS = ['otp'];
 /** The shape Auth issues for `{{ .TokenHash }}` (GoTrue v2.197.0): SHA-224 hex, `pkce_` for a PKCE request. */
 const TOKEN_HASH = /^(?:pkce_)?[0-9a-f]{56}$/;
-/** The local Auth Site URL (supabase/config.toml, decision 37.4): the CMS. */
-const SITE_URL = 'http://localhost:3100';
+/** The local Auth Site URL (supabase/config.toml, decision 37.4; the stack slot's): the CMS. */
+const SITE_URL = stack.cmsUrl;
 
 const methods = (accessToken: string) => (claims(accessToken).amr as { method: string }[]).map((a) => a.method);
 
