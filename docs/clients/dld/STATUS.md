@@ -5,8 +5,9 @@ The living record of onboarding DLD (Dagný Land Design) as a tenant. A later se
 | | |
 |---|---|
 | Last updated | 2026-11-12, after Einar's rulings |
-| **Current stage** | **1 is done** (rulings, probes). **Stage 3 has begun** with the library's first slice (L1). The enhancement list waits for Einar |
-| Next action | Einar approves rows of [ENHANCEMENTS.md](ENHANCEMENTS.md) and its five library decisions. Meanwhile: build L1 (`docs/plans/media-library.md`), then draft the content model (stage 2), which needs his rulings on B7 and B10 first |
+| **Current stage** | **3, platform work.** Stage 2 is done: the content model is approved. In progress: library slice L1, A3, A11 |
+| Next action | Review and merge L1, A3 and A11 as their PRs arrive. Then the rest of Track A ([ENHANCEMENTS.md](ENHANCEMENTS.md)), one agent at a time on the local stack: L2–L6, A12, A7, A6, A10, A4, A2, A5. `modules/dld` (stage 4) needs A11, A12 and A7 merged first |
+| How agents run | Each agent gets a model sized to its task (Einar, 2026-11-12: "please run agents with model scoped for the task"). Opus for boundary code and security review, Sonnet for scoped reviews and routine work |
 | Nothing has changed in | Production, `dld-is`, the DLD workspace, Vercel, DNS. The Hub has new docs only, until L1's PR |
 
 ## Probe results, 2026-11-12
@@ -81,9 +82,32 @@ Split it as you see fit. My expectation: a first version before DLD's editors st
 
 The reference is a screenshot of another admin's "Myndasafn" page, described in `docs/plans/media-library.md`. The spec is to be amended to match this ruling.
 
+### 2026-11-12: the enhancement list
+
+Asked: "Approve Track A and the five library decisions as recommended?" Einar: "**Approve as recommended**".
+
+- **Track A goes in:** A1–A8 and A10. A8 is verified on Vercel before any fix. A9 (a second admin language) only if DLD asks.
+- **The five library decisions, as recommended:** no video files; no copyable file URLs; one web-sized published copy instead of several sizes (B3, later); PDF only for documents; a changed caption waits for the next publish in the first version.
+- **Track B is not approved.** Nothing in it is built until Einar says so.
+
+### 2026-11-12: two rows moved to Track A
+
+Einar: "**add B7 and B10 to track A**".
+
+- The `video` field kind is now A11 and manual ordering of entries is A12. Both are approved and are built before DLD's module, because a field's kind cannot change later.
+- The content model uses them: a video is a `video` field, and project order is set by dragging, not by a number field.
+
+### 2026-11-12: the content model
+
+Asked: "Approve the content model with my five recommended answers?" Einar: "**Approve as recommended**".
+
+- [content-model.md](content-model.md) is approved as written: five types (`project`, `news`, `person`, `home`, `contact`), tenant slug `dld`.
+- The five answers: the slogans go in the CMS; the footer text field stays; DLD is told the logo is changed on request; the 24 alt texts Litljómi drafted are imported and DLD is told they are drafts; a new project appears first until dragged.
+- Four things are Einar's to tell DLD (section 8 of the model). Nothing has been sent.
+
 ### Gates still ahead, each needing Einar
 
-- Which enhancements go in ([ENHANCEMENTS.md](ENHANCEMENTS.md)).
+- Track B rows, whenever he wants them ([ENHANCEMENTS.md](ENHANCEMENTS.md)).
 - The content model (stage 2).
 - The copy batch (stage 6).
 - Go-live (stage 7).
