@@ -184,7 +184,7 @@ Not acted on. Each is somebody else's record to correct.
 
 **The Hub's records** (from the platform pass):
 
-- `docs/runbooks/operations.md` section 2, step 9, tells the editor to press "Vista slóð". The button no longer exists.
+- Fixed in PR #69: the runbook's stale "Vista slóð" step.
 - OPEN-ISSUES S20 is still listed P1 though M5 is accepted. Minor 17 (security headers) is listed open; the code sends them.
 - `modules/m4-probe` is still registered in the CMS though its tenant was deleted.
 - The spec describes module features that are not built: a logo in `branding`, help text, `extensions`, document actions.

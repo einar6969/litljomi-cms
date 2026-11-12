@@ -107,7 +107,7 @@ All numbered decisions are in `docs/plans/2026-11-01-m0-m1.md`, despite its name
 | 18–20 | Passwordless sign-in enforced by a hook, and how that stays active |
 | 34–36 | Worker and retry design |
 | 39–42 | Editor rulings, the design pass, and deferring Pro and production |
-| 42.4 | SDK vendored as `npm pack` files until a second site arrives |
+| 42.4 | SDK vendored as `npm pack` files. The registry planned for the second site is dropped (Einar, 2026-11-12; `docs/clients/dld/STATUS.md`, D6). Pack with `pnpm pack:sdk` |
 | 43, 47 | Hosted boundaries and credential rules. Einar enters every key |
 | 46 | The adapter for A1–A4 on staging |
 | 49.1 | Notify only once the public pointer is fresh |
