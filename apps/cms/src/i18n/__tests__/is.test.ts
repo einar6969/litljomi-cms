@@ -13,9 +13,3 @@ it('is non-empty text for every key', () => {
     expect((value as string).trim(), key).not.toBe('');
   }
 });
-
-// Decision 37.4: the sign-in form shows this one neutral message for success, an unknown address
-// and a rate limit alike; the login action tests check that every outcome lands on it.
-it('keeps the neutral sign-in message of decision 37.4', () => {
-  expect(is.login.sent).toBe('Ef netfangið er skráð færðu tölvupóst');
-});

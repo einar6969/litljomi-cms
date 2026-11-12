@@ -1,35 +1,26 @@
-// Signing in through the real flow: the sign-in form, the magic link from Mailpit, and the
-// "Halda áfram" button of the CMS's /auth/confirm page (decision 41.1).
+// Signing in through the real flows: the sign-in form's email and password (PW-02), and a link's
+// "Halda áfram" button on the CMS's /auth/confirm page (decision 41.1).
 import { expect, type Page } from '@playwright/test';
 import { t } from '../../src/i18n/is';
+import { signInTokenHash } from './console-admin';
 import { CMS_URL } from './local';
-import { magicLinkOf, messageIds, waitForNewMessage } from './mailpit';
+import { PERSONA_PASSWORD, type E2ePersona } from './personas';
 
-/** Submits the sign-in form for `email` and waits for the neutral message. */
-export async function requestLink(page: Page, email: string): Promise<void> {
-  await page.goto('/login');
+/** Opens /login (with `query`, if any), fills in `email` and `password` and presses "Skrá inn". */
+export async function submitSignIn(page: Page, email: string, password: string, query = ''): Promise<void> {
+  await page.goto(`/login${query}`);
   await page.getByLabel(t.login.emailLabel).fill(email);
+  await page.getByLabel(t.login.passwordLabel).fill(password);
   await page.getByRole('button', { name: t.login.submit }).click();
-  await expect(page.getByRole('main').getByRole('status')).toHaveText(t.login.sent);
 }
 
-// Auth answers a repeat request for one address within `[auth.email] max_frequency` (1 s in
-// supabase/config.toml) without sending a mail, so a retry waits longer than that.
-const RESEND_BACKOFF_MS = 2000;
-
 /**
- * Requests a magic link for `email` on `page` and returns the emailed link, without opening it. A
- * missing mail is requested again after RESEND_BACKOFF_MS, up to three times.
+ * The confirm page's sign-in link for `persona`, made by the admin script (the sign-in email carries
+ * none, decision 72.1). Not opened; it works once, in any browser.
  */
-export async function requestMagicLink(page: Page, email: string): Promise<URL> {
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    const seen = await messageIds(email);
-    await requestLink(page, email);
-    const message = await waitForNewMessage(email, seen);
-    if (message) return magicLinkOf(message);
-    await page.waitForTimeout(RESEND_BACKOFF_MS);
-  }
-  throw new Error(`no magic link arrived for ${email}`);
+export async function signInLink(persona: E2ePersona): Promise<URL> {
+  const { tokenHash } = await signInTokenHash(persona);
+  return new URL(`${CMS_URL}/auth/confirm?${new URLSearchParams({ token_hash: tokenHash, type: 'email' })}`);
 }
 
 /** Opens the confirm page of `link` on `page`, without pressing its button (as a mail scanner would). */
@@ -43,22 +34,23 @@ export async function openLink(page: Page, link: URL): Promise<void> {
 // own: the tenant picker at `/` sending an editor with one tenant on to `/t/<slug>`.
 const HEADING_MS = 500;
 const STILL_MS = 500;
-// How long the landing may take to settle in all (repeated tries of the check above).
+// How long the page may take to leave, and then to settle (repeated tries of the check above).
 const SETTLE_TIMEOUT_MS = 15_000;
 
 /**
- * Waits until `page` has left /auth/confirm and settled (see HEADING_MS and STILL_MS). "Halda áfram"
- * is a server action, so its redirect is followed by the client router, and a page it lands on may
- * redirect again (the tenant picker); the intermediate URL is not the landing.
+ * Waits until `page` has left the path `from` and settled (see HEADING_MS and STILL_MS). The sign-in
+ * form navigates when Auth has answered, and "Halda áfram" is a server action whose redirect the
+ * client router follows; a page either lands on may redirect again (the tenant picker), so the
+ * intermediate URL is not the landing.
  */
-async function settledLanding(page: Page): Promise<URL> {
-  await page.waitForURL((url) => url.origin === CMS_URL && url.pathname !== '/auth/confirm');
+async function settledLanding(page: Page, from: string): Promise<URL> {
+  await page.waitForURL((url) => url.origin === CMS_URL && url.pathname !== from, { timeout: SETTLE_TIMEOUT_MS });
   await expect(async () => {
     const before = page.url();
     await expect(page.getByRole('main').getByRole('heading', { level: 1 })).toBeVisible({ timeout: HEADING_MS });
     await page.waitForTimeout(STILL_MS);
     expect(page.url()).toBe(before);
-    expect(new URL(before).pathname).not.toBe('/auth/confirm');
+    expect(new URL(before).pathname).not.toBe(from);
   }).toPass({ timeout: SETTLE_TIMEOUT_MS });
   return new URL(page.url());
 }
@@ -70,12 +62,17 @@ async function settledLanding(page: Page): Promise<URL> {
 export async function followLink(page: Page, link: URL): Promise<URL> {
   await openLink(page, link);
   await page.getByRole('button', { name: t.confirm.submit }).click();
-  const landed = await settledLanding(page);
-  if (landed.pathname === '/login') throw new Error(`the magic link did not sign in (landed on ${landed.pathname}${landed.search})`);
+  const landed = await settledLanding(page, '/auth/confirm');
+  if (landed.pathname === '/login') throw new Error(`the link did not sign in (landed on ${landed.pathname}${landed.search})`);
   return landed;
 }
 
-/** Signs `email` in on `page` through the magic link and returns where the sign-in settled. */
-export async function signIn(page: Page, email: string): Promise<URL> {
-  return followLink(page, await requestMagicLink(page, email));
+/**
+ * Signs `email` in on `page` with the sign-in form and returns where the sign-in settled. The
+ * password is the personas' fixture password unless given; `query` is the sign-in page's, such as
+ * `?next=…`. A refused sign-in stays on /login, so it fails here after SETTLE_TIMEOUT_MS.
+ */
+export async function signIn(page: Page, email: string, password = PERSONA_PASSWORD, query = ''): Promise<URL> {
+  await submitSignIn(page, email, password, query);
+  return settledLanding(page, '/login');
 }

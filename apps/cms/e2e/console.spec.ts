@@ -1,9 +1,9 @@
 // M4-04: console access (spec §2.1, §4.4, §8.1), against the local CMS and stack. An editor gets
-// 404; an admin at aal1 is sent to /console/mfa, enrols a first TOTP factor and reaches /console;
-// a later session asks for the code and shows no secret. The Auth hook still refuses a password.
+// 404; an admin signed in with a password (PW-02) is at aal1 and sent to /console/mfa, enrols a
+// first TOTP factor and reaches /console; a later session asks for the code and shows no secret.
 import type { Page } from '@playwright/test';
 import { t } from '../src/i18n/is';
-import { adminFactors, adminPasswordSignIn, resetAdmin } from './support/console-admin';
+import { adminFactors, resetAdmin } from './support/console-admin';
 import { CMS_URL } from './support/local';
 import { PERSONA_EMAILS } from './support/personas';
 import { sessionState } from './support/session';
@@ -60,7 +60,7 @@ test.describe('as the platform admin', () => {
 
   let secret = '';
 
-  test('at aal1 is sent to /console/mfa, is refused a wrong code, enrols and reaches /console', async ({ page }) => {
+  test('signs in with a password at aal1, is sent to /console/mfa, is refused a wrong code, enrols and reaches /console', async ({ page }) => {
     await signIn(page, PERSONA_EMAILS.platform_admin);
 
     await page.goto('/console');
@@ -95,7 +95,7 @@ test.describe('as the platform admin', () => {
     await expectConsole(page);
   });
 
-  test('a later session asks for the code, shows no secret and enrols nothing', async ({ browser }) => {
+  test('a later password sign-in asks for the code, shows no secret and enrols nothing', async ({ browser }) => {
     const later = await newLoopbackContext(browser);
     try {
       const laterPage = await later.newPage();
@@ -119,9 +119,5 @@ test.describe('as the platform admin', () => {
     } finally {
       await later.close();
     }
-  });
-
-  test('the Auth hook still refuses a password sign-in', async () => {
-    expect(await adminPasswordSignIn()).toEqual({ status: 403, signedIn: false });
   });
 });

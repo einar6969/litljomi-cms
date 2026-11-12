@@ -1,21 +1,21 @@
 // The platform_admin persona's steps for apps/cms/e2e/console.spec.ts, and a throwaway account's for
 // sign-in-sessions.spec.ts, on the LOCAL stack only
 // (env.ts refuses any host that is not loopback). They need the secret key, which the browser tests
-// never hold, so the spec starts this file with `node`. Each step prints one line of JSON and no
-// secret:
+// never hold, so the spec starts this file with `node`. Each step prints one line of JSON, never the
+// secret key, a password or a session (sign-in-link prints a one-time link token, see there):
 //   reset             removes the persona's MFA factors and sessions, so a rerun enrols from nothing;
-//   factors           counts its verified and unverified factors;
-//   password-sign-in  gives it a random password, tries it on Auth and reports the answer.
+//   factors           counts its verified and unverified factors.
 import { randomBytes } from 'node:crypto';
-import { adminAuth, auth, generateLinkSession } from '../src/auth-api.ts';
-import { PERSONAS } from '../src/fixtures.ts';
+import { adminAuth, auth, brief, passwordSignIn } from '../src/auth-api.ts';
+import { PERSONAS, PERSONA_PASSWORD, type PersonaName } from '../src/fixtures.ts';
 import { closeAll, ownerQuery } from '../src/sql.ts';
 // Also: arrange-pages and clean-pages, the fixtures of console-pages.spec.ts (M4-05);
 // arrange-email-change, address-of <id> and remove-user <id>, those of sign-in-sessions.spec.ts (M5-03);
 // arrange-overview <state>, clean-overview, revoke-status-read and grant-status-read, those of the
-// tenant overview's screenshots in design.spec.ts.
+// tenant overview's screenshots in design.spec.ts; sign-in-link <persona>, the confirm page's link for
+// auth.spec.ts (PW-02).
 
-const { id, email } = PERSONAS.platform_admin;
+const { id } = PERSONAS.platform_admin;
 /** The module tenant of the overview's fixture; nothing seeds it, so the slug is free. */
 const OVERVIEW_TENANT = 'm4-probe';
 
@@ -190,13 +190,16 @@ const steps: Record<string, (arg?: string) => Promise<unknown>> = {
   },
 
   // M5-03: a throwaway account, because an email change moves the address, with a change requested.
-  // Auth has mailed both addresses; the spec answers the mails. The session used here is not printed.
+  // Auth has mailed both addresses; the spec answers the mails. The account signs in with the
+  // personas' fixture password (PW-02), so the spec can sign in at its new address; the session used
+  // here is not printed.
   async 'arrange-email-change'() {
     const stamp = randomBytes(6).toString('hex');
     const [oldAddress, newAddress] = [`m503-old-${stamp}@test.local`, `m503-new-${stamp}@test.local`];
-    const created = await adminAuth('/admin/users', { body: { email: oldAddress, email_confirm: true } });
+    const created = await adminAuth('/admin/users', { body: { email: oldAddress, email_confirm: true, password: PERSONA_PASSWORD } });
     if (created.status !== 200) throw new Error(`creating the account answered ${created.status}`);
-    const session = await generateLinkSession(oldAddress, 'magiclink');
+    const session = await passwordSignIn(oldAddress, PERSONA_PASSWORD);
+    if (session.status !== 200) throw new Error(`signing the account in answered ${session.status}`);
     const change = await auth('/user', { method: 'PUT', token: session.json.access_token, body: { email: newAddress } });
     if (change.status !== 200) throw new Error(`requesting the change answered ${change.status}`);
     return { id: created.json.id as string, oldAddress, newAddress };
@@ -214,12 +217,14 @@ const steps: Record<string, (arg?: string) => Promise<unknown>> = {
     return { removed: true };
   },
 
-  async 'password-sign-in'() {
-    const password = randomBytes(24).toString('hex');
-    const set = await adminAuth(`/admin/users/${id}`, { method: 'PUT', body: { password } });
-    if (set.status !== 200) throw new Error(`setting the password answered ${set.status}`);
-    const attempt = await auth('/token?grant_type=password', { body: { email, password } });
-    return { status: attempt.status, signedIn: typeof attempt.json.access_token === 'string' };
+  // PW-02: the confirm page's sign-in link for a fixed persona, as Auth would build it for
+  // `{{ .TokenHash }}`. The sign-in email carries no link (decision 72.1), so auth.spec.ts gets its
+  // links here. Printed: a one-time token hash for a local test account, as the mailbox would show.
+  async 'sign-in-link'(persona) {
+    if (persona === undefined || !Object.hasOwn(PERSONAS, persona)) throw new Error(`unknown persona: ${persona}`);
+    const link = await adminAuth('/admin/generate_link', { body: { type: 'magiclink', email: PERSONAS[persona as PersonaName].email } });
+    if (link.status !== 200) throw new Error(`generating the link answered ${brief(link)}`);
+    return { tokenHash: link.json.hashed_token as string };
   },
 };
 

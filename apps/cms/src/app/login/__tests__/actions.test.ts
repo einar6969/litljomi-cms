@@ -6,97 +6,57 @@ vi.mock('next/navigation', () => ({
     throw new Error(`REDIRECT ${to}`);
   }),
 }));
-const auth = vi.hoisted(() => ({ signInWithOtp: vi.fn(), signOut: vi.fn() }));
+const auth = vi.hoisted(() => ({ signOut: vi.fn() }));
 vi.mock('@/lib/supabase/server', () => ({ createEditorClient: vi.fn(async () => ({ auth })) }));
-// The pending session a magic link left for the confirm page's question (M3-14).
+// The pending session a link left for the confirm page's question (M3-14).
 const revoke = vi.hoisted(() => ({ discardPending: vi.fn() }));
 vi.mock('@/app/auth/confirm/revoke', () => revoke);
 
 const { createEditorClient } = await import('@/lib/supabase/server');
-const { requestMagicLink, signOut } = await import('../actions');
-
-const KNOWN = 'editor@example.test';
-const SENT = 'REDIRECT /login?sent=1';
-
-const form = (email: unknown) => {
-  const data = new FormData();
-  if (email !== undefined) data.set('email', email as string);
-  return data;
-};
+const actions = await import('../actions');
+const { discardPendingSession, signOut } = actions;
 
 let errors: ReturnType<typeof vi.spyOn>;
 let logs: ReturnType<typeof vi.spyOn>;
 let warns: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.stubEnv('CMS_PUBLIC_URL', 'http://localhost:3100');
-  auth.signInWithOtp.mockResolvedValue({ data: {}, error: null });
   errors = vi.spyOn(console, 'error').mockImplementation(() => {});
   logs = vi.spyOn(console, 'log').mockImplementation(() => {});
   warns = vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 afterEach(() => {
-  vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
 
 /** Everything written to the console during the test, as one string. */
 const consoleText = () => JSON.stringify([errors.mock.calls, logs.mock.calls, warns.mock.calls]);
 
-describe('requestMagicLink', () => {
-  it('asks Auth for a magic link to an existing user only, landing on /auth/confirm, through the editor client', async () => {
-    await expect(requestMagicLink(form(`  ${KNOWN} `))).rejects.toThrow(SENT);
-    expect(createEditorClient).toHaveBeenCalledOnce();
-    expect(auth.signInWithOtp).toHaveBeenCalledExactlyOnceWith({
-      email: KNOWN,
-      options: { shouldCreateUser: false, emailRedirectTo: 'http://localhost:3100/auth/confirm' },
-    });
+describe('the sign-in actions', () => {
+  // Password sign-in runs in the browser, straight to Auth (decision 72.4): no action takes the
+  // address or the password, and the magic-link request is gone.
+  it('are only sign-out and discarding the pending session', () => {
+    expect(Object.keys(actions).sort()).toEqual(['discardPendingSession', 'signOut']);
+  });
+});
+
+describe('discardPendingSession', () => {
+  it('discards the pending session from the confirm page, and touches no other session', async () => {
+    revoke.discardPending.mockResolvedValue(undefined);
+    await expect(discardPendingSession()).resolves.toBeUndefined();
+    expect(revoke.discardPending).toHaveBeenCalledOnce();
+    expect(createEditorClient).not.toHaveBeenCalled();
   });
 
-  it('builds the landing URL from CMS_PUBLIC_URL without a doubled slash', async () => {
-    vi.stubEnv('CMS_PUBLIC_URL', 'https://cms.example.test/');
-    await expect(requestMagicLink(form(KNOWN))).rejects.toThrow(SENT);
-    expect(auth.signInWithOtp.mock.calls[0]![0].options.emailRedirectTo).toBe('https://cms.example.test/auth/confirm');
+  it('takes no arguments, so it can never be given the password', () => {
+    expect(discardPendingSession.length).toBe(0);
   });
 
-  // The same outcome whatever Auth answers, so the response never reveals whether an account
-  // exists or a limit was hit; the email is never logged.
-  it.each([
-    ['an unknown email (shouldCreateUser: false)', { data: {}, error: { status: 422, code: 'otp_disabled', message: 'Signups not allowed for otp' } }],
-    ['a rate limit', { data: {}, error: { status: 429, code: 'over_email_send_rate_limit', message: 'email rate limit exceeded' } }],
-    ['a per-address frequency limit', { data: {}, error: { status: 429, code: 'over_request_rate_limit', message: 'For security purposes…' } }],
-    ['a server error', { data: {}, error: { status: 500, code: 'unexpected_failure', message: `failed for ${KNOWN}` } }],
-  ])('gives the neutral outcome for %s and never logs the email', async (_case, answer) => {
-    auth.signInWithOtp.mockResolvedValue(answer);
-    await expect(requestMagicLink(form(KNOWN))).rejects.toThrow(SENT);
-    expect(consoleText()).not.toContain(KNOWN);
-  });
-
-  it('gives the neutral outcome when the Auth call throws, without logging the email', async () => {
-    auth.signInWithOtp.mockRejectedValue(new Error(`fetch failed for ${KNOWN}`));
-    await expect(requestMagicLink(form(KNOWN))).rejects.toThrow(SENT);
-    expect(consoleText()).not.toContain(KNOWN);
-  });
-
-  it.each([undefined, '', '   ', 'not-an-email', 'a@b', `${'x'.repeat(250)}@example.test`])(
-    'gives the neutral outcome for the malformed address %j without calling Auth',
-    async (email) => {
-      await expect(requestMagicLink(form(email))).rejects.toThrow(SENT);
-      expect(auth.signInWithOtp).not.toHaveBeenCalled();
-    },
-  );
-
-  it('ignores a file in place of the address', async () => {
-    const data = new FormData();
-    data.set('email', new Blob([KNOWN]), 'email.txt');
-    await expect(requestMagicLink(data)).rejects.toThrow(SENT);
-    expect(auth.signInWithOtp).not.toHaveBeenCalled();
-  });
-
-  it('refuses to run without CMS_PUBLIC_URL, before calling Auth', async () => {
-    vi.stubEnv('CMS_PUBLIC_URL', '');
-    await expect(requestMagicLink(form(KNOWN))).rejects.toThrow('CMS_PUBLIC_URL is not set');
-    expect(auth.signInWithOtp).not.toHaveBeenCalled();
+  it('resolves when discarding fails, logging no detail', async () => {
+    revoke.discardPending.mockRejectedValue(new Error('cookie store refused eyJsecret'));
+    await expect(discardPendingSession()).resolves.toBeUndefined();
+    expect(consoleText()).not.toContain('eyJsecret');
+    expect(errors).toHaveBeenCalledOnce();
   });
 });
 

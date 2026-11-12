@@ -1,5 +1,6 @@
-// Setup project: signs editor_labak and editor_demo in through the real magic-link flow once per
-// run and saves each browser state, which the specs reuse instead of signing in again.
+// Setup project: signs editor_labak and editor_demo in through the sign-in form with their fixture
+// password once per run and saves each browser state, which the specs reuse instead of signing in
+// again.
 import { PERSONA_EMAILS, type E2ePersona } from './support/personas';
 import { sessionState } from './support/session';
 import { signIn } from './support/sign-in';

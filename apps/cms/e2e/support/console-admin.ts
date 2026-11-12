@@ -1,10 +1,12 @@
 // The platform_admin persona's side of console.spec.ts, on the local stack. The steps need the
 // stack's secret key, which these tests never hold or name, so they run in
 // tests/integration/scripts/console-admin.ts (as the global setup does the seed), with this Node
-// binary and the CLIs' network calls off. Each prints one line of JSON, without any secret.
+// binary and the CLIs' network calls off. Each prints one line of JSON, never the secret key, a
+// password or a session (signInTokenHash's step prints a one-time link token).
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { NO_CLI_NETWORK_ENV } from './local';
+import type { E2ePersona } from './personas';
 
 const repoRoot = join(import.meta.dirname, '..', '..', '..', '..');
 const script = join(repoRoot, 'tests', 'integration', 'scripts', 'console-admin.ts');
@@ -59,5 +61,8 @@ export const addressOf = (id: string) => run<{ email: string }>('address-of', id
 /** Removes a throwaway account. */
 export const removeUser = (id: string) => run<{ removed: true }>('remove-user', id);
 
-/** Gives the admin a password, tries it on Auth, and says what Auth answered. */
-export const adminPasswordSignIn = () => run<{ status: number; signedIn: boolean }>('password-sign-in');
+/**
+ * A one-time token hash for the confirm page's sign-in link of a fixed persona. The sign-in email
+ * carries no link (decision 72.1), so the confirm page's tests get their links here.
+ */
+export const signInTokenHash = (persona: E2ePersona) => run<{ tokenHash: string }>('sign-in-link', persona);
