@@ -1,5 +1,5 @@
 // Password sign-in and double-confirmed email changes over Supabase Auth's HTTP API
-// (spec §4.4; plan decisions 19, 21, 22, 72 and 72.1; docs/plans/passwords.md PW-01). The
+// (spec §4.4; plan decisions 19, 21, 22, 72, 72.1 and 72.3; docs/plans/passwords.md PW-01). The
 // sign-in hook, private.sign_in_access_token, issues tokens for a password, `otp` (Auth's
 // method for every link verified by token hash: invitation, recovery, email change), TOTP
 // step-up and refresh. Magic links and email codes are stopped in the email: the mail Auth
@@ -9,6 +9,7 @@
 //
 // Every test uses its own throwaway user, never a fixed persona: setting a password
 // revokes the user's other sessions, and an email change moves the address.
+import crypto from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
   adminAuth, auth, brief, claims, clearMail, deleteThrowawayUsers, followVerify, generateLinkSession, newUser, passwordSession,
@@ -43,6 +44,32 @@ function linkTokenOf(mail: MailMessage): string {
     if (token) return token;
   }
   throw new Error(`no link with a token in mail "${mail.Subject}"`);
+}
+
+/** Auth's stored hash of an emailed code: hex SHA-224 of the address followed by the code. */
+const codeHash = (email: string, code: string) => crypto.createHash('sha224').update(email + code).digest('hex');
+
+/** The hashes of the one-time tokens Auth holds for a user, without the `pkce_` prefix. */
+const storedTokenHashes = async (userId: string) =>
+  (await ownerQuery<{ token_hash: string }>('select token_hash from auth.one_time_tokens where user_id = $1', [userId]))
+    .map((r) => r.token_hash.replace(/^pkce_/, ''));
+
+/**
+ * A mail that signs no one in (decisions 72.1, 72.3): no link, no token hash, no code of any
+ * length, none of the user's stored token hashes, and the CMS address to sign in at with a password.
+ */
+function expectSignsNoOneIn(mail: MailMessage, tokenHashes: string[]) {
+  expect(mail.Subject).toBe('Innskráning í Litljómi vefumsjón');
+  for (const body of [mail.HTML, mail.Text]) {
+    expect(body).not.toMatch(/href\s*=/i);
+    expect(body).not.toContain('/auth/');
+    expect(body).not.toContain('/verify');
+    expect(body).not.toMatch(/[0-9a-f]{40,}/i);
+    expect(body).not.toMatch(/\d{6,}/);
+    for (const hash of tokenHashes) expect(body).not.toContain(hash);
+  }
+  expect(mail.HTML).toContain('lykilorði');
+  expect(mail.HTML).toContain('http://localhost:3100');
 }
 
 /** The amr methods Auth has recorded for a user's sessions (what a refresh is built from). */
@@ -90,19 +117,47 @@ describe('PW-01: a password and the emailed links sign in; the sign-in email sig
     const challenge = withPkce ? { code_challenge: pkce().challenge, code_challenge_method: 's256' } : {};
     await requestEmail('/otp', { email: user.email, create_user: false, ...challenge });
     const [mail] = await waitMail(user.email);
-    expect(mail!.Subject).toBe('Innskráning í Litljómi vefumsjón');
-    const tokens = await ownerQuery<{ token_hash: string }>('select token_hash from auth.one_time_tokens where user_id = $1', [user.id]);
+    const tokens = await storedTokenHashes(user.id);
     expect(tokens.length, 'Auth issued a token for the request').toBeGreaterThan(0);
-    for (const body of [mail!.HTML, mail!.Text]) {
-      expect(body).not.toMatch(/href\s*=/i);
-      expect(body).not.toContain('/auth/');
-      expect(body).not.toMatch(/[0-9a-f]{40,}/i);
-      expect(body).not.toMatch(/\b\d{6}\b/);
-      for (const { token_hash } of tokens) expect(body).not.toContain(token_hash.replace(/^pkce_/, ''));
-    }
     // It tells the editor where to sign in with a password instead.
-    expect(mail!.HTML).toContain('lykilorði');
-    expect(mail!.HTML).toContain('http://localhost:3100');
+    expectSignsNoOneIn(mail!, tokens);
+  });
+
+  // F2 of the PW-01 security review (decision 72.3): anyone can ask Auth to resend a pending
+  // invitee's sign-up confirmation. Auth's default mail links to GET /verify?type=signup, which
+  // hands over a session; the repository's confirmation template carries no link, hash or code.
+  it('a sign-up confirmation resent for a pending invitee arrives with no link, token hash or code', async () => {
+    const invited = await newUser('pending', { invite: true });
+    await clearMail();
+    await requestEmail('/resend', { type: 'signup', email: invited.email });
+    const [mail] = await waitMail(invited.email);
+    const tokens = await storedTokenHashes(invited.id);
+    expect(tokens.length, 'Auth issued a token for the request').toBeGreaterThan(0);
+    expectSignsNoOneIn(mail!, tokens);
+  });
+
+  // F1 of the PW-01 security review (decision 72.3): Auth makes a code for every /otp request and
+  // POST /verify accepts it, though no mail carries it, and every token-hash link is the hash of
+  // such a code. So codes are 10 digits (spec §4.4), not the default 6.
+  it('emailed codes are 10 digits: an admin link is built from a 10-digit code, and an /otp code is no 6-digit one', async () => {
+    const linked = await newUser('code-length');
+    const link = await adminAuth('/admin/generate_link', { body: { type: 'magiclink', email: linked.email } });
+    expect(link.status, brief(link)).toBe(200);
+    expect(link.json.email_otp).toMatch(/^\d{10}$/);
+    expect(link.json.hashed_token).toBe(codeHash(linked.email, link.json.email_otp));
+
+    // The code of an /otp request is never shown, only its hash: none of the 10^6 six-digit codes makes it.
+    const user = await newUser('otp-length');
+    await clearMail();
+    await requestEmail('/otp', { email: user.email, create_user: false });
+    await waitMail(user.email);
+    const [hash, ...others] = await storedTokenHashes(user.id);
+    expect(others).toEqual([]);
+    expect(hash).toMatch(/^[0-9a-f]{56}$/);
+    for (let n = 0; n < 1_000_000; n++) {
+      const guess = String(n).padStart(6, '0');
+      if (codeHash(user.email, guess) === hash) expect.fail(`the /otp code is the 6-digit ${guess}`);
+    }
   });
 
   it('a PKCE exchange is refused with 403, and leaves no session', async () => {

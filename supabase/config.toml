@@ -238,7 +238,11 @@ secure_password_change = true
 # Controls the minimum amount of time that must pass before sending another signup confirmation or password reset email.
 max_frequency = "1s"
 # Number of characters used in the email OTP.
-otp_length = 6
+# Litljómi: 10, the longest Auth allows (spec §4.4; decision 72.3). Auth makes a code for every
+# magic-link, code, sign-up confirmation, recovery and invite request, POST /verify accepts it
+# though no mail carries it, and every token-hash link is the hash of such a code; at 10 digits
+# none can be guessed within its hour. Hosted projects take the same length.
+otp_length = 10
 # Number of seconds before the email OTP expires (defaults to 1 hour).
 otp_expiry = 3600
 
@@ -258,6 +262,12 @@ otp_expiry = 3600
 [auth.email.template.magic_link]
 subject = "Innskráning í Litljómi vefumsjón"
 content_path = "./supabase/templates/magic_link.html"
+
+# Auth sends the sign-up confirmation to a pending invitee whenever anyone asks it to resend one.
+# Like the magic-link mail, it carries no link, token hash or code (decision 72.3).
+[auth.email.template.confirmation]
+subject = "Innskráning í Litljómi vefumsjón"
+content_path = "./supabase/templates/confirmation.html"
 
 [auth.email.template.invite]
 subject = "Þér er boðið í Litljómi vefumsjón"

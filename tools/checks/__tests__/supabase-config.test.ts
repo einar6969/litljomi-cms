@@ -34,6 +34,11 @@ describe('supabase/config.toml security settings', () => {
     ['auth.minimum_password_length', 6, "no password rules beyond Auth's minimum (spec §4.4, decision 72)"],
     ['auth.password_requirements', '', 'no character requirements (spec §4.4, decision 72)'],
     ['auth.email.otp_expiry', 3600, 'an emailed link is valid one hour (hosted: Email OTP Expiration, decision 43)'],
+    [
+      'auth.email.otp_length',
+      10,
+      "every emailed code, and every token-hash link built from one, is 10 digits, the longest Auth allows (spec §4.4, decision 72.3)",
+    ],
     ['auth.mfa.totp.enroll_enabled', true, 'TOTP enrolment'],
     ['auth.mfa.totp.verify_enabled', true, 'TOTP verification'],
     ['auth.hook.custom_access_token.enabled', true, 'sign-in hook on (spec §4.4, PW-01)'],
@@ -100,12 +105,14 @@ describe('supabase/config.toml security settings', () => {
   // Invitations and both addresses' email-change links go to the CMS's own /auth/confirm page
   // with the token hash, which verifies it on the server only when the editor presses its button,
   // so the link works in any browser (decision 41.1) and a mail scanner opening it confirms nothing
-  // (M5 finding 9); `{{ .SiteURL }}` is the Auth Site URL, the CMS host. The magic-link mail has no
-  // link at all: it names the CMS address in its text (decision 72.1).
+  // (M5 finding 9); `{{ .SiteURL }}` is the Auth Site URL, the CMS host. The magic-link and sign-up
+  // confirmation mails have no link at all: they name the CMS address in their text (decisions 72.1,
+  // 72.3).
   const INVITE_LINK = '{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=invite';
   const EMAIL_CHANGE_LINK = '{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email_change';
   describe.each([
     ['magic_link', ['{{ .SiteURL }}'], []],
+    ['confirmation', ['{{ .SiteURL }}'], []],
     ['invite', [INVITE_LINK], [INVITE_LINK]],
     ['email_change', [EMAIL_CHANGE_LINK, '{{ .Email }}', '{{ .NewEmail }}'], [EMAIL_CHANGE_LINK]],
     ['reauthentication', ['{{ .Token }}'], []],
@@ -136,28 +143,68 @@ describe('supabase/config.toml security settings', () => {
   });
 
   // `{{ .ConfirmationURL }}` is Auth's own GET /verify, which a mail scanner's open would use up.
-  it.each(['magic_link', 'invite', 'email_change'])('[auth.email.template.%s] has no link Auth consumes on GET', (name) => {
+  it.each(['magic_link', 'confirmation', 'invite', 'email_change'])('[auth.email.template.%s] has no link Auth consumes on GET', (name) => {
     expect(readFileSync(join(repoRoot, `supabase/templates/${name}.html`), 'utf8')).not.toContain('.ConfirmationURL');
   });
 
-  // Decision 72.1 (spec §4.4): Auth sends this mail for magic-link and code sign-in requests, and
-  // every link it verifies by token hash counts as `otp`, which the sign-in hook allows. So the
-  // mail is what stops magic-link and code sign-in: none of the variables that sign anyone in.
-  it.each(['.ConfirmationURL', '.TokenHash', '.Token'])('[auth.email.template.magic_link] has no {{ %s }}', (variable) => {
-    const html = readFileSync(join(repoRoot, 'supabase/templates/magic_link.html'), 'utf8');
-    // Anywhere inside an action (`{{.Token}}`, `{{ .Token | html }}`); `\b` keeps `.Token` from
-    // matching the start of `.TokenHash`.
-    const pattern = new RegExp(`\\{\\{[^}]*\\${variable}\\b`);
-    expect(html).not.toMatch(pattern);
+  // Decisions 72.1 and 72.3 (spec §4.4): Auth sends the magic-link mail for magic-link and code
+  // sign-in requests, and the confirmation mail when anyone asks it to resend a pending invitee's
+  // sign-up confirmation. Every link Auth verifies by token hash counts as `otp`, which the sign-in
+  // hook allows, so these mails are what stop magic-link and code sign-in. An allowlist, not a list
+  // of forbidden variables: Go templates reach every value in other ways too (`{{ . }}`,
+  // `{{ index . "Token" }}`, `{{ printf "%s" .TokenHash }}`).
+  const SIGNS_NO_ONE_IN = ['magic_link', 'confirmation'];
+  const ALLOWED_ACTION = '{{ .SiteURL }}';
+
+  /** Every template action in `html` other than exactly `{{ .SiteURL }}`, unterminated ones included. */
+  function actionsBeyondSiteUrl(html: string): string[] {
+    const rest = html.split(ALLOWED_ACTION).join('');
+    return [...rest.matchAll(/\{\{(?:(?!\}\})[\s\S])*(?:\}\}|$)/g)].map((m) => m[0]);
+  }
+
+  it.each([
+    ['{{ . }}'],
+    ['{{ index . "Token" }}'],
+    ['{{ .ConfirmationURL }}'],
+    ['{{ .Token }}'],
+    ['{{ .TokenHash }}'],
+    ['{{.Token}}'],
+    ['{{- .TokenHash -}}'],
+    ['{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}'],
+    ['{{ .SiteURL | printf "%s" }}'],
+    ['{{ printf "%s" .TokenHash }}'],
+    ['{{ with .Token }}x{{ end }}'],
+    ['{{/* a comment */}}'],
+    ['{{ .Token'],
+  ])('the allowlist check rejects %s', (action) => {
+    expect(actionsBeyondSiteUrl(`<p>Sign in at {{ .SiteURL }}. ${action}</p>`)).not.toEqual([]);
   });
 
-  // Decision 42.2 (Q3), kept by decision 72.1: no one-time code in the magic-link mail.
-  it('[auth.email.template.magic_link] has no one-time code', () => {
-    const html = readFileSync(join(repoRoot, 'supabase/templates/magic_link.html'), 'utf8');
-    expect(html).not.toMatch(/\{\{\s*\.Token\s*\}\}/);
+  it('the allowlist check accepts text whose only actions are {{ .SiteURL }}', () => {
+    expect(actionsBeyondSiteUrl('<p>{{ .SiteURL }} and again {{ .SiteURL }}; a lone } or { is text.</p>')).toEqual([]);
+  });
+
+  it.each(SIGNS_NO_ONE_IN)('[auth.email.template.%s] has no template action other than {{ .SiteURL }}', (name) => {
+    const html = readFileSync(join(repoRoot, `supabase/templates/${name}.html`), 'utf8');
+    expect(actionsBeyondSiteUrl(html), `${name}.html may use only ${ALLOWED_ACTION}`).toEqual([]);
+  });
+
+  // Decision 42.2 (Q3), kept by decisions 72.1 and 72.3: no one-time code in these mails.
+  it.each(SIGNS_NO_ONE_IN)('[auth.email.template.%s] has no one-time code', (name) => {
+    const html = readFileSync(join(repoRoot, `supabase/templates/${name}.html`), 'utf8');
     // "kóð" is the stem of kóði (code) in every form; a later wording that needs the word for
     // something else must narrow this check, not drop it.
     expect(html).not.toMatch(/kóð/i);
+  });
+
+  // Decision 72.3: the confirmation mail is the sign-in mail's twin, with its subject, heading and
+  // the text Einar approved in decision 72.2.
+  it.each(SIGNS_NO_ONE_IN)('[auth.email.template.%s] has the approved sign-in subject, heading and text (decision 72.2)', (name) => {
+    expect(setting(`auth.email.template.${name}.subject`)).toBe('Innskráning í Litljómi vefumsjón');
+    const html = readFileSync(join(repoRoot, `supabase/templates/${name}.html`), 'utf8');
+    expect(html).toContain('<h1 style="margin:0 0 16px 0;font-size:20px;">Innskráning í Litljómi vefumsjón</h1>');
+    expect(html).toContain('Innskráning í Litljómi vefumsjón er með netfangi og lykilorði á {{ .SiteURL }}.');
+    expect(html).toContain('Ef þú baðst ekki um innskráningu geturðu hunsað þennan póst.');
   });
 
   it('has no [remotes.*] block (config push would apply it to a hosted project)', () => {
