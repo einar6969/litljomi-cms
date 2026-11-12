@@ -82,6 +82,16 @@
                   "event"
                 ]
               }
+            },
+            "videos": {
+              "kind": "list",
+              "required": false,
+              "max": 3,
+              "of": {
+                "kind": "video",
+                "required": false,
+                "still": "optional"
+              }
             }
           }
         }

@@ -51,6 +51,15 @@ describe('describeValue', () => {
     expect(describeValue({ entry: { _ref: ENTRY, _kind: 'entry' } })).toBe(`${r.entry} 5e6f7a8b`);
   });
 
+  it('describes a video by its title, address and still (A11)', () => {
+    const clip = { url: 'https://vimeo.com/76979871', title: 'Opnunin', still: { _ref: ASSET, _kind: 'asset', alt: 'Dans' } };
+    expect(describeValue(clip)).toBe(`${r.video}: Opnunin, https://vimeo.com/76979871, ${r.image} 1a2b3c4d: Dans`);
+    expect(describeValue({ ...clip, still: null })).toBe(`${r.video}: Opnunin, https://vimeo.com/76979871`);
+    expect(describeValue({ url: '', title: '', still: null })).toBe(`${r.video}: ${r.empty}`);
+    // Two videos that differ only in the still are told apart.
+    expect(describeValue(clip)).not.toBe(describeValue({ ...clip, still: { ...clip.still, _ref: ENTRY } }));
+  });
+
   it('describes a group by its values, and shortens a long value', () => {
     expect(describeValue({ name: 'Anna', role: 'Bakari' })).toBe('Anna; Bakari');
     const long = describeValue('x'.repeat(500));

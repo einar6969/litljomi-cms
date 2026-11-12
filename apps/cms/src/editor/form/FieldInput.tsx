@@ -43,6 +43,7 @@ export function FieldInput({ field, id, label = field.label, value, onChange }: 
       to={field.to}
       of={field.of}
       fields={field.fields}
+      still={field.still}
       value={value}
       onChange={onChange}
     />

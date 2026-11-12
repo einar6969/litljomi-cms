@@ -12,6 +12,7 @@ import { ReferenceField } from './fields/ReferenceField';
 import { RichTextField } from './fields/RichTextField';
 import { SelectField } from './fields/SelectField';
 import { TextField } from './fields/TextField';
+import { VideoField } from './fields/VideoField';
 
 /** What every field component receives. `onChange(undefined)` clears the field. */
 export type FieldProps = {
@@ -33,6 +34,8 @@ export type FieldProps = {
   of?: FieldDescriptor;
   /** A group's nested fields (M2-15). */
   fields?: readonly FieldDescriptor[];
+  /** A video field's still image: required on publish, or optional (A11). */
+  still?: 'required' | 'optional';
 };
 
 /**
@@ -52,4 +55,5 @@ export const fieldRegistry: Record<string, ComponentType<FieldProps>> = {
   reference: ReferenceField,
   list: ListField,
   group: GroupField,
+  video: VideoField,
 };

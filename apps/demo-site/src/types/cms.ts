@@ -21,6 +21,15 @@ export interface EntrySummary {
   path: string | null;
 }
 
+/** A video field's value: a link to the video on its provider, with a title and a still image. */
+export interface PublicVideo {
+  provider: 'youtube' | 'vimeo';
+  id: string;
+  url: string;
+  title: string;
+  still: PublicAsset | null;
+}
+
 export interface EventEntry {
   title: string | null;
   startDate: string | null;
@@ -33,7 +42,7 @@ export interface EventEntry {
   category: "concert" | "workshop" | "talk" | null;
   doorsOpen: string | null;
   related: EntrySummary | null;
-  program: { intro: string | null; highlights: Array<{ _key: string; value: EntrySummary | null }> | null; } | null;
+  program: { intro: string | null; highlights: Array<{ _key: string; value: EntrySummary | null }> | null; videos: Array<{ _key: string; value: PublicVideo | null }> | null; } | null;
 }
 
 export interface NoticeEntry {
