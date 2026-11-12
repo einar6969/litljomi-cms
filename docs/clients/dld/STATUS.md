@@ -5,9 +5,19 @@ The living record of onboarding DLD (Dagný Land Design) as a tenant. A later se
 | | |
 |---|---|
 | Last updated | 2026-11-12, after Einar's rulings |
-| **Current stage** | **1, probes.** The roadmap is approved with adjustments and D1–D6 are ruled |
-| Next action | Finish the probes and the library design, then bring Einar the enhancement list ([ENHANCEMENTS.md](ENHANCEMENTS.md)) for approval. After that: the content model (stage 2) |
-| Nothing has changed in | The Hub's code, production, `dld-is`, the DLD workspace, Vercel, DNS |
+| **Current stage** | **1 is done** (rulings, probes). **Stage 3 has begun** with the library's first slice (L1). The enhancement list waits for Einar |
+| Next action | Einar approves rows of [ENHANCEMENTS.md](ENHANCEMENTS.md) and its five library decisions. Meanwhile: build L1 (`docs/plans/media-library.md`), then draft the content model (stage 2), which needs his rulings on B7 and B10 first |
+| Nothing has changed in | Production, `dld-is`, the DLD workspace, Vercel, DNS. The Hub has new docs only, until L1's PR |
+
+## Probe results, 2026-11-12
+
+| Probe | Result | Report |
+|---|---|---|
+| The site without the static export | **Passed.** All 64 pages stay static and match today's output; the signed webhook refreshes content; preview works. Risks for stage 4 are listed in ENHANCEMENTS.md, last section | [probes/site-without-export.md](probes/site-without-export.md). Clone kept in the session scratchpad (temporary) |
+| The editor with portfolio-shaped content | **Works, with blockers** an editor cannot get past: no way to remove a draft or an image, singletons and shared-page types cannot be confirmed live, nothing orders projects, no images in rich text. 13 Hub bugs with steps | [probes/editor.md](probes/editor.md). Code on local branch `probe/dld-shape` (`80080c5`) in `.claude/worktrees/agent-a402a992b16ee4985`; never pushed |
+| A release of DLD's size | **No obstacle found locally.** 230 image copies in 2 s; bundle about 275 KB. Hosted storage is unmeasured: the import publishes in batches and measures the first | In the editor report |
+
+Each probe's blockers became a row in ENHANCEMENTS.md (A6, A7, A10, B9, B10).
 
 ## How to continue
 
@@ -95,11 +105,11 @@ The reference is a screenshot of another admin's "Myndasafn" page, described in 
 - "Tengd verk" on the service pages and the six projects on the home page: who maintains them after launch?
 - Which of the candidate platform additions are needed before DLD's editors start.
 
-**Technical, to settle in stage 1:**
+**Technical, still open:**
 
-- Does a list of images inside a group work acceptably in the editor? Never tried in a browser.
-- Does a release with about 230 images build inside the worker's 270-second limit?
-- How large is DLD's bundle against Next.js's cache item limit?
+- How fast hosted storage copies images at publish. Measured only locally.
+- Whether a site on Vercel really answers 500 when storage is unreachable right after a publish (ENHANCEMENTS.md A8). Seen on a local server only.
+- Whether the local stack can deliver images in a bundle at all (A4): today every image arrives as `null` there.
 - Which preview host the integration branch gets. Vercel's protection on `dld` covers everything but custom domains, and the worker follows no redirects and cannot pass protection, so it needs a custom domain (one DNS record, Einar's).
 
 ## Verified by the coordinator
