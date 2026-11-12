@@ -1,5 +1,5 @@
 // The safety rules shared by the commands that reach the hosted staging project (`provision`,
-// `boundary-check`; decisions 44 and 46; runbook docs/runbooks/staging.md sections 7.2 and 11).
+// `boundary-check`; decisions 44 and 46; runbook docs/runbooks/staging.md sections 7.4 and 11).
 //
 // - The env file is read as text, never executed, with the rules of the runbook's `env_value`: each
 //   needed name exactly once on a plain NAME=value line, its value matching a fixed pattern. A
@@ -83,7 +83,7 @@ export function requiredFlag(p: ParsedArgs, name: string, pattern: RegExp): stri
 }
 
 // ---------------------------------------------------------------------------------------------
-// The env file (runbook section 7.2, `env_value`)
+// The env file (runbook section 7.4, `env_value`)
 
 /** NAME's value from the env file's text; refuses, naming only NAME, as the runbook's env_value does. */
 export function envValue(text: string, name: string, allowed: RegExp, file: string): string {

@@ -2,18 +2,20 @@
 // sign-in-sessions.spec.ts, on the LOCAL stack only
 // (env.ts refuses any host that is not loopback). They need the secret key, which the browser tests
 // never hold, so the spec starts this file with `node`. Each step prints one line of JSON, never the
-// secret key, a password or a session (recovery-link prints a one-time link token, see there):
+// secret key, a password or a session (recovery-link prints a one-time link token and
+// arrange-totp-admin a throwaway account's TOTP secret, see there):
 //   reset             removes the persona's MFA factors and sessions, so a rerun enrols from nothing;
 //   factors           counts its verified and unverified factors.
 import { randomBytes } from 'node:crypto';
-import { adminAuth, auth, brief, passwordSignIn } from '../src/auth-api.ts';
+import { adminAuth, auth, brief, passwordSignIn, totp } from '../src/auth-api.ts';
 import { PERSONAS, PERSONA_PASSWORD, type PersonaName } from '../src/fixtures.ts';
 import { closeAll, ownerQuery } from '../src/sql.ts';
 // Also: arrange-pages and clean-pages, the fixtures of console-pages.spec.ts (M4-05);
 // arrange-email-change, address-of <id> and remove-user <id>, those of sign-in-sessions.spec.ts (M5-03);
 // arrange-overview <state>, clean-overview, revoke-status-read and grant-status-read, those of the
 // tenant overview's screenshots in design.spec.ts; recovery-link <persona>, the confirm page's link for
-// auth.spec.ts (PW-03); invite-account and arrange-account, the accounts of password.spec.ts (PW-03).
+// auth.spec.ts (PW-03); invite-account, arrange-account and arrange-totp-admin, the accounts of
+// password.spec.ts (PW-03).
 
 const { id } = PERSONAS.platform_admin;
 /** The module tenant of the overview's fixture; nothing seeds it, so the slug is free. */
@@ -211,7 +213,10 @@ const steps: Record<string, (arg?: string) => Promise<unknown>> = {
     return { email: user.json.email as string };
   },
 
+  // A platform admin's row would keep its account from being deleted (tenancy migration); none
+  // but arrange-totp-admin's has one.
   async 'remove-user'(userId) {
+    await ownerQuery('delete from cms.platform_admins where user_id = $1', [userId]);
     const removed = await adminAuth(`/admin/users/${userId}`, { method: 'DELETE' });
     if (removed.status !== 200) throw new Error(`removing the account answered ${removed.status}`);
     return { removed: true };
@@ -245,6 +250,29 @@ const steps: Record<string, (arg?: string) => Promise<unknown>> = {
     const created = await adminAuth('/admin/users', { body: { email, email_confirm: true, password: PERSONA_PASSWORD } });
     if (created.status !== 200) throw new Error(`creating the account answered ${brief(created)}`);
     return { id: created.json.id as string, email };
+  },
+
+  // PW-03: a throwaway platform admin with a verified TOTP factor, for a reset (Auth then wants the
+  // code before the password). It signs in with the personas' fixture password until it is reset;
+  // the session that enrolled the factor is not printed. Printed: the factor's TOTP secret, a local
+  // test account's, which the spec needs to give codes, as console.spec.ts reads it from the page.
+  async 'arrange-totp-admin'() {
+    const email = `pw03-admin-${randomBytes(6).toString('hex')}@test.local`;
+    const created = await adminAuth('/admin/users', { body: { email, email_confirm: true, password: PERSONA_PASSWORD } });
+    if (created.status !== 200) throw new Error(`creating the account answered ${brief(created)}`);
+    const userId = created.json.id as string;
+    await ownerQuery('insert into cms.platform_admins (user_id) values ($1)', [userId]);
+    const session = await passwordSignIn(email, PERSONA_PASSWORD);
+    if (session.status !== 200) throw new Error(`signing the account in answered ${brief(session)}`);
+    const token = session.json.access_token as string;
+    const factor = await auth('/factors', { token, body: { factor_type: 'totp', friendly_name: 'Console' } });
+    if (factor.status !== 200) throw new Error(`enrolling the factor answered ${brief(factor)}`);
+    const secret = factor.json.totp.secret as string;
+    const challenge = await auth(`/factors/${factor.json.id}/challenge`, { token, body: {} });
+    if (challenge.status !== 200) throw new Error(`challenging the factor answered ${brief(challenge)}`);
+    const verified = await auth(`/factors/${factor.json.id}/verify`, { token, body: { challenge_id: challenge.json.id, code: totp(secret) } });
+    if (verified.status !== 200) throw new Error(`verifying the factor answered ${brief(verified)}`);
+    return { id: userId, email, secret };
   },
 };
 

@@ -2,7 +2,8 @@
 // stack's secret key, which these tests never hold or name, so they run in
 // tests/integration/scripts/console-admin.ts (as the global setup does the seed), with this Node
 // binary and the CLIs' network calls off. Each prints one line of JSON, never the secret key, a
-// password or a session (recoveryTokenHash's step prints a one-time link token).
+// password or a session (recoveryTokenHash's step prints a one-time link token, arrangeTotpAdmin's a
+// throwaway account's TOTP secret).
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { NO_CLI_NETWORK_ENV } from './local';
@@ -58,7 +59,7 @@ export const arrangeEmailChange = () => run<{ id: string; oldAddress: string; ne
 /** The address Auth holds for an account. */
 export const addressOf = (id: string) => run<{ email: string }>('address-of', id);
 
-/** Removes a throwaway account. */
+/** Removes a throwaway account, and its platform admin row if it has one. */
 export const removeUser = (id: string) => run<{ removed: true }>('remove-user', id);
 
 /**
@@ -73,3 +74,9 @@ export const inviteAccount = () => run<{ id: string; email: string }>('invite-ac
 
 /** A throwaway account with the personas' fixture password, for a reset (PW-03). */
 export const arrangeAccount = () => run<{ id: string; email: string }>('arrange-account');
+
+/**
+ * A throwaway platform admin with the personas' fixture password and a verified TOTP factor, whose
+ * base32 `secret` gives its codes (support/totp.ts), for a reset (PW-03).
+ */
+export const arrangeTotpAdmin = () => run<{ id: string; email: string; secret: string }>('arrange-totp-admin');

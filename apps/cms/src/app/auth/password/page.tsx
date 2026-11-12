@@ -12,13 +12,19 @@ import { readPasswordStep } from './step';
  * It names the account the link signed in to and asks for its password. Without a session it sends
  * the visitor to sign in; without the step for this session, home: it is not a page for changing a
  * password at will.
+ *
+ * Auth sets the password of an account with a verified factor only from an `aal2` session (GoTrue
+ * answers `insufficient_aal`), and a link's session is `aal1`. So an account with TOTP, a platform
+ * admin's (§4.4), gives its code first, on the form.
  */
 export default async function SetPasswordPage() {
   const client = await createEditorClient();
   const email = await verifiedEmail(client);
   if (email === null) redirect('/login');
   const { data } = await client.auth.getSession();
-  if ((await readPasswordStep(data.session?.access_token)) === null) redirect('/');
+  const accessToken = data.session?.access_token;
+  if ((await readPasswordStep(accessToken)) === null) redirect('/');
+  const needsCode = await needsTotpCode(client, accessToken);
   return (
     <AuthFrame>
       <h1>{t.password.title}</h1>
@@ -26,7 +32,7 @@ export default async function SetPasswordPage() {
         {t.password.account} <strong>{email}</strong>.
       </p>
       <p className="lede">{t.password.intro}</p>
-      <SetPasswordForm email={email} />
+      <SetPasswordForm email={email} needsCode={needsCode} />
     </AuthFrame>
   );
 }
@@ -39,4 +45,15 @@ async function verifiedEmail(client: SupabaseClient): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Whether the session of `accessToken` is below `aal2` while the account has a verified factor. Auth
+ * reads the factors for the token (getUser), not from the cookies. A failure is thrown with its code,
+ * never read as "no code", as the console does (lib/console-access.ts).
+ */
+async function needsTotpCode(client: SupabaseClient, accessToken: string | undefined): Promise<boolean> {
+  const { data, error } = await client.auth.mfa.getAuthenticatorAssuranceLevel(accessToken);
+  if (error) throw new Error(`assurance level: ${error.code}`);
+  return data.nextLevel === 'aal2' && data.currentLevel !== 'aal2';
 }

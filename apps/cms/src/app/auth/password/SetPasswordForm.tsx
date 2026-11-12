@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { goTo } from '@/app/login/navigate';
 import { t } from '@/i18n/is';
 import { safeRedirectPath } from '@/lib/auth/routing';
@@ -11,11 +11,27 @@ import { Notice } from '@/ui/Notice';
 import { useHydrated } from '@/ui/useHydrated';
 import { finishPasswordStep } from './actions';
 import { setPasswordFailureMessage } from './outcome';
+import { TotpCodeForm } from './TotpCodeForm';
 
 type Props = {
   /** The signed-in account's address, for password managers to store the password under. */
   email: string;
+  /**
+   * The session is `aal1` and the account has a verified TOTP factor (page.tsx): Auth sets the
+   * password only once the code has raised the session to `aal2`, so the code is asked first.
+   */
+  needsCode: boolean;
 };
+
+/**
+ * The set-password form (PW-03): the password, after the TOTP code when `needsCode`. Once the code
+ * is verified, the password field takes the focus.
+ */
+export function SetPasswordForm({ email, needsCode }: Props) {
+  const [codeVerified, setCodeVerified] = useState(false);
+  if (needsCode && !codeVerified) return <TotpCodeForm onVerified={() => setCodeVerified(true)} />;
+  return <PasswordForm email={email} focus={needsCode} />;
+}
 
 /**
  * The new password, set from the browser straight with Auth (`updateUser`, the link's session,
@@ -26,12 +42,17 @@ type Props = {
  * As the sign-in form: disabled until hydrated, a POST, and one attempt at a time. If the password
  * was set but the step could not be ended, the next attempt only ends the step.
  */
-export function SetPasswordForm({ email }: Props) {
+function PasswordForm({ email, focus }: { email: string; focus: boolean }) {
   const [failure, setFailure] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const hydrated = useHydrated();
   const running = useRef(false);
   const saved = useRef(false);
+  const field = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (focus) field.current?.focus();
+  }, [focus]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -65,7 +86,15 @@ export function SetPasswordForm({ email }: Props) {
     <form method="post" onSubmit={submit} className="flex flex-col gap-3.5">
       <input type="email" name="username" autoComplete="username" value={email} readOnly hidden />
       <Field label={t.password.label} htmlFor="password" help={help}>
-        <input id="password" name="password" type="password" autoComplete="new-password" required aria-describedby={describedByOf('password', { help })} />
+        <input
+          ref={field}
+          id="password"
+          name="password"
+          type="password"
+          autoComplete="new-password"
+          required
+          aria-describedby={describedByOf('password', { help })}
+        />
       </Field>
       <Button type="submit" variant="primary" className="btn-wide" disabled={!hydrated || pending}>
         {t.password.submit}

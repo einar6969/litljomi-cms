@@ -8,14 +8,16 @@
 //
 // PW-03: after an invitation or a reset the CMS has the editor set a password from the link's
 // session, in the browser (supabase-js updateUser). With `secure_password_change` on, Auth lets a
-// session under a day old do that without reauthentication, and refuses an older one.
+// session under a day old do that without reauthentication, and refuses an older one. For an
+// account with a verified factor (a platform admin with TOTP, §4.4) it wants an `aal2` session, so
+// the page has the code verified first, in the same session.
 //
 // The mail templates are served by the running local stack, so this file needs the stack started
 // with this repository's supabase/templates and config.toml.
 import { afterAll, describe, expect, it } from 'vitest';
 import {
   adminAuth, auth, brief, claims, clearMail, confirmLink, deleteThrowawayUsers, mailsTo, newUser, passwordSession, passwordSignIn, pkce,
-  requestEmail, sleep, waitMail, type MailMessage,
+  requestEmail, sleep, totp, waitMail, type MailMessage,
 } from './auth-api.ts';
 import { closeAll, ownerQuery } from './sql.ts';
 
@@ -262,6 +264,55 @@ describe('setting the password from the link\'s session (PW-03)', () => {
     expect(same.json.error_code).toBe('same_password');
     // Six characters of any kind are enough (no password rules, decision 72).
     expect((await setPassword(session.json.access_token, 'aaaaaa')).status).toBe(200);
+  });
+
+  // Auth answers 401 insufficient_aal to a password from an aal1 session of an account with a
+  // verified factor (GoTrue v2.197.0). The set-password page then asks for the TOTP code first and
+  // verifies it from the browser with the link's session (supabase-js mfa.challengeAndVerify).
+  it('a platform admin with TOTP resets by the mailed link: the code raises the link\'s session to aal2, then the new password signs in and the old one no longer', async () => {
+    const admin = await newUser('pw-admin-totp');
+    await ownerQuery('insert into cms.platform_admins (user_id) values ($1)', [admin.id]);
+    try {
+      const signedIn = await passwordSession(admin);
+      const enrolled = await auth('/factors', { token: signedIn.json.access_token, body: { factor_type: 'totp', friendly_name: 'Console' } });
+      expect(enrolled.status, brief(enrolled)).toBe(200);
+      const factorId: string = enrolled.json.id;
+      const secret: string = enrolled.json.totp.secret;
+      const verifyCode = async (accessToken: string) => {
+        const challenge = await auth(`/factors/${factorId}/challenge`, { token: accessToken, body: {} });
+        expect(challenge.status, brief(challenge)).toBe(200);
+        return auth(`/factors/${factorId}/verify`, { token: accessToken, body: { challenge_id: challenge.json.id, code: totp(secret) } });
+      };
+      expect((await verifyCode(signedIn.json.access_token)).status).toBe(200);
+
+      await clearMail();
+      await requestEmail('/recover', { email: admin.email });
+      const tokenHash = confirmLinkIn((await waitMail(admin.email))[0]!, 'recovery');
+      const link = await auth('/verify', { body: { type: 'recovery', token_hash: tokenHash } });
+      expect(link.status, brief(link)).toBe(200);
+      expect(claims(link.json.access_token).aal).toBe('aal1');
+
+      const refused = await setPassword(link.json.access_token, 'admin password 10');
+      expect(refused.status, brief(refused)).toBe(401);
+      expect(refused.json.error_code).toBe('insufficient_aal');
+      expect((await passwordSignIn(admin.email, admin.password!)).status).toBe(200);
+
+      const raised = await verifyCode(link.json.access_token);
+      expect(raised.status, brief(raised)).toBe(200);
+      expect(claims(raised.json.access_token).aal).toBe('aal2');
+      // The same session, so the set-password step (keyed on the session id) still applies.
+      expect(claims(raised.json.access_token).session_id).toBe(claims(link.json.access_token).session_id);
+
+      const set = await setPassword(raised.json.access_token, 'admin password 10');
+      expect(set.status, brief(set)).toBe(200);
+      expect((await passwordSignIn(admin.email, 'admin password 10')).status).toBe(200);
+      const old = await passwordSignIn(admin.email, admin.password!);
+      expect(old.status, brief(old)).toBe(400);
+      expect(old.json.access_token).toBeUndefined();
+    } finally {
+      // The row would keep the account from being deleted after the file (tenancy migration).
+      await ownerQuery('delete from cms.platform_admins where user_id = $1', [admin.id]);
+    }
   });
 
   it('refuses the password of a session more than a day old without reauthentication (secure_password_change)', async () => {

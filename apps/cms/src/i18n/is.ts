@@ -51,6 +51,12 @@ export const is = {
     // Auth's reauthentication refusal: the link's session is more than a day old.
     stale: 'Of langt er liðið frá því að hlekkurinn var opnaður. Biddu um nýjan með „Gleymt lykilorð?“.',
     failed: 'Ekki tókst að vista lykilorðið. Reyndu aftur.',
+    // An account with a verified TOTP factor (a platform admin, §4.4) gives its code first: Auth
+    // sets such an account's password only from an aal2 session. The console's code step in Icelandic.
+    codeIntro: 'Aðgangurinn þinn er varinn með auðkenningarappi. Sláðu inn sex stafa kóðann sem appið sýnir áður en þú velur lykilorð.',
+    codeLabel: 'Sex stafa kóði',
+    codeSubmit: 'Staðfesta',
+    codeRefused: 'Kóðinn virkaði ekki. Reyndu aftur.',
   },
   // The landing page of the invitation, reset and email-change links (decision 41.1): only its
   // button uses the link.

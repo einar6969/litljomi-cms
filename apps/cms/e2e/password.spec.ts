@@ -7,15 +7,19 @@
 // other sessions, which the fixed personas' stored sessions must keep. The local Auth container reads
 // its templates when it starts: restart the stack (`pnpm db:stop`, `pnpm db:start`) so that it mails
 // the current invite.html and recovery.html.
+//
+// A platform admin's account has a verified TOTP factor (§4.4), and Auth sets such an account's
+// password only from an aal2 session: the set-password page asks for the code first.
 import { randomBytes } from 'node:crypto';
 import type { Browser, Page } from '@playwright/test';
 import { t } from '../src/i18n/is';
-import { arrangeAccount, inviteAccount, removeUser } from './support/console-admin';
+import { arrangeAccount, arrangeTotpAdmin, inviteAccount, removeUser } from './support/console-admin';
 import { CMS_URL } from './support/local';
 import { confirmLinkOf, messageIds, waitForNewMessage } from './support/mailpit';
 import { PERSONA_PASSWORD } from './support/personas';
 import { openLink, signIn, submitSignIn } from './support/sign-in';
 import { expect, newLoopbackContext, test } from './support/test';
+import { totp, wrongCode } from './support/totp';
 
 const newPassword = () => `nýtt ${randomBytes(6).toString('hex')}`;
 
@@ -134,6 +138,63 @@ test('a reset from "Gleymt lykilorð?": the new password signs in, the old one n
     } finally {
       await editor.close();
     }
+  } finally {
+    await removeUser(id);
+  }
+});
+
+test('a platform admin with TOTP resets from "Gleymt lykilorð?": the code first, then the password; the new one signs in, the old one no longer', async ({ page }) => {
+  test.setTimeout(90_000);
+  const { id, email, secret } = await arrangeTotpAdmin();
+  try {
+    const seen = await messageIds(email);
+    await page.goto('/login/forgot');
+    await page.getByLabel(t.login.emailLabel).fill(email);
+    await page.getByRole('button', { name: t.forgot.submit }).click();
+    await expect(page.getByRole('main').getByRole('status')).toHaveText(t.forgot.sent);
+    await pressLink(page, await mailedLink(email, seen, 'recovery'), email);
+
+    const code = page.getByLabel(t.password.codeLabel);
+    await test.step('the code comes first, and every other page leads back to it', async () => {
+      await expect(page.getByRole('main')).toContainText(t.password.codeIntro);
+      await expect(code).toBeVisible();
+      await expect(page.getByLabel(t.password.label)).toHaveCount(0);
+      for (const path of ['/', '/console']) {
+        await page.goto(path);
+        await expect(page, path).toHaveURL(`${CMS_URL}/auth/password`);
+        await expect(code, path).toBeVisible();
+      }
+    });
+
+    await test.step('a wrong code says so and asks again', async () => {
+      await code.fill(wrongCode(secret));
+      await page.getByRole('button', { name: t.password.codeSubmit }).click();
+      await expect(page.getByRole('main').getByRole('alert')).toHaveText(t.password.codeRefused);
+      await expect(code).toHaveValue('');
+      await expect(page.getByLabel(t.password.label)).toHaveCount(0);
+    });
+
+    const password = newPassword();
+    await test.step('the right code, then the password is set and the admin goes on', async () => {
+      await code.fill(totp(secret));
+      await page.getByRole('button', { name: t.password.codeSubmit }).click();
+      await expect(page.getByLabel(t.password.label)).toBeFocused();
+      await expect(code).toHaveCount(0);
+      // The account belongs to no tenant, so it lands on the tenant picker.
+      expect((await setPassword(page, password)).pathname).toBe('/');
+      // The code raised the link's own session to aal2: the console asks for none.
+      await page.goto('/console');
+      await expect(page).toHaveURL(`${CMS_URL}/console`);
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText('Console');
+    });
+
+    await test.step('after signing out, the new password signs in and the old one no longer', async () => {
+      await page.goto('/');
+      await signOut(page);
+      await submitSignIn(page, email, PERSONA_PASSWORD);
+      await expect(page.getByRole('main').getByRole('alert')).toHaveText(t.login.failed);
+      expect((await signIn(page, email, password)).pathname).toBe('/');
+    });
   } finally {
     await removeUser(id);
   }

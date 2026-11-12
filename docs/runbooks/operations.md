@@ -632,7 +632,7 @@ There's no CLI for this, on purpose. An admin sees every tenant's operations in 
    insert into cms.platform_admins (user_id) select u.id from auth.users u where u.email = '<address>';
    ```
 
-3. **Straight after, enrol TOTP.** Until a factor exists, anyone with that account's session can enrol one, so don't leave this for later. Sign in at `/login` by magic link and open `/console`, which goes to `/console/mfa`. Scan the QR code, enter the code, and reach `/console`. The factor's secret is shown this once.
+3. **Straight after, enrol TOTP.** Until a factor exists, anyone with that account's session can enrol one, so don't leave this for later. Sign in at `/login` with the account's email and password (decision 72). A new admin, invited in step 1, has no password yet: open the invitation mail's link, press **Halda áfram**, and choose a password on the page that follows, which signs you in. Then open `/console`, which goes to `/console/mfa`. Scan the QR code, enter the code, and reach `/console`. The factor's secret is shown this once.
 
 **Verify:** `/console` lists the tenants. Then, each statement on its own:
 
@@ -678,7 +678,7 @@ delete from auth.mfa_factors where user_id = (select u.id from auth.users u join
 select (select count(*) from auth.sessions s where s.user_id = p.user_id) as sessions, (select count(*) from auth.mfa_factors f where f.user_id = p.user_id) as factors from cms.platform_admins p join auth.users u on u.id = p.user_id where u.email = '<address>';
 ```
 
-**Verify:** sign in again by magic link. The console asks you to enrol, so enrol straight away, as above. An access token issued before the delete keeps working until it expires, at most an hour later (the project's JWT expiry is 3600 seconds).
+**Verify:** sign in again at `/login` with your email and password. The console asks you to enrol, so enrol straight away, as above. If you've forgotten the password too, delete the factor first, then use **Gleymt lykilorð?**: a reset link asks for the factor's code before the new password, and without a factor it asks for none. An access token issued before the delete keeps working until it expires, at most an hour later (the project's JWT expiry is 3600 seconds).
 
 The SQL editor needs Einar's Supabase login, not the console's factor, so losing the factor doesn't lock him out of this.
 

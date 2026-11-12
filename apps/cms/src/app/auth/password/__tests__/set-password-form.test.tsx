@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // React's act() warns unless the environment says it is a test.
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const auth = vi.hoisted(() => ({ updateUser: vi.fn() }));
+const auth = vi.hoisted(() => ({ updateUser: vi.fn(), mfa: { listFactors: vi.fn(), challengeAndVerify: vi.fn() } }));
 vi.mock('@/lib/supabase/browser', () => ({ createBrowserEditorClient: vi.fn(() => ({ auth })) }));
 const actions = vi.hoisted(() => ({ finishPasswordStep: vi.fn() }));
 vi.mock('../actions', () => actions);
@@ -19,6 +19,8 @@ const { t } = await import('@/i18n/is');
 
 const EMAIL = 'ritstjori@example.is';
 const PASSWORD = 'nýtt lykilorð 42';
+const CODE = '123456';
+const FACTOR = { id: 'f-1', factor_type: 'totp', status: 'verified' };
 const refusal = (status: number, code: string) => ({ data: { user: null }, error: { name: 'AuthApiError', status, code, message: `refused ${PASSWORD}` } });
 
 let root: Root | undefined;
@@ -29,6 +31,8 @@ let warns: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
   vi.clearAllMocks();
   auth.updateUser.mockResolvedValue({ data: { user: {} }, error: null });
+  auth.mfa.listFactors.mockResolvedValue({ data: { all: [FACTOR], totp: [FACTOR], phone: [] }, error: null });
+  auth.mfa.challengeAndVerify.mockResolvedValue({ data: {}, error: null });
   actions.finishPasswordStep.mockResolvedValue('/t/acme/news');
   errors = vi.spyOn(console, 'error').mockImplementation(() => {});
   logs = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -43,10 +47,10 @@ afterEach(async () => {
 
 const consoleText = () => JSON.stringify([errors.mock.calls, logs.mock.calls, warns.mock.calls]);
 
-async function render(): Promise<void> {
+async function render(needsCode = false): Promise<void> {
   const mounted = createRoot(document.body.appendChild(document.createElement('div')));
   root = mounted;
-  await act(async () => mounted.render(<SetPasswordForm email={EMAIL} />));
+  await act(async () => mounted.render(<SetPasswordForm email={EMAIL} needsCode={needsCode} />));
 }
 
 const password = () => document.getElementById('password') as HTMLInputElement;
@@ -83,7 +87,7 @@ describe('<SetPasswordForm /> (PW-03)', () => {
   });
 
   it('cannot be sent before it is hydrated, and never puts the password in a URL', () => {
-    const html = renderToString(<SetPasswordForm email={EMAIL} />);
+    const html = renderToString(<SetPasswordForm email={EMAIL} needsCode={false} />);
     expect(html).toMatch(/<button type="submit"[^>]* disabled=""/);
     expect(html).toMatch(/<form[^>]* method="post"/);
     expect(html).not.toMatch(/<form[^>]* action=/);
@@ -188,5 +192,124 @@ describe('<SetPasswordForm /> (PW-03)', () => {
     await act(async () => finish({ data: { user: {} }, error: null }));
     await vi.waitFor(() => expect(navigation.goTo).toHaveBeenCalledOnce());
     expect(button().disabled).toBe(true);
+  });
+});
+
+// A platform admin enrols TOTP (spec §4.4), and Auth sets the password of an account with a
+// verified factor only from an `aal2` session (GoTrue v2.197.0 answers `insufficient_aal`). The
+// link's session is `aal1`, so the code comes first: challenged and verified from the browser
+// straight with Auth, which raises the same session to `aal2` (the step's session id stays).
+describe('<SetPasswordForm needsCode /> (PW-03, an account with TOTP)', () => {
+  const code = () => document.getElementById('code') as HTMLInputElement | null;
+
+  /** Types `value` as the code and submits, then waits until the attempt has run its course. */
+  async function submitCode(value = CODE): Promise<void> {
+    code()!.value = value;
+    await act(async () => {
+      code()!.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    await vi.waitFor(() => expect(code() === null || !button().disabled).toBe(true));
+  }
+
+  it('asks for the six-digit code first, as an authenticator app and a password manager expect, and not yet for the password', async () => {
+    await render(true);
+    expect(document.body.textContent).toContain(t.password.codeIntro);
+    expect(document.body.textContent).toContain(t.password.codeLabel);
+    expect(code()!.autocomplete).toBe('one-time-code');
+    expect(code()!.inputMode).toBe('numeric');
+    expect(code()!.pattern).toBe('[0-9]{6}');
+    expect(code()!.maxLength).toBe(6);
+    expect(code()!.required).toBe(true);
+    expect(password()).toBeNull();
+    expect(button().textContent).toBe(t.password.codeSubmit);
+    expect(button().disabled).toBe(false);
+  });
+
+  it('cannot be sent before it is hydrated, and never puts the code in a URL', () => {
+    const html = renderToString(<SetPasswordForm email={EMAIL} needsCode />);
+    expect(html).toMatch(/<button type="submit"[^>]* disabled=""/);
+    expect(html).toMatch(/<form[^>]* method="post"/);
+    expect(html).not.toMatch(/<form[^>]* action=/);
+  });
+
+  it('verifies the code with the account\'s verified TOTP factor, then asks for the password and sets it', async () => {
+    const order: string[] = [];
+    auth.mfa.challengeAndVerify.mockImplementation(async () => (order.push('verify'), { data: {}, error: null }));
+    auth.updateUser.mockImplementation(async () => (order.push('update'), { data: { user: {} }, error: null }));
+    await render(true);
+    await submitCode();
+    expect(auth.mfa.challengeAndVerify).toHaveBeenCalledExactlyOnceWith({ factorId: FACTOR.id, code: CODE });
+    expect(code()).toBeNull();
+    expect(document.body.textContent).not.toContain(t.password.codeIntro);
+    expect(password()).not.toBeNull();
+    expect(document.activeElement).toBe(password());
+    expect(alertText()).toBeNull();
+    expect(auth.updateUser).not.toHaveBeenCalled();
+
+    await submit();
+    expect(order).toEqual(['verify', 'update']);
+    expect(auth.updateUser).toHaveBeenCalledExactlyOnceWith({ password: PASSWORD });
+    expect(navigation.goTo).toHaveBeenCalledExactlyOnceWith('/t/acme/news');
+  });
+
+  it.each([
+    ['a wrong or expired code', () => auth.mfa.challengeAndVerify.mockResolvedValue({ data: null, error: { status: 422, code: 'mfa_verification_failed' } }), t.password.codeRefused],
+    ['Auth\'s rate limit', () => auth.mfa.challengeAndVerify.mockResolvedValue({ data: null, error: { status: 429, code: 'over_request_rate_limit' } }), t.login.rateLimited],
+    ['Auth cannot be reached', () => auth.mfa.challengeAndVerify.mockRejectedValue(new TypeError('Failed to fetch')), t.password.codeRefused],
+    ['the factors cannot be read', () => auth.mfa.listFactors.mockResolvedValue({ data: null, error: { status: 500, code: 'unexpected_failure' } }), t.password.codeRefused],
+    ['no verified TOTP factor', () => auth.mfa.listFactors.mockResolvedValue({ data: { all: [], totp: [], phone: [] }, error: null }), t.password.codeRefused],
+  ])('says so when the code is refused (%s), keeps asking for it and clears the field', async (_case, arrange, message) => {
+    arrange();
+    await render(true);
+    await submitCode();
+    expect(alertText()).toBe(message);
+    expect(code()!.value).toBe('');
+    expect(password()).toBeNull();
+    expect(button().disabled).toBe(false);
+    expect(auth.updateUser).not.toHaveBeenCalled();
+  });
+
+  it('refuses anything but six digits without asking Auth', async () => {
+    await render(true);
+    await submitCode('12345a');
+    expect(alertText()).toBe(t.password.codeRefused);
+    expect(auth.mfa.listFactors).not.toHaveBeenCalled();
+    expect(auth.mfa.challengeAndVerify).not.toHaveBeenCalled();
+  });
+
+  it('clears an earlier message when the next code is accepted', async () => {
+    auth.mfa.challengeAndVerify.mockResolvedValueOnce({ data: null, error: { status: 422, code: 'mfa_verification_failed' } });
+    await render(true);
+    await submitCode('000000');
+    expect(alertText()).toBe(t.password.codeRefused);
+    await submitCode();
+    expect(alertText()).toBeNull();
+    expect(password()).not.toBeNull();
+  });
+
+  it('never logs or shows the code', async () => {
+    auth.mfa.challengeAndVerify.mockResolvedValue({ data: null, error: { status: 422, code: 'mfa_verification_failed', message: `bad ${CODE}` } });
+    await render(true);
+    await submitCode();
+    expect(consoleText()).not.toContain(CODE);
+    expect(document.body.innerHTML).not.toContain(CODE);
+  });
+
+  it('cannot be sent twice while the code is verified', async () => {
+    let finish = (_: unknown) => {};
+    auth.mfa.challengeAndVerify.mockImplementation(() => new Promise((resolve) => (finish = resolve)));
+    await render(true);
+    code()!.value = CODE;
+    const send = async () =>
+      act(async () => {
+        code()!.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      });
+    await send();
+    await vi.waitFor(() => expect(auth.mfa.challengeAndVerify).toHaveBeenCalledOnce());
+    expect(button().disabled).toBe(true);
+    await send();
+    expect(auth.mfa.challengeAndVerify).toHaveBeenCalledOnce();
+    await act(async () => finish({ data: {}, error: null }));
+    await vi.waitFor(() => expect(password()).not.toBeNull());
   });
 });
