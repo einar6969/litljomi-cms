@@ -142,6 +142,16 @@ describe('supabase/config.toml security settings', () => {
       const hrefs = [...html.matchAll(/href\s*=\s*"([^"]*)"/gi)].map((m) => m[1]);
       expect(hrefs).toEqual(links);
     });
+
+    // S32: production sends these mails through SendGrid, whose click tracking would rewrite each
+    // link into a ct.sendgrid.net redirect. SendGrid's per-link opt-out is the attribute
+    // `clicktracking="off"`, written before `href` as SendGrid documents it.
+    it('turns SendGrid click tracking off on every link (S32)', () => {
+      const html = readFileSync(file, 'utf8');
+      const anchors = [...html.matchAll(/<a\b[^>]*>/gi)].map((m) => m[0]);
+      expect(anchors, `${name}.html has one <a> per link`).toHaveLength(links.length);
+      expect(anchors.map((a) => /^<a clicktracking="off" href="([^"]*)"/.exec(a)?.[1])).toEqual(links);
+    });
   });
 
   // `{{ .ConfirmationURL }}` is Auth's own GET /verify, which a mail scanner's open would use up.
