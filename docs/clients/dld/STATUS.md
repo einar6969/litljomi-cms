@@ -105,6 +105,17 @@ Asked: "Approve the content model with my five recommended answers?" Einar: "**A
 - The five answers: the slogans go in the CMS; the footer text field stays; DLD is told the logo is changed on request; the 24 alt texts Litljómi drafted are imported and DLD is told they are drafts; a new project appears first until dragged.
 - Four things are Einar's to tell DLD (section 8 of the model). Nothing has been sent.
 
+### 2026-11-12: how the work runs
+
+Asked how to make the workflow more efficient, the coordinator proposed seven changes. Einar: "**apply all of it, use a workflow**".
+
+- **Lanes off the stack start now:** `modules/dld`, the content converter and the site integration in `dld-is`, the import command, the editor fixes. Only work that needs the database queues for the local stack.
+- **A second local stack** is being built so two agents can run database and browser tests at once.
+- **Fewer, larger PRs:** slices are merged where they touch the same files (L4 with L5, A6 with A10).
+- **Merge rule relaxed:** a branch need not be updated when `main` moved only under `docs/` (now in `CLAUDE.md`).
+- **Tighter briefs:** agents read `docs/agents/CONTEXT.md` and `AGENT-CONTEXT.md` here, with exact files, and leave full suites to CI.
+- **Workflow scripts** run build, review and fix for each slice. The coordinator merges.
+
 ### Gates still ahead, each needing Einar
 
 - Track B rows, whenever he wants them ([ENHANCEMENTS.md](ENHANCEMENTS.md)).
