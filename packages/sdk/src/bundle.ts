@@ -58,3 +58,17 @@ export interface EntrySummary {
   title: string | null;
   path: string | null;
 }
+
+/**
+ * A video field's value in `data` (spec §5.2, §7.1): a link to a video on YouTube or Vimeo, not a
+ * file. `provider` and `id` are read from `url` by the release build; a site embeds the player from
+ * them (or links to `url`). `still` is delivered exactly as an image field's value, null when the
+ * editor set none. An additive type of format 1 (spec §7.2).
+ */
+export interface PublicVideo {
+  provider: 'youtube' | 'vimeo';
+  id: string;
+  url: string;
+  title: string;
+  still: PublicAsset | null;
+}

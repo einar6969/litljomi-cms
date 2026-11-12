@@ -27,6 +27,8 @@ export interface FieldSnapshot {
   to?: string[];
   /** link: the allowed entry types, null when any type is allowed. */
   entryTypes?: string[] | null;
+  /** video: whether the still image is required on publish (absent reads as optional). */
+  still?: 'required' | 'optional';
   /** list: the item field. */
   of?: FieldSnapshot;
   /** group: the nested fields. */
@@ -81,6 +83,9 @@ function fieldSnapshot(field: AnyFieldKind): FieldSnapshot {
       break;
     case 'link':
       s.entryTypes = f.entryTypes === undefined ? null : [...(f.entryTypes as string[])];
+      break;
+    case 'video':
+      s.still = f.still === 'required' ? 'required' : 'optional';
       break;
     case 'list':
       num('min');
@@ -206,6 +211,14 @@ function compareField(path: string, a: FieldSnapshot, b: FieldSnapshot, breaking
         else if (b.entryTypes.length !== a.entryTypes.length) allowed.push(`${path}: entry types widened`);
       }
       break;
+    case 'video': {
+      // The address, title and their publish rules are fixed by the kind; only the still option varies.
+      const before = a.still ?? 'optional';
+      const after = b.still ?? 'optional';
+      if (before === 'optional' && after === 'required') breaking.push(`${path}: still now required`);
+      if (before === 'required' && after === 'optional') allowed.push(`${path}: still now optional`);
+      break;
+    }
     case 'list':
       raised('min');
       lowered('max');

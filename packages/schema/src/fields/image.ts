@@ -11,11 +11,13 @@ export interface ImageOptions {
 /** `{ _ref, _kind: 'asset', alt }`: an asset reference with the alt text for this use (spec §4.3, §5.1). */
 export type ImageValue = { _ref: string; _kind: 'asset'; alt: string };
 
-const base: z.ZodType<ImageValue> = z.strictObject({
+/** A present image value; the `video` kind's still uses it too. */
+export const imageValueSchema: z.ZodType<ImageValue> = z.strictObject({
   _ref: canonicalUuid,
   _kind: z.literal('asset'),
   alt: z.string(),
 }) as unknown as z.ZodType<ImageValue>;
+const base = imageValueSchema;
 
 export function image(o: ImageOptions): FieldKind<ImageValue, PublicAsset> {
   const required = o.required ?? false;
