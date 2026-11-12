@@ -331,6 +331,16 @@
           "at": "2026-11-05",
           "scope": "Closed: the approval of decision 68 ended with this acceptance. A later hosted action needs a new approval.",
           "note": "Einar in chat, 2026-11-05, answering \"Do you accept M5?\": \"Accept M5\"."
+        },
+        {
+          "at": "2026-11-12",
+          "scope": "Advance the staging branch from 9d31159 to main at 09f7f62 (fast-forward; PRs #61 and #62 plus docs). No migrations, so no supabase db push. Covers the resulting Vercel builds on the staging projects and read-only checks that they serve. Excludes production, labak-hub, labak.is, DNS, Supabase changes and firewall rules. Ends when staging serves 09f7f62.",
+          "note": "Einar in chat, 2026-11-12, after being told that moving staging forward needs his approval: \"advance staging to main\"."
+        },
+        {
+          "at": "2026-11-12",
+          "scope": "Closed: staging advanced 9d31159..09f7f62 at 02:53 UTC. vefumsjon-staging and demo-staging deployed (Vercel commit statuses success); the CMS serves /login 200 and the new self-hosted font 200; demo-staging /events 200. demo-next15-staging failed as it did on 9d31159 (inactive, decision 52, OPEN-ISSUES B9). A later hosted action needs a new approval.",
+          "note": "Closed by the controller when the scope above was met; no further approval was given."
         }
       ]
     },
