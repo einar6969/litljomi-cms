@@ -30,6 +30,11 @@ type Props = {
   publish?: typeof requestPublishAction;
   unpublish?: typeof requestUnpublishAction;
   loadStatus?: (entryId: string) => Promise<PublicationStatusRow | null>;
+  /**
+   * The entry's `published_draft_version` now. Read when a publish this panel did not send settles
+   * (the page was opened while it was on its way): the version the page was rendered with is stale.
+   */
+  loadPublishedVersion?: (entryId: string) => Promise<number | null>;
   /** Titles of entries by id, to name the references a refused publish was about. */
   loadTitles?: (ids: readonly string[]) => Promise<Record<string, string | null>>;
   /** Told whether the entry can be archived now: not published, and no request on its way (A6). */
@@ -55,6 +60,14 @@ async function loadPublicationStatus(entryId: string): Promise<PublicationStatus
     .maybeSingle();
   if (error) throw new Error(`publication_status: ${error.code}`);
   return (data as PublicationStatusRow | null) ?? null;
+}
+
+/** The entry's `published_draft_version` from `api.entry_detail`, read with the editor's own session (RLS). */
+async function loadEntryPublishedVersion(entryId: string): Promise<number | null> {
+  const { data, error } = await createBrowserEditorClient().from('entry_detail').select('published_draft_version').eq('id', entryId).maybeSingle();
+  if (error) throw new Error(`entry_detail: ${error.code}`);
+  if (!data) throw new Error('entry_detail: no row');
+  return (data as { published_draft_version: number | null }).published_draft_version;
 }
 
 /** The titles of the given entries from `api.entry_list`, read with the editor's own session (RLS). */
@@ -94,6 +107,7 @@ export function PublishPanel({
   unpublish = requestUnpublishAction,
   loadStatus = loadPublicationStatus,
   loadTitles = loadEntryTitles,
+  loadPublishedVersion = loadEntryPublishedVersion,
   onArchivableChange,
   children,
 }: Props) {
@@ -115,6 +129,8 @@ export function PublishPanel({
   awaitingRef.current = awaiting;
   const labelsRef = useRef(fieldLabels);
   labelsRef.current = fieldLabels;
+  const loadPublishedVersionRef = useRef(loadPublishedVersion);
+  loadPublishedVersionRef.current = loadPublishedVersion;
 
   useEffect(() => {
     let cancelled = false;
@@ -127,23 +143,40 @@ export function PublishPanel({
         next = undefined;
       }
       if (cancelled) return;
-      setLoadFailed(next === undefined);
-      if (next !== undefined) {
-        setRow(next);
-        setLoaded(true);
-      }
       const waitingFor = awaitingRef.current;
       const settled =
         next === null
           ? waitingFor === null
           : next !== undefined && answers(next, waitingFor) && isFinal(displayState(next, { fieldLabels: labelsRef.current }));
-      if (settled) {
+      // The version a settled committed publish made the published one. The worker publishes
+      // exactly the version a request carried (§6.2), so for this panel's own request that is the
+      // version it sent. Any other (one on its way when the page was opened, or one the view shows
+      // in place of this panel's) is read again: the version the page was rendered with may be
+      // older, and a "Birt á vef ✓" over unpublished edits is the false success of §7.4.
+      let settledVersion: number | null | undefined;
+      if (settled && next && next.status === 'committed' && next.action === 'publish') {
+        if (waitingFor !== null && next.request_id === waitingFor && sentVersionRef.current !== null) {
+          settledVersion = sentVersionRef.current;
+        } else {
+          try {
+            settledVersion = await loadPublishedVersionRef.current(entryId);
+          } catch {
+            // Nothing is claimed until it can be read: the row is not shown, and is read again.
+            next = undefined;
+          }
+          if (cancelled) return;
+        }
+      }
+      setLoadFailed(next === undefined);
+      if (next !== undefined) {
+        setRow(next);
+        setLoaded(true);
+      }
+      if (settled && next !== undefined) {
         if (next && next.status === 'committed') {
           setPublished(next.action === 'publish');
-          // The worker publishes exactly the version a request carried (§6.2), so this panel's own
-          // committed publish makes that version the published one.
           if (next.action === 'unpublish') setPublishedVersion(null);
-          else if (waitingFor !== null && next.request_id === waitingFor && sentVersionRef.current !== null) setPublishedVersion(sentVersionRef.current);
+          else if (settledVersion !== undefined) setPublishedVersion(settledVersion);
         }
         return;
       }
