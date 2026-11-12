@@ -168,6 +168,7 @@ select is_empty($$ select conrelid::regclass::text || '.' || conname from pg_cat
 select set_eq($$ select conname::text from pg_catalog.pg_constraint
      where connamespace = 'cms'::regnamespace and conname like '%\_length' $$,
   $$ values ('assets_default_alt_length'), ('assets_filename_length'), ('assets_original_path_length'),
+            ('assets_caption_length'), ('assets_credit_length'), -- media library L1 (117_media_library)
             ('drafts_title_length'), ('entries_slug_length'), ('entries_type_length'), ('revisions_title_length') $$,
   'the length limits');
 

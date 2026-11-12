@@ -43,7 +43,7 @@ grant execute on function tests.asset(text) to anon, authenticated, service_role
 select has_table('cms', 'assets', 'cms.assets exists');
 select columns_are('cms', 'assets', array['id', 'tenant_id', 'original_path', 'filename', 'mime', 'bytes',
     'width', 'height', 'sha256', 'focal_x', 'focal_y', 'default_alt', 'public_path', 'created_at', 'created_by',
-    'archived_at'],
+    'archived_at', 'caption', 'credit', 'thumb_path'], -- the last three: media library L1 (117_media_library)
   'assets columns');
 select set_eq($$ select a.attname::text from pg_catalog.pg_attribute a
      where a.attrelid = 'cms.assets'::regclass and a.attnum > 0 and not a.attisdropped and a.attnotnull $$,
@@ -79,7 +79,8 @@ select set_eq($$ select * from tests.column_privs('authenticated', 'cms.assets')
   $$ values ('id', 'INSERT'), ('tenant_id', 'INSERT'), ('original_path', 'INSERT'), ('filename', 'INSERT'),
             ('mime', 'INSERT'), ('bytes', 'INSERT'), ('width', 'INSERT'), ('height', 'INSERT'), ('sha256', 'INSERT'),
             ('default_alt', 'INSERT'), ('created_by', 'INSERT'),
-            ('focal_x', 'UPDATE'), ('focal_y', 'UPDATE'), ('default_alt', 'UPDATE'), ('archived_at', 'UPDATE') $$,
+            ('focal_x', 'UPDATE'), ('focal_y', 'UPDATE'), ('default_alt', 'UPDATE'), ('archived_at', 'UPDATE'),
+            ('caption', 'UPDATE'), ('credit', 'UPDATE'), ('thumb_path', 'UPDATE') $$, -- media library L1
   'authenticated: insert and update columns on assets exactly §4.5 (never public_path)');
 select set_eq($$ select * from tests.column_privs('service_role', 'cms.assets') $$,
   $$ values ('public_path', 'UPDATE') $$,

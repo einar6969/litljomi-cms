@@ -5,10 +5,36 @@ The living record of onboarding DLD (Dagný Land Design) as a tenant. A later se
 | | |
 |---|---|
 | Last updated | 2026-11-12, after Einar's rulings |
-| **Current stage** | **3, platform work.** Stage 2 is done: the content model is approved. In progress: library slice L1, A3, A11 |
-| Next action | Review and merge L1, A3 and A11 as their PRs arrive. Then the rest of Track A ([ENHANCEMENTS.md](ENHANCEMENTS.md)), one agent at a time on the local stack: L2–L6, A12, A7, A6, A10, A4, A2, A5. `modules/dld` (stage 4) needs A11, A12 and A7 merged first |
-| How agents run | Each agent gets a model sized to its task (Einar, 2026-11-12: "please run agents with model scoped for the task"). Opus for boundary code and security review, Sonnet for scoped reviews and routine work |
-| Nothing has changed in | Production, `dld-is`, the DLD workspace, Vercel, DNS. The Hub has new docs only, until L1's PR |
+| **Current stage** | **3, platform work, and 4, tenant and site, side by side.** Most of Track A is built and reviewed; little is merged yet |
+| Next action | **Free disk space on the Mac first** (see "Blocked" below). Then: start a stack, run the browser batch, merge in the order below |
+| How agents run | Models sized to the task. Briefs point at `docs/agents/CONTEXT.md` and `AGENT-CONTEXT.md` here. Parallel lanes run as workflow scripts; the coordinator merges |
+
+## Where every piece stands (2026-11-12, 20:20)
+
+| Piece | Where | State |
+|---|---|---|
+| A3, SDK version and site procedure | PR #69 | **Merged** |
+| A11, `video` field kind | PR #70, head `e089e8a` | Review PASS on `b6f441b`; since then only a merge of `main` and the SDK bump to 0.2.1. Needs: its browser spec run, a pass on the new head, a green `database` job (the failure looks like the known flake in `pipeline.integration.test.ts`) |
+| Library L1, data and API | PR #74 | Spec PASS and security PASS on `63f45b4`. A fix round followed (indexes led by the file, a lock timeout, two small corrections). Needs: CI on the new head, delta re-reviews, the quality review |
+| `modules/dld` | PR #71 (draft), head `33ed9aa` | Review PASS. Built on #70. Waits for A7 (site checks for person, home, contact) and A12 |
+| A2, import command | PR #75, head `0af351d` | Quality PASS and security PASS after three rounds (the reviews caught a password read from the environment and a write to the wrong tenant through the ledger). Its `database` job fails until L1 is on `main`: the import needs `api.asset_summary` |
+| Import plan | `docs/plans/import.md`, inside PR #75 | Written. Its open decisions are listed at the end of the plan |
+| A6 + A10, editor fixes | PR #73, head `9a76fce` | Review PASS after one fix round. CI green. Browser specs written, not run |
+| Second local stack | PR #72, head `06b662e` | Built, CI green. **Not reviewed.** Its proof run was cut short when the disk filled |
+| DLD site: leave the export, then one data layer | `dld-is` branch `cms/integration`, head `d604687` | Both tasks reviewed PASS: an independent rebuild matched all 64 pages and the 404 |
+| DLD content converter | `dld-is` branch `cms/converter`, head `aef0cd1` | Fidelity review PASS. Output was written to the session scratchpad (temporary); the script regenerates it |
+
+**Not started:** library L2–L6, A12 (manual ordering), A7 (live confirmation without a page), A4 (local rehearsal with images), A5 (move a site), A8 (verify the outage finding on Vercel). All need a database.
+
+**Merge order once a stack is back:** #74, then #75 (re-run its CI), #70, #73, #72. Each needs a pass on its final head. Then advance `production` once, migrations first.
+
+## Blocked: the Mac's disk
+
+At 19:25 on 2026-11-12 the disk filled (about 3.5 GB free of 228 GB) and OrbStack's VM stopped, taking both local stacks down. Docker has not come back. Einar was asked whether the npm cache (4.2 GB) may be cleared; no answer yet.
+
+- After space is freed: start OrbStack, then `pnpm db:start` and `pnpm db:reset` (the VM logged write errors as it stopped).
+- Slot 2 was never stopped cleanly. From its worktree `.claude/worktrees/wf_853cb4ed-21f-1`: `CMS_STACK_SLOT=2 pnpm db:stop --no-backup`.
+- The DLD site worktrees and the probe clone are in the session scratchpad and can be deleted; their work is on the pushed branches.
 
 ## Probe results, 2026-11-12
 
@@ -105,6 +131,17 @@ Asked: "Approve the content model with my five recommended answers?" Einar: "**A
 - The five answers: the slogans go in the CMS; the footer text field stays; DLD is told the logo is changed on request; the 24 alt texts Litljómi drafted are imported and DLD is told they are drafts; a new project appears first until dragged.
 - Four things are Einar's to tell DLD (section 8 of the model). Nothing has been sent.
 
+### 2026-11-12: how the work runs
+
+Asked how to make the workflow more efficient, the coordinator proposed seven changes. Einar: "**apply all of it, use a workflow**".
+
+- **Lanes off the stack start now:** `modules/dld`, the content converter and the site integration in `dld-is`, the import command, the editor fixes. Only work that needs the database queues for the local stack.
+- **A second local stack** is being built so two agents can run database and browser tests at once.
+- **Fewer, larger PRs:** slices are merged where they touch the same files (L4 with L5, A6 with A10).
+- **Merge rule relaxed:** a branch need not be updated when `main` moved only under `docs/` (now in `CLAUDE.md`).
+- **Tighter briefs:** agents read `docs/agents/CONTEXT.md` and `AGENT-CONTEXT.md` here, with exact files, and leave full suites to CI.
+- **Workflow scripts** run build, review and fix for each slice. The coordinator merges.
+
 ### Gates still ahead, each needing Einar
 
 - Track B rows, whenever he wants them ([ENHANCEMENTS.md](ENHANCEMENTS.md)).
@@ -184,7 +221,7 @@ Not acted on. Each is somebody else's record to correct.
 
 **The Hub's records** (from the platform pass):
 
-- `docs/runbooks/operations.md` section 2, step 9, tells the editor to press "Vista slóð". The button no longer exists.
+- Fixed in PR #69: the runbook's stale "Vista slóð" step.
 - OPEN-ISSUES S20 is still listed P1 though M5 is accepted. Minor 17 (security headers) is listed open; the code sends them.
 - `modules/m4-probe` is still registered in the CMS though its tenant was deleted.
 - The spec describes module features that are not built: a logo in `branding`, help text, `extensions`, document actions.
