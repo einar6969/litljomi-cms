@@ -50,7 +50,7 @@ const fake = {
 };
 vi.mock('@/lib/supabase/server', () => ({ createEditorClient: vi.fn(async () => fake) }));
 
-const { assetPreviewAction, ensureThumbnailAction, registerAssetAction, updateAssetAction } = await import('../asset-actions');
+const { assetPreviewAction, ensureThumbnailAction, registerAssetAction, updateAssetAction, updateAssetTextAction } = await import('../asset-actions');
 
 const TENANT_ID = '00000000-0000-4000-8000-0000000000f1';
 const OTHER_TENANT = '00000000-0000-4000-8000-0000000000f2';
@@ -96,7 +96,7 @@ beforeEach(() => {
     my_tenants: { data: { id: TENANT_ID, slug: SLUG, name: 'T', status: 'active' } },
     asset_list: { data: row() },
   };
-  state.rpc = { register_asset: { data: ASSET }, update_asset: {}, set_asset_thumbnail: {} };
+  state.rpc = { register_asset: { data: ASSET }, update_asset: {}, update_asset_text: {}, set_asset_thumbnail: {} };
   state.object = { data: blobOf(jpeg), error: null };
   state.upload = { error: null };
   state.signed = { data: { signedUrl: SIGNED }, error: null };
@@ -473,5 +473,65 @@ describe('updateAssetAction', () => {
     state.user = { id: 'u1' };
     state.rpc.update_asset = { error: { code: 'PGRST301', message: 'JWT expired' }, status: 401 };
     await expect(updateAssetAction(ASSET, { focal: null })).resolves.toEqual({ ok: false, code: 'auth' });
+  });
+});
+
+describe('updateAssetTextAction', () => {
+  const texts = { defaultAlt: 'Rúgbrauð á borði', caption: 'Nýbakað', credit: 'Þóra Ægisdóttir' };
+
+  it('saves the three texts through update_asset_text, trimmed, an empty one as null', async () => {
+    await expect(updateAssetTextAction(ASSET, texts)).resolves.toEqual({ ok: true });
+    await expect(updateAssetTextAction(ASSET, { defaultAlt: '  Brauð ', caption: '   ', credit: '' })).resolves.toEqual({ ok: true });
+    await expect(updateAssetTextAction(ASSET, { defaultAlt: null, caption: null, credit: null })).resolves.toEqual({ ok: true });
+    expect(state.calls).toEqual([
+      { name: 'update_asset_text', args: { p_asset_id: ASSET, p_default_alt: 'Rúgbrauð á borði', p_caption: 'Nýbakað', p_credit: 'Þóra Ægisdóttir' } },
+      { name: 'update_asset_text', args: { p_asset_id: ASSET, p_default_alt: 'Brauð', p_caption: null, p_credit: null } },
+      { name: 'update_asset_text', args: { p_asset_id: ASSET, p_default_alt: null, p_caption: null, p_credit: null } },
+    ]);
+  });
+
+  it('rejects texts past their limits, missing or extra keys and malformed ids without reading or calling the database', async () => {
+    for (const args of [
+      ['x', texts],
+      [ASSET, { ...texts, defaultAlt: 'x'.repeat(1001) }],
+      [ASSET, { ...texts, caption: 'x'.repeat(1001) }],
+      [ASSET, { ...texts, credit: 'x'.repeat(301) }],
+      [ASSET, { defaultAlt: 'a', caption: 'b' }],
+      [ASSET, { ...texts, focal: { x: 0.5, y: 0.5 } }],
+      [ASSET, { ...texts, credit: 1 }],
+      [ASSET, null],
+    ] as const) {
+      await expect(updateAssetTextAction(...(args as unknown as Parameters<typeof updateAssetTextAction>))).resolves.toEqual({ ok: false, code: 'invalid' });
+    }
+    expect(state.calls).toEqual([]);
+    expect(state.queries).toEqual([]);
+  });
+
+  it('accepts texts exactly at their limits', async () => {
+    await expect(updateAssetTextAction(ASSET, { defaultAlt: 'a'.repeat(1000), caption: 'b'.repeat(1000), credit: 'c'.repeat(300) })).resolves.toEqual({ ok: true });
+  });
+
+  it('refuses an asset it cannot see or of a suspended tenant, and maps database errors to the generic error', async () => {
+    state.tables.asset_list = { data: null };
+    await expect(updateAssetTextAction(ASSET, texts)).resolves.toEqual({ ok: false, code: 'error' });
+    state.tables.asset_list = { data: row() };
+    state.tables.my_tenants = { data: { id: TENANT_ID, slug: SLUG, name: 'T', status: 'suspended' } };
+    await expect(updateAssetTextAction(ASSET, texts)).resolves.toEqual({ ok: false, code: 'error' });
+    expect(state.calls).toEqual([]);
+    state.tables.my_tenants = { data: { id: TENANT_ID, slug: SLUG, name: 'T', status: 'active' } };
+    for (const message of ['not_found', 'tenant_inactive']) {
+      state.rpc.update_asset_text = { error: { code: 'P0001', message } };
+      await expect(updateAssetTextAction(ASSET, texts)).resolves.toEqual({ ok: false, code: 'error' });
+    }
+    state.rpc.update_asset_text = { error: { code: '23514', message: 'assets_credit_length' } };
+    await expect(updateAssetTextAction(ASSET, texts)).resolves.toEqual({ ok: false, code: 'error' });
+  });
+
+  it('answers auth without a session or with an expired one', async () => {
+    state.user = null;
+    await expect(updateAssetTextAction(ASSET, texts)).resolves.toEqual({ ok: false, code: 'auth' });
+    state.user = { id: 'u1' };
+    state.rpc.update_asset_text = { error: { code: 'PGRST301', message: 'JWT expired' }, status: 401 };
+    await expect(updateAssetTextAction(ASSET, texts)).resolves.toEqual({ ok: false, code: 'auth' });
   });
 });

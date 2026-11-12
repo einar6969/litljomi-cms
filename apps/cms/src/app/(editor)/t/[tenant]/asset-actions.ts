@@ -5,7 +5,17 @@ import { authOrError, hasSession } from '@/editor/server/entry-context';
 import { inspectImage } from '@/editor/server/image-metadata';
 import { ensureThumbnail } from '@/editor/server/thumbnail';
 import { EXTENSION_BY_MIME, MEDIA_PRIVATE_BUCKET, previewUrl, SAFE_FILENAME } from '@/editor/upload';
-import { assetChangeShape, assetIdShape, assetMetadataShape, mergeAssetChange, saveAssetMetadata, type AssetChange } from '@/editor/media/asset-metadata';
+import {
+  assetChangeShape,
+  assetIdShape,
+  assetMetadataShape,
+  assetTextShape,
+  mergeAssetChange,
+  saveAssetMetadata,
+  saveAssetText,
+  type AssetChange,
+  type AssetTexts,
+} from '@/editor/media/asset-metadata';
 import { createEditorClient } from '@/lib/supabase/server';
 import type { SupabaseClient } from '@/lib/supabase/types';
 import { isActive, resolveTenant } from '@/lib/tenant';
@@ -176,6 +186,30 @@ export async function updateAssetAction(id: string, change: AssetChange): Promis
     const metadata = assetMetadataShape.safeParse(mergeAssetChange(asset, args.data.change));
     if (!metadata.success) return { ok: false, code: 'error' };
     const { error, status } = await saveAssetMetadata(client, metadata.data);
+    if (error) return { ok: false, code: authOrError({ error, status }) };
+    return { ok: true };
+  } catch {
+    return { ok: false, code: 'error' };
+  }
+}
+
+const textArgs = z.object({ id: assetIdShape, texts: assetTextShape });
+
+/**
+ * Saves a file's default alt text, caption and credit together, from the library's detail panel
+ * (docs/plans/media-library.md section 6.1), through `api.update_asset_text`, which finds the row
+ * under RLS and refuses a suspended tenant. Each text is trimmed; an empty one is cleared. The
+ * tenant comes from the asset and must be active.
+ */
+export async function updateAssetTextAction(id: string, texts: AssetTexts): Promise<UpdateAssetResult> {
+  const args = textArgs.safeParse({ id, texts });
+  if (!args.success) return { ok: false, code: 'invalid' };
+  try {
+    const client = await createEditorClient();
+    if (!(await hasSession(client))) return { ok: false, code: 'auth' };
+    const asset = await loadAsset(client, args.data.id);
+    if (!asset) return { ok: false, code: 'error' };
+    const { error, status } = await saveAssetText(client, args.data.id, args.data.texts);
     if (error) return { ok: false, code: authOrError({ error, status }) };
     return { ok: true };
   } catch {

@@ -8,12 +8,10 @@ const actions = vi.hoisted(() => ({ assetPreviewAction: vi.fn(), updateAssetActi
 vi.mock('@/app/(editor)/t/[tenant]/asset-actions', () => actions);
 
 const { FocalPointPicker, KEYBOARD_SAVE_DELAY_MS } = await import('../media/FocalPointPicker');
-const { AssetDetail } = await import('../media/AssetDetail');
 const { moveFocal, fraction } = await import('../media/focal-point');
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const ASSET = '00000000-0000-4000-8000-0000000000a1';
 
 let container: HTMLDivElement;
 let root: Root;
@@ -135,105 +133,3 @@ describe('FocalPointPicker', () => {
   });
 });
 
-describe('AssetDetail', () => {
-  const detail = (o: { focal?: { x: number; y: number } | null; defaultAlt?: string | null; url?: string | null } = {}) => (
-    <AssetDetail
-      assetId={ASSET}
-      url={o.url === undefined ? 'http://127.0.0.1:54321/x' : o.url}
-      filename="Rúgbrauð.jpg"
-      width={64}
-      height={48}
-      focal={o.focal ?? null}
-      defaultAlt={o.defaultAlt ?? null}
-    />
-  );
-  const saveButton = () => [...container.querySelectorAll('button')].find((b) => b.textContent === t.asset.saveDefaultAlt)!;
-  async function type(input: HTMLInputElement, text: string) {
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
-    await act(async () => {
-      setter.call(input, text);
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-  }
-
-  it('shows the file name and size, and the default alt text with its help', async () => {
-    await render(detail({ defaultAlt: 'Brauð' }));
-    expect($('[data-testid="asset-filename"]')?.textContent).toBe('Rúgbrauð.jpg');
-    expect($('[data-testid="asset-size"]')?.textContent).toBe('64 × 48 px');
-    const input = $<HTMLInputElement>('#asset-default-alt')!;
-    expect(input.value).toBe('Brauð');
-    expect(document.getElementById(input.getAttribute('aria-describedby')!)?.textContent).toBe(t.asset.defaultAltHelp);
-    expect(saveButton().disabled).toBe(true);
-  });
-
-  it('saves the default alt text alone, trimmed, and an emptied one as null', async () => {
-    actions.updateAssetAction.mockResolvedValue({ ok: true });
-    await render(detail({ focal: { x: 0.2, y: 0.3 }, defaultAlt: 'Brauð' }));
-    await type($<HTMLInputElement>('#asset-default-alt')!, '  Rúgbrauð á borði ');
-    await act(async () => saveButton().click());
-    expect(actions.updateAssetAction).toHaveBeenLastCalledWith(ASSET, { defaultAlt: 'Rúgbrauð á borði' });
-    expect($('[data-testid="asset-notice"]')?.textContent).toBe(t.editor.image.defaultAltSaved);
-    expect($('[data-testid="asset-notice"]')?.getAttribute('aria-live')).toBe('polite');
-    expect(saveButton().disabled).toBe(true);
-    await type($<HTMLInputElement>('#asset-default-alt')!, '');
-    await act(async () => saveButton().click());
-    expect(actions.updateAssetAction).toHaveBeenLastCalledWith(ASSET, { defaultAlt: null });
-  });
-
-  it('saves the focal point alone, and shows a refusal as an alert', async () => {
-    actions.updateAssetAction.mockResolvedValue({ ok: true });
-    await render(detail({ defaultAlt: 'Brauð' }));
-    const picker = $<HTMLButtonElement>('#asset-focal')!;
-    picker.getBoundingClientRect = () => ({ left: 0, top: 0, width: 100, height: 100 }) as DOMRect;
-    await act(async () => picker.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1, clientX: 10, clientY: 90 })));
-    expect(actions.updateAssetAction).toHaveBeenLastCalledWith(ASSET, { focal: { x: 0.1, y: 0.9 } });
-    expect($('[data-testid="asset-focal-value"]')?.textContent).toContain('10 % frá vinstri, 90 % ofan frá');
-
-    actions.updateAssetAction.mockResolvedValue({ ok: false, code: 'error' });
-    await act(async () => picker.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1, clientX: 50, clientY: 50 })));
-    expect($('[data-testid="asset-notice"]')?.textContent).toBe(t.editor.image.updateError);
-    expect($('[data-testid="asset-notice"]')?.getAttribute('role')).toBe('alert');
-    // The refused point is not shown as saved.
-    expect($('[data-testid="asset-focal-value"]')?.textContent).toContain('10 % frá vinstri, 90 % ofan frá');
-
-    actions.updateAssetAction.mockResolvedValue({ ok: false, code: 'auth' });
-    await act(async () => picker.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1, clientX: 50, clientY: 50 })));
-    expect($('[data-testid="asset-notice"]')?.textContent).toBe(t.editor.signedOut);
-  });
-
-  it('asks for the preview of a file the page had no thumbnail for, and shows no image until it comes', async () => {
-    let answer: (value: unknown) => void = () => {};
-    actions.assetPreviewAction.mockReturnValue(new Promise((resolve) => (answer = resolve)));
-    await render(detail({ url: null }));
-    expect(actions.assetPreviewAction).toHaveBeenCalledWith(ASSET);
-    expect($('[data-testid="asset-preview"]')).toBeNull();
-    await act(async () => answer({ ok: true, url: 'http://127.0.0.1:54321/thumb', thumbnail: true, defaultAlt: null, focalX: null, focalY: null }));
-    expect($<HTMLImageElement>('[data-testid="asset-preview"]')!.src).toBe('http://127.0.0.1:54321/thumb');
-    expect($('[data-testid="asset-notice"]')).toBeNull();
-  });
-
-  it('says so when that preview cannot be had', async () => {
-    actions.assetPreviewAction.mockResolvedValue({ ok: false, code: 'error' });
-    await render(detail({ url: null }));
-    expect($('[data-testid="asset-preview"]')).toBeNull();
-    expect($('[data-testid="asset-notice"]')?.textContent).toBe(t.editor.image.previewError);
-    actions.assetPreviewAction.mockResolvedValue({ ok: false, code: 'auth' });
-    await act(async () => root.unmount());
-    root = createRoot(container);
-    await render(detail({ url: null }));
-    expect($('[data-testid="asset-notice"]')?.textContent).toBe(t.editor.signedOut);
-  });
-
-  it(`signs the preview again when it fails to load, at most 3 times, then says so`, async () => {
-    actions.assetPreviewAction.mockResolvedValue({ ok: true, url: 'http://127.0.0.1:54321/y', defaultAlt: null, focalX: null, focalY: null });
-    await render(detail());
-    for (let i = 1; i <= 3; i++) {
-      await act(async () => $('[data-testid="asset-preview"]')!.dispatchEvent(new Event('error')));
-      expect(actions.assetPreviewAction).toHaveBeenCalledTimes(i);
-    }
-    expect($<HTMLImageElement>('[data-testid="asset-preview"]')!.src).toBe('http://127.0.0.1:54321/y');
-    expect($('[data-testid="asset-notice"]')).toBeNull();
-    await act(async () => $('[data-testid="asset-preview"]')!.dispatchEvent(new Event('error')));
-    expect($('[data-testid="asset-notice"]')?.textContent).toBe(t.editor.image.previewError);
-  });
-});

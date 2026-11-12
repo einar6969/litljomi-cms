@@ -49,16 +49,16 @@ test('sets the focal point with the keyboard, with a visible focus ring, and edi
     await expect.poll(() => metadataOf(editor, assetId), SAVED).toEqual({ focal_x: 0.6, focal_y: 0.49, default_alt: null });
   });
 
-  await test.step('the detail page opens in a new tab, keeps the focal point and saves the default alt text alone', async () => {
+  await test.step('the detail page opens in a new tab, keeps the focal point and saves the default alt text', async () => {
     const [detail] = await Promise.all([page.context().waitForEvent('page'), page.getByRole('link', { name: t.editor.image.details }).click()]);
     await detail.waitForLoadState();
     await expect(detail.getByRole('heading', { level: 1 })).toHaveText(t.asset.title);
     await expect(detail.getByTestId('asset-filename')).toHaveText('rugbraud.jpg');
-    await expect(detail.getByTestId('asset-size')).toHaveText('64 × 48 px');
+    await expect(detail.getByTestId('asset-dimensions')).toHaveText('64 × 48 px');
     await expect(detail.getByTestId('asset-focal-value')).toContainText('60 % frá vinstri, 49 % ofan frá');
-    await detail.getByLabel(t.asset.defaultAlt).fill('Rúgbrauð á borði');
-    await detail.getByRole('button', { name: t.asset.saveDefaultAlt }).click();
-    await expect(detail.getByTestId('asset-notice')).toHaveText(t.editor.image.defaultAltSaved, SAVED);
+    await detail.getByLabel(t.library.detail.alt, { exact: true }).fill('Rúgbrauð á borði');
+    await detail.getByRole('button', { name: t.library.detail.save }).click();
+    await expect(detail.getByTestId('asset-notice')).toHaveText(t.library.detail.saved, SAVED);
     expect(await metadataOf(editor, assetId)).toEqual({ focal_x: 0.6, focal_y: 0.49, default_alt: 'Rúgbrauð á borði' });
 
     // Removing the focal point there keeps the alt text just saved.
