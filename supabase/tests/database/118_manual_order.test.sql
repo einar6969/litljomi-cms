@@ -182,9 +182,9 @@ select tests.act_as(tests.persona('platform_admin'), 'aal2');
 select is(tests.move_cell(tests.entry('c184'), tests.entry('c181'), 'before'), 'P0001 not_found',
   'a platform admin at aal2 has no content access: not_found');
 select tests.act_as_anon();
-select like(tests.move_cell(tests.entry('c184'), tests.entry('c181'), 'before'), '42501 %', 'anon: 42501');
+select matches(tests.move_cell(tests.entry('c184'), tests.entry('c181'), 'before'), '^42501 ', 'anon: 42501');
 select tests.act_as_service();
-select like(tests.move_cell(tests.entry('c184'), tests.entry('c181'), 'before'), '42501 %', 'service_role: 42501');
+select matches(tests.move_cell(tests.entry('c184'), tests.entry('c181'), 'before'), '^42501 ', 'service_role: 42501');
 
 select tests.act_as(tests.persona('editor_labak'));
 select is(tests.move_cell(tests.entry('c184'), tests.entry('c187'), 'before'), 'P0001 not_found',
