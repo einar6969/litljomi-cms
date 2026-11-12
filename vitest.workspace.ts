@@ -10,6 +10,13 @@ export default defineWorkspace([
     },
   },
   {
+    // `pnpm pack:sdk`. Its tests run the real git and npm against a repository in a temp folder.
+    test: {
+      name: 'pack',
+      include: ['tools/pack/__tests__/**/*.test.ts'],
+    },
+  },
+  {
     test: {
       name: 'schema',
       include: ['packages/schema/src/__tests__/**/*.test.ts'],

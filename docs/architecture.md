@@ -614,7 +614,7 @@ supabase/                 migrations, pgTAP tests, seed for fixture tenants
 docs/                     this document, runbooks
 ```
 
-**Client sites** stay in their own repositories (e.g. the LABAK site). They depend on `@litljomi/cms-sdk` and `@litljomi/rich-text` and on their tenant's delivery types, generated from the module by the CLI and committed in the site repository. Each site's CI parses the fixture bundle of its tenant with its SDK version. Until a second site arrives, the two packages reach a site as vendored `npm pack` files committed in the site repository (`file:vendor/…`), updated by hand with each SDK release; a private package registry (GitHub Packages, which needs a `litljomi` GitHub organisation for the `@litljomi` scope) replaces them then (Einar, 2026-11-02, plan decision 42).
+**Client sites** stay in their own repositories (e.g. the LABAK site). They depend on `@litljomi/cms-sdk` and `@litljomi/rich-text` and on their tenant's delivery types, generated from the module by the CLI and committed in the site repository. Each site's CI parses the fixture bundle of its tenant with its SDK version. The two packages reach a site as vendored `npm pack` files committed in the site repository (`file:vendor/…`), each with a real version, packed by `pnpm pack:sdk` and refreshed with each SDK release (`docs/runbooks/operations.md` §2, step 11). A private package registry was planned for the second site (plan decision 42) and is not adopted: "vendored SDK with a real version: yes. A package registry isn’t worth it for one more site." (Einar, 2026-11-12).
 
 ### 9.2 Onboarding a new client
 
