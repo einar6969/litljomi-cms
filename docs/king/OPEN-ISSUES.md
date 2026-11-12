@@ -56,7 +56,7 @@ These aren't in `deferred-minors.md`. "Open" was checked in code on 2026-11-05. 
 | # | P | Item | Suggested next step |
 |---|---|---|---|
 | S16 | Closed | Minors triaged in `docs/verification/m5-review.md` | None |
-| S17 | P1 | The staging Supabase secret key was pasted into a chat (C4). Rotation is deferred to before go-live (decision 47.2). It also sits in local transcripts | Rotate before go-live. Production gets fresh keys entered only by Einar |
+| S17 | P1 | The Supabase secret key was pasted into a chat (C4), and the project is now production (decision 74). It also sits in local transcripts | `docs/plans/production.md` step 3: Einar enters a fresh key; the old one is deleted; legacy JWT keys disabled if unused |
 | S18 | Closed | The repository is public, by Einar's choice. M5's history scan found no real secret: 587 commits, regex and entropy (`m5-review.md`) | None |
 | S19 | P1 | Cloud threads have Supabase, Vercel and Zoho Mail connectors, gated only by asking first (Reported by the coordinator). "No hosted systems" is a behavioural rule there | Einar decides whether to remove them from the Project |
 | S20 | P1 | M2 and M3 had one security review of `61f6011` and no spec or quality review. Fix rounds and W1 were each reviewed alone | M5 must cover M2, M3 and the fixes as a whole |
@@ -91,7 +91,7 @@ These aren't in `deferred-minors.md`. "Open" was checked in code on 2026-11-05. 
 | # | P | Risk | Note |
 |---|---|---|---|
 | R1 | P2 | SDK version is still 0.1.0 after 8 commits since M1 (2 of them merges), and LABAK vendors the older 0.1.0. Same version, different code | Bump it, and refresh or publish it before M6 (decision 42.4) |
-| R2 | P2 | Production has no owner in any milestone: Supabase Pro, `cms.litljomi.is`, region, Auth, SMTP. Staging has no backups on Free | Einar decides where it belongs |
+| R2 | Decided | Production is the existing Free project `rwpgpfsmhhtimauvpoyt` at `vefstjorn.is` (decision 74); no backups and no staging, both accepted for now | `docs/plans/production.md` |
 | R3 | Closed | GitHub Actions billing. The repo is public for free CI. Einar dropped this as a concern (decision 54), and CI passed on `eb4e85c`. If `ci` jobs fail within seconds, read the annotations | None |
 | R4 | P2 | Rulings in the coordinator's chat may exist nowhere else. It has no known export | Record them the same day from now on |
 | R5 | P3 | One maintainer, one model at every level, one laptop holding local transcripts and the staging env file | Known and accepted so far |
@@ -128,7 +128,7 @@ Left unchanged on purpose. The KING proposes corrections and Einar agrees them.
 | # | Decision | Note |
 |---|---|---|
 | E1 | Starting M5 | M4 is accepted (decision 64). The proposal is in the KING's report |
-| E4 | Production: when, which region, and the Pro cost | See R2 |
+| E4 | Decided | Production: decision 74 | `docs/plans/production.md` |
 | E5 | The definition of finished | Proposed in `BRIEF.md`, section 7 |
 | E6 | Target month for LABAK's launch | No urgency. A date sets M6's pace |
 | E7 | Whether the `crs` log-mode rules on `demo-staging` cost anything | Blocks nothing. Vercel bills "Firewall OWASP Requests" as its own line. The data seen stopped before the rules appeared |

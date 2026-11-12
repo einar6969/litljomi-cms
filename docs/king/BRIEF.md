@@ -21,13 +21,14 @@ A milestone being accepted does not make every line of it hosted.
 
 ## 1. Where things stand
 
-- **Accepted:** M0, M1 (checkpoint C4), M2 and M3 (C5, decision 51.5), M4 (C6, decision 64), M5 (C7, decision 69).
-- **Password sign-in (decision 72), 2026-11-12:** PW-01 (#63) and PW-02 (#64) merged; PW-03 and PW-04 in one PR; then the staging rollout, pre-approved by decision 73 rule 2. Staging still serves magic-link sign-in until that rollout.
-- **Staging matches `main`** at `9d31159`, with 45 migrations, the M5 fixes included. Later docs commits on `main` don't affect it.
-- **Nothing real is live.** There is no production project, no real editor and no real content. labak.is is still the old Joomla site.
-- **Tests:** on `b756c74`, from the CI log: pgTAP 2,006 in 39 files, unit 2,498, integration 96 + 116. Unit 2,498 re-run locally on `f2ab9e4`; the other totals were not re-read. CI passed on `eb4e85c`.
+As of 2026-11-12 (evening).
 
-M5 is accepted. What stays open is in `docs/execution/checkpoints/C7.md`. Next are Einar's decisions on production (E4), the definition of finished (E5) and LABAK's month (E6). No hosted action has an approval now.
+- **Accepted milestones:** M0, M1 (C4), M2 and M3 (C5), M4 (C6), M5 (C7). M6 (LABAK) is **parked** (decision 74).
+- **Done on 2026-11-12:** the UI level-up (#61) and tenant overview (#62); password sign-in (decision 72, #63–#65), rolled out and verified on the Supabase project (`docs/verification/pw-staging.md`); S29 and R7 (#66): sign-out on the set-password page, and the CMS server never refreshes a session.
+- **The Supabase project `rwpgpfsmhhtimauvpoyt` is now production** (decision 74), on the Free plan, with no backups (accepted) and no separate staging. It runs `staging` = `a772423` (the `staging` branch is the Vercel production switch; the name is historical). The CMS still answers at `vefumsjon-staging.litljomi.is` until the domain moves.
+- **Next:** `docs/plans/production.md`: move the CMS to **`vefstjorn.is`**, rotate the secret key, remove test accounts, verify. Then onboard a **new client** (Einar provides the details).
+- **How agents work:** decision 75. No sandbox, full git and CLI autonomy; `CLAUDE.md` "Autonomy" lists the few things that need Einar's word. The G0–G7 gates and `gates.json` are history.
+- **Nothing real is live yet:** no real editor and no real content. labak.is is still the old Joomla site.
 
 ## 2. What the Hub is and why it exists
 
