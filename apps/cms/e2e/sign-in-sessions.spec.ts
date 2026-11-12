@@ -7,7 +7,7 @@
 // `pnpm db:start`) so that it mails the current email_change.html.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Browser, Page } from '@playwright/test';
+import type { Browser, BrowserContext, Page } from '@playwright/test';
 import { t } from '../src/i18n/is';
 import { SESSION_MAX_AGE } from '../src/lib/supabase/session-cookies';
 import { addressOf, arrangeEmailChange, removeUser, resetAdmin } from './support/console-admin';
@@ -65,7 +65,73 @@ test.describe('headers', () => {
   });
 });
 
+// The session cookie, as @supabase/ssr names it (supabase-js's storage key), and its chunks `.0`, `.1`.
+const SESSION_COOKIE = `sb-${new URL(SUPABASE_URL).hostname.split('.')[0]}-auth-token`;
+const SESSION_CHUNKS = new RegExp(`^${SESSION_COOKIE}(?:\\.\\d+)?$`);
+// @supabase/ssr's chunk size (MAX_CHUNK_SIZE); a browser keeps no cookie over 4 KB.
+const CHUNK = 3180;
+const chunkIndex = (name: string) => (name === SESSION_COOKIE ? -1 : Number(name.slice(SESSION_COOKIE.length + 1)));
+const fromBase64url = (value: string) => JSON.parse(Buffer.from(value, 'base64url').toString());
+const toBase64url = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
+
+/** The access token of the browser's session, from its cookies. */
+async function accessToken(context: BrowserContext): Promise<string> {
+  const chunks = (await context.cookies(CMS_URL)).filter(({ name }) => SESSION_CHUNKS.test(name)).sort((x, y) => chunkIndex(x.name) - chunkIndex(y.name));
+  return fromBase64url(chunks.map(({ value }) => value).join('').slice('base64-'.length)).access_token as string;
+}
+
+/**
+ * Makes the browser's session what it is an hour and more later: its access token past `exp`
+ * (re-encoded, so no longer signed by Auth, which an expired token is never sent to). The refresh
+ * token is left as Auth issued it.
+ */
+async function expireSession(context: BrowserContext): Promise<void> {
+  const chunks = (await context.cookies(CMS_URL)).filter(({ name }) => SESSION_CHUNKS.test(name)).sort((x, y) => chunkIndex(x.name) - chunkIndex(y.name));
+  const session = fromBase64url(chunks.map(({ value }) => value).join('').slice('base64-'.length));
+  const exp = Math.floor(Date.now() / 1000) - 60;
+  const [header, payload, signature] = (session.access_token as string).split('.');
+  session.access_token = [header, toBase64url({ ...fromBase64url(payload!), exp }), signature].join('.');
+  session.expires_at = exp;
+  const value = `base64-${toBase64url(session)}`;
+  const pieces = value.length <= CHUNK ? [value] : (value.match(new RegExp(`.{1,${CHUNK}}`, 'g')) ?? []);
+  await context.clearCookies({ name: SESSION_CHUNKS });
+  const { name: _name, value: _value, ...attributes } = chunks[0]!;
+  await context.addCookies(pieces.map((piece, i) => ({ ...attributes, name: pieces.length === 1 ? SESSION_COOKIE : `${SESSION_COOKIE}.${i}`, value: piece })));
+}
+
+const expOf = (token: string) => fromBase64url(token.split('.')[1]!).exp as number;
+
 test.describe('session cookies', () => {
+  // R7: the CMS server never refreshes a session; the browser does, from the editor's own address.
+  test('an expired session on a page navigation is refreshed in the browser, through /auth/refresh, back on the same page and still signed in', async ({ page, context }) => {
+    // A session of its own: the refresh rotates its refresh token, which the stored sessions must keep.
+    await signIn(page, PERSONA_EMAILS.editor_demo);
+    // Off the editor first, whose browser client would otherwise refresh the session itself.
+    await page.goto('about:blank');
+    await expireSession(context);
+    const forged = await accessToken(context);
+
+    const refreshes: string[] = [];
+    page.on('request', (request) => {
+      if (new URL(request.url()).searchParams.get('grant_type') === 'refresh_token') refreshes.push(request.url());
+    });
+    // The page loads, one request per redirect hop.
+    const loads: string[] = [];
+    page.on('request', (request) => {
+      if (request.isNavigationRequest() && request.frame() === page.mainFrame()) loads.push(new URL(request.url()).pathname);
+    });
+
+    await page.goto('/t/demo/event?q=a');
+    await expect(page).toHaveURL(`${CMS_URL}/t/demo/event?q=a`);
+    await expect(page.getByRole('button', { name: t.app.signOut })).toBeVisible();
+    expect(loads).toEqual(['/t/demo/event', '/auth/refresh', '/t/demo/event']);
+    // One refresh, from the browser: none from the CMS server (its client refuses them).
+    expect(refreshes).toEqual([`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`]);
+    const fresh = await accessToken(context);
+    expect(fresh).not.toBe(forged);
+    expect(expOf(fresh)).toBeGreaterThan(Date.now() / 1000);
+  });
+
   test('are same-site lax and bounded, readable by the browser client, and not Secure on local http', async ({ page, context }) => {
     await signIn(page, PERSONA_EMAILS.editor_demo);
     const cookies = (await context.cookies()).filter(({ name }) => name.startsWith('sb-'));

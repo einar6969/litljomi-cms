@@ -11,6 +11,9 @@ vi.mock('@/lib/supabase/server', () => ({ createEditorClient: vi.fn(async () => 
 // The pending session a link left for the confirm page's question (M3-14).
 const revoke = vi.hoisted(() => ({ discardPending: vi.fn() }));
 vi.mock('@/app/auth/confirm/revoke', () => revoke);
+// The set-password step after an invitation or reset link (PW-03).
+const step = vi.hoisted(() => ({ clearPasswordStep: vi.fn() }));
+vi.mock('@/app/auth/password/step', () => step);
 
 const { createEditorClient } = await import('@/lib/supabase/server');
 const actions = await import('../actions');
@@ -73,6 +76,13 @@ describe('signOut', () => {
     auth.signOut.mockImplementation(async () => (order.push('signOut'), { error: null }));
     await expect(signOut()).rejects.toThrow('REDIRECT /login');
     expect(order).toEqual(['discardPending', 'signOut']);
+  });
+
+  // S29: signing out from the set-password page ends the step with the session.
+  it('clears the set-password step', async () => {
+    auth.signOut.mockResolvedValue({ error: null });
+    await expect(signOut()).rejects.toThrow('REDIRECT /login');
+    expect(step.clearPasswordStep).toHaveBeenCalledOnce();
   });
 
   it('still signs out when discarding the pending session fails, logging no detail', async () => {

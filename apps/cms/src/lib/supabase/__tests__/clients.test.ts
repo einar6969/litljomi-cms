@@ -11,7 +11,8 @@ vi.mock('@supabase/ssr', () => ({
 }));
 
 const { createBrowserClient, createServerClient } = await import('@supabase/ssr');
-const { createEditorClient } = await import('../server');
+const { createDetachedClient, createEditorClient } = await import('../server');
+const { fetchWithoutRefresh } = await import('../no-refresh-fetch');
 const { createBrowserEditorClient } = await import('../browser');
 const { SESSION_MAX_AGE } = await import('../session-cookies');
 
@@ -60,6 +61,11 @@ describe('createEditorClient', () => {
     const { cookies } = serverOptions();
     expect(cookies.getAll()).toEqual([{ name: 'sb', value: 'v' }]);
   });
+  // R7: the CMS server never sends a refresh; the browser refreshes from the editor's own address.
+  it('gives the client the fetch that refuses refreshes', async () => {
+    await createEditorClient();
+    expect(createServerClient).toHaveBeenCalledWith(URL_, PUBLISHABLE, expect.objectContaining({ global: { fetch: fetchWithoutRefresh } }));
+  });
   // @supabase/ssr writes 400 days whatever `cookieOptions` says, so the bound is applied in setAll.
   it('writes the session cookies secure, same-site lax and bounded', async () => {
     await createEditorClient();
@@ -83,6 +89,18 @@ describe('createEditorClient', () => {
     vi.stubEnv(name, '');
     await expect(createEditorClient()).rejects.toThrow(name);
     expect(createServerClient).not.toHaveBeenCalled();
+  });
+});
+
+describe('createDetachedClient', () => {
+  it('uses the publishable key and no cookies, and refuses refreshes as well', () => {
+    createDetachedClient();
+    expect(createServerClient).toHaveBeenCalledExactlyOnceWith(
+      URL_,
+      PUBLISHABLE,
+      expect.objectContaining({ db: { schema: 'api' }, global: { fetch: fetchWithoutRefresh } }),
+    );
+    expect(serverOptions().cookies.getAll()).toEqual([]);
   });
 });
 
