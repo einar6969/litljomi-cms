@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Written | 2026-11-12, second draft |
-| State | **Reviewed for DLD and for the platform; reconciled. Waiting for Einar's approval** |
+| State | **Approved by Einar on 2026-11-12** ("Approve as recommended"), with the five recommended answers in section 8: slogans in the CMS; the footer text field kept; DLD told about the logo; the 24 drafted alt texts imported; a new project appears first |
 | Lives in | `modules/dld` in this repository, once approved. Nothing here goes into core |
 | Needs from the platform | A1 (library: caption and credit per file), A7 (live confirmation for content with no page of its own), A11 (the `video` field kind), A12 (manual ordering). All approved |
 

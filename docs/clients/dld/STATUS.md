@@ -5,8 +5,8 @@ The living record of onboarding DLD (Dagný Land Design) as a tenant. A later se
 | | |
 |---|---|
 | Last updated | 2026-11-12, after Einar's rulings |
-| **Current stage** | **2: the content model waits for Einar's approval** ([content-model.md](content-model.md), reviewed for DLD and for the platform, reconciled). **Stage 3 is under way**: library slice L1 and enhancement A3 are being built |
-| Next action | Einar approves the model and answers its five questions. Then: review and merge L1 and A3; build the rest of Track A in the order given in [ENHANCEMENTS.md](ENHANCEMENTS.md); A11 and A12 before `modules/dld` |
+| **Current stage** | **3, platform work.** Stage 2 is done: the content model is approved. In progress: library slice L1, A3, A11 |
+| Next action | Review and merge L1, A3 and A11 as their PRs arrive. Then the rest of Track A ([ENHANCEMENTS.md](ENHANCEMENTS.md)), one agent at a time on the local stack: L2–L6, A12, A7, A6, A10, A4, A2, A5. `modules/dld` (stage 4) needs A11, A12 and A7 merged first |
 | How agents run | Each agent gets a model sized to its task (Einar, 2026-11-12: "please run agents with model scoped for the task"). Opus for boundary code and security review, Sonnet for scoped reviews and routine work |
 | Nothing has changed in | Production, `dld-is`, the DLD workspace, Vercel, DNS. The Hub has new docs only, until L1's PR |
 
@@ -96,6 +96,14 @@ Einar: "**add B7 and B10 to track A**".
 
 - The `video` field kind is now A11 and manual ordering of entries is A12. Both are approved and are built before DLD's module, because a field's kind cannot change later.
 - The content model uses them: a video is a `video` field, and project order is set by dragging, not by a number field.
+
+### 2026-11-12: the content model
+
+Asked: "Approve the content model with my five recommended answers?" Einar: "**Approve as recommended**".
+
+- [content-model.md](content-model.md) is approved as written: five types (`project`, `news`, `person`, `home`, `contact`), tenant slug `dld`.
+- The five answers: the slogans go in the CMS; the footer text field stays; DLD is told the logo is changed on request; the 24 alt texts Litljómi drafted are imported and DLD is told they are drafts; a new project appears first until dragged.
+- Four things are Einar's to tell DLD (section 8 of the model). Nothing has been sent.
 
 ### Gates still ahead, each needing Einar
 
