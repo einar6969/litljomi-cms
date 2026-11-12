@@ -269,6 +269,44 @@ describe('displayState: failed_validation, "Ekki hægt að birta: …"', () => {
     expect(state.label).toBe('Ekki hægt að birta: Mynd, body');
   });
 
+  // A10: a refusal for a reference says which one, in words: the field (and the list item), the
+  // entry by its title when the panel could read it, and why.
+  it('names each refused reference in words: field, item, entry title and reason', () => {
+    const A = '00000000-0000-4000-8000-00000000aaa1';
+    const B = '00000000-0000-4000-8000-00000000bbb1';
+    const C = '00000000-0000-4000-8000-00000000ccc1';
+    const error = {
+      code: 'invalid_reference',
+      refs: [
+        { path: '$."related"[2]', kind: 'entry', id: A, reason: 'unpublished' },
+        { path: '$."body"."content"[0]."content"[0]."marks"[0]."attrs"."entry"', kind: 'entry', id: B, reason: 'archived' },
+        { path: '$."related"[0]', kind: 'entry', id: C, reason: 'not_found' },
+        { path: '$."image"', kind: 'asset', id: 'x', reason: 'archived' },
+      ],
+    };
+    const state = displayState(row({ status: 'failed_validation', error, release_status: null }), {
+      fieldLabels: { related: 'Tengd verk', body: 'Meginmál', image: 'Mynd' },
+      entryTitles: { [A]: 'Vorhátíð', [B]: null },
+    });
+    expect(state.label).toBe('Ekki hægt að birta: Tengd verk, Meginmál, Mynd');
+    const p = t.publish.reference;
+    expect(state.lines).toEqual([
+      `Tengd verk 3: „Vorhátíð“ ${p.unpublished}`,
+      `Meginmál: „${t.entries.untitled}“ ${p.archived}`,
+      `Tengd verk 1: ${p.unknownEntry} ${p.notFound}`,
+      `Mynd: ${p.image} ${p.notFound}`,
+    ]);
+    expect(state.detail).toBe(p.detail);
+  });
+
+  it('an unpublished reference whose title is not known yet is still named by field and reason', () => {
+    const state = displayState(
+      row({ status: 'failed_validation', release_status: null, error: { code: 'invalid_reference', refs: [{ path: '$."related"[0]', kind: 'entry', id: 'q', reason: 'unpublished' }] } }),
+      { fieldLabels: { related: 'Tengd verk' } },
+    );
+    expect(state.lines).toEqual([`Tengd verk 1: ${t.publish.reference.unknownEntry} ${t.publish.reference.unpublished}`]);
+  });
+
   it('slug_required names the slug field', () => {
     expect(failed({ code: 'slug_required' }).label).toBe(`Ekki hægt að birta: ${t.editor.slug.label}`);
   });

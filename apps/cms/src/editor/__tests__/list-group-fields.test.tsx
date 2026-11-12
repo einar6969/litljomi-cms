@@ -139,7 +139,9 @@ describe('ListField', () => {
     expect(itemKeys()).toEqual(['k0', 'k1']);
     expect($<HTMLInputElement>('#field-tags-k0')?.value).toBe('rautt');
     expect($<HTMLInputElement>('#field-tags-k1')?.value).toBe('grænt');
-    expect($('label[for="field-tags-k1"]')?.textContent).toBe(itemName(2));
+    // An item is required on publish, so its label carries the (aria-hidden) required marker (A10).
+    expect($('label[for="field-tags-k1"]')?.textContent).toBe(`${itemName(2)}*`);
+    expect($('label[for="field-tags-k1"] [data-required-marker]')?.getAttribute('aria-hidden')).toBe('true');
     expect($('legend')?.textContent).toBe('Merki');
   });
 

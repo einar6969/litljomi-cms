@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defineModule, defineType, isSingleton, newsType, structureItems, text, type ModuleManifest } from '../index.ts';
+import { defineModule, defineType, isSingleton, newsType, RESERVED_TYPE_NAMES, structureItems, text, type ModuleManifest } from '../index.ts';
 
 describe('newsType', () => {
   it('has the library shape', () => {
@@ -31,6 +31,17 @@ describe('defineModule', () => {
   it('returns the manifest unchanged', () => {
     const m: ModuleManifest = { tenant: 't', locale: 'is', branding: { name: 'T' }, types: [], structure: [], site: {} };
     expect(defineModule(m)).toBe(m);
+  });
+
+  // A type's list is the editor's page /t/<tenant>/<type>; a type named after one of the editor's
+  // own pages there (/t/<tenant>/assets/…) could never be reached (A10).
+  it('refuses a type named after one of the editor\'s own pages', () => {
+    expect(RESERVED_TYPE_NAMES).toContain('assets');
+    for (const name of RESERVED_TYPE_NAMES) {
+      const type = defineType({ name, version: 1, label: name, fields: { title: text({ label: 'Title' }) }, preview: { title: 'title' }, orderBy: 'title' });
+      const m: ModuleManifest = { tenant: 't', locale: 'is', branding: { name: 'T' }, types: [type], structure: [{ type: name, label: name }], site: {} };
+      expect(() => defineModule(m)).toThrow(new RegExp(`type "${name}" is the name of an editor page`));
+    }
   });
 });
 

@@ -328,6 +328,25 @@ describe('RichTextField', () => {
     expect(text).toContain('"y"');
   });
 
+  // A10: a pasted Word list arrives as a list, and a paste that left a table out says so in one line.
+  it('keeps a pasted Word list as a list, and says in one line that a table was left out', async () => {
+    const onChange = vi.fn();
+    await render(<RichTextField {...field} value={undefined} onChange={onChange} />);
+    await until(() => expect(container.querySelector('.ProseMirror')).not.toBeNull());
+    const item = (text: string) => `<p class=MsoListParagraph style='mso-list:l0 level1 lfo1'><span style='mso-list:Ignore'>·<span> </span></span>${text}</p>`;
+    await act(async () => paste(container.querySelector('.ProseMirror')!, `${item('Brauð')}${item('Kaka')}`));
+    const saved = JSON.stringify(onChange.mock.lastCall?.[0]);
+    expect(saved).toContain('"bulletList"');
+    expect(saved).not.toContain('·');
+    expect(container.querySelector('[data-testid="field-x-paste-note"]')).toBeNull();
+
+    await act(async () => paste(container.querySelector('.ProseMirror')!, WORD_LIKE));
+    expect(container.querySelector('[data-testid="field-x-paste-note"]')?.textContent).toBe(t.editor.richText.droppedTables);
+    // The next paste that leaves nothing out clears the line.
+    await act(async () => paste(container.querySelector('.ProseMirror')!, '<p>z</p>'));
+    expect(container.querySelector('[data-testid="field-x-paste-note"]')).toBeNull();
+  });
+
   it('keeps the stored value unchanged while the document does not validate, and says so (Task 24 quality r1)', async () => {
     const doc = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Halló' }] }] };
     const onChange = vi.fn();

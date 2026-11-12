@@ -33,7 +33,7 @@ const fake = {
 };
 vi.mock('@/lib/supabase/server', () => ({ createEditorClient: vi.fn(async () => fake) }));
 
-const { createEntryAction, loadDraftAction, openSingletonAction, saveDraftAction: saveDraftAs } = await import('../actions');
+const { archiveEntryAction, createEntryAction, loadDraftAction, openSingletonAction, saveDraftAction: saveDraftAs } = await import('../actions');
 /** A save by the signed-in editor the form was opened for (M2-17: every save names its user). */
 const saveDraftAction = (id: string, expectedVersion: number, data: unknown) => saveDraftAs(id, expectedVersion, data, USER);
 
@@ -280,3 +280,36 @@ describe('loadDraftAction (M2-11: the newer version after a conflict)', () => {
   });
 });
 
+
+// A6: an editor archives an entry that is not published; api.archive_entry decides (§4.6).
+describe('archiveEntryAction (A6)', () => {
+  it('archives the entry through api.archive_entry and answers with its list', async () => {
+    await expect(archiveEntryAction(ENTRY)).resolves.toEqual({ ok: true, listPath: `/t/${encodeURIComponent(SLUG)}/${encodeURIComponent(TYPE.name)}` });
+    expect(state.calls).toEqual([{ name: 'archive_entry', args: { p_entry_id: ENTRY } }]);
+  });
+
+  it('answers "published" when the database refuses a published entry', async () => {
+    state.rpc.archive_entry = { error: { code: 'P0001', message: 'forbidden' }, status: 400 };
+    await expect(archiveEntryAction(ENTRY)).resolves.toEqual({ ok: false, code: 'published' });
+  });
+
+  it('refuses a singleton, an invalid id, no session and an entry it cannot see, without archiving', async () => {
+    state.tables.my_tenants = { data: { id: TENANT_ID, slug: singletonModule.tenant, name: 'T', status: 'active' } };
+    state.tables.entry_list = { data: { id: ENTRY, tenant_id: TENANT_ID, type: SINGLETON.name } };
+    await expect(archiveEntryAction(ENTRY)).resolves.toEqual({ ok: false, code: 'error' });
+    await expect(archiveEntryAction('nope')).resolves.toEqual({ ok: false, code: 'invalid' });
+    state.user = null;
+    await expect(archiveEntryAction(ENTRY)).resolves.toEqual({ ok: false, code: 'auth' });
+    state.user = { id: USER };
+    state.tables.entry_list = { data: null };
+    await expect(archiveEntryAction(ENTRY)).resolves.toEqual({ ok: false, code: 'error' });
+    expect(state.calls).toEqual([]);
+  });
+
+  it('answers "auth" for an expired session and "error" for anything else', async () => {
+    state.rpc.archive_entry = { error: { code: 'PGRST301', message: 'JWT expired' }, status: 401 };
+    await expect(archiveEntryAction(ENTRY)).resolves.toEqual({ ok: false, code: 'auth' });
+    state.rpc.archive_entry = { error: { code: 'P0001', message: 'not_found' }, status: 400 };
+    await expect(archiveEntryAction(ENTRY)).resolves.toEqual({ ok: false, code: 'error' });
+  });
+});

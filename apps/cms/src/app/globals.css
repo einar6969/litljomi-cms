@@ -1442,6 +1442,39 @@
     padding: 16px;
   }
 
+  .slot-hist {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* The conflict notice is scrolled to when it appears (EntryForm); it clears the sticky bar. */
+  .conflict-note {
+    scroll-margin-top: 72px;
+  }
+
+  /* A10: on a long form, the save status (in the bar) and the publish panel stay in view. Below
+     1024 px the panel is pinned to the bottom instead (further down). */
+  @media (min-width: 1024px) {
+    .top-saves {
+      position: sticky;
+      z-index: 5;
+      top: 0;
+      background: var(--canvas);
+    }
+
+    .rail {
+      position: sticky;
+      top: 69px;
+      max-height: calc(100vh - 85px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      /* Room for the cards' borders and focus rings inside the scrolling box. */
+      margin: -4px;
+      padding: 4px;
+    }
+  }
+
   .btns {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));

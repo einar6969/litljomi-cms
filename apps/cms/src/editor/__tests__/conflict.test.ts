@@ -51,6 +51,40 @@ describe('describeValue', () => {
     expect(describeValue({ entry: { _ref: ENTRY, _kind: 'entry' } })).toBe(`${r.entry} 5e6f7a8b`);
   });
 
+  // A10 (probe §14, 8): a list is shown by its items' values, one numbered line each, never by the
+  // items' keys.
+  it('describes a list field by its items\' values, one numbered line each, without the item keys', () => {
+    const list = [
+      { _key: 'k1a2b3c4', value: 'Fyrsta' },
+      { _key: 'k5d6e7f8', value: { name: 'Anna', role: 'Bakari' } },
+      { _key: 'k9g0h1i2', value: { _ref: ASSET, _kind: 'asset', alt: 'Brauð' } },
+      { _key: 'k3j4k5l6', value: null },
+    ];
+    const text = describeValue(list);
+    expect(text).toBe(`1. Fyrsta\n2. Anna; Bakari\n3. ${r.image} 1a2b3c4d: Brauð\n4. ${r.empty}`);
+    for (const key of ['k1a2b3c4', 'k5d6e7f8', 'k9g0h1i2', 'k3j4k5l6']) expect(text).not.toContain(key);
+  });
+
+  it('leaves a nested list\'s keys out too', () => {
+    const group = { name: 'Anna', links: [{ _key: 'kk11', value: 'a' }, { _key: 'kk22', value: 'b' }] };
+    const text = describeValue([{ _key: 'top1', value: group }]);
+    expect(text).not.toMatch(/kk11|kk22|top1/);
+    expect(text).toContain('Anna');
+    expect(text).toContain('a');
+  });
+
+  // Probe §14, 8: two long values that differ past the cut must not read the same.
+  it('shows where two long values differ when the cut would make them read the same', () => {
+    const fields = [{ key: 'body', kind: 'text', label: 'Meginmál', required: false }];
+    const same = 'x'.repeat(400);
+    const [field] = changedFields(fields, { body: `${same}MITT` }, { body: `${same}ÞEIRRA` });
+    expect(field!.mine).not.toBe(field!.theirs);
+    expect(field!.mine).toContain('MITT');
+    expect(field!.theirs).toContain('ÞEIRRA');
+    expect(field!.mine.startsWith('…')).toBe(true);
+    expect(field!.mine.length).toBeLessThanOrEqual(302);
+  });
+
   it('describes a group by its values, and shortens a long value', () => {
     expect(describeValue({ name: 'Anna', role: 'Bakari' })).toBe('Anna; Bakari');
     const long = describeValue('x'.repeat(500));
