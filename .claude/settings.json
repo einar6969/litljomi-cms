@@ -1,72 +1,46 @@
 {
   "permissions": {
     "defaultMode": "auto",
-    "disableBypassPermissionsMode": "disable",
     "allow": [
       "Bash(git *)",
-      "Bash(gh *)"
+      "Bash(gh *)",
+      "Bash(vercel *)",
+      "Bash(supabase *)",
+      "Bash(pnpm *)"
     ],
     "deny": [
-      "Bash(sudo *)",
       "Read(/.env)",
       "Read(/.env.local)",
+      "Read(/.env.*.local)",
       "Read(/**/.env)",
       "Read(/**/.env.local)",
+      "Read(/**/.env.*.local)",
       "Edit(/.env)",
       "Edit(/.env.local)",
+      "Edit(/.env.*.local)",
       "Edit(/**/.env)",
       "Edit(/**/.env.local)",
+      "Edit(/**/.env.*.local)",
       "Write(/.env)",
       "Write(/.env.local)",
+      "Write(/.env.*.local)",
       "Write(/**/.env)",
       "Write(/**/.env.local)",
-      "Read(/.env.staging.local)",
-      "Read(/**/.env.staging.local)",
-      "Edit(/.env.staging.local)",
-      "Edit(/**/.env.staging.local)",
-      "Write(/.env.staging.local)",
-      "Write(/**/.env.staging.local)",
-      "Bash(git push * staging*)",
-      "Bash(git push *:staging*)",
-      "Bash(git -C * push * staging*)",
-      "Bash(git -C * push *:staging*)"
+      "Write(/**/.env.*.local)"
     ],
     "ask": [
-      "Bash(vercel *)",
-      "Bash(netlify *)",
-      "Bash(supabase link *)",
-      "Bash(supabase login *)",
-      "Bash(supabase db push *)",
-      "Bash(supabase projects *)",
-      "Bash(supabase orgs *)",
-      "Bash(supabase secrets *)",
-      "Bash(supabase functions deploy *)",
-      "Bash(supabase config push *)",
-      "Bash(supabase db reset --linked *)",
-      "Bash(supabase migration repair *)",
-      "Bash(npm publish *)",
-      "Bash(pnpm publish *)",
-      "Bash(brew *)",
-      "Edit(/.claude/**)"
+      "Bash(supabase db reset --linked*)",
+      "Bash(supabase config push*)",
+      "Bash(supabase migration repair*)",
+      "Bash(pnpm exec supabase db reset --linked*)",
+      "Bash(pnpm exec supabase config push*)",
+      "Bash(pnpm exec supabase migration repair*)",
+      "Bash(npx supabase db reset --linked*)",
+      "Bash(npx supabase config push*)",
+      "Bash(npx supabase migration repair*)"
     ]
   },
   "sandbox": {
-    "enabled": true,
-    "failIfUnavailable": true,
-    "excludedCommands": [
-      "gh *",
-      "git *",
-      "pnpm --filter cms e2e *"
-    ],
-    "network": {
-      "allowedDomains": [
-        "registry.npmjs.org"
-      ],
-      "allowUnixSockets": [
-        "/Users/einarzoega/.orbstack/run/docker.sock",
-        "/var/run/docker.sock"
-      ],
-      "allowLocalBinding": true
-    }
+    "enabled": false
   }
 }
