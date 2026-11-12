@@ -42,7 +42,7 @@ export interface EventEntry {
   category: "concert" | "workshop" | "talk" | null;
   doorsOpen: string | null;
   related: EntrySummary | null;
-  program: { intro: string | null; highlights: Array<{ _key: string; value: EntrySummary | null }> | null; videos: Array<{ _key: string; value: PublicVideo | null }> | null; } | null;
+  program: { intro: string | null; highlights: Array<{ _key: string; value: EntrySummary | null }> | null; videos: Array<{ _key: string; value: PublicVideo | null }> | null; gallery: Array<{ _key: string; value: PublicAsset | null }> | null; } | null;
 }
 
 export interface NoticeEntry {

@@ -158,9 +158,9 @@ const oneAtATime = <T,>(task: () => Promise<T>): Promise<T> => {
 /**
  * A file's thumbnail, or its type's icon. A file without one asks for it (`ensureThumbnailAction`,
  * which makes, stores and signs it), once; a thumbnail that fails to load (an expired signature) is
- * signed once more. After that, the icon stays.
+ * signed once more. After that, the icon stays. The library picker shows the same.
  */
-function FileThumb({ file }: { file: LibraryFile }) {
+export function FileThumb({ file }: { file: Pick<LibraryFile, 'id' | 'kind' | 'thumbUrl'> }) {
   const [src, setSrc] = useState(file.thumbUrl);
   const asked = useRef(false);
   const mounted = useRef(false);

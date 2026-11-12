@@ -92,6 +92,15 @@
                 "required": false,
                 "still": "optional"
               }
+            },
+            "gallery": {
+              "kind": "list",
+              "required": false,
+              "max": 12,
+              "of": {
+                "kind": "image",
+                "required": false
+              }
             }
           }
         }

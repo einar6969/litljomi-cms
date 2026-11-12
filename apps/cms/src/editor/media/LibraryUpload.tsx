@@ -110,8 +110,7 @@ export function LibraryUpload({ tenantId, tenantSlug, newestHref, showButton }: 
     };
   }, []);
 
-  const { items, signedOut, dropped, progress, result } = snapshot;
-  const running = progress.total > 0 && result === null;
+  const { items, signedOut, dropped, result } = snapshot;
   const shown = items.length > 0 || result !== null || dropped > 0 || signedOut;
 
   return (
@@ -146,57 +145,7 @@ export function LibraryUpload({ tenantId, tenantSlug, newestHref, showButton }: 
       {shown ? (
         <section className="card sub lib-queue" aria-labelledby="upload-title" data-testid="upload-queue">
           <h2 id="upload-title">{t.upload.title}</h2>
-          <p aria-live="polite" data-testid="upload-summary">
-            {running
-              ? t.upload.progress.replace('{done}', String(progress.done)).replace('{total}', String(progress.total))
-              : result
-                ? uploadResult(result.done, result.failed)
-                : ''}
-          </p>
-          {dropped > 0 ? <Notice tone="warning">{t.upload.tooMany.replace('{max}', String(MAX_BATCH))}</Notice> : null}
-          {signedOut ? (
-            <Notice as="div" tone="error" role="alert">
-              <strong>{t.editor.signedOut}</strong>
-              <div className="note-acts">
-                <a href="/login" target="_blank" rel="noreferrer">
-                  {t.editor.signIn}
-                </a>
-                <Button size="sm" onClick={() => getQueue().resume()}>
-                  {t.editor.retry}
-                </Button>
-              </div>
-            </Notice>
-          ) : null}
-          {items.length > 0 ? (
-            <ul className="lib-up-list">
-              {items.map((item) => (
-                <li key={item.key} data-state={item.state}>
-                  <Icon name="image" />
-                  <span className="lib-up-name">{item.name}</span>
-                  {item.state === 'failed' ? (
-                    <span role="alert" className="err">
-                      {stateText(item)}
-                    </span>
-                  ) : (
-                    <span className="help">{stateText(item)}</span>
-                  )}
-                  {item.state === 'uploading' ? <progress max={100} value={item.progress} aria-hidden="true" /> : null}
-                  {item.state === 'failed' || item.state === 'waiting' ? (
-                    <span className="acts">
-                      {item.state === 'failed' && item.reason === 'error' ? (
-                        <Button size="sm" onClick={() => getQueue().retry(item.key)}>
-                          {t.editor.retry}
-                        </Button>
-                      ) : null}
-                      <Button size="sm" variant="quiet" onClick={() => getQueue().remove(item.key)} aria-label={`${t.upload.remove}: ${item.name}`}>
-                        {t.upload.remove}
-                      </Button>
-                    </span>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          <UploadQueueView snapshot={snapshot} queue={getQueue} />
         </section>
       ) : null}
     </>
@@ -210,5 +159,70 @@ export function UploadTrigger() {
       <Icon name="upload" />
       {t.library.upload}
     </Button>
+  );
+}
+
+/**
+ * A queue's state (plan section 6.2): the live summary ("3 af 12", then the batch's sentence), the
+ * files left out of a batch, the lost session with its way back, and a row per file with its state,
+ * or its reason and "Reyna aftur". The library's upload and the picker's show the same.
+ */
+export function UploadQueueView({ snapshot, queue }: { snapshot: QueueSnapshot; queue: () => UploadQueue }) {
+  const { items, signedOut, dropped, progress, result } = snapshot;
+  const running = progress.total > 0 && result === null;
+  return (
+    <>
+      <p aria-live="polite" data-testid="upload-summary">
+        {running
+          ? t.upload.progress.replace('{done}', String(progress.done)).replace('{total}', String(progress.total))
+          : result
+            ? uploadResult(result.done, result.failed)
+            : ''}
+      </p>
+      {dropped > 0 ? <Notice tone="warning">{t.upload.tooMany.replace('{max}', String(MAX_BATCH))}</Notice> : null}
+      {signedOut ? (
+        <Notice as="div" tone="error" role="alert">
+          <strong>{t.editor.signedOut}</strong>
+          <div className="note-acts">
+            <a href="/login" target="_blank" rel="noreferrer">
+              {t.editor.signIn}
+            </a>
+            <Button size="sm" onClick={() => queue().resume()}>
+              {t.editor.retry}
+            </Button>
+          </div>
+        </Notice>
+      ) : null}
+      {items.length > 0 ? (
+        <ul className="lib-up-list">
+          {items.map((item) => (
+            <li key={item.key} data-state={item.state}>
+              <Icon name="image" />
+              <span className="lib-up-name">{item.name}</span>
+              {item.state === 'failed' ? (
+                <span role="alert" className="err">
+                  {stateText(item)}
+                </span>
+              ) : (
+                <span className="help">{stateText(item)}</span>
+              )}
+              {item.state === 'uploading' ? <progress max={100} value={item.progress} aria-hidden="true" /> : null}
+              {item.state === 'failed' || item.state === 'waiting' ? (
+                <span className="acts">
+                  {item.state === 'failed' && item.reason === 'error' ? (
+                    <Button size="sm" onClick={() => queue().retry(item.key)}>
+                      {t.editor.retry}
+                    </Button>
+                  ) : null}
+                  <Button size="sm" variant="quiet" onClick={() => queue().remove(item.key)} aria-label={`${t.upload.remove}: ${item.name}`}>
+                    {t.upload.remove}
+                  </Button>
+                </span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </>
   );
 }

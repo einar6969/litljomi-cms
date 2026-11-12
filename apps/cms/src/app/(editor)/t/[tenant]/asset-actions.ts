@@ -1,7 +1,10 @@
 'use server';
 
 import { z } from 'zod';
+import { MAX_QUERY_LENGTH } from '@/editor/entry-list-filter';
+import { MAX_LIBRARY_PAGE } from '@/editor/media/library-filter';
 import { authOrError, hasSession } from '@/editor/server/entry-context';
+import { loadPickerFiles } from '@/editor/server/library';
 import { inspectImage } from '@/editor/server/image-metadata';
 import { ensureThumbnail } from '@/editor/server/thumbnail';
 import { EXTENSION_BY_MIME, MEDIA_PRIVATE_BUCKET, previewUrl, SAFE_FILENAME } from '@/editor/upload';
@@ -38,6 +41,9 @@ export type AssetPreviewResult =
   | { ok: false; code: Failure };
 export type EnsureThumbnailResult = { ok: true; url: string } | { ok: false; code: Failure };
 export type UpdateAssetResult = { ok: true } | { ok: false; code: Failure };
+/** An image as the library picker lists it: a signed URL of its thumbnail, or null when it has none yet. */
+export type PickerFile = { id: string; filename: string; defaultAlt: string | null; width: number | null; height: number | null; bytes: number; thumbUrl: string | null };
+export type PickerFilesResult = { ok: true; files: PickerFile[]; hasMore: boolean } | { ok: false; code: Failure };
 
 const registerArgs = z.object({
   tenantSlug: z.string(),
@@ -212,6 +218,46 @@ export async function updateAssetTextAction(id: string, texts: AssetTexts): Prom
     const { error, status } = await saveAssetText(client, args.data.id, args.data.texts);
     if (error) return { ok: false, code: authOrError({ error, status }) };
     return { ok: true };
+  } catch {
+    return { ok: false, code: 'error' };
+  }
+}
+
+const pickerArgs = z.object({
+  tenantSlug: z.string(),
+  q: z.string().max(MAX_QUERY_LENGTH),
+  page: z.number().int().min(1).max(MAX_LIBRARY_PAGE),
+});
+
+/**
+ * The library in pick mode, for an image field or a list of images (docs/plans/media-library.md
+ * section 6.3, slice L6): the tenant's images, newest first, narrowed by the search (trimmed), every
+ * page of 60 up to `page`, with their thumbnails signed (`loadPickerFiles`). The tenant comes only
+ * from `api.my_tenants` and must be active; RLS decides what `api.asset_list` returns. A database
+ * error answers the generic error, never an empty list.
+ */
+export async function pickerFilesAction(tenantSlug: string, q: string, page: number): Promise<PickerFilesResult> {
+  const args = pickerArgs.safeParse({ tenantSlug, q, page });
+  if (!args.success) return { ok: false, code: 'invalid' };
+  try {
+    const client = await createEditorClient();
+    if (!(await hasSession(client))) return { ok: false, code: 'auth' };
+    const tenant = await resolveTenant(client, args.data.tenantSlug);
+    if (!tenant || !isActive(tenant)) return { ok: false, code: 'invalid' };
+    const listed = await loadPickerFiles(client, tenant.id, args.data.q.trim(), args.data.page);
+    return {
+      ok: true,
+      hasMore: listed.hasMore,
+      files: listed.files.map((f) => ({
+        id: f.id,
+        filename: f.filename,
+        defaultAlt: f.default_alt,
+        width: f.width,
+        height: f.height,
+        bytes: f.bytes,
+        thumbUrl: f.thumb_path === null ? null : (listed.thumbUrls.get(f.thumb_path) ?? null),
+      })),
+    };
   } catch {
     return { ok: false, code: 'error' };
   }

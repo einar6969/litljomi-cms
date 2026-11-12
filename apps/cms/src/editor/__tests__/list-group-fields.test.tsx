@@ -16,7 +16,14 @@ vi.mock('@/lib/supabase/browser', () => ({ createBrowserEditorClient: () => ({})
 vi.mock('@/app/(editor)/t/[tenant]/actions', () => ({ saveDraftAction, loadDraftAction: vi.fn(), setSlugAction: vi.fn(), restoreRevisionAction: vi.fn() }));
 vi.mock('@/app/(editor)/t/[tenant]/reference-actions', () => ({ referenceOptionsAction: vi.fn(async () => ({ ok: true, options: [], truncated: false })) }));
 vi.mock('@/app/(editor)/t/[tenant]/publish-actions', () => ({ requestPublishAction: vi.fn(), requestUnpublishAction: vi.fn() }));
-vi.mock('@/app/(editor)/t/[tenant]/asset-actions', () => ({ registerAssetAction: vi.fn(), assetPreviewAction: vi.fn(), updateAssetAction: vi.fn() }));
+const assetActions = vi.hoisted(() => ({
+  registerAssetAction: vi.fn(),
+  assetPreviewAction: vi.fn(),
+  updateAssetAction: vi.fn(),
+  pickerFilesAction: vi.fn(),
+  ensureThumbnailAction: vi.fn(),
+}));
+vi.mock('@/app/(editor)/t/[tenant]/asset-actions', () => assetActions);
 
 const { ListField, listHelp, moveItem } = await import('../form/fields/ListField');
 const { GroupField } = await import('../form/fields/GroupField');
@@ -27,6 +34,11 @@ const { EditorTenantProvider } = await import('../form/tenant-context');
 const { getType } = await import('@/modules/registry');
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+// jsdom has the element but not its modal behaviour (the library picker, media library L6).
+HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+  this.setAttribute('open', '');
+};
 
 const TENANT = { id: '00000000-0000-4000-8000-0000000000f1', slug: 'demo' };
 const ENTRY = '00000000-0000-4000-8000-0000000000e1';
@@ -108,7 +120,7 @@ describe('the field registry', () => {
     expect(fieldRegistry.group).toBe(GroupField);
   });
 
-  it("describes the demo event's program group with its nested lists of references and videos", () => {
+  it("describes the demo event's program group with its nested lists of references, videos and images", () => {
     const program = describeFields(getType('demo', 'event')!).find((f) => f.key === 'program');
     expect(program).toEqual({
       key: 'program',
@@ -128,6 +140,8 @@ describe('the field registry', () => {
         },
         // A11: the video kind inside a list inside a group.
         { key: 'videos', kind: 'list', label: 'Videos', required: false, max: 3, of: { key: 'videos', kind: 'video', label: 'Video', required: true, still: 'optional' } },
+        // Media library L6: a list of images, the bulk add's case.
+        { key: 'gallery', kind: 'list', label: 'Gallery', required: false, max: 12, of: { key: 'gallery', kind: 'image', label: 'Photo', required: true } },
       ],
     });
     // Only plain data crosses to the client.
@@ -269,6 +283,81 @@ describe('ListField', () => {
     expect($<HTMLInputElement>('#field-tags-k1')?.value).toBe('abc');
     // Renumbered by its new place; the marker follows the label text.
     expect($('label[for="field-tags-k1"]')?.textContent).toBe(`${itemName(1, 'Stig')}*`);
+  });
+});
+
+describe('a list of images (media library L6)', () => {
+  const imageItem: FieldDescriptor = { key: 'gallery', kind: 'image', label: 'Mynd', required: true };
+  const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+  const libraryFile = (n: number) => ({ id: id(n), filename: `m${n}.jpg`, defaultAlt: n === 2 ? 'Önnur' : null, width: 4, height: 3, bytes: 9, thumbUrl: null });
+  const stored = (n: number, alt = '') => ({ _key: `k${n}`, value: { _ref: id(n), _kind: 'asset', alt } });
+  const dialog = () => document.querySelector<HTMLDialogElement>('dialog');
+
+  beforeEach(() => {
+    assetActions.assetPreviewAction.mockResolvedValue({ ok: false, code: 'error' });
+    assetActions.ensureThumbnailAction.mockResolvedValue({ ok: false, code: 'error' });
+    assetActions.pickerFilesAction.mockResolvedValue({ ok: true, hasMore: false, files: [1, 2, 3, 4].map(libraryFile) });
+  });
+
+  /** Opens "Bæta við úr safni", selects the library's files by number in that order and confirms. */
+  async function pick(...numbers: number[]) {
+    await click(buttonNamed(t.editor.list.addFromLibrary)!);
+    expect(dialog()).not.toBeNull();
+    await act(async () => vi.waitFor(() => expect(dialog()!.querySelectorAll('[role="option"]')).toHaveLength(4)));
+    const options = [...dialog()!.querySelectorAll<HTMLElement>('[role="option"]')];
+    for (const n of numbers) await click(options[n - 1]!);
+    await click(dialog()!.querySelector<HTMLButtonElement>('[data-testid="picker-confirm"]')!);
+    expect(dialog()).toBeNull();
+  }
+
+  it('offers "Bæta við úr safni" beside "Bæta við" for a list of images only', async () => {
+    await renderList([], { of: imageItem, label: 'Myndir' });
+    expect(buttonNamed(t.editor.list.add)).toBeDefined();
+    expect(buttonNamed(t.editor.list.addFromLibrary)).toBeDefined();
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await renderList(items('a'));
+    expect(buttonNamed(t.editor.list.addFromLibrary)).toBeUndefined();
+  });
+
+  it('appends the chosen files in the order chosen, each a new item with its default alt text', async () => {
+    const { value } = await renderList([stored(9, 'Fyrir')], { of: imageItem, label: 'Myndir' });
+    await pick(3, 2, 1);
+    const list = value() as { _key: string; value: unknown }[];
+    expect(list.map((i) => i.value)).toEqual([
+      { _ref: id(9), _kind: 'asset', alt: 'Fyrir' },
+      { _ref: id(3), _kind: 'asset', alt: '' },
+      { _ref: id(2), _kind: 'asset', alt: 'Önnur' },
+      { _ref: id(1), _kind: 'asset', alt: '' },
+    ]);
+    expect(new Set(list.map((i) => i._key)).size).toBe(4);
+    expect(assetActions.pickerFilesAction).toHaveBeenCalledWith(TENANT.slug, '', 1);
+    // The dialog was a list's, for several files.
+    expect($('[data-testid="list-no-room"]')).toBeNull();
+  });
+
+  it("takes what fits under the list's max and says how many there was room for", async () => {
+    const { value } = await renderList([stored(9)], { of: imageItem, label: 'Myndir', max: 3 });
+    await pick(1, 2, 3, 4);
+    expect((value() as { value: { _ref: string } }[]).map((i) => i.value._ref)).toEqual([id(9), id(1), id(2)]);
+    const said = t.editor.list.noRoom.replace('{n}', '2');
+    expect($('[data-testid="list-no-room"]')?.textContent).toBe(said);
+    expect($('[data-testid="list-announcement"]')?.textContent).toBe(said);
+    // Full now: neither way of adding is offered.
+    expect(buttonNamed(t.editor.list.addFromLibrary)?.disabled).toBe(true);
+    expect(buttonNamed(t.editor.list.add)?.disabled).toBe(true);
+  });
+
+  it('removes the item when its image is removed, instead of leaving an empty item (probe section 14, item 6)', async () => {
+    const { value } = await renderList([stored(1), stored(2)], { of: imageItem, label: 'Myndir' });
+    const removeImage = $$<HTMLButtonElement>('button').filter((b) => b.textContent === t.editor.image.remove);
+    expect(removeImage).toHaveLength(2);
+    await click(removeImage[0]!);
+    expect(value()).toEqual([stored(2)]);
+    expect($('[data-testid="list-announcement"]')?.textContent).toBe(t.editor.list.removed.replace('{item}', 'Mynd 1'));
+    expect(document.activeElement).toBe(handleOf(itemEls()[0]!));
+    await click($$<HTMLButtonElement>('button').find((b) => b.textContent === t.editor.image.remove)!);
+    expect(value()).toBeUndefined();
   });
 });
 

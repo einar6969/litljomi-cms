@@ -54,6 +54,17 @@ describe('demo module', () => {
     const unknown = { ...clip, value: { ...clip.value, url: 'https://example.com/1' } };
     expect(event.publishValidator().safeParse({ ...fixture, program: { videos: [unknown] } }).success).toBe(false);
   });
+  it('has an optional list of up to twelve images in its program group (media library L6)', () => {
+    const program = event.fields.program as AnyFieldKind & { fields: Record<string, AnyFieldKind & { of?: AnyFieldKind; max?: number }> };
+    expect(program.fields.gallery).toMatchObject({ kind: 'list', required: false, max: 12 });
+    expect(program.fields.gallery!.of).toMatchObject({ kind: 'image', required: false });
+    const photo = (n: number) => ({ _key: `g${n}`, value: { _ref: `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`, _kind: 'asset', alt: '' } });
+    const twelve = Array.from({ length: 12 }, (_, i) => photo(i + 1));
+    expect(event.publishValidator().safeParse({ ...fixture, program: { gallery: twelve } }).success).toBe(true);
+    expect(event.publishValidator().safeParse({ ...fixture, program: { gallery: [...twelve, photo(13)] } }).success).toBe(false);
+    // An empty item is refused on publish.
+    expect(event.publishValidator().safeParse({ ...fixture, program: { gallery: [{ _key: 'g1', value: null }] } }).success).toBe(false);
+  });
   it('has an optional field of each scalar kind, filled in its fixture (M2-03)', () => {
     const byKind = Object.fromEntries(Object.entries<AnyFieldKind>(event.fields).map(([k, f]) => [f.kind, { key: k, f }]));
     for (const kind of ['number', 'boolean', 'select', 'datetime']) {

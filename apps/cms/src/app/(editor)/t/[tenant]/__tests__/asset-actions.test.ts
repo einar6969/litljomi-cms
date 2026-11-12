@@ -8,6 +8,10 @@ type Signed = { data: { signedUrl: string } | null; error: { message: string } |
 const state = vi.hoisted(() => ({
   user: { id: 'u1' } as { id: string } | null,
   tables: {} as Record<string, Answer>,
+  /** A table's answer to a listing (`range`), as against `maybeSingle`. */
+  lists: {} as Record<string, Answer>,
+  /** The answer of `createSignedUrls`. */
+  signedMany: { data: [], error: null } as { data: { path: string; signedUrl: string; error: string | null }[] | null; error: { message: string } | null },
   rpc: {} as Record<string, Answer>,
   object: null as { data: Blob | null; error: { message: string } | null } | null,
   signed: { data: { signedUrl: 'http://127.0.0.1:54321/storage/v1/object/sign/media-private/x?token=t' }, error: null } as Signed | ((path: string) => Signed),
@@ -26,6 +30,10 @@ const fake = {
     const chain = {
       select: (columns: string) => ((query.columns = columns), chain),
       eq: (column: string, value: unknown) => (query.filters.push([column, value]), chain),
+      is: (column: string, value: unknown) => (query.filters.push([`is:${column}`, value]), chain),
+      ilike: (column: string, value: unknown) => (query.filters.push([`ilike:${column}`, value]), chain),
+      order: (column: string, options: unknown) => (query.filters.push([`order:${column}`, options]), chain),
+      range: async (from: number, to: number) => (query.filters.push(['range', [from, to]]), { data: [], error: null, ...state.lists[table] }),
       maybeSingle: async () => ({ data: null, error: null, ...state.tables[table] }),
     };
     return chain;
@@ -40,6 +48,7 @@ const fake = {
       createSignedUrl: async (...args: unknown[]) => (
         state.storage.push({ bucket, method: 'createSignedUrl', args }), typeof state.signed === 'function' ? state.signed(args[0] as string) : state.signed
       ),
+      createSignedUrls: async (...args: unknown[]) => (state.storage.push({ bucket, method: 'createSignedUrls', args }), state.signedMany),
       upload: async (...args: unknown[]) => {
         state.storage.push({ bucket, method: 'upload', args });
         if (state.upload instanceof Error) throw state.upload;
@@ -50,7 +59,7 @@ const fake = {
 };
 vi.mock('@/lib/supabase/server', () => ({ createEditorClient: vi.fn(async () => fake) }));
 
-const { assetPreviewAction, ensureThumbnailAction, registerAssetAction, updateAssetAction, updateAssetTextAction } = await import('../asset-actions');
+const { assetPreviewAction, ensureThumbnailAction, pickerFilesAction, registerAssetAction, updateAssetAction, updateAssetTextAction } = await import('../asset-actions');
 
 const TENANT_ID = '00000000-0000-4000-8000-0000000000f1';
 const OTHER_TENANT = '00000000-0000-4000-8000-0000000000f2';
@@ -92,6 +101,8 @@ beforeEach(() => {
   state.calls = [];
   state.queries = [];
   state.storage = [];
+  state.lists = {};
+  state.signedMany = { data: [], error: null };
   state.tables = {
     my_tenants: { data: { id: TENANT_ID, slug: SLUG, name: 'T', status: 'active' } },
     asset_list: { data: row() },
@@ -533,5 +544,93 @@ describe('updateAssetTextAction', () => {
     state.user = { id: 'u1' };
     state.rpc.update_asset_text = { error: { code: 'PGRST301', message: 'JWT expired' }, status: 401 };
     await expect(updateAssetTextAction(ASSET, texts)).resolves.toEqual({ ok: false, code: 'auth' });
+  });
+});
+
+describe('pickerFilesAction', () => {
+  // Media library L6 (docs/plans/media-library.md section 6.3): the library in pick mode.
+  const listed = (o: Record<string, unknown> = {}) => ({
+    id: ASSET,
+    filename: 'braud.jpg',
+    mime: 'image/jpeg',
+    kind: 'image',
+    width: 40,
+    height: 30,
+    bytes: 1234,
+    created_at: '2026-11-01T12:00:00Z',
+    default_alt: 'Brauð',
+    thumb_path: THUMB,
+    ...o,
+  });
+  const OTHER = '00000000-0000-4000-8000-0000000000a2';
+  const listing = () => state.queries.find((q) => q.table === 'asset_list');
+
+  it("lists the tenant's images in the library, newest first, a search escaped, with their thumbnails signed in one call", async () => {
+    state.lists.asset_list = { data: [listed(), listed({ id: OTHER, filename: 'kaka.png', default_alt: null, thumb_path: null })] };
+    state.signedMany = { data: [{ path: THUMB, signedUrl: SIGNED, error: null }], error: null };
+    await expect(pickerFilesAction(SLUG, '  50%_brauð ', 1)).resolves.toEqual({
+      ok: true,
+      hasMore: false,
+      files: [
+        { id: ASSET, filename: 'braud.jpg', defaultAlt: 'Brauð', width: 40, height: 30, bytes: 1234, thumbUrl: SIGNED },
+        { id: OTHER, filename: 'kaka.png', defaultAlt: null, width: 40, height: 30, bytes: 1234, thumbUrl: null },
+      ],
+    });
+    expect(listing()!.filters).toEqual([
+      ['tenant_id', TENANT_ID],
+      ['kind', 'image'],
+      ['is:archived_at', null],
+      ['ilike:search_text', '%50\\%\\_brauð%'],
+      ['order:created_at', { ascending: false }],
+      ['order:id', { ascending: true }],
+      ['range', [0, 60]],
+    ]);
+    expect(state.storage).toEqual([{ bucket: 'media-private', method: 'createSignedUrls', args: [[THUMB], 600] }]);
+  });
+
+  it('reads every page up to the one asked for, one row more to know whether there are more', async () => {
+    state.lists.asset_list = { data: Array.from({ length: 121 }, (_, i) => listed({ id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`, thumb_path: null })) };
+    const result = await pickerFilesAction(SLUG, '', 2);
+    expect(result).toMatchObject({ ok: true, hasMore: true });
+    expect(result.ok && result.files).toHaveLength(120);
+    expect(listing()!.filters).toContainEqual(['range', [0, 120]]);
+    expect(listing()!.filters.some(([c]) => c.startsWith('ilike:'))).toBe(false);
+  });
+
+  it('rejects a page out of range, a search past its limit and arguments that are not what they should be, before reading anything', async () => {
+    for (const args of [
+      [SLUG, '', 0],
+      [SLUG, '', 1.5],
+      [SLUG, '', 1000],
+      [SLUG, 'x'.repeat(201), 1],
+      [SLUG, null, 1],
+      [{}, '', 1],
+    ] as const) {
+      await expect(pickerFilesAction(...(args as unknown as [string, string, number]))).resolves.toEqual({ ok: false, code: 'invalid' });
+    }
+    expect(state.queries).toEqual([]);
+  });
+
+  it('lists nothing for a tenant the editor is not a member of, or a suspended one', async () => {
+    state.tables.my_tenants = { data: null };
+    await expect(pickerFilesAction(SLUG, '', 1)).resolves.toEqual({ ok: false, code: 'invalid' });
+    state.tables.my_tenants = { data: { id: TENANT_ID, slug: SLUG, name: 'T', status: 'suspended' } };
+    await expect(pickerFilesAction(SLUG, '', 1)).resolves.toEqual({ ok: false, code: 'invalid' });
+    expect(listing()).toBeUndefined();
+  });
+
+  it('answers auth without a session, and the generic error when the database refuses, never an empty list', async () => {
+    state.user = null;
+    await expect(pickerFilesAction(SLUG, '', 1)).resolves.toEqual({ ok: false, code: 'auth' });
+    state.user = { id: 'u1' };
+    state.lists.asset_list = { data: null, error: { code: '57014', message: 'canceling statement due to statement timeout' } };
+    await expect(pickerFilesAction(SLUG, '', 1)).resolves.toEqual({ ok: false, code: 'error' });
+  });
+
+  it('lists a file whose thumbnail cannot be signed without one, for the browser to ask for', async () => {
+    state.lists.asset_list = { data: [listed()] };
+    state.signedMany = { data: null, error: { message: 'boom' } };
+    const result = await pickerFilesAction(SLUG, '', 1);
+    expect(result.ok && result.files[0]!.thumbUrl).toBeNull();
   });
 });

@@ -55,6 +55,26 @@ export async function loadLibraryFiles(
   return { files, hasMore: rows.length > files.length, thumbUrls: await signThumbnails(client, files) };
 }
 
+/**
+ * The images the library picker lists (docs/plans/media-library.md section 6.3, slice L6): the
+ * tenant's images in the library, newest first, narrowed by the search, every page up to `page`,
+ * and whether there are more; thumbnails signed as for the library page.
+ */
+export async function loadPickerFiles(
+  client: SupabaseClient,
+  tenantId: string,
+  q: string,
+  page: number,
+): Promise<{ files: ListedFile[]; hasMore: boolean; thumbUrls: Map<string, string> }> {
+  const { from, to } = libraryRange(page);
+  const query = applyLibraryFilter(client.from('asset_list').select(LIST_COLUMNS).eq('tenant_id', tenantId).eq('kind', 'image'), { q, filter: null });
+  const { data, error } = await orderLibrary(query, 'newest').range(from, to);
+  if (error) throw new Error(`asset_list: ${error.code}`);
+  const rows = (data ?? []) as ListedFile[];
+  const files = rows.slice(0, page * LIBRARY_PAGE_SIZE);
+  return { files, hasMore: rows.length > files.length, thumbUrls: await signThumbnails(client, files) };
+}
+
 /** One call signs every listed thumbnail, valid 600 seconds like every editor preview (§5.6). */
 async function signThumbnails(client: SupabaseClient, files: readonly ListedFile[]): Promise<Map<string, string>> {
   const paths = files.flatMap((f) => (f.thumb_path === null ? [] : [f.thumb_path]));

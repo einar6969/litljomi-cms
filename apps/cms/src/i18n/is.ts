@@ -215,6 +215,9 @@ export const is = {
       range: 'Minnst {min} og mest {max} atriði.',
       atLeast: 'Minnst {min} atriði.',
       atMost: 'Mest {max} atriði.',
+      // Media library L6, DRAFT: a list of images takes several files from the library at once.
+      addFromLibrary: 'Bæta við úr safni',
+      noRoom: 'Aðeins var pláss fyrir {n} í viðbót. Hinum var sleppt.',
     },
     outdated: {
       title: 'Uppkastið er á eldri útgáfu efnisflokksins',
@@ -243,7 +246,10 @@ export const is = {
       cannot: 'Ekki er hægt að endurheimta þessa birtingu sjálfkrafa. Hafðu samband við kerfisstjóra.',
     },
     image: {
-      choose: 'Velja mynd',
+      // Media library L6, DRAFT: changes the approved "Velja mynd", so the two buttons read apart.
+      choose: 'Hlaða upp mynd',
+      // Media library L6, DRAFT.
+      fromLibrary: 'Velja úr safni',
       replace: 'Skipta um mynd',
       remove: 'Fjarlægja mynd',
       uploading: 'Hleð upp mynd…',
@@ -445,6 +451,19 @@ export const is = {
     failedOne: 'Ekki tókst að hlaða upp {f} skrá.',
     failedMany: 'Ekki tókst að hlaða upp {f} skrám.',
     tooMany: 'Mest er hægt að hlaða upp {max} skrám í einu. Þeim sem voru umfram var sleppt.',
+  },
+  // Media library L6: the library picker in forms, DRAFT. `{n}` is filled in by the code; which of
+  // a pair of words applies is decided in editor/media/picker-selection.ts.
+  picker: {
+    titleOne: 'Velja mynd úr safni',
+    titleMany: 'Velja myndir úr safni',
+    confirmOne: 'Velja mynd',
+    confirmMany: 'Velja {n} myndir',
+    selectedOne: '{n} mynd valin',
+    selectedMany: '{n} myndir valdar',
+    empty: 'Engar myndir í safninu enn. Hladdu upp mynd til að byrja.',
+    // The picker's files failed to load. Not in the plan's list.
+    loadError: 'Ekki tókst að sækja myndirnar. Reyndu aftur.',
   },
   notFound: {
     title: 'Síðan fannst ekki',
