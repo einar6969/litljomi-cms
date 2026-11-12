@@ -4,11 +4,12 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpath
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   MANIFEST_FILE,
   PACKAGE_DIRS,
   USAGE,
+  childEnv,
   filesNotInCommit,
   isInside,
   olderTarballs,
@@ -33,12 +34,14 @@ function tempDir(prefix: string): string {
   return dir;
 }
 afterEach(() => {
+  vi.unstubAllEnvs();
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
 function git(cwd: string, ...args: string[]): string {
   const identity = ['-c', 'user.name=pack-sdk test', '-c', 'user.email=pack-sdk@example.invalid', '-c', 'commit.gpgsign=false'];
-  return execFileSync('git', [...identity, ...args], { cwd, encoding: 'utf8' });
+  // Without git's own variables, so these commands can only reach the repository at `cwd`.
+  return execFileSync('git', [...identity, ...args], { cwd, encoding: 'utf8', env: childEnv(process.env) });
 }
 
 function write(root: string, files: Record<string, string>): void {
@@ -90,6 +93,15 @@ describe('isInside', () => {
     expect(isInside('/a/repo', '/a')).toBe(false);
     expect(isInside('/a/repo', '/a/site/vendor')).toBe(false);
     expect(isInside('/a/repo', '/a/repo-site/vendor')).toBe(false);
+  });
+});
+
+describe('childEnv', () => {
+  it("drops git's own variables, keeps the rest and turns npm's update check off", () => {
+    expect(childEnv({ PATH: '/bin', GIT_DIR: '/elsewhere/.git', GIT_INDEX_FILE: '/elsewhere/index' })).toEqual({
+      PATH: '/bin',
+      npm_config_update_notifier: 'false',
+    });
   });
 });
 
@@ -216,6 +228,16 @@ describe('packSdk', () => {
     expect(packSdk({ repoRoot: repo, destination }).exitCode).toBe(0);
     const listing = execFileSync('tar', ['-tzf', join(destination, 'fixture-cms-sdk-1.2.3.tgz')], { encoding: 'utf8' });
     expect(listing.trim().split('\n').sort()).toEqual(['package/package.json', 'package/src/index.ts']);
+  });
+
+  it('reads the repository it was given, also when GIT_DIR names another, as inside a hook', () => {
+    const repo = fixtureRepo();
+    write(repo, { 'packages/sdk/src/index.ts': 'export const sdk = 2;\n' });
+    vi.stubEnv('GIT_DIR', join(tempDir('pack-sdk-elsewhere-'), '.git'));
+    const result = packSdk({ repoRoot: repo, destination: tempDir('pack-sdk-site-') });
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain('uncommitted changes');
+    expect(result.output).toContain('packages/sdk/src/index.ts');
   });
 
   it('ignores uncommitted changes outside the two packages', PACKS, () => {

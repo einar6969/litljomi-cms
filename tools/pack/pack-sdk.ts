@@ -97,13 +97,18 @@ function realPath(path: string): string {
   return join(realpathSync(existing), ...missing);
 }
 
+/**
+ * The environment for `git` and `npm`: without git's own variables, so git reads the repository at
+ * the working directory and no other (inside a hook, GIT_DIR and GIT_INDEX_FILE name the hook's),
+ * and with npm's update check off.
+ */
+export function childEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const kept = Object.fromEntries(Object.entries(env).filter(([name]) => !name.startsWith('GIT_')));
+  return { ...kept, npm_config_update_notifier: 'false' };
+}
+
 function run(command: string, args: string[], cwd: string): string {
-  return execFileSync(command, args, {
-    cwd,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, npm_config_update_notifier: 'false' },
-  });
+  return execFileSync(command, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: childEnv(process.env) });
 }
 
 function pack(repoRoot: string, destination: string): string[] {
