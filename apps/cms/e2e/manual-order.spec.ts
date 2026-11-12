@@ -36,6 +36,15 @@ const rows = (page: Page): Locator => page.locator('table.entry-table tbody tr')
 const titles = (page: Page) => rows(page).locator('td a').allTextContents();
 const handle = (page: Page, title: string) => page.getByRole('button', { name: label(o.handle, title), exact: true });
 
+/**
+ * Reloads the list and waits for hydration: the order controls are disabled until then, and
+ * `focus()` and raw mouse presses do not wait for a control to be enabled the way `click()` does.
+ */
+async function reload(page: Page, title: string): Promise<void> {
+  await page.reload();
+  await expect(handle(page, title)).toBeEnabled();
+}
+
 test('a manually ordered list: newest first, moved by button, key and drag at 1440 and 375 px, each saved at once', async ({ page }) => {
   const run = randomBytes(4).toString('hex');
   const [a, b, c] = ['Alfa', 'Beta', 'Gamma'].map((n) => `${n} ${run}`) as [string, string, string];
@@ -55,7 +64,7 @@ test('a manually ordered list: newest first, moved by button, key and drag at 14
     await page.getByRole('button', { name: label(o.moveDown, c), exact: true }).click();
     await expect.poll(() => titles(page)).toEqual([b, c, a]);
     await expect(page.getByTestId('order-status')).toHaveText(label(o.moved, c).replace('{n}', '2').replace('{total}', '3'), SAVED);
-    await page.reload();
+    await reload(page, a);
     await expect.poll(() => titles(page)).toEqual([b, c, a]);
   });
 
@@ -65,7 +74,7 @@ test('a manually ordered list: newest first, moved by button, key and drag at 14
     await expect.poll(() => titles(page)).toEqual([b, a, c]);
     await expect(handle(page, a)).toBeFocused();
     await expect(page.getByTestId('order-status')).toHaveText(label(o.moved, a).replace('{n}', '2').replace('{total}', '3'), SAVED);
-    await page.reload();
+    await reload(page, c);
     await expect.poll(() => titles(page)).toEqual([b, a, c]);
   });
 
@@ -80,13 +89,13 @@ test('a manually ordered list: newest first, moved by button, key and drag at 14
     await page.mouse.up();
     await expect.poll(() => titles(page)).toEqual([c, b, a]);
     await expect(page.getByTestId('order-status')).toHaveText(label(o.moved, c).replace('{n}', '1').replace('{total}', '3'), SAVED);
-    await page.reload();
+    await reload(page, b);
     await expect.poll(() => titles(page)).toEqual([c, b, a]);
   });
 
   await test.step('at 375 px: every control is a 44 px target, nothing overflows, and a move works', async () => {
     await page.setViewportSize({ width: 375, height: 800 });
-    await page.reload();
+    await reload(page, b);
     for (const name of [label(o.handle, b), label(o.moveUp, b), label(o.moveDown, b)]) {
       const box = await page.getByRole('button', { name, exact: true }).boundingBox();
       expect(box, name).not.toBeNull();
@@ -98,7 +107,7 @@ test('a manually ordered list: newest first, moved by button, key and drag at 14
     await page.getByRole('button', { name: label(o.moveUp, b), exact: true }).click();
     await expect.poll(() => titles(page)).toEqual([b, c, a]);
     await expect(page.getByTestId('order-status')).toHaveText(label(o.moved, b).replace('{n}', '1').replace('{total}', '3'), SAVED);
-    await page.reload();
+    await reload(page, a);
     await expect.poll(() => titles(page)).toEqual([b, c, a]);
 
     // Dragging at 375 px, as a mouse would (a real finger was not tried).
@@ -110,7 +119,7 @@ test('a manually ordered list: newest first, moved by button, key and drag at 14
     await page.mouse.move(to.x + to.width / 4, to.y + to.height / 4, { steps: 8 });
     await page.mouse.up();
     await expect.poll(() => titles(page)).toEqual([a, b, c]);
-    await page.reload();
+    await reload(page, a);
     await expect.poll(() => titles(page)).toEqual([a, b, c]);
     await page.setViewportSize({ width: 1440, height: 900 });
   });
@@ -125,7 +134,7 @@ test('a manually ordered list: newest first, moved by button, key and drag at 14
     await expect(page.getByRole('alert')).toHaveText(o.failed, SAVED);
     await expect.poll(() => titles(page)).toEqual([a, b, c]);
     await page.unroute(listPage);
-    await page.reload();
+    await reload(page, a);
     await expect.poll(() => titles(page)).toEqual([a, b, c]);
   });
 
