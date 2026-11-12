@@ -19,14 +19,16 @@ type Row = {
   focal_x: number | null;
   focal_y: number | null;
   default_alt: string | null;
-  original_path: string;
+  thumb_path: string | null;
 };
 
 // One asset's detail (spec §5.6), linked from the image field. The asset is read from
 // api.asset_list under the editor's session, filtered to the tenant of the URL: an asset of another
-// tenant, an archived one, or a malformed id is simply not found. The original is shown through a
-// short-lived signed URL. `assets` is a static segment beside [type], so no content type may be
-// named "assets" (the module registry's tests check this).
+// tenant, an archived one, or a malformed id is simply not found. The file is shown by its
+// thumbnail through a short-lived signed URL; for a file without one the page signs nothing and
+// the detail asks for the preview, which makes the thumbnail (asset-actions.ts). Rendering never
+// writes. `assets` is a static segment beside [type], so no content type may be named "assets"
+// (the module registry's tests check this).
 export default async function AssetPage({ params }: Props) {
   const { tenant: slug, assetId } = await params;
   if (!assetIdShape.safeParse(assetId).success) notFound();
@@ -36,7 +38,7 @@ export default async function AssetPage({ params }: Props) {
   const client = await createEditorClient();
   const { data, error } = await client
     .from('asset_list')
-    .select('id, filename, width, height, focal_x, focal_y, default_alt, original_path')
+    .select('id, filename, width, height, focal_x, focal_y, default_alt, thumb_path')
     .eq('id', assetId)
     .eq('tenant_id', tenant.id)
     .is('archived_at', null)
@@ -44,8 +46,9 @@ export default async function AssetPage({ params }: Props) {
   if (error) throw new Error(`asset_list: ${error.code}`);
   if (!data) notFound();
   const asset = data as Row;
-  const url = await previewUrl(client, asset.original_path);
-  if (!url) throw new Error('asset preview: signing failed');
+  // A thumbnail that cannot be signed (its object gone) is left to the preview action too, which
+  // falls back to the original.
+  const url = asset.thumb_path === null ? null : await previewUrl(client, asset.thumb_path);
   const tenantPath = `/t/${encodeURIComponent(tenant.slug)}`;
   return (
     <>

@@ -8,7 +8,10 @@ import { fraction, moveFocal, percentOf, type FocalPoint } from './focal-point';
 type Props = {
   /** The base of the ids inside: `${id}-focal`, `${id}-focal-help`, `${id}-preview`. */
   id: string;
-  /** A signed URL of the private original (§5.6), not a public file. */
+  /**
+   * A signed URL of the file's private thumbnail (§5.6), or of its original when it cannot have
+   * one; never a public file. The point is a fraction of the shown image, so either gives the same.
+   */
   url: string;
   alt: string;
   /** The saved focal point, or null when the asset has none. */

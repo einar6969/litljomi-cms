@@ -136,8 +136,16 @@ describe('FocalPointPicker', () => {
 });
 
 describe('AssetDetail', () => {
-  const detail = (o: { focal?: { x: number; y: number } | null; defaultAlt?: string | null } = {}) => (
-    <AssetDetail assetId={ASSET} url="http://127.0.0.1:54321/x" filename="Rúgbrauð.jpg" width={64} height={48} focal={o.focal ?? null} defaultAlt={o.defaultAlt ?? null} />
+  const detail = (o: { focal?: { x: number; y: number } | null; defaultAlt?: string | null; url?: string | null } = {}) => (
+    <AssetDetail
+      assetId={ASSET}
+      url={o.url === undefined ? 'http://127.0.0.1:54321/x' : o.url}
+      filename="Rúgbrauð.jpg"
+      width={64}
+      height={48}
+      focal={o.focal ?? null}
+      defaultAlt={o.defaultAlt ?? null}
+    />
   );
   const saveButton = () => [...container.querySelectorAll('button')].find((b) => b.textContent === t.asset.saveDefaultAlt)!;
   async function type(input: HTMLInputElement, text: string) {
@@ -190,6 +198,29 @@ describe('AssetDetail', () => {
 
     actions.updateAssetAction.mockResolvedValue({ ok: false, code: 'auth' });
     await act(async () => picker.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1, clientX: 50, clientY: 50 })));
+    expect($('[data-testid="asset-notice"]')?.textContent).toBe(t.editor.signedOut);
+  });
+
+  it('asks for the preview of a file the page had no thumbnail for, and shows no image until it comes', async () => {
+    let answer: (value: unknown) => void = () => {};
+    actions.assetPreviewAction.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    await render(detail({ url: null }));
+    expect(actions.assetPreviewAction).toHaveBeenCalledWith(ASSET);
+    expect($('[data-testid="asset-preview"]')).toBeNull();
+    await act(async () => answer({ ok: true, url: 'http://127.0.0.1:54321/thumb', thumbnail: true, defaultAlt: null, focalX: null, focalY: null }));
+    expect($<HTMLImageElement>('[data-testid="asset-preview"]')!.src).toBe('http://127.0.0.1:54321/thumb');
+    expect($('[data-testid="asset-notice"]')).toBeNull();
+  });
+
+  it('says so when that preview cannot be had', async () => {
+    actions.assetPreviewAction.mockResolvedValue({ ok: false, code: 'error' });
+    await render(detail({ url: null }));
+    expect($('[data-testid="asset-preview"]')).toBeNull();
+    expect($('[data-testid="asset-notice"]')?.textContent).toBe(t.editor.image.previewError);
+    actions.assetPreviewAction.mockResolvedValue({ ok: false, code: 'auth' });
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await render(detail({ url: null }));
     expect($('[data-testid="asset-notice"]')?.textContent).toBe(t.editor.signedOut);
   });
 

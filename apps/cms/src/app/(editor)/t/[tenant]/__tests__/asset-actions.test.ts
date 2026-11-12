@@ -3,16 +3,15 @@ import sharp from 'sharp';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Answer = { data?: unknown; error?: { code?: string; message?: string } | null; status?: number };
+type Signed = { data: { signedUrl: string } | null; error: { message: string } | null };
 
 const state = vi.hoisted(() => ({
   user: { id: 'u1' } as { id: string } | null,
   tables: {} as Record<string, Answer>,
   rpc: {} as Record<string, Answer>,
   object: null as { data: Blob | null; error: { message: string } | null } | null,
-  signed: { data: { signedUrl: 'http://127.0.0.1:54321/storage/v1/object/sign/media-private/x?token=t' }, error: null } as {
-    data: { signedUrl: string } | null;
-    error: { message: string } | null;
-  },
+  signed: { data: { signedUrl: 'http://127.0.0.1:54321/storage/v1/object/sign/media-private/x?token=t' }, error: null } as Signed | ((path: string) => Signed),
+  upload: { error: null } as { error: { message: string } | null },
   calls: [] as { name: string; args: unknown }[],
   queries: [] as { table: string; columns: string; filters: [string, unknown][] }[],
   storage: [] as { bucket: string; method: string; args: unknown[] }[],
@@ -37,13 +36,16 @@ const fake = {
   storage: {
     from: (bucket: string) => ({
       download: async (...args: unknown[]) => (state.storage.push({ bucket, method: 'download', args }), state.object),
-      createSignedUrl: async (...args: unknown[]) => (state.storage.push({ bucket, method: 'createSignedUrl', args }), state.signed),
+      createSignedUrl: async (...args: unknown[]) => (
+        state.storage.push({ bucket, method: 'createSignedUrl', args }), typeof state.signed === 'function' ? state.signed(args[0] as string) : state.signed
+      ),
+      upload: async (...args: unknown[]) => (state.storage.push({ bucket, method: 'upload', args }), state.upload),
     }),
   },
 };
 vi.mock('@/lib/supabase/server', () => ({ createEditorClient: vi.fn(async () => fake) }));
 
-const { assetPreviewAction, registerAssetAction, updateAssetAction } = await import('../asset-actions');
+const { assetPreviewAction, ensureThumbnailAction, registerAssetAction, updateAssetAction } = await import('../asset-actions');
 
 const TENANT_ID = '00000000-0000-4000-8000-0000000000f1';
 const OTHER_TENANT = '00000000-0000-4000-8000-0000000000f2';
@@ -52,10 +54,33 @@ const registry = await import('@/modules/registry');
 const SLUG = registry.modules[0]!.tenant;
 const FILE = 'mynd.jpg';
 const PATH = `${TENANT_ID}/${ASSET}/${FILE}`;
+const THUMB = `${TENANT_ID}/${ASSET}/thumb/480.webp`;
+const SIGNED = 'http://127.0.0.1:54321/storage/v1/object/sign/media-private/x?token=t';
 
 const jpeg = new Uint8Array(await sharp({ create: { width: 40, height: 30, channels: 3, background: '#c87828' } }).jpeg().toBuffer());
 const png = new Uint8Array(await sharp({ create: { width: 8, height: 8, channels: 3, background: '#000' } }).png().toBuffer());
 const blobOf = (bytes: Uint8Array) => new Blob([Uint8Array.from(bytes)]);
+// A PNG one row past the thumbnail's pixel cap (100 megapixels): small to store, never decoded.
+const overCap = new Uint8Array(
+  await sharp({ create: { width: 10_000, height: 10_001, channels: 3, background: '#000' } }).png({ compressionLevel: 9 }).toBuffer(),
+);
+// A JPEG whose header is whole and whose pixels are cut off: registered, but no thumbnail.
+const wholeJpeg = new Uint8Array(await sharp({ create: { width: 800, height: 600, channels: 3, background: '#c87828' } }).jpeg().toBuffer());
+const truncated = wholeJpeg.slice(0, Math.floor(wholeJpeg.byteLength / 3));
+
+const row = (o: Record<string, unknown> = {}) => ({
+  id: ASSET,
+  tenant_id: TENANT_ID,
+  original_path: PATH,
+  thumb_path: null,
+  default_alt: 'Brauð',
+  focal_x: 0.5,
+  focal_y: 0.25,
+  ...o,
+});
+
+/** The thumbnail's upload: its path, body and options. */
+const thumbnailUpload = () => state.storage.find((c) => c.method === 'upload');
 
 beforeEach(() => {
   state.user = { id: 'u1' };
@@ -64,18 +89,20 @@ beforeEach(() => {
   state.storage = [];
   state.tables = {
     my_tenants: { data: { id: TENANT_ID, slug: SLUG, name: 'T', status: 'active' } },
-    asset_list: { data: { id: ASSET, tenant_id: TENANT_ID, original_path: PATH, default_alt: 'Brauð', focal_x: 0.5, focal_y: 0.25 } },
+    asset_list: { data: row() },
   };
-  state.rpc = { register_asset: { data: ASSET }, update_asset: {} };
+  state.rpc = { register_asset: { data: ASSET }, update_asset: {}, set_asset_thumbnail: {} };
   state.object = { data: blobOf(jpeg), error: null };
+  state.upload = { error: null };
+  state.signed = { data: { signedUrl: SIGNED }, error: null };
 });
 
 describe('registerAssetAction', () => {
   it('reads the uploaded object with the editor session and registers the metadata derived from its bytes', async () => {
     await expect(registerAssetAction(SLUG, ASSET, PATH, FILE)).resolves.toEqual({ ok: true, assetId: ASSET });
     expect(state.queries[0]).toEqual({ table: 'my_tenants', columns: 'id, slug, name, status', filters: [['slug', SLUG]] });
-    expect(state.storage).toEqual([{ bucket: 'media-private', method: 'download', args: [PATH] }]);
-    expect(state.calls).toEqual([
+    expect(state.storage[0]).toEqual({ bucket: 'media-private', method: 'download', args: [PATH] });
+    expect(state.calls[0]).toEqual(
       {
         name: 'register_asset',
         args: {
@@ -90,7 +117,59 @@ describe('registerAssetAction', () => {
           p_sha256: createHash('sha256').update(jpeg).digest('hex'),
         },
       },
-    ]);
+    );
+  });
+
+  it('then makes the thumbnail from the same bytes, stores it in the file\'s folder and records it', async () => {
+    await expect(registerAssetAction(SLUG, ASSET, PATH, FILE)).resolves.toEqual({ ok: true, assetId: ASSET });
+    // One download only: the thumbnail is made from the bytes already read.
+    expect(state.storage.map((c) => c.method)).toEqual(['download', 'upload']);
+    const upload = thumbnailUpload()!;
+    expect(upload.bucket).toBe('media-private');
+    expect(upload.args[0]).toBe(THUMB);
+    expect(upload.args[2]).toEqual({ contentType: 'image/webp', upsert: false });
+    expect(await sharp(upload.args[1] as Uint8Array).metadata()).toMatchObject({ format: 'webp', width: 40, height: 30 });
+    expect(state.calls.map((c) => c.name)).toEqual(['register_asset', 'set_asset_thumbnail']);
+    expect(state.calls[1]!.args).toEqual({ p_asset_id: ASSET, p_thumb_path: THUMB });
+  });
+
+  it('registers the file without a thumbnail when none can be made or stored', async () => {
+    const png = `${TENANT_ID}/${ASSET}/mynd.png`;
+    // Over the pixel cap: nothing is decoded or uploaded.
+    state.object = { data: blobOf(overCap), error: null };
+    await expect(registerAssetAction(SLUG, ASSET, png, 'mynd.png')).resolves.toEqual({ ok: true, assetId: ASSET });
+    expect(state.storage.map((c) => c.method)).toEqual(['download']);
+    expect(state.calls.map((c) => c.name)).toEqual(['register_asset']);
+
+    // A corrupt file whose header passed.
+    state.storage = [];
+    state.calls = [];
+    state.object = { data: blobOf(truncated), error: null };
+    await expect(registerAssetAction(SLUG, ASSET, PATH, FILE)).resolves.toEqual({ ok: true, assetId: ASSET });
+    expect(state.storage.map((c) => c.method)).toEqual(['download']);
+    expect(state.calls.map((c) => c.name)).toEqual(['register_asset']);
+
+    // The upload fails, and no object is there to record (set_asset_thumbnail says not_found).
+    state.object = { data: blobOf(jpeg), error: null };
+    state.upload = { error: { message: 'Internal Server Error' } };
+    state.rpc.set_asset_thumbnail = { error: { code: 'P0001', message: 'not_found' } };
+    await expect(registerAssetAction(SLUG, ASSET, PATH, FILE)).resolves.toEqual({ ok: true, assetId: ASSET });
+
+    // Stored, but the database refuses to record it.
+    state.upload = { error: null };
+    state.rpc.set_asset_thumbnail = { error: { code: 'P0001', message: 'forbidden' } };
+    await expect(registerAssetAction(SLUG, ASSET, PATH, FILE)).resolves.toEqual({ ok: true, assetId: ASSET });
+
+    // Even a throwing upload leaves the registration standing.
+    state.upload = null as unknown as typeof state.upload;
+    await expect(registerAssetAction(SLUG, ASSET, PATH, FILE)).resolves.toEqual({ ok: true, assetId: ASSET });
+  });
+
+  it('makes no thumbnail when the registration fails', async () => {
+    state.rpc.register_asset = { error: { code: 'P0001', message: 'forbidden' } };
+    await expect(registerAssetAction(SLUG, ASSET, PATH, FILE)).resolves.toEqual({ ok: false, code: 'error' });
+    expect(state.storage.map((c) => c.method)).toEqual(['download']);
+    expect(state.calls.map((c) => c.name)).toEqual(['register_asset']);
   });
 
   it('rejects an object whose real type is not JPEG, PNG or WebP, or not the type its name says', async () => {
@@ -174,11 +253,17 @@ describe('registerAssetAction', () => {
   });
 });
 
+const signedAt = (path: string): Signed => ({ data: { signedUrl: `http://127.0.0.1:54321/storage/v1/object/sign/media-private/${path}?token=t` }, error: null });
+const NOT_SIGNED: Signed = { data: null, error: { message: 'Object not found' } };
+
 describe('assetPreviewAction', () => {
-  it('signs a 600-second URL for the original in media-private, the tenant taken from the asset row', async () => {
+  it("signs a 600-second URL for the file's thumbnail, the tenant taken from the asset row, and never reads the original", async () => {
+    state.tables.asset_list = { data: row({ thumb_path: THUMB }) };
+    state.signed = signedAt;
     await expect(assetPreviewAction(ASSET)).resolves.toEqual({
       ok: true,
-      url: 'http://127.0.0.1:54321/storage/v1/object/sign/media-private/x?token=t',
+      url: signedAt(THUMB).data!.signedUrl,
+      thumbnail: true,
       defaultAlt: 'Brauð',
       focalX: 0.5,
       focalY: 0.25,
@@ -187,26 +272,119 @@ describe('assetPreviewAction', () => {
       ['asset_list', [['id', ASSET]]],
       ['my_tenants', [['id', TENANT_ID]]],
     ]);
-    expect(state.storage).toEqual([{ bucket: 'media-private', method: 'createSignedUrl', args: [PATH, 600] }]);
+    expect(state.queries[0]!.columns).toContain('thumb_path');
+    expect(state.storage).toEqual([{ bucket: 'media-private', method: 'createSignedUrl', args: [THUMB, 600] }]);
+    expect(state.calls).toEqual([]);
+  });
+
+  it('makes the thumbnail of an older file on first view, records it and signs it', async () => {
+    state.signed = signedAt;
+    await expect(assetPreviewAction(ASSET)).resolves.toMatchObject({ ok: true, url: signedAt(THUMB).data!.signedUrl, thumbnail: true });
+    expect(state.storage.map((c) => [c.method, c.args[0]])).toEqual([
+      ['download', PATH],
+      ['upload', THUMB],
+      ['createSignedUrl', THUMB],
+    ]);
+    expect(state.calls).toEqual([{ name: 'set_asset_thumbnail', args: { p_asset_id: ASSET, p_thumb_path: THUMB } }]);
+  });
+
+  it('signs the original when no thumbnail can be made, stored, recorded or signed', async () => {
+    state.signed = signedAt;
+    const original = { ok: true, url: signedAt(PATH).data!.signedUrl, thumbnail: false, defaultAlt: 'Brauð', focalX: 0.5, focalY: 0.25 };
+    const cases: [string, () => void][] = [
+      ['over the pixel cap', () => (state.object = { data: blobOf(overCap), error: null })],
+      ['corrupt', () => (state.object = { data: blobOf(truncated), error: null })],
+      ['the original unreadable', () => (state.object = { data: null, error: { message: 'Object not found' } })],
+      ['not recorded', () => (state.rpc.set_asset_thumbnail = { error: { code: 'P0001', message: 'forbidden' } })],
+      ['recorded but its object gone', () => (state.tables.asset_list = { data: row({ thumb_path: THUMB }) })],
+    ];
+    for (const [name, arrange] of cases) {
+      state.object = { data: blobOf(jpeg), error: null };
+      state.rpc.set_asset_thumbnail = {};
+      state.tables.asset_list = { data: row() };
+      state.signed = (path) => (path === THUMB && name === 'recorded but its object gone' ? NOT_SIGNED : signedAt(path));
+      arrange();
+      await expect(assetPreviewAction(ASSET), name).resolves.toEqual(original);
+    }
   });
 
   it('signs nothing for an asset the editor cannot see, a suspended tenant or a malformed id', async () => {
     state.tables.asset_list = { data: null };
     await expect(assetPreviewAction(ASSET)).resolves.toEqual({ ok: false, code: 'error' });
-    state.tables.asset_list = { data: { id: ASSET, tenant_id: TENANT_ID, original_path: PATH, default_alt: null, focal_x: null, focal_y: null } };
+    state.tables.asset_list = { data: row({ default_alt: null, focal_x: null, focal_y: null }) };
     state.tables.my_tenants = { data: { id: TENANT_ID, slug: SLUG, name: 'T', status: 'suspended' } };
     await expect(assetPreviewAction(ASSET)).resolves.toEqual({ ok: false, code: 'error' });
     await expect(assetPreviewAction('x')).resolves.toEqual({ ok: false, code: 'invalid' });
     await expect(assetPreviewAction(7 as unknown as string)).resolves.toEqual({ ok: false, code: 'invalid' });
     expect(state.storage).toEqual([]);
+    expect(state.calls).toEqual([]);
   });
 
-  it('answers auth without a session, and the generic error when signing fails', async () => {
+  it('answers auth without a session, and the generic error when nothing can be signed', async () => {
     state.user = null;
     await expect(assetPreviewAction(ASSET)).resolves.toEqual({ ok: false, code: 'auth' });
+    expect(state.storage).toEqual([]);
     state.user = { id: 'u1' };
-    state.signed = { data: null, error: { message: 'Object not found' } };
+    state.signed = NOT_SIGNED;
     await expect(assetPreviewAction(ASSET)).resolves.toEqual({ ok: false, code: 'error' });
+  });
+});
+
+describe('ensureThumbnailAction', () => {
+  it('signs an existing thumbnail without reading the original', async () => {
+    state.tables.asset_list = { data: row({ thumb_path: THUMB }) };
+    state.signed = signedAt;
+    await expect(ensureThumbnailAction(ASSET)).resolves.toEqual({ ok: true, url: signedAt(THUMB).data!.signedUrl });
+    expect(state.storage).toEqual([{ bucket: 'media-private', method: 'createSignedUrl', args: [THUMB, 600] }]);
+    expect(state.calls).toEqual([]);
+  });
+
+  it('makes, stores, records and signs a missing one', async () => {
+    state.signed = signedAt;
+    await expect(ensureThumbnailAction(ASSET)).resolves.toEqual({ ok: true, url: signedAt(THUMB).data!.signedUrl });
+    expect(state.storage.map((c) => [c.method, c.args[0]])).toEqual([
+      ['download', PATH],
+      ['upload', THUMB],
+      ['createSignedUrl', THUMB],
+    ]);
+    expect(state.calls).toEqual([{ name: 'set_asset_thumbnail', args: { p_asset_id: ASSET, p_thumb_path: THUMB } }]);
+  });
+
+  it('records an object a failed earlier attempt left in place', async () => {
+    // Editors cannot overwrite: the upload says the object exists, and recording it still works.
+    state.upload = { error: { message: 'The resource already exists' } };
+    state.signed = signedAt;
+    await expect(ensureThumbnailAction(ASSET)).resolves.toEqual({ ok: true, url: signedAt(THUMB).data!.signedUrl });
+    expect(state.calls).toEqual([{ name: 'set_asset_thumbnail', args: { p_asset_id: ASSET, p_thumb_path: THUMB } }]);
+  });
+
+  it('answers the generic error, and never signs the original, when none can be made or recorded', async () => {
+    state.object = { data: blobOf(overCap), error: null };
+    await expect(ensureThumbnailAction(ASSET)).resolves.toEqual({ ok: false, code: 'error' });
+    state.object = { data: blobOf(jpeg), error: null };
+    state.rpc.set_asset_thumbnail = { error: { code: 'P0001', message: 'not_found' } };
+    await expect(ensureThumbnailAction(ASSET)).resolves.toEqual({ ok: false, code: 'error' });
+    state.rpc.set_asset_thumbnail = { error: { code: 'PGRST303', message: 'JWT expired' }, status: 401 };
+    await expect(ensureThumbnailAction(ASSET)).resolves.toEqual({ ok: false, code: 'auth' });
+    expect(state.storage.filter((c) => c.method === 'createSignedUrl')).toEqual([]);
+  });
+
+  it('checks the session, the id, the asset and its tenant before reading anything', async () => {
+    await expect(ensureThumbnailAction('x')).resolves.toEqual({ ok: false, code: 'invalid' });
+    await expect(ensureThumbnailAction(ASSET.toUpperCase())).resolves.toEqual({ ok: false, code: 'invalid' });
+    await expect(ensureThumbnailAction(null as unknown as string)).resolves.toEqual({ ok: false, code: 'invalid' });
+    state.user = null;
+    await expect(ensureThumbnailAction(ASSET)).resolves.toEqual({ ok: false, code: 'auth' });
+    state.user = { id: 'u1' };
+    state.tables.asset_list = { data: null };
+    await expect(ensureThumbnailAction(ASSET)).resolves.toEqual({ ok: false, code: 'error' });
+    state.tables.asset_list = { data: row() };
+    state.tables.my_tenants = { data: { id: TENANT_ID, slug: SLUG, name: 'T', status: 'suspended' } };
+    await expect(ensureThumbnailAction(ASSET)).resolves.toEqual({ ok: false, code: 'error' });
+    state.tables.asset_list = { error: { code: '42501', message: 'permission denied' } };
+    await expect(ensureThumbnailAction(ASSET)).resolves.toEqual({ ok: false, code: 'error' });
+    expect(state.storage).toEqual([]);
+    expect(state.calls).toEqual([]);
   });
 });
 
@@ -234,7 +412,7 @@ describe('updateAssetAction', () => {
   });
 
   it('keeps a stored asset without a focal point without one', async () => {
-    state.tables.asset_list = { data: { id: ASSET, tenant_id: TENANT_ID, original_path: PATH, default_alt: null, focal_x: null, focal_y: null } };
+    state.tables.asset_list = { data: row({ default_alt: null, focal_x: null, focal_y: null }) };
     await expect(updateAssetAction(ASSET, { defaultAlt: 'Brauð' })).resolves.toEqual({ ok: true });
     expect(state.calls[0]?.args).toEqual({ p_asset_id: ASSET, p_focal_x: null, p_focal_y: null, p_default_alt: 'Brauð' });
   });
@@ -265,7 +443,7 @@ describe('updateAssetAction', () => {
   it('refuses an asset it cannot see or of a suspended tenant, and maps database errors to the generic error', async () => {
     state.tables.asset_list = { data: null };
     await expect(updateAssetAction(ASSET, { focal: null })).resolves.toEqual({ ok: false, code: 'error' });
-    state.tables.asset_list = { data: { id: ASSET, tenant_id: TENANT_ID, original_path: PATH, default_alt: null, focal_x: null, focal_y: null } };
+    state.tables.asset_list = { data: row({ default_alt: null, focal_x: null, focal_y: null }) };
     state.tables.my_tenants = { data: { id: TENANT_ID, slug: SLUG, name: 'T', status: 'suspended' } };
     await expect(updateAssetAction(ASSET, { focal: { x: 0.5, y: 0.5 } })).resolves.toEqual({ ok: false, code: 'error' });
     expect(state.calls).toEqual([]);

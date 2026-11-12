@@ -58,8 +58,10 @@ const imageOf = (value: unknown): ImageValue | null => {
 /**
  * An image field (§5.2, §5.6). A chosen file is checked before upload (`prepareUpload`), uploaded
  * from the browser to `media-private` with the editor's session, then registered by the server,
- * which reads the object back. The preview is a signed URL valid for 600 seconds, signed again if
- * it fails to load (expired), at most `MAX_PREVIEW_RESIGNS` times, then a notice. The alt text
+ * which reads the object back and makes its thumbnail. The preview is the thumbnail, never the
+ * original unless the file cannot have one (`assetPreviewAction`), through a signed URL valid for
+ * 600 seconds, signed again if it fails to load (expired), at most `MAX_PREVIEW_RESIGNS` times,
+ * then a notice. The alt text
  * belongs to this use; the asset's own default alt text and focal point are edited here too
  * (`update_asset`), and on the asset's detail page, linked from here.
  */

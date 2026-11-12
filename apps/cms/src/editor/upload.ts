@@ -9,7 +9,7 @@ import type { SupabaseClient } from '@/lib/supabase/types';
 
 export const MEDIA_PRIVATE_BUCKET = 'media-private';
 export const MAX_UPLOAD_BYTES = 20_971_520;
-/** Editor previews of originals are signed for 10 minutes (spec §5.6). */
+/** Editor previews (thumbnails, and an original only where a file has none) are signed for 10 minutes (spec §5.6). */
 export const PREVIEW_SECONDS = 600;
 
 export const EXTENSION_BY_MIME = {
@@ -69,7 +69,7 @@ export async function uploadOriginal(client: SupabaseClient, path: string, file:
   return !error;
 }
 
-/** A short-lived signed URL of an original in `media-private` (§5.6), or null. */
+/** A short-lived signed URL of an object in `media-private` (§5.6), a thumbnail or an original, or null. */
 export async function previewUrl(client: SupabaseClient, path: string): Promise<string | null> {
   const { data, error } = await client.storage.from(MEDIA_PRIVATE_BUCKET).createSignedUrl(path, PREVIEW_SECONDS);
   return error || !data ? null : data.signedUrl;
