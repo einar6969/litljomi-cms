@@ -33,6 +33,10 @@ describe('generateDeliveryTypes', () => {
     expect(out).toContain('  focal?: { x: number; y: number } | null;');
     expect(out).toContain("import type { ProjectedRichTextDoc } from '@litljomi/rich-text';");
   });
+  it('declares caption and credit optional and nullable, as the SDK does (additive to format 1, media library L3)', () => {
+    expect(out).toContain('  caption?: string | null;');
+    expect(out).toContain('  credit?: string | null;');
+  });
   it('is deterministic and handles several types', () => {
     const u = defineType({ ...t, name: 'event-item', fields: { title: text({ label: 'T' }) }, preview: { title: 'title' }, orderBy: 'title' });
     expect(generateDeliveryTypes([t, u])).toContain('export interface EventItemEntry {');

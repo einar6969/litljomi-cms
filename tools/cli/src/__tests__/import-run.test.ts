@@ -125,14 +125,12 @@ describe('import: a full run', () => {
     const requests = hub.calls.filter((c) => c.path === '/rest/v1/rpc/request_publish').map((c) => (c.body as { p_entry_id: string }).p_entry_id);
     expect(requests[0]).toBe(bySlug('harbour-path')?.id);
     expect(requests).toHaveLength(3);
-    // The report: everything compared, nothing different; captions and order counted as unchecked.
+    // The report: everything compared, captions and credits too (delivered since L3), nothing
+    // different; order counted as unchecked.
     const rep = report(w);
     expect(rep.differences).toEqual([]);
     expect(rep.checked).toEqual({ entries: 3, files: 3 });
-    expect(rep.unchecked).toEqual([
-      { what: 'file captions and credits (not delivered until L3)', count: 1 },
-      { what: 'order: validated, not applied (manual ordering, A12, does not exist yet)', count: 1 },
-    ]);
+    expect(rep.unchecked).toEqual([{ what: 'order: validated, not applied (manual ordering, A12, does not exist yet)', count: 1 }]);
     expect(r.text).toContain('first batch: 1 request(s), 2 new image(s), 136 bytes');
     // The ledger names ids only.
     expect(Object.keys(ledger(w).entries).sort()).toEqual(['home', 'news/opening', 'project/harbour']);
@@ -237,6 +235,10 @@ describe('import: someone else\'s edits are reported, not overwritten', () => {
     expect(r.text).toContain('NOT TOUCHED file projects/harbour/01.jpg');
     // Two of the three files have texts; the third has none to write.
     expect(w.hub.count('POST', '/rest/v1/rpc/update_asset_text')).toBe(2);
+    // The site shows the library's caption (L3), so the report names the difference at each use.
+    const differences = report(w).differences.filter((d) => d.at.endsWith('/caption'));
+    expect(differences.length).toBeGreaterThan(0);
+    expect(differences[0]).toMatchObject({ what: 'text differs', expected: 'Another caption', actual: 'The new path' });
   });
 });
 

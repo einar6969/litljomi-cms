@@ -22,6 +22,9 @@ export interface ContextAsset {
   focal_y: number | null;
   default_alt: string | null;
   public_path: string | null;
+  /** The file's caption and credit (media library L3), delivered with every use of the image. */
+  caption: string | null;
+  credit: string | null;
 }
 
 /**
@@ -64,6 +67,8 @@ export function buildProjectionContext(o: {
         mime: a.mime,
         alt: a.default_alt ?? '',
         focal: a.focal_x !== null && a.focal_y !== null ? { x: a.focal_x, y: a.focal_y } : null,
+        caption: a.caption,
+        credit: a.credit,
       };
     },
   };
@@ -97,6 +102,8 @@ export function contextFromRead(refs: ReadRef[], module: ModuleManifest, mediaUr
         focal_y: r.focal_y,
         default_alt: r.default_alt,
         public_path: r.public_path,
+        caption: r.caption,
+        credit: r.credit,
       });
     }
   }

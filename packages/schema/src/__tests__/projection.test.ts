@@ -26,6 +26,8 @@ const asset = (url: string): PublicAsset => ({
   mime: 'image/jpeg',
   alt: 'default alt',
   focal: { x: 0.5, y: 0.25 },
+  caption: 'Kanilsnúðar á bakka',
+  credit: 'Anna Önnudóttir',
 });
 const summary = (o: Partial<EntrySummary> = {}): EntrySummary => ({
   id: E,
@@ -91,6 +93,39 @@ describe('projectEntry', () => {
   it('copies the focal point, never passing on other keys of the context', () => {
     const extra = { ...asset('https://m.test/a.jpg'), focal: { x: 0.1, y: 0.9, z: 1 }, secret: 'x' } as unknown as PublicAsset;
     expect(projectEntry(t, data, fakeCtx({ assets: { [A]: extra } })).pic).toEqual({ ...asset('https://m.test/a.jpg'), focal: { x: 0.1, y: 0.9 }, alt: 'per-use alt' });
+  });
+
+  // Media library L3: the file's caption and credit are delivered with every use of the image,
+  // additive to bundle format 1 (plan section 3.3); the alt text stays the use's own.
+  it("projects the file's caption and credit with every use of the image, the alt per use", () => {
+    const two = defineType({
+      name: 'gallery',
+      version: 1,
+      label: 'G',
+      fields: { a: image({ label: 'A' }), b: image({ label: 'B' }) },
+      preview: { title: 'a' },
+      orderBy: 'a',
+    });
+    const uses = { a: { _ref: A, _kind: 'asset', alt: 'Fyrri' }, b: { _ref: A, _kind: 'asset', alt: '' } };
+    const out = projectEntry(two, uses, fakeCtx({ assets: { [A]: asset('https://m.test/a.jpg') } }));
+    expect(out.a).toMatchObject({ alt: 'Fyrri', caption: 'Kanilsnúðar á bakka', credit: 'Anna Önnudóttir' });
+    expect(out.b).toMatchObject({ alt: '', caption: 'Kanilsnúðar á bakka', credit: 'Anna Önnudóttir' });
+  });
+
+  it('delivers null for a file without a caption or credit', () => {
+    const none = { ...asset('https://m.test/a.jpg'), caption: null, credit: null };
+    const pic = projectEntry(t, data, fakeCtx({ assets: { [A]: none } })).pic;
+    expect(pic).toHaveProperty('caption', null);
+    expect(pic).toHaveProperty('credit', null);
+  });
+
+  it('delivers null, never undefined or another type, when the context gives no string', () => {
+    for (const bad of [undefined, 3, { text: 'x' }]) {
+      const odd = { ...asset('https://m.test/a.jpg'), caption: bad, credit: bad } as unknown as PublicAsset;
+      const pic = projectEntry(t, data, fakeCtx({ assets: { [A]: odd } })).pic as Record<string, unknown>;
+      expect(pic['caption']).toBeNull();
+      expect(pic['credit']).toBeNull();
+    }
   });
 
   it('an image with a missing asset projects as null', () => {

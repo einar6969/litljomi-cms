@@ -156,6 +156,8 @@ const asset = (id: string, o: Record<string, unknown> = {}) => ({
   default_alt: 'alt',
   public_path: null,
   archived: false,
+  caption: null,
+  credit: null,
   ...o,
 });
 const picRef = (id: string) => ({ path: '$."pic"', kind: 'asset' as const, id });
@@ -337,7 +339,17 @@ describe('buildRelease: delivery', () => {
       schemaVersion: 2,
       data: {
         title: 'Eitt',
-        pic: { id: A1, url: `https://media.test/prufa/${A1}/a.jpg`, width: 800, height: 600, mime: 'image/jpeg', alt: 'mynd', focal: null },
+        pic: {
+          id: A1,
+          url: `https://media.test/prufa/${A1}/a.jpg`,
+          width: 800,
+          height: 600,
+          mime: 'image/jpeg',
+          alt: 'mynd',
+          focal: null,
+          caption: null,
+          credit: null,
+        },
         related: { entry: { id: E2, type: 'article', slug: two!.slug, title: 'Tvö', path: `/greinar/${two!.slug}` } },
       },
     });
@@ -346,6 +358,26 @@ describe('buildRelease: delivery', () => {
     ]);
     expect(two!.data).toEqual({ title: 'Tvö', pic: null, related: null });
     expect(one!.contentHash).not.toBe(two!.contentHash);
+  });
+
+  // Media library L3: the file's caption and credit come from the snapshot's asset row and are
+  // delivered with the image (plan section 3.3); the alt text is the use's own.
+  it("delivers the file's caption and credit with the image, inside the entry's hash", async () => {
+    snapshot.assets = [asset(A1, { caption: 'Kanilsnúðar á bakka', credit: 'Anna Önnudóttir' })];
+    const first = (await build()).bundle!.entries['article']![0]!;
+    expect(first.data['pic']).toEqual({
+      id: A1,
+      url: `https://media.test/prufa/${A1}/a.jpg`,
+      width: 800,
+      height: 600,
+      mime: 'image/jpeg',
+      alt: 'mynd',
+      focal: null,
+      caption: 'Kanilsnúðar á bakka',
+      credit: 'Anna Önnudóttir',
+    });
+    // The hash covers the whole record (§7.2), so it covers the caption and credit too.
+    expect(first.contentHash).toBe(entryContentHash(first as unknown as Record<string, unknown>));
   });
 
   it('reads the previous release right after beginning and returns its bundle', async () => {
@@ -550,6 +582,22 @@ describe('buildRelease: fallback to the previous projection (§7.1, plan M3-05)'
     expect(finish.p_request_ids).toEqual(['r1', 'r2', 'r3']);
     expect(alertMock).toHaveBeenCalledTimes(1);
     expect(alertMock).toHaveBeenCalledWith('release.entry_fallback', { tenantId: TENANT, releaseId: RELEASE, number: 3, fallback });
+  });
+
+  // Media library L3: the fallback reuses the earlier record as it was. A record written before
+  // caption and credit were delivered keeps its image without them, though the file has both now.
+  it('reuses a record from before captions were delivered as it was, adding no caption or credit', async () => {
+    const prev = previousE2(snapshot.entries[1]!.revision_id);
+    withPrevious({ article: [prev] });
+    snapshot.assets = [asset(A1), asset(A2, { public_path: `prufa/${A2}/a.jpg`, caption: 'Nýr myndatexti', credit: 'Anna' })];
+
+    const result = await build();
+
+    expect(result.status).toBe('delivered');
+    const reused = result.bundle!.entries['article']!.find((e) => e.id === E2)!;
+    expect(reused).toEqual(prev);
+    expect(reused.data['pic']).not.toHaveProperty('caption');
+    expect(reused.data['pic']).not.toHaveProperty('credit');
   });
 
   it('covers a failure before projection too (a revision that cannot be upcast after a transform deploy)', async () => {

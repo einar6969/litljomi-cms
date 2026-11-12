@@ -34,6 +34,8 @@ const asset = (o: Partial<PublicAsset> = {}): PublicAsset => ({
   mime: 'image/jpeg',
   alt: 'Sjálfgefið',
   focal: { x: 0.25, y: 0.75 },
+  caption: null,
+  credit: null,
   ...o,
 });
 const still = (alt = 'Kyrrmynd') => ({ _ref: A, _kind: 'asset' as const, alt });

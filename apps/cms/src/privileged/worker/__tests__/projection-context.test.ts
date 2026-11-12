@@ -41,9 +41,9 @@ describe('buildProjectionContext', () => {
       { id: 'e3', type: 'event', slug: 'x', title: 'Viðburður', sortAt: null },
     ],
     assets: [
-      { id: 'a1', filename: 'a.jpg', mime: 'image/jpeg', width: 800, height: 600, focal_x: 0.5, focal_y: 0.25, default_alt: 'Alt', public_path: 'prufa/a1/a.jpg' },
-      { id: 'a2', filename: 'b.jpg', mime: 'image/jpeg', width: 10, height: 10, focal_x: null, focal_y: null, default_alt: null, public_path: 'prufa/a2/b.jpg' },
-      { id: 'a3', filename: 'c.jpg', mime: 'image/jpeg', width: 10, height: 10, focal_x: null, focal_y: null, default_alt: null, public_path: null },
+      { id: 'a1', filename: 'a.jpg', mime: 'image/jpeg', width: 800, height: 600, focal_x: 0.5, focal_y: 0.25, default_alt: 'Alt', public_path: 'prufa/a1/a.jpg', caption: 'Kanilsnúðar á bakka', credit: 'Anna Önnudóttir' },
+      { id: 'a2', filename: 'b.jpg', mime: 'image/jpeg', width: 10, height: 10, focal_x: null, focal_y: null, default_alt: null, public_path: 'prufa/a2/b.jpg', caption: null, credit: null },
+      { id: 'a3', filename: 'c.jpg', mime: 'image/jpeg', width: 10, height: 10, focal_x: null, focal_y: null, default_alt: null, public_path: null, caption: null, credit: null },
     ],
     mediaUrl,
   });
@@ -58,7 +58,7 @@ describe('buildProjectionContext', () => {
   it('resolves an entry it was not given (not published) to null', () => {
     expect(resolveEntry(ctx, 'nope')).toBeNull();
   });
-  it('resolves a public asset to its URL, size, default alt and focal point', () => {
+  it('resolves a public asset to its URL, size, default alt, focal point, caption and credit', () => {
     expect(resolveAsset(ctx, 'a1')).toEqual({
       id: 'a1',
       url: 'https://media.example/prufa/a1/a.jpg',
@@ -67,8 +67,10 @@ describe('buildProjectionContext', () => {
       mime: 'image/jpeg',
       alt: 'Alt',
       focal: { x: 0.5, y: 0.25 },
+      caption: 'Kanilsnúðar á bakka',
+      credit: 'Anna Önnudóttir',
     });
-    expect(resolveAsset(ctx, 'a2')).toMatchObject({ alt: '', focal: null });
+    expect(resolveAsset(ctx, 'a2')).toMatchObject({ alt: '', focal: null, caption: null, credit: null });
   });
   it('resolves an asset without a public path, or unknown, to null', () => {
     expect(resolveAsset(ctx, 'a3')).toBeNull();
@@ -96,8 +98,8 @@ describe('contextFromRead', () => {
         ref({ id: 'e1' }),
         ref({ id: 'e2', published: false, title: null }),
         ref({ id: 'e3', archived: true }),
-        { path: '$."i"', kind: 'asset', id: 'a1', published: true, archived: false, filename: 'a.jpg', mime: 'image/jpeg', width: 1, height: 1, focal_x: null, focal_y: null, default_alt: 'A', public_path: 'prufa/a1/a.jpg' },
-        { path: '$."j"', kind: 'asset', id: 'a2', published: true, archived: true, filename: 'b.jpg', mime: 'image/jpeg', width: 1, height: 1, focal_x: null, focal_y: null, default_alt: null, public_path: 'prufa/a2/b.jpg' },
+        { path: '$."i"', kind: 'asset', id: 'a1', published: true, archived: false, filename: 'a.jpg', mime: 'image/jpeg', width: 1, height: 1, focal_x: null, focal_y: null, default_alt: 'A', public_path: 'prufa/a1/a.jpg', caption: 'Myndatexti', credit: 'Ljósmyndari' },
+        { path: '$."j"', kind: 'asset', id: 'a2', published: true, archived: true, filename: 'b.jpg', mime: 'image/jpeg', width: 1, height: 1, focal_x: null, focal_y: null, default_alt: null, public_path: 'prufa/a2/b.jpg', caption: null, credit: null },
       ],
       site,
       mediaUrl,
@@ -106,6 +108,7 @@ describe('contextFromRead', () => {
     expect(resolveEntry(ctx, 'e2')).toBeNull();
     expect(resolveEntry(ctx, 'e3')).toBeNull();
     expect(resolveAsset(ctx, 'a1')?.url).toBe('https://media.example/prufa/a1/a.jpg');
+    expect(resolveAsset(ctx, 'a1')).toMatchObject({ caption: 'Myndatexti', credit: 'Ljósmyndari' });
     expect(resolveAsset(ctx, 'a2')).toBeNull();
   });
 

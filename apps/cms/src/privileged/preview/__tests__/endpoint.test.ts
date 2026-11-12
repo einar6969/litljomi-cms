@@ -88,7 +88,7 @@ beforeEach(() => {
       entry: { id: ENTRY, type: 'news', slug: 'frett', archived: false, first_published_at: '2026-10-01T00:00:00+00:00', last_published_at: '2026-10-02T00:00:00+00:00' },
       draft: { data: news('Drög'), version: 4, schema_version: 1 },
       assets: [
-        { id: ASSET, filename: 'mynd.jpg', mime: 'image/jpeg', width: 8, height: 6, focal_x: null, focal_y: null, default_alt: null, original_path: ORIGINAL, archived: false },
+        { id: ASSET, filename: 'mynd.jpg', mime: 'image/jpeg', width: 8, height: 6, focal_x: null, focal_y: null, default_alt: null, original_path: ORIGINAL, archived: false, caption: 'Kanilsnúðar á bakka', credit: 'Anna Önnudóttir' },
       ],
     },
     release: { id: 'r7', number: 7, bundle_path: 'labak/releases/7.json' },
@@ -120,6 +120,8 @@ describe('readPreview', () => {
     expect((b.entries.news![0]!.data.image as { url: string }).url).toBe(
       `https://project.supabase.co/storage/v1/object/sign/media-private/${ORIGINAL}?token=t`,
     );
+    // Media library L3: preview projects like a release, so the file's caption and credit come too.
+    expect(b.entries.news![0]!.data.image).toMatchObject({ caption: 'Kanilsnúðar á bakka', credit: 'Anna Önnudóttir' });
     expect(state.signed).toEqual([{ paths: [ORIGINAL], ttl: PREVIEW_MEDIA_TTL_SECONDS }]);
     expect(state.calls).toEqual([
       'worker_preview_tenant',

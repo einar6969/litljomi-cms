@@ -179,7 +179,8 @@ export async function buildReport(input: ReportInput): Promise<Report> {
     asset(id) {
       const f = fileById.get(id);
       if (f === undefined || input.local) return null;
-      return { id, url: `${SENTINEL}${id}`, width: f.meta.width, height: f.meta.height, mime: f.meta.mime, alt: f.alt, focal: null };
+      // The caption and credit the manifest gives the file (L3 delivers them with every use).
+      return { id, url: `${SENTINEL}${id}`, width: f.meta.width, height: f.meta.height, mime: f.meta.mime, alt: f.alt, focal: null, caption: f.caption, credit: f.credit };
     },
   };
 
@@ -248,8 +249,6 @@ export async function buildReport(input: ReportInput): Promise<Report> {
       });
     }
   }
-  const captioned = [...plan.files.values()].filter((f) => f.caption !== null || f.credit !== null).length;
-  unchecked('file captions and credits (not delivered until L3)', captioned);
 
   const imported = new Set(plan.items.map((i) => i.type));
   const known = new Set(ids.values());
