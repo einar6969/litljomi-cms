@@ -39,7 +39,7 @@ import { supabaseUrl } from '../../lib/supabase/env';
 import type { SupabaseClient } from '../../lib/supabase/types';
 import { createAdminClient } from '../admin-client';
 import { alert } from './alerts';
-import { buildProjectionContext, publicMediaUrl, type ContextAsset, type ContextEntry } from './projection-context';
+import { buildProjectionContext, localStackOrigin, publicMediaUrl, type ContextAsset, type ContextEntry } from './projection-context';
 import { callRpc, isApiError } from './rpc';
 import {
   deliveryBundlePath,
@@ -188,7 +188,11 @@ export async function buildRelease(tenantId: string, options: BuildOptions = {})
   const db = options.db ?? createAdminClient();
   const storage = options.storage ?? supabaseReleaseStorage(db);
   // Read before beginning: an unset project URL throws here, never resolving every image to null.
-  const mediaUrl = options.mediaUrl ?? mediaUrlOf(supabaseUrl());
+  // The project's own URL also decides whether media may be delivered over http: only on a local
+  // stack (enhancement A4). An injected mediaUrl is https only.
+  const projectUrl = options.mediaUrl === undefined ? supabaseUrl() : null;
+  const mediaUrl = options.mediaUrl ?? mediaUrlOf(projectUrl as string);
+  const media = { url: mediaUrl, localOrigin: projectUrl === null ? null : localStackOrigin(projectUrl) };
   const now = options.now ?? (() => new Date());
   const clock = options.clock ?? (() => performance.now());
 
@@ -234,7 +238,7 @@ export async function buildRelease(tenantId: string, options: BuildOptions = {})
     if (!module) throw new BuildFailure('module', new Error(`no module for tenant ${slug}`));
 
     // Step 3. Project; reuse or leave out what fails (two passes or more, until nothing changes).
-    const projected = await at('project', async () => projectAll(snapshot, module, tenantId, mediaUrl, previousBundle));
+    const projected = await at('project', async () => projectAll(snapshot, module, tenantId, media, previousBundle));
     omitted = projected.omitted;
     fallback = projected.fallback;
     const generatedAt = now().toISOString();
@@ -488,7 +492,7 @@ function projectAll(
   snapshot: Snapshot,
   module: ModuleManifest,
   tenantId: string,
-  mediaUrl: (p: string) => string,
+  media: { url: (p: string) => string; localOrigin: string | null },
   previousBundle: Bundle | null,
 ): Projected {
   const slug = snapshot.tenant.slug;
@@ -578,7 +582,8 @@ function projectAll(
         (e): ContextEntry => ({ id: e.entry_id, type: e.type, slug: e.slug, title: e.title, sortAt: isoOrNull(e.sort_at) }),
       ),
       assets: contextAssets,
-      mediaUrl,
+      mediaUrl: media.url,
+      localMediaOrigin: media.localOrigin,
     });
     built = new Map();
     let failed = false;

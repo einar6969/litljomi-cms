@@ -130,6 +130,25 @@ describe('readPreview', () => {
     ]);
   });
 
+  // Enhancement A4: on a local stack the signed URLs are http on the stack's own loopback address.
+  describe('on a local stack', () => {
+    const LOCAL = 'http://127.0.0.1:54331';
+    const signHttp = (origin: string) => async (paths: string[]) =>
+      new Map(paths.map((p) => [p, `${origin}/storage/v1/object/sign/media-private/${p}?token=t`]));
+    const imageOf = (r: Awaited<ReturnType<typeof readPreview>>) => (r.ok ? (r.bundle.entries.news![0]!.data.image as { url: string } | null) : 'refused');
+
+    it("delivers the draft's media at the stack's own http address", async () => {
+      const r = await readPreview(deps({ stackUrl: LOCAL, signMedia: signHttp(LOCAL) }), { tenant: 'labak', token: token() });
+      expect(imageOf(r)).toMatchObject({ url: `${LOCAL}/storage/v1/object/sign/media-private/${ORIGINAL}?token=t` });
+    });
+    it('delivers no http media without a local stack address, or when that address is not loopback', async () => {
+      expect(imageOf(await readPreview(deps({ signMedia: signHttp(LOCAL) }), { tenant: 'labak', token: token() }))).toBeNull();
+      const hosted = 'http://abcdefghijklmnopqrst.supabase.co';
+      expect(imageOf(await readPreview(deps({ stackUrl: hosted, signMedia: signHttp(hosted) }), { tenant: 'labak', token: token() }))).toBeNull();
+      expect(imageOf(await readPreview(deps({ stackUrl: LOCAL, signMedia: signHttp('http://127.0.0.1:54321') }), { tenant: 'labak', token: token() }))).toBeNull();
+    });
+  });
+
   it('before the first release the preview holds the draft only, as release 0', async () => {
     state.release = { id: null, number: null, bundle_path: null };
     const r = await readPreview(deps(), { tenant: 'labak', token: token() });

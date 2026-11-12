@@ -1,6 +1,7 @@
 // The projection context the worker builds from the database (spec §6.2, §7.1; decision 35): the
 // pre-commit projection (Task 19) and the release build (Task 20) resolve references the same way.
 import type { ModuleManifest, ProjectionContext } from '@litljomi/cms-schema';
+import { loopbackHttpOrigin } from '@litljomi/rich-text';
 
 /** A published, not archived entry that references may resolve to. */
 export interface ContextEntry {
@@ -29,13 +30,16 @@ export interface ContextAsset {
  * archived or unknown) resolves to null (spec §6.2). An entry's path comes from the module's site
  * integration for its type; it is null when the type has no site pages or the integration cannot
  * compute one (for example, no slug). An asset resolves only once it has a public path; its URL is
- * `mediaUrl(public_path)`, and `resolveAsset` in the schema package keeps it only if it is https.
+ * `mediaUrl(public_path)`, and `resolveAsset` in the schema package keeps it only if it is https,
+ * or http on exactly `localMediaOrigin`: `localStackOrigin` of the worker's own Supabase URL, which
+ * is null on a hosted project (enhancement A4).
  */
 export function buildProjectionContext(o: {
   module: ModuleManifest;
   entries: ContextEntry[];
   assets: ContextAsset[];
   mediaUrl: (publicPath: string) => string;
+  localMediaOrigin: string | null;
 }): ProjectionContext {
   const entries = new Map(o.entries.map((e) => [e.id, e]));
   const assets = new Map(o.assets.map((a) => [a.id, a]));
@@ -49,6 +53,7 @@ export function buildProjectionContext(o: {
     }
   };
   return {
+    localMediaOrigin: o.localMediaOrigin,
     entry(id) {
       const e = entries.get(id);
       return e ? { id: e.id, type: e.type, slug: e.slug, title: e.title, path: pathOf(e) } : null;
@@ -79,7 +84,12 @@ export type ReadRef =
  * not archived entries (the read gives the published revision's title; it has no sort date, which
  * no M1 path needs), and not archived assets.
  */
-export function contextFromRead(refs: ReadRef[], module: ModuleManifest, mediaUrl: (publicPath: string) => string): ProjectionContext {
+export function contextFromRead(
+  refs: ReadRef[],
+  module: ModuleManifest,
+  mediaUrl: (publicPath: string) => string,
+  localMediaOrigin: string | null,
+): ProjectionContext {
   const entries: ContextEntry[] = [];
   const assets: ContextAsset[] = [];
   for (const r of refs) {
@@ -100,11 +110,22 @@ export function contextFromRead(refs: ReadRef[], module: ModuleManifest, mediaUr
       });
     }
   }
-  return buildProjectionContext({ module, entries, assets, mediaUrl });
+  return buildProjectionContext({ module, entries, assets, mediaUrl, localMediaOrigin });
 }
 
 /** The public URL of a `media-public` object (spec §5.6): `{supabaseUrl}/storage/v1/object/public/media-public/{path}`. */
 export function publicMediaUrl(supabaseUrl: string, publicPath: string): string {
   const base = supabaseUrl.replace(/\/+$/, '');
   return `${base}/storage/v1/object/public/media-public/${publicPath.split('/').map(encodeURIComponent).join('/')}`;
+}
+
+/**
+ * The origin of a local stack, from the Supabase URL the worker itself uses: its origin when that
+ * URL is http on a loopback host, and null otherwise, so null on every hosted project (whose URL is
+ * `https://<ref>.supabase.co`). Only then are a release's or a preview's media delivered over http
+ * (enhancement A4). It is read from the stack's own address, never from a setting: pointing it at a
+ * loopback address means talking to a local stack, not to a hosted one.
+ */
+export function localStackOrigin(supabaseUrl: string): string | null {
+  return loopbackHttpOrigin(supabaseUrl);
 }

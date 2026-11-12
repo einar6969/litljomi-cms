@@ -47,3 +47,39 @@ export function canonicalHttpsUrl(s: string): string | null {
 export function isHttpsUrl(s: string): boolean {
   return canonicalHttpsUrl(s) !== null;
 }
+
+// A loopback host as the URL parser normalises it: `localhost`, IPv4 127.0.0.0/8, IPv6 `[::1]`.
+const LOOPBACK_IPV4 = /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+const isLoopbackHost = (hostname: string): boolean => hostname === 'localhost' || hostname === '[::1]' || LOOPBACK_IPV4.test(hostname);
+
+/**
+ * The origin of an absolute `http:` URL whose host is a loopback address (`localhost`,
+ * `127.0.0.0/8`, `[::1]`), with no credentials, whitespace or control characters: the address of a
+ * local stack. Null for anything else, every `https:` URL and every host that is not loopback
+ * included (enhancement A4).
+ */
+export function loopbackHttpOrigin(s: string): string | null {
+  if (UNSAFE_CHARS.test(s)) return null;
+  let u: URL;
+  try {
+    u = new URL(s);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'http:' || !isLoopbackHost(u.hostname) || u.username !== '' || u.password !== '') return null;
+  return u.origin;
+}
+
+/**
+ * A delivered media URL in canonical form, or null. An `https:` URL as `canonicalHttpsUrl` accepts
+ * it; and, on a local stack only, an `http:` URL on exactly `localOrigin`, the stack's own loopback
+ * address, whose Storage serves http (enhancement A4). `localOrigin` counts only when it is itself
+ * an http origin on a loopback host, so no value of it lets an http URL on any other host through.
+ */
+export function canonicalMediaUrl(s: string, localOrigin: string | null): string | null {
+  const https = canonicalHttpsUrl(s);
+  if (https !== null || localOrigin === null) return https;
+  const stack = loopbackHttpOrigin(localOrigin);
+  if (stack === null || stack !== localOrigin.replace(/\/+$/, '') || loopbackHttpOrigin(s) !== stack) return null;
+  return new URL(s).href;
+}

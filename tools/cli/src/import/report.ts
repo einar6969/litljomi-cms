@@ -50,8 +50,6 @@ export interface ReportInput {
   module: ModuleManifest;
   tenant: { id: string; slug: string };
   ids: Map<string, string>;
-  /** The local stack delivers every image as null until A4: the file half is unchecked there. */
-  local: boolean;
   lastRelease: number | null;
   notices: string[];
   session: EditorSession;
@@ -178,7 +176,7 @@ export async function buildReport(input: ReportInput): Promise<Report> {
     },
     asset(id) {
       const f = fileById.get(id);
-      if (f === undefined || input.local) return null;
+      if (f === undefined) return null;
       return { id, url: `${SENTINEL}${id}`, width: f.meta.width, height: f.meta.height, mime: f.meta.mime, alt: f.alt, focal: null };
     },
   };
@@ -209,7 +207,6 @@ export async function buildReport(input: ReportInput): Promise<Report> {
       diff('(data)', `the manifest's data could not be projected (${e instanceof Error ? e.name : 'error'})`);
       continue;
     }
-    if (input.local) unchecked('image uses not compared on the local stack (local images are delivered as null until A4)', item.files.length);
     compare(expected, delivered.data, [], {
       diff,
       file: (url, at) => {

@@ -10,14 +10,16 @@
 //   a prompt that does not echo); never from an environment variable or an argument, which would
 //   leave it in the shell history. It is never written to a file, logged or echoed. Tokens stay in
 //   memory; everything printed is redacted of the password and every token.
-// - The URL must be https://<--expect-ref>.supabase.co, or with --local exactly the local stack's
-//   http://127.0.0.1:54321 (import decision 3); requests go to that origin only and never follow a
-//   redirect (./hosted.ts).
+// - The URL must be https://<--expect-ref>.supabase.co, or with --local exactly a local stack's own
+//   address, slot 1's http://127.0.0.1:54321 or slot 2's http://127.0.0.1:54331 (import decision 3;
+//   ./local.ts, the same rule as provision's --local); requests go to that origin only and never
+//   follow a redirect (./hosted.ts).
 // - Nothing is read outside --media and no symlink is followed; the manifest is never changed.
 // - Output is keys, ids, statuses and counts; the dry run also prints the manifest's own text.
 import { isAbsolute } from 'node:path';
 import type { ModuleManifest } from '@litljomi/cms-schema';
 import { DEFAULT_ENV_FILE, Failure, KEY_RE, REF_RE, URL_RE, UsageError, envValue, redactAll, type FetchFn } from './hosted.ts';
+import { LOCAL_ORIGINS, LOCAL_REF, LOCAL_URL_RE, hostOf } from './local.ts';
 import { LedgerFile, ledgerPath, parseLedger, reportPath, type Ledger, type LedgerStore } from './import/ledger.ts';
 import type { InspectImage } from './import/media.ts';
 import { comparisonText, dryRun, type MediaFs, type Plan } from './import/plan.ts';
@@ -25,9 +27,8 @@ import { buildReport, type Report } from './import/report.ts';
 import { Importer, type RunDeps } from './import/run.ts';
 import { EditorSession } from './import/session.ts';
 
-export const LOCAL_ORIGIN = 'http://127.0.0.1:54321';
 /** The ledger and report name of a --local run, in place of a project ref. */
-export const LOCAL_REF = 'local';
+export { LOCAL_REF };
 export const MAX_BATCH = 9;
 
 export interface ImportDeps extends MediaFs, LedgerStore, Omit<RunDeps, 'readBytes'> {
@@ -150,10 +151,11 @@ async function readEditorTarget(a: Args, readTextFile: (p: string) => Promise<st
   } catch {
     throw new Failure(`FAILED: ${envFile} could not be read; nothing was sent`);
   }
-  const url = envValue(text, 'NEXT_PUBLIC_SUPABASE_URL', a.local ? /^http:\/\/127\.0\.0\.1:54321$/ : URL_RE, envFile);
+  const url = envValue(text, 'NEXT_PUBLIC_SUPABASE_URL', a.local ? LOCAL_URL_RE : URL_RE, envFile);
   const publishableKey = envValue(text, 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', KEY_RE, envFile);
-  const expected = a.local ? LOCAL_ORIGIN : `https://${a.ref as string}.supabase.co`;
-  if (url !== expected) throw new Failure(`FAILED: ${envFile} points at ${url.replace(/^https?:\/\//, '')}, not ${expected.replace(/^https?:\/\//, '')}; nothing was sent`);
+  if (a.local && !(LOCAL_ORIGINS as readonly string[]).includes(url)) throw new Failure(`FAILED: ${envFile} points at ${hostOf(url)}, not a local stack; nothing was sent`);
+  const expected = a.local ? url : `https://${a.ref as string}.supabase.co`;
+  if (url !== expected) throw new Failure(`FAILED: ${envFile} points at ${hostOf(url)}, not ${hostOf(expected)}; nothing was sent`);
   return { origin: url, publishableKey, ref: a.local ? LOCAL_REF : (a.ref as string) };
 }
 
@@ -288,7 +290,6 @@ export async function runImport(args: string[], io: ImportIo, deps: ImportDeps):
       module,
       tenant: { id: tenantId, slug: a.tenant },
       ids: importer.ids,
-      local: a.local,
       lastRelease: outcome?.lastRelease ?? null,
       notices,
       session,

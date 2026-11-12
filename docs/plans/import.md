@@ -222,7 +222,7 @@ Output: a JSON report (`--report`, default beside the ledger) and a short summar
 | Integration, local stack (holder only) | A small fixture manifest into the `demo` tenant with its module: a full run; a second run that creates nothing; a run killed mid-wave and resumed; an editor save that moves a slug before publish (reported, not published); a singleton; a cycle | `tests/integration/` |
 | Production rehearsal | None exists (no staging). The first hosted run is DLD's, with `--first-batch-only` |
 
-**The local stack's limits.** The CLI refuses loopback today, so the integration test needs a `--local` switch that accepts only the stack's own fixed URL (decision 3). And **a local bundle delivers every image as `null`**: the projection keeps only `https` URLs and local storage is `http` (A4). Until A4, the report's file half is "unchecked" on the local stack, and the test asserts exactly that count rather than a pass.
+**The local stack.** `--local` accepts only a local stack's own address, slot 1's or slot 2's (decision 3; the same rule as `provision --local`). Since A4 a local bundle delivers its images at the stack's own `http` address, so the report's file half is checked on the local stack as on a hosted one, and the integration test asserts the pass.
 
 ## 5. Open decisions
 

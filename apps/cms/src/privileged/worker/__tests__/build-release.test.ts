@@ -380,6 +380,24 @@ describe('buildRelease: delivery', () => {
     expect((result.bundle!.entries['article']![0]!.data as { pic: { url: string } }).pic.url).toBe(`https://media.test/prufa/${A1}/a.jpg`);
   });
 
+  // Enhancement A4: the project's own URL decides; only a loopback http one (a local stack) delivers http media.
+  it.each([
+    ['a local stack', 'http://127.0.0.1:54331', `http://127.0.0.1:54331/storage/v1/object/public/media-public/prufa/${A1}/a.jpg`],
+    ['a hosted project', 'https://abcdefghijklmnopqrst.supabase.co', `https://abcdefghijklmnopqrst.supabase.co/storage/v1/object/public/media-public/prufa/${A1}/a.jpg`],
+    ['an http address that is not loopback', 'http://abcdefghijklmnopqrst.supabase.co', null],
+  ])('with the project URL of %s, an image resolves to %s', async (_name, projectUrl, expected) => {
+    snapshot.assets = [asset(A1, { public_path: `prufa/${A1}/a.jpg` })];
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', projectUrl);
+    try {
+      const result = await buildRelease(TENANT, { storage: mem.storage, now, clock });
+      expect(result.status).toBe('delivered');
+      const pic = (result.bundle!.entries['article']![0]!.data as { pic: { url: string } | null }).pic;
+      expect(pic === null ? null : pic.url).toBe(expected);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('an archived asset is neither copied nor resolved', async () => {
     snapshot.assets = [asset(A1, { archived: true })];
 

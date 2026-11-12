@@ -5,10 +5,13 @@
 //   needed name exactly once on a plain NAME=value line, its value matching a fixed pattern. A
 //   refusal names the variable, never its value.
 // - The URL must be https://<--expect-ref>.supabase.co; any other host (loopback included) is refused.
+//   A command that opts in (`provision`) may instead be given --local, which accepts exactly a local
+//   stack's own address (./local.ts) and never a hosted one.
 // - Requests go only to that origin, with keys and tokens in headers only, and never follow a redirect.
 // - Server errors are reduced to the HTTP status and the error's code and message fields, with every
 //   known secret redacted, control characters removed and the length capped.
 import { isAbsolute } from 'node:path';
+import { LOCAL_ORIGINS, LOCAL_REF, LOCAL_URL_RE, hostOf } from './local.ts';
 
 export const DEFAULT_ENV_FILE = '/Users/einarzoega/litljomi-cms/.env.production.local';
 
@@ -32,22 +35,36 @@ export interface ArgSpec {
   positionals: number;
   flags: string[];
   repeatable?: string[];
+  /** Accepts `--local` (no value) in place of `--expect-ref`, with an explicit `--env-file`. */
+  local?: boolean;
 }
 
 export interface ParsedArgs {
   positionals: string[];
   flags: Map<string, string[]>;
+  /** `--local` was given: the target is a local stack (./local.ts), not a hosted project. */
+  local: boolean;
 }
 
 const COMMON_FLAGS = ['--expect-ref', '--env-file'];
 
-/** Parses the arguments against `spec`; `--expect-ref` is required and `--env-file` must be absolute. */
+/**
+ * Parses the arguments against `spec`; `--expect-ref` is required (or, where the spec allows it,
+ * `--local` with an explicit `--env-file`) and `--env-file` must be absolute.
+ */
 export function parseArgs(args: string[], spec: ArgSpec): ParsedArgs {
   const known = new Set([...spec.flags, ...COMMON_FLAGS]);
   const positionals: string[] = [];
   const flags = new Map<string, string[]>();
+  let local = false;
   for (let i = 0; i < args.length; i++) {
     const raw = args[i] as string;
+    if (spec.local && (raw === '--local' || raw.startsWith('--local='))) {
+      if (raw !== '--local') throw new UsageError('--local takes no value');
+      if (local) throw new UsageError('--local given twice');
+      local = true;
+      continue;
+    }
     if (raw.startsWith('--')) {
       // `--flag=value` and `--flag value` are both accepted; `--env-file=<path>` is the documented form
       // because vite-node swallows a separate `--env-file <path>` when run through `pnpm … cli`.
@@ -67,10 +84,12 @@ export function parseArgs(args: string[], spec: ArgSpec): ParsedArgs {
     }
   }
   if (positionals.length !== spec.positionals) throw new UsageError('unexpected or missing arguments');
-  if (!flags.has('--expect-ref')) throw new UsageError('--expect-ref is required');
+  if (local && flags.has('--expect-ref')) throw new UsageError('give exactly one of --expect-ref and --local');
+  if (!local && !flags.has('--expect-ref')) throw new UsageError(spec.local ? '--expect-ref or --local is required' : '--expect-ref is required');
   const envFile = flags.get('--env-file')?.[0];
   if (envFile !== undefined && !isAbsolute(envFile)) throw new UsageError('--env-file must be an absolute path');
-  return { positionals, flags };
+  if (local && envFile === undefined) throw new UsageError('--local needs --env-file (the default is the production env file)');
+  return { positionals, flags, local };
 }
 
 export const flagValue = (p: ParsedArgs, name: string): string | undefined => p.flags.get(name)?.[0];
@@ -110,19 +129,24 @@ export interface Target {
   key: string;
   /** The publishable key, when it was asked for. */
   publishableKey?: string;
+  /** The project's reference, or `local` for a local stack. */
   ref: string;
   envFile: string;
+  /** A local stack (--local), not a hosted project. */
+  local: boolean;
 }
 
 /**
  * Reads and checks the target project: `--expect-ref`'s form first (before any file is read), then
- * the env file's values, then that the URL is exactly https://<ref>.supabase.co.
+ * the env file's values, then that the URL is exactly https://<ref>.supabase.co. With --local, the
+ * URL must instead be exactly one of the local stacks' addresses (./local.ts).
  */
 export async function readTarget(
   p: ParsedArgs,
   readTextFile: (path: string) => Promise<string>,
   options: { publishableKey?: boolean } = {},
 ): Promise<Target> {
+  if (p.local) return readLocalTarget(p, readTextFile, options);
   const ref = flagValue(p, '--expect-ref') as string;
   if (!REF_RE.test(ref)) {
     throw new Failure("FAILED: --expect-ref must be the hosted project's reference (20 lowercase letters or digits); nothing was sent");
@@ -140,7 +164,29 @@ export async function readTarget(
   if (url !== `https://${ref}.supabase.co`) {
     throw new Failure(`FAILED: ${envFile} points at ${url.slice('https://'.length)}, not ${ref}.supabase.co; nothing was sent`);
   }
-  return publishableKey === undefined ? { origin: url, key, ref, envFile } : { origin: url, key, publishableKey, ref, envFile };
+  return publishableKey === undefined ? { origin: url, key, ref, envFile, local: false } : { origin: url, key, publishableKey, ref, envFile, local: false };
+}
+
+async function readLocalTarget(
+  p: ParsedArgs,
+  readTextFile: (path: string) => Promise<string>,
+  options: { publishableKey?: boolean },
+): Promise<Target> {
+  const envFile = flagValue(p, '--env-file') as string;
+  let text: string;
+  try {
+    text = await readTextFile(envFile);
+  } catch {
+    throw new Failure(`FAILED: ${envFile} could not be read; nothing was sent`);
+  }
+  const url = envValue(text, 'NEXT_PUBLIC_SUPABASE_URL', LOCAL_URL_RE, envFile);
+  const key = envValue(text, 'SUPABASE_SECRET_KEY', KEY_RE, envFile);
+  const publishableKey = options.publishableKey ? envValue(text, 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', KEY_RE, envFile) : undefined;
+  if (!(LOCAL_ORIGINS as readonly string[]).includes(url)) {
+    throw new Failure(`FAILED: ${envFile} points at ${hostOf(url)}, not a local stack; nothing was sent`);
+  }
+  const base = { origin: url, key, ref: LOCAL_REF, envFile, local: true };
+  return publishableKey === undefined ? base : { ...base, publishableKey };
 }
 
 // ---------------------------------------------------------------------------------------------

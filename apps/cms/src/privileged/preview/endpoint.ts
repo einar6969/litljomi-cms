@@ -10,7 +10,7 @@ import { readUnverifiedPreviewClaims, verifyPreviewToken, type Bundle, type Bund
 import { getModule } from '@/modules/registry';
 import type { SupabaseClient } from '@/lib/supabase/types';
 import { supabaseReleaseStorage, type ReleaseStorage } from '../worker/build-release';
-import { buildProjectionContext, type ContextAsset, type ContextEntry } from '../worker/projection-context';
+import { buildProjectionContext, localStackOrigin, type ContextAsset, type ContextEntry } from '../worker/projection-context';
 import { callRpc } from '../worker/rpc';
 import { MEDIA_PRIVATE, privateMediaPath } from '../worker/storage-paths';
 
@@ -56,6 +56,12 @@ export type PreviewDeps = {
    */
   signMedia?: (paths: string[], expiresIn: number) => Promise<Map<string, string>>;
   mediaTtlSeconds?: number;
+  /**
+   * The Supabase URL the admin client and the signed URLs use. When it is http on a loopback host
+   * (a local stack), the draft's media are delivered at that http address (enhancement A4);
+   * otherwise, or when absent, only https media are.
+   */
+  stackUrl?: string;
 };
 
 export type PreviewFailure =
@@ -144,6 +150,7 @@ export async function readPreview(deps: PreviewDeps, input: { tenant: string; to
     entries: [...released, draftSummary],
     assets: contextAssets,
     mediaUrl: (path) => signed.get(path) ?? '',
+    localMediaOrigin: deps.stackUrl === undefined ? null : localStackOrigin(deps.stackUrl),
   });
   let data: Record<string, unknown>;
   try {
