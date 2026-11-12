@@ -361,6 +361,11 @@
           "at": "2026-11-12",
           "scope": "Done: staging advanced 09f7f62 → 7139585 (password sign-in, PRs #63–#65); vefumsjon-staging and demo-staging deployed (runbook 7.3 step 6).",
           "note": "Done under decision 73 rule 2 (standing staging approval within the approved plan, decision 72); results in docs/verification/pw-staging.md."
+        },
+        {
+          "at": "2026-11-12",
+          "scope": "Done: staging advanced 7139585 → a772423 (PR #66: S29 sign-out on the set-password page, R7 no server-side session refresh); no migration or template change; vefumsjon-staging and demo-staging deployed; /login, /auth/refresh, /login/forgot 200.",
+          "note": "Done under decision 73 rule 2 after Einar asked to take care of S29 and R7 (\"please take care of the two open-issues, S29 and R7, in an efficient and fast manner.\")."
         }
       ]
     },
