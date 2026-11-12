@@ -6,7 +6,7 @@
 
 **Einar's words (2026-11-12):** "i want to implement account passwords auth, instead of the current system." and, asked whether sign-in should include a CAPTCHA, "no CAPTCHA. also, no password rules."
 
-**Replaces:** decision 18's hook (it refused passwords; the new one refuses magic links and OTP codes), decision 20's verification procedure (inverted), and decision 43's "magic link only". Decision 66 parked M5 finding 7 until a password system: PW-02 resolves it by keying Auth's limits on the editor's address. The guessing risk that remains is accepted (spec §4.4, §11.2).
+**Replaces:** decision 18's hook (it refused passwords; the new one allows them, and magic links are stopped by the sign-in email instead, decision 72.1), decision 20's verification procedure (inverted), and decision 43's "magic link only". Decision 66 parked M5 finding 7 until a password system: PW-02 resolves it by keying Auth's limits on the editor's address. The guessing risk that remains is accepted (spec §4.4, §11.2).
 
 **Not in scope:** CAPTCHA; password rules beyond Auth's minimum of 6; the leaked-password check; a "change password" screen for a signed-in editor (a reset does it); MFA for editors; passkeys. Platform admins keep TOTP and `aal2` for the console, unchanged.
 
@@ -18,11 +18,12 @@ As in `docs/plans/m5.md`: local, one task, one branch `pw/<task-id>-<slug>`, one
 
 - **Spec:** §4.4, §4.5 "Auth hook grant", §11.2.
 - **Scope:**
-  - A new migration creates `private.sign_in_access_token(event jsonb)`: same shape, grants and fail-closed checks as today's hook, with the allowed methods `password`, `recovery`, `invite`, `email_change`, `totp` and `token_refresh`. For `token_refresh` and `totp`, every `amr` method must be one of `password`, `recovery`, `invite`, `email_change` or `totp`. `magiclink`, `otp` and anything else return 403 with a message that names no method. The same migration drops `private.passwordless_access_token`.
+  - A new migration creates `private.sign_in_access_token(event jsonb)`: same shape, grants and fail-closed checks as today's hook, with the allowed methods `password`, `otp`, `totp` and `token_refresh`. For `token_refresh` and `totp`, every `amr` method must be `password`, `otp` or `totp`. Anything else, `magiclink`, `recovery` and `invite` included (they only arrive from a PKCE exchange, which the CMS doesn't use), returns 403 with a message that names no method. The same migration drops `private.passwordless_access_token`. Decision 72.1: Auth reports every token-hash link as `otp`, so the hook can't refuse magic links.
   - `supabase/config.toml`: the hook URI points to the new function; `minimum_password_length = 6`; `password_requirements = ""`; leaked-password check off; `secure_password_change` stays on.
+  - `supabase/templates/magic_link.html` carries no `{{ .ConfirmationURL }}`, `{{ .TokenHash }}` or `{{ .Token }}`. It tells the editor, in Icelandic, that sign-in is with a password at the CMS address. This is what stops magic-link and code sign-in (decision 72.1). Its copy goes to Einar for approval with PW-03's strings.
   - The test helpers that sign in through a magic link (`tests/integration/src/auth-api.ts`, `clients.ts`, the persona matrix's setup, `editor/__tests__/*.integration.test.ts`) sign in with a password instead. Seeded test users get a password from the seed or fixture files, never a real one.
   - `tools/checks` and `tools/cli/src/boundary-check.ts` check the new hook and its new expectations.
-- **Acceptance:** pgTAP covers every method with valid, empty, missing and malformed `amr`, and pins the grants (only `postgres` and `supabase_auth_admin` may execute). Integration: a password sign-in gets a session; a magic-link and an OTP verification each get 403; a session whose `amr` holds `magiclink` can't refresh; an invite and a recovery link each sign in. The persona matrix passes.
+- **Acceptance:** pgTAP covers every method with valid, empty, missing and malformed `amr`, and pins the grants (only `postgres` and `supabase_auth_admin` may execute). Integration: a password sign-in gets a session; an invite, a recovery and an email-change link each sign in by POST; a sign-in email requested through the OTP endpoint arrives (in Mailpit) with no link, token hash or code; a sign-up and an anonymous sign-in get 403. A `tools/checks` test fails if the magic-link template gains any of the three placeholders. The persona matrix passes.
 
 ## PW-02: Sign-in with a password
 
@@ -41,7 +42,7 @@ As in `docs/plans/m5.md`: local, one task, one branch `pw/<task-id>-<slug>`, one
   - A "Gleymt lykilorð?" link on `/login` opens a form that requests a reset email (`redirectTo` the confirm page). It always shows the same confirmation.
   - The confirm page accepts `invite`, `recovery` and `email_change` links, and refuses `email` (magic link). As today, the link is verified by the button's POST, never the GET.
   - After an invite or a recovery link, the CMS takes the editor to a set-password page before any other page, and returns them to where they were going once the password is set. A failed or refused update says so and keeps them on the page.
-  - Templates: `invite.html` says the editor will choose a password; a new Icelandic `recovery.html` follows the token-hash and POST pattern; `magic_link.html` no longer carries a link and says to sign in with a password at the CMS address, because Auth's OTP endpoint can still send it.
+  - Templates: `invite.html` says the editor will choose a password; a new Icelandic `recovery.html` follows the token-hash and POST pattern; `magic_link.html` is done in PW-01.
   - New Icelandic strings in `src/i18n/is.ts` are listed in the PR for Einar's approval of the copy, as with decision 51.3.
 - **Acceptance:** browser tests: an invite leads to a set password, sign-out, then sign-in with it; a reset makes the new password work and the old one fail; opening a link by GET uses nothing up; a signed-in visitor opening another account's link is asked first (M3-14). Unit tests for the confirm types and the redirect rules.
 
@@ -56,4 +57,4 @@ On the local stack: `pnpm db:reset`, `pnpm db:test`, `pnpm test`, `pnpm test:int
 
 ## Hosted (separate approval)
 
-Not covered by approving this plan. On staging: `supabase db push` and, in the same minute, the hook URI in the dashboard (sign-ins fail between the two; staging has no editors); the password settings; the invite, recovery and magic-link templates; advance `staging`; reset the passwords of the test and admin accounts; run the inverted hook check and the staging browser suite. Production waits for its own decision.
+Not covered by approving this plan. On staging: `supabase db push` and, in the same minute, the hook URI in the dashboard (sign-ins fail between the two; staging has no editors); the password settings; the invite, recovery and magic-link templates; advance `staging`; sign out every hosted session (old magic-link sessions refresh as `otp` and would otherwise survive); reset the passwords of the test and admin accounts; check the hosted magic-link template carries no link or code; run the inverted hook check and the staging browser suite. Production waits for its own decision.
