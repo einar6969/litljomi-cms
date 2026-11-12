@@ -5,8 +5,9 @@ The living record of onboarding DLD (Dagný Land Design) as a tenant. A later se
 | | |
 |---|---|
 | Last updated | 2026-11-12, after Einar's rulings |
-| **Current stage** | **1 is done** (rulings, probes). **Stage 3 has begun** with the library's first slice (L1). The enhancement list waits for Einar |
-| Next action | Einar approves rows of [ENHANCEMENTS.md](ENHANCEMENTS.md) and its five library decisions. Meanwhile: build L1 (`docs/plans/media-library.md`), then draft the content model (stage 2), which needs his rulings on B7 and B10 first |
+| **Current stage** | **2: the content model waits for Einar's approval** ([content-model.md](content-model.md), reviewed for DLD and for the platform, reconciled). **Stage 3 is under way**: library slice L1 and enhancement A3 are being built |
+| Next action | Einar approves the model and answers its five questions. Then: review and merge L1 and A3; build the rest of Track A in the order given in [ENHANCEMENTS.md](ENHANCEMENTS.md); A11 and A12 before `modules/dld` |
+| How agents run | Each agent gets a model sized to its task (Einar, 2026-11-12: "please run agents with model scoped for the task"). Opus for boundary code and security review, Sonnet for scoped reviews and routine work |
 | Nothing has changed in | Production, `dld-is`, the DLD workspace, Vercel, DNS. The Hub has new docs only, until L1's PR |
 
 ## Probe results, 2026-11-12
