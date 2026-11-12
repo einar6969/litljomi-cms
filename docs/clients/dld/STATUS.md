@@ -61,9 +61,11 @@ Each probe's blockers became a row in ENHANCEMENTS.md (A6, A7, A10, B9, B10).
 
 ## How to continue
 
-1. Read `CLAUDE.md`, `docs/king/BRIEF.md` section 1 and `docs/king/OPEN-ISSUES.md` in this repository.
-2. Read [ROADMAP.md](ROADMAP.md), then this file's rulings and open questions.
-3. The client's workspace is `/Users/einarzoega/Documents/Litljómi ehf/Projects/2026/LAW Takeover/DLD`. Its `CLAUDE.md` holds DLD's current state and the site's invariants. The site repository is `dld-is/` inside it (remote `einar6969/dld`).
+A new session starts from [START.md](START.md): it holds a paste-ready prompt and the things that are easy to miss. Einar asked for a handover to a fresh session once the second workflow reports ("Yes, hand over", 2026-11-12).
+
+1. Read `CLAUDE.md`, then this file from the top, then [ROADMAP.md](ROADMAP.md), [ENHANCEMENTS.md](ENHANCEMENTS.md) and [content-model.md](content-model.md).
+2. Check the state at the source (`gh pr list`, CI, `git log`, the DLD site's branches) before relying on the tables below.
+3. The client's workspace is `/Users/einarzoega/Documents/Litljómi ehf/Projects/2026/LAW Takeover/DLD`. Its `CLAUDE.md` holds DLD's current state and the site's invariants. The site repository is `dld-is/` inside it (remote `einar6969/dld`). The task texts for work in it are in its `metaprompts/active/`.
 4. Do nothing past the current stage without the approval the roadmap names for it.
 
 ## Standing instructions
