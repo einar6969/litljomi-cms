@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { ensureThumbnailAction } from '@/app/(editor)/t/[tenant]/asset-actions';
 import { t } from '@/i18n/is';
 import { Icon } from '@/ui/Icon';
-import { fileMeta, formatBytes, formatUploadDate, kindLabel } from './library-format';
+import { fileMeta, formatBytes, kindLabel } from './library-format';
 import type { LibraryView } from './library-filter';
 
 /** One file as the library lists it: read from `api.asset_list`, its thumbnail signed by the page. */
@@ -22,6 +22,11 @@ export type LibraryFile = {
   height: number | null;
   bytes: number;
   createdAt: string;
+  /**
+   * The upload date in Icelandic ("4. okt. 2026"), formatted on the server: a browser without
+   * Icelandic locale data would write it in another language.
+   */
+  uploaded: string;
   /** A signed URL of the thumbnail, valid 600 seconds, or null when the file has none yet. */
   thumbUrl: string | null;
   /** How many entries use it; null where the view does not show it. */
@@ -99,7 +104,7 @@ export function LibraryFiles({ view, files, activeId }: Props) {
                   {file.width !== null && file.height !== null ? `${file.width}×${file.height}` : ''}
                 </td>
                 <td role="cell">
-                  <time dateTime={file.createdAt}>{formatUploadDate(file.createdAt)}</time>
+                  <time dateTime={file.createdAt}>{file.uploaded}</time>
                 </td>
                 <td role="cell" className="mono">
                   {file.usage ?? ''}

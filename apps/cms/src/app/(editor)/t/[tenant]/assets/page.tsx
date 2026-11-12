@@ -4,7 +4,7 @@ import { SearchShortcut } from '@/editor/SearchShortcut';
 import { AssetDetail } from '@/editor/media/AssetDetail';
 import { LibraryFiles, type LibraryFile } from '@/editor/media/LibraryFiles';
 import { isLibraryFiltered, libraryHref, LIBRARY_PAGE_SIZE, LIBRARY_SORTS, MAX_LIBRARY_PAGE, parseLibraryState, type LibraryFilter, type LibraryState } from '@/editor/media/library-filter';
-import { filesLine, formatBytes, unusedLine } from '@/editor/media/library-format';
+import { filesLine, formatBytes, formatUploadDate, unusedLine } from '@/editor/media/library-format';
 import { LibraryUpload, UploadTrigger } from '@/editor/media/LibraryUpload';
 import { assetUse, loadLibraryFile, loadLibraryFiles, loadLibrarySummary, loadUsageCounts } from '@/editor/server/library';
 import { MAX_QUERY_LENGTH } from '@/editor/entry-list-filter';
@@ -62,6 +62,7 @@ export default async function LibraryPage({ params, searchParams }: Props) {
     height: f.height,
     bytes: f.bytes,
     createdAt: f.created_at,
+    uploaded: formatUploadDate(f.created_at),
     thumbUrl: f.thumb_path === null ? null : (listed.thumbUrls.get(f.thumb_path) ?? null),
     usage: usageCounts?.get(f.id) ?? null,
   }));

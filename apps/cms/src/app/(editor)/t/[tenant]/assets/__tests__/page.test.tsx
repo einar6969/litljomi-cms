@@ -123,6 +123,8 @@ describe('the library page', () => {
     expect(listQuery().calls).toContainEqual(['is', 'missing_alt', true]);
     expect(listQuery().calls).toContainEqual(['order', 'filename', { ascending: true }]);
     expect(html).toContain('<table role="table"');
+    // Dates are written on the server, in Icelandic.
+    expect(html).toContain('<time dateTime="2026-10-04T12:00:00Z">4. okt. 2026</time>');
     expect(html).toContain(`href="/t/acme/assets?q=brau%C3%B0&amp;filter=missing-alt&amp;sort=name&amp;view=list&amp;file=${row(1).id}"`);
     // The usage counts of the list view.
     expect(db.queries.find((q) => q.table === 'asset_usage')?.calls).toContainEqual(['in', 'asset_id', [row(1).id, row(2).id]]);

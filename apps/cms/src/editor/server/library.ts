@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@/lib/supabase/types';
 import { MEDIA_PRIVATE_BUCKET, PREVIEW_SECONDS, previewUrl } from '../upload';
 import type { AssetFile, AssetUse } from '../media/AssetDetail';
 import { applyLibraryFilter, LIBRARY_PAGE_SIZE, libraryRange, orderLibrary, type LibraryState } from '../media/library-filter';
+import { formatUploadDate } from '../media/library-format';
 
 // The media library's reads (docs/plans/media-library.md sections 4 and 6.1, slice L4), with the
 // editor's own session: api.asset_summary, api.asset_list and api.asset_usage are security_invoker
@@ -129,6 +130,7 @@ export async function loadLibraryFile(
       height: row.height,
       bytes: row.bytes,
       createdAt: row.created_at,
+      uploaded: formatUploadDate(row.created_at),
       focal: row.focal_x !== null && row.focal_y !== null ? { x: row.focal_x, y: row.focal_y } : null,
       defaultAlt: row.default_alt,
       caption: row.caption,

@@ -25,7 +25,11 @@ export function formatBytes(bytes: number): string {
 
 const DATE = new Intl.DateTimeFormat('is-IS', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Atlantic/Reykjavik' });
 
-/** An upload date as "4. okt. 2026", in Reykjavík time. */
+/**
+ * An upload date as "4. okt. 2026", in Reykjavík time. Called on the server only: a browser without
+ * Icelandic locale data (Playwright's Chromium among them) would write it in English, and the page
+ * would not hydrate.
+ */
 export const formatUploadDate = (iso: string): string => DATE.format(new Date(iso));
 
 /** A card's line: "2048×716 · 60,5 KB", or the size alone for a file without dimensions. */

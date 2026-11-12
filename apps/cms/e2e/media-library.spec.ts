@@ -82,14 +82,14 @@ test('the library at 1440, 768 and 375 px: search, filters, both views, details,
   const entryId = await createNews(page);
   await page.getByLabel(TITLE).fill(`Kökufrétt ${token}`);
   const uploadRequest = page.waitForRequest((r) => r.method() === 'POST' && r.url().startsWith(UPLOAD_PREFIX));
-  await page.locator('#field-image').setInputFiles(jpeg(`Notud ${token}.jpg`));
+  await page.locator('#field-image').setInputFiles(jpeg(`Notkun ${token}.jpg`));
   const request = await uploadRequest;
   const editor = await editorHeadersOf(request);
   const used = decodeURIComponent(request.url().slice(UPLOAD_PREFIX.length)).split('/')[1]!;
   await expect(page.getByTestId('field-image-preview')).toBeVisible(SAVED);
   await expect(page.getByRole('status')).toHaveText(t.editor.saved, SAVED);
   await page.goto('/t/labak/assets');
-  await uploadInLibrary(page, [jpeg(`Onotud ${token} a.jpg`), jpeg(`Onotud ${token} b.jpg`)], '2 skrár eru komnar í safnið.');
+  await uploadInLibrary(page, [jpeg(`Laus ${token} a.jpg`), jpeg(`Laus ${token} b.jpg`)], '2 skrár eru komnar í safnið.');
 
   for (const width of WIDTHS) {
     await test.step(`at ${width} px`, async () => {
@@ -107,22 +107,25 @@ test('the library at 1440, 768 and 375 px: search, filters, both views, details,
       await page.getByRole('link', { name: t.library.filter.unused, exact: true }).click();
       await expect(page).toHaveURL(/filter=unused/);
       await expect(cards(page)).toHaveCount(2);
-      await expect(cards(page).filter({ hasText: `notud-${token}` })).toHaveCount(0);
+      await expect(cards(page).filter({ hasText: `notkun-${token}` })).toHaveCount(0);
       await page.getByRole('link', { name: t.library.filter.missingAlt }).click();
       await expect(page).toHaveURL(/filter=missing-alt/);
       await expect(cards(page)).toHaveCount(3);
 
-      // The list view shows the same files in a table, with the usage count.
+      // The list view shows the same files in a table, with the upload date in Icelandic and, from
+      // 768 px (stacked rows below that have no room for an unlabelled number), the usage count.
       await page.getByRole('link', { name: t.library.view.list }).click();
       await expect(page).toHaveURL(/view=list/);
       const table = page.getByRole('table');
       await expect(table.getByRole('row')).toHaveCount(4);
-      await expect(table.getByRole('row').filter({ hasText: `notud-${token}.jpg` }).getByRole('cell').last()).toHaveText('1');
+      const usedRow = table.getByRole('row').filter({ hasText: `notkun-${token}.jpg` });
+      await expect(usedRow.getByRole('cell').nth(4)).toHaveText(/^\d{1,2}\. [a-zþæöðáéíóúý]{3}\.? \d{4}$/);
+      if (width >= 768) await expect(usedRow.getByRole('cell').nth(5)).toHaveText('1');
       await page.getByRole('link', { name: t.library.view.grid }).click();
       await expect(cards(page)).toHaveCount(3);
 
       // A file's details: on wide screens beside the files, below 1024 px over them.
-      await cards(page).filter({ hasText: `notud-${token}` }).click();
+      await cards(page).filter({ hasText: `notkun-${token}` }).click();
       await expect(page).toHaveURL(new RegExp(`file=${used}`));
       const panel = page.getByTestId('asset-panel');
       await expect(panel.getByRole('heading', { level: 2 })).toBeFocused();
@@ -142,7 +145,7 @@ test('the library at 1440, 768 and 375 px: search, filters, both views, details,
       if (width >= 1024) await panel.getByRole('link', { name: t.library.detail.close }).click();
       else await panel.getByRole('link', { name: t.library.detail.back }).click();
       await expect(page).not.toHaveURL(/file=/);
-      await expect(cards(page).filter({ hasText: `notud-${token}` })).toBeFocused();
+      await expect(cards(page).filter({ hasText: `notkun-${token}` })).toBeFocused();
     });
   }
 
@@ -162,8 +165,12 @@ test('the library with the keyboard only', async ({ page }) => {
   await page.goto(`/t/labak/assets?q=${token}`);
 
   // "/" jumps to the search; the grid is one tab stop after the toolbar.
-  await page.keyboard.press('/');
-  await expect(page.getByRole('searchbox', { name: t.library.search })).toBeFocused();
+  // Pressed again until the page's script has loaded: before that, "/" reaches no listener.
+  const searchbox = page.getByRole('searchbox', { name: t.library.search });
+  await expect(async () => {
+    await page.keyboard.press('/');
+    await expect(searchbox).toBeFocused({ timeout: 500 });
+  }).toPass();
   const first = cards(page).first();
   const second = cards(page).nth(1);
   await first.focus();

@@ -12,7 +12,7 @@ import { StatusBadge } from '@/ui/StatusBadge';
 import { MAX_ALT_LENGTH, MAX_CAPTION_LENGTH, MAX_CREDIT_LENGTH, type AssetChange } from './asset-metadata';
 import type { FocalPoint } from './focal-point';
 import { FocalPointPicker } from './FocalPointPicker';
-import { formatBytes, formatUploadDate, kindLabel, usageState } from './library-format';
+import { formatBytes, kindLabel, usageState } from './library-format';
 
 /** The file as the panel shows it, read from `api.asset_list` under the editor's session. */
 export type AssetFile = {
@@ -23,6 +23,8 @@ export type AssetFile = {
   height: number;
   bytes: number;
   createdAt: string;
+  /** The upload date in Icelandic, formatted on the server (a browser may lack Icelandic locale data). */
+  uploaded: string;
   focal: FocalPoint | null;
   defaultAlt: string | null;
   caption: string | null;
@@ -198,7 +200,9 @@ export function AssetDetail({ file, url: initialUrl, usage, originalHref, closeH
         <dt>{t.library.col.dimensions}</dt>
         <dd data-testid="asset-dimensions">{t.asset.dimensions.replace('{width}', String(file.width)).replace('{height}', String(file.height))}</dd>
         <dt>{t.library.col.uploaded}</dt>
-        <dd data-testid="asset-uploaded">{formatUploadDate(file.createdAt)}</dd>
+        <dd data-testid="asset-uploaded">
+          <time dateTime={file.createdAt}>{file.uploaded}</time>
+        </dd>
       </dl>
       <a href={originalHref} target="_blank" rel="noreferrer" className="lib-original">
         {t.library.detail.original}

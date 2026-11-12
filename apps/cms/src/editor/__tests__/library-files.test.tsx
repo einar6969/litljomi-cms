@@ -25,6 +25,7 @@ const files: Files = [1, 2, 3].map((n) => ({
   height: 716,
   bytes: 61_952,
   createdAt: '2026-10-04T12:00:00Z',
+  uploaded: '4. okt. 2026',
   thumbUrl: `http://127.0.0.1:54321/thumb-${n}`,
   usage: n,
 }));

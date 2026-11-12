@@ -51,6 +51,7 @@ const FILE: DetailProps['file'] = {
   height: 716,
   bytes: 61_952,
   createdAt: '2026-10-04T12:00:00Z',
+  uploaded: '4. okt. 2026',
   focal: null,
   defaultAlt: 'Brauð',
   caption: null,
