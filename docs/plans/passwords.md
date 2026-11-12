@@ -1,6 +1,6 @@
 # Password sign-in: implementation plan
 
-> **Status: DRAFT for Einar's approval.** Nothing in it is approved until Einar says so in chat. On approval the controller records decision 72 in `docs/plans/2026-11-01-m0-m1.md`, quoting him.
+> **Status: APPROVED by Einar on 2026-11-12 (decision 72).** Hosted rollout is not covered.
 
 **Goal:** editors and platform admins sign in with email and password instead of a magic link (spec §4.4 as amended on 2026-11-12). New editors set their first password from the invite email; a forgotten password is reset by email.
 
