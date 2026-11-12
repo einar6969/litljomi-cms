@@ -7,3 +7,9 @@ export const PERSONA_EMAILS = {
 } as const;
 
 export type E2ePersona = keyof typeof PERSONA_EMAILS;
+
+/**
+ * The password every fixed persona signs in with on the local stack, copied from PERSONA_PASSWORD in
+ * tests/integration/src/fixtures.ts (the seed sets it). A local test value, never a real one.
+ */
+export const PERSONA_PASSWORD = 'local-test-password-0123';

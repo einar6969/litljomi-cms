@@ -11,11 +11,14 @@ export const is = {
   },
   login: {
     title: 'Innskráning',
-    intro: 'Sláðu inn netfangið þitt og við sendum þér innskráningarhlekk.',
     emailLabel: 'Netfang',
-    submit: 'Senda innskráningarhlekk',
-    // One neutral message for success, an unknown address and a rate limit alike (decision 37.4).
-    sent: 'Ef netfangið er skráð færðu tölvupóst',
+    passwordLabel: 'Lykilorð',
+    submit: 'Skrá inn',
+    // One neutral message for every failed sign-in but a rate limit: a wrong password, an unknown
+    // address and a network error alike, so it never shows whether an account exists (spec §4.4).
+    failed: 'Innskráning tókst ekki. Athugaðu netfang og lykilorð og reyndu aftur.',
+    // Auth's per-address limit (spec §4.4).
+    rateLimited: 'Of margar tilraunir í bili. Reyndu aftur eftir nokkrar mínútur.',
     linkInvalid: 'Innskráningarhlekkurinn er ógildur eða útrunninn. Biddu um nýjan.',
     // After the first of an email change's two links (spec §4.4).
     emailChangeWaiting: 'Netfangið er staðfest. Breytingin tekur gildi þegar hitt netfangið hefur líka verið staðfest.',

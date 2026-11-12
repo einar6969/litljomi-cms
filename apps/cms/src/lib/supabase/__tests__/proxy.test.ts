@@ -85,6 +85,16 @@ describe('updateSession', () => {
     expect(response.headers.get('location')).toBe(`${ORIGIN}/login`);
   });
 
+  // The browser re-sends a 307's POST with its action id to /login, where the sign-out is registered
+  // (login/page.tsx), so an editor whose session expired can still sign out. Any other action finds
+  // no action of its own there and does not run.
+  it('sends a server action posted without a session on to /login as a 307', async () => {
+    const post = new NextRequest(`${ORIGIN}/t/acme/news/1`, { method: 'POST', headers: { cookie: 'sb-access=old', 'next-action': 'an-action-id' } });
+    const response = await updateSession(post);
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe(`${ORIGIN}/login`);
+  });
+
   it('keeps cookie changes (a cleared session) on the redirect', async () => {
     state.refresh = () => state.cookies!.setAll([{ name: 'sb-access', value: '', options: { path: '/', maxAge: 0 } }]);
     const response = await updateSession(request('/t/acme'));

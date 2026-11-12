@@ -13,10 +13,10 @@ import { SESSION_MAX_AGE } from '../src/lib/supabase/session-cookies';
 import { addressOf, arrangeEmailChange, removeUser, resetAdmin } from './support/console-admin';
 import { createNews } from './support/editor';
 import { CMS_URL, SUPABASE_URL } from './support/local';
-import { magicLinkOf, waitForNewMessage } from './support/mailpit';
+import { confirmLinkOf, waitForNewMessage } from './support/mailpit';
 import { PERSONA_EMAILS } from './support/personas';
 import { sessionState } from './support/session';
-import { requestMagicLink, signIn } from './support/sign-in';
+import { signIn } from './support/sign-in';
 import { expect, newLoopbackContext, test } from './support/test';
 
 const JPEG = readFileSync(join(import.meta.dirname, 'fixtures', 'rugbraud.jpg'));
@@ -133,7 +133,7 @@ test.describe('an email change', () => {
   async function linkMailedTo(address: string): Promise<URL> {
     const message = await waitForNewMessage(address, new Set());
     if (!message) throw new Error(`no email-change mail arrived for ${address}`);
-    return magicLinkOf(message);
+    return confirmLinkOf(message);
   }
 
   test('needs the POST of each address, and opening the links confirms nothing', async ({ browser, page }) => {
@@ -169,8 +169,9 @@ test.describe('an email change', () => {
         expect((await addressOf(id)).email).toBe(newAddress);
       });
 
-      await test.step('the new address signs in from now on', async () => {
-        expect((await requestMagicLink(page, newAddress)).pathname).toBe('/auth/confirm');
+      await test.step('the new address signs in with the password from now on', async () => {
+        // The account belongs to no tenant, so it lands on the tenant picker.
+        expect((await signIn(page, newAddress)).pathname).toBe('/');
       });
     } finally {
       await removeUser(id);

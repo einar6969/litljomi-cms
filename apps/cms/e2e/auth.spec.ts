@@ -1,30 +1,25 @@
-// Task 22: magic-link sign-in, tenant routing and the neutral sign-in message, against the local
-// CMS (`next start` on `CMS_PORT`, support/local.ts), the local stack and its Mailpit. Task 32 (decision 41.1): the link
-// works in a browser other than the one that asked for it, and opening it alone (as an email
-// security scanner does) signs nobody in and does not use it up. Decision 42.2 (Q1): a visitor who
-// is already signed in is told so; a bad link changes nothing. M3-14: the page drops the token hash
-// from the address bar once loaded; a link for another account then names that account and asks
-// before replacing the visitor's session ("Skipta um aðgang" revokes the old session, "Hætta við"
-// keeps it).
+// Task 22 and PW-02: sign-in with a password and tenant routing, against the local CMS (`next start`
+// on `CMS_PORT`, support/local.ts) and the local stack. A wrong password and an unknown address get
+// the same neutral message (spec §4.4). Task 32 (decision 41.1): a link works in any browser, once,
+// and opening it alone (as an email security scanner does) signs nobody in and does not use it up.
+// Decision 42.2 (Q1): a visitor who is already signed in is told so; a bad link changes nothing.
+// M3-14: the page drops the token hash from the address bar once loaded; a link for another account
+// then names that account and asks before replacing the visitor's session ("Skipta um aðgang"
+// revokes the old session, "Hætta við" keeps it), and a password sign-in discards the question.
+//
+// The sign-in email carries no link (decision 72.1), so the links come from the admin script
+// (support/sign-in.ts, signInLink); the confirm page takes them as it takes an emailed one.
 import { randomBytes } from 'node:crypto';
-import type { Browser, Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import { t } from '../src/i18n/is';
 import { CMS_URL } from './support/local';
-import { messageIds, waitForNewMessage } from './support/mailpit';
-import { PERSONA_EMAILS } from './support/personas';
+import { PERSONA_EMAILS, PERSONA_PASSWORD } from './support/personas';
 import { sessionState } from './support/session';
-import { followLink, openLink, requestLink, requestMagicLink, signIn } from './support/sign-in';
+import { followLink, openLink, signIn, signInLink, submitSignIn } from './support/sign-in';
 import { expect, newLoopbackContext, test } from './support/test';
 
-/** A magic link for `email`, requested in another browser (so this one keeps its session). */
-async function linkFromAnotherBrowser(browser: Browser, email: string): Promise<URL> {
-  const requester = await newLoopbackContext(browser);
-  try {
-    return await requestMagicLink(await requester.newPage(), email);
-  } finally {
-    await requester.close();
-  }
-}
+// The M3-14 question's cookie, as src/app/auth/confirm/pending.ts names it (server-only, so not imported).
+const PENDING_COOKIE = 'cms-confirm-pending';
 
 /** In a new tab of the same browser: still signed in as editor_demo. */
 async function expectStillDemo(page: Page): Promise<void> {
@@ -35,7 +30,7 @@ async function expectStillDemo(page: Page): Promise<void> {
 }
 
 test.describe('without a session', () => {
-  test('editor_labak signs in through the Mailpit link and lands on /t/labak', async ({ page }) => {
+  test('editor_labak signs in with a password and lands on /t/labak', async ({ page }) => {
     // Editor routes need a session.
     await page.goto('/t/labak');
     await expect(page).toHaveURL(`${CMS_URL}/login`);
@@ -43,12 +38,51 @@ test.describe('without a session', () => {
     const landed = await signIn(page, PERSONA_EMAILS.editor_labak);
     expect(landed.href).toBe(`${CMS_URL}/t/labak`);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Landssamband bakarameistara');
+    expect((await page.goto('/t/labak'))?.status()).toBe(200);
   });
 
-  test('a link requested in one browser signs in in another, once', async ({ page, browser }) => {
-    const link = await requestMagicLink(page, PERSONA_EMAILS.editor_labak);
+  test('a wrong password and an unknown address get the same neutral message, and sign nobody in', async ({ page, context }) => {
+    const known = PERSONA_EMAILS.editor_demo;
+    const unknown = `nobody-${randomBytes(6).toString('hex')}@test.local`;
+    const refusal = page.getByRole('main').getByRole('alert');
 
-    // Another browser or device: a fresh context without the requesting browser's cookies.
+    await submitSignIn(page, known, `${PERSONA_PASSWORD}-wrong`);
+    await expect(refusal).toHaveText(t.login.failed);
+    const wrongUrl = page.url();
+    const wrongText = await page.locator('main').innerText();
+
+    await submitSignIn(page, unknown, PERSONA_PASSWORD);
+    await expect(refusal).toHaveText(t.login.failed);
+    expect(page.url()).toBe(wrongUrl);
+    expect(await page.locator('main').innerText()).toBe(wrongText);
+
+    expect(new URL(wrongUrl).pathname).toBe('/login');
+    expect(wrongText).not.toContain(known);
+    await expect(page.getByLabel(t.login.passwordLabel)).toHaveValue('');
+    expect((await context.cookies()).filter(({ name }) => name.startsWith('sb-'))).toEqual([]);
+    await page.goto('/t/demo');
+    await expect(page).toHaveURL(`${CMS_URL}/login`);
+  });
+
+  test('a sign-in goes on to next when it is a path on the CMS, and home otherwise', async ({ browser }) => {
+    for (const [next, landing] of [
+      ['/t/labak/news', '/t/labak/news'],
+      ['//evil.example/t/labak/news', '/t/labak'],
+    ] as const) {
+      const context = await newLoopbackContext(browser);
+      try {
+        const landed = await signIn(await context.newPage(), PERSONA_EMAILS.editor_labak, PERSONA_PASSWORD, `?${new URLSearchParams({ next })}`);
+        expect(landed.href).toBe(`${CMS_URL}${landing}`);
+      } finally {
+        await context.close();
+      }
+    }
+  });
+
+  test('a link signs in in any browser, once', async ({ page, browser }) => {
+    const link = await signInLink('editor_labak');
+
+    // Another browser or device: a fresh context of its own.
     const other = await newLoopbackContext(browser);
     try {
       const otherPage = await other.newPage();
@@ -59,7 +93,7 @@ test.describe('without a session', () => {
       await other.close();
     }
 
-    // The browser that asked for the link is still signed out.
+    // This browser is still signed out.
     await page.goto('/t/labak');
     await expect(page).toHaveURL(`${CMS_URL}/login`);
 
@@ -77,8 +111,8 @@ test.describe('without a session', () => {
     }
   });
 
-  test('opening the link without pressing the button signs nobody in and does not use it up', async ({ page, browser }) => {
-    const link = await requestMagicLink(page, PERSONA_EMAILS.editor_demo);
+  test('opening the link without pressing the button signs nobody in and does not use it up', async ({ browser }) => {
+    const link = await signInLink('editor_demo');
 
     // A mail scanner: opens the link in its own context and never presses the button.
     const scanner = await newLoopbackContext(browser);
@@ -102,8 +136,8 @@ test.describe('without a session', () => {
     }
   });
 
-  test('the confirm page drops the token hash from the address bar, and its button still signs in', async ({ page, browser }) => {
-    const link = await requestMagicLink(page, PERSONA_EMAILS.editor_demo);
+  test('the confirm page drops the token hash from the address bar, and its button still signs in', async ({ browser }) => {
+    const link = await signInLink('editor_demo');
     const tokenHash = link.searchParams.get('token_hash')!;
     const visitor = await newLoopbackContext(browser);
     try {
@@ -125,7 +159,7 @@ test.describe('without a session', () => {
   test('a signed-in editor pressing another account\'s link is shown that account and asked; "Skipta um aðgang" replaces the session', async ({ page, browser }) => {
     expect((await signIn(page, PERSONA_EMAILS.editor_demo)).href).toBe(`${CMS_URL}/t/demo`);
     const demoSession = await page.context().storageState();
-    const link = await linkFromAnotherBrowser(browser, PERSONA_EMAILS.editor_labak);
+    const link = await signInLink('editor_labak');
 
     await openLink(page, link);
     await expect(page.getByRole('main').getByRole('status')).toHaveText(`${t.confirm.signedIn} ${t.confirm.signedInDetail}`);
@@ -160,7 +194,7 @@ test.describe('without a session', () => {
 
   test('a signed-in editor answering "Hætta við" stays signed in as before', async ({ page, browser }) => {
     expect((await signIn(page, PERSONA_EMAILS.editor_demo)).href).toBe(`${CMS_URL}/t/demo`);
-    const link = await linkFromAnotherBrowser(browser, PERSONA_EMAILS.editor_labak);
+    const link = await signInLink('editor_labak');
 
     await openLink(page, link);
     await page.getByRole('button', { name: t.confirm.submit }).click();
@@ -200,24 +234,18 @@ test.describe('without a session', () => {
     expect(icon.headers()['content-type']).toContain('image/svg+xml');
   });
 
-  test('an unknown email gets the same neutral message as a known one', async ({ page }) => {
-    const known = PERSONA_EMAILS.editor_demo;
-    const unknown = `nobody-${randomBytes(6).toString('hex')}@test.local`;
-    const seenKnown = await messageIds(known);
+  test('a password sign-in discards a question left waiting on the confirm page (M3-14)', async ({ page, context }) => {
+    const cookieNames = async () => (await context.cookies()).map(({ name }) => name);
+    expect((await signIn(page, PERSONA_EMAILS.editor_demo)).href).toBe(`${CMS_URL}/t/demo`);
+    await openLink(page, await signInLink('editor_labak'));
+    await page.getByRole('button', { name: t.confirm.submit }).click();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(t.confirm.replaceTitle);
+    expect(await cookieNames()).toContain(PENDING_COOKIE);
 
-    await requestLink(page, known);
-    const knownUrl = page.url();
-    const knownText = await page.locator('main').innerText();
-
-    await requestLink(page, unknown);
-    expect(page.url()).toBe(knownUrl);
-    expect(await page.locator('main').innerText()).toBe(knownText);
-    expect(knownText).toContain(t.login.sent);
-    expect(knownText).not.toContain(known);
-
-    // The known address got its link; the unknown one got nothing and no account.
-    expect(await waitForNewMessage(known, seenKnown)).not.toBeNull();
-    expect(await waitForNewMessage(unknown, new Set(), 3000)).toBeNull();
+    expect((await signIn(page, PERSONA_EMAILS.editor_demo)).href).toBe(`${CMS_URL}/t/demo`);
+    expect(await cookieNames()).not.toContain(PENDING_COOKIE);
+    await page.goto('/auth/confirm');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(t.confirm.title);
   });
 });
 

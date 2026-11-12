@@ -30,11 +30,11 @@ As in `docs/plans/m5.md`: local, one task, one branch `pw/<task-id>-<slug>`, one
 
 - **Spec:** §4.4, M5 finding 7.
 - **Scope:**
-  - `/login` asks for email and password. The server action signs in with the editor's cookie client and then routes as today (tenant home, the console's MFA step, a safe `next` path). Wrong password, unknown address and malformed input give one message, so the answer never shows whether an account exists. A rate limit gets its own message. Neither the address nor the password is ever logged or echoed back.
-  - `requestMagicLink` and its notices are removed. Sign-out is unchanged, including discarding a pending session.
-  - **The editor's address, not the server's (finding 7).** Auth's per-IP limits must key on the visitor's own address. Start by proving locally how GoTrue accepts a forwarded address from a server call (for example `Sb-Forwarded-For`, and what it requires), and only trust an address Vercel sets. If it can't be done with the publishable key, sign in from the browser client straight to Auth instead. Report the finding before building on it.
+  - `/login` asks for email and password in a small client form that signs in with the existing browser client (`apps/cms/src/lib/supabase/browser.ts`, `signInWithPassword`, publishable key), straight to Auth (decision 72.4). The session cookies are the ones the browser client already writes. After success, a full navigation to `safeRedirectPath(next)` (default `/`), so routing stays on the server as today (tenant home, the console's MFA step). A pure function maps each outcome to one of two messages: a rate limit (429, `over_request_rate_limit`) gets its own; every other failure, network errors included, gets one neutral message, so the answer never shows whether an account exists. Neither the address nor the password is logged, stored or echoed back.
+  - `requestMagicLink` and its notices are removed. A session a link left waiting for the M3-14 question is discarded before or after the password sign-in (a server action may do this; it never sees the password). Sign-out is unchanged.
+  - **The editor's address, not the server's (finding 7).** Settled by the investigation (decision 72.4): forwarding the address from a server call needs a hosted setting under which anyone can fake the header, or the secret key in an editor route, so sign-in moves to the browser.
   - The browser-test helpers (`apps/cms/e2e/support/sign-in.ts`, `editor-session.setup.ts`, `console-admin.ts`) sign in with a password.
-- **Acceptance:** unit tests for every action outcome. An integration test exhausts the sign-in limit for one address and shows that another address can still sign in. Browser tests: sign-in, a wrong password, and a platform admin's sign-in followed by TOTP. The existing browser suite passes.
+- **Acceptance:** unit tests for the outcome-to-message function (wrong password on a real account, unknown address, malformed input, rate limit, network failure) and for the form's redirect. An integration test on the local stack: a wrong password on a real account and an unknown address get the same Auth error. The limit itself can't be tested locally, because local Auth limits nothing: it moves to the hosted rollout. Browser tests: sign-in, a wrong password, and a platform admin's sign-in followed by TOTP. The existing browser suite passes (run by Einar).
 
 ## PW-03: First password and password reset
 
@@ -50,7 +50,7 @@ As in `docs/plans/m5.md`: local, one task, one branch `pw/<task-id>-<slug>`, one
 ## PW-04: Documents
 
 - **Docs only** (decision 54): no PR or review needed.
-- **Scope:** the staging runbook's Auth section (hook URI, password settings, templates, the hook check of decision 20 inverted: a magic link and an OTP code are refused, a password signs in); `.env.example` if anything changes; `docs/king/OPEN-ISSUES.md` (finding 7 and S26 updated, the accepted guessing risk added); `BRIEF.md`'s decisions table.
+- **Scope:** the staging runbook's Auth section (hook URI, password settings, templates, the hook check of decision 20 inverted: a magic link and an OTP code are refused, a password signs in); `.env.example` if anything changes; `docs/king/OPEN-ISSUES.md` (finding 7 and S26 updated, the accepted guessing risk added, and the new item from decision 72.4: the CMS proxy refreshes sessions from the server's address, so bogus expired cookies might use up the shared refresh limit for every editor; unproven, to check before real editors); `BRIEF.md`'s decisions table.
 
 ## Local acceptance
 
@@ -58,4 +58,4 @@ On the local stack: `pnpm db:reset`, `pnpm db:test`, `pnpm test`, `pnpm test:int
 
 ## Hosted (separate approval)
 
-Not covered by approving this plan. On staging: `supabase db push` and, in the same minute, the hook URI in the dashboard (sign-ins fail between the two; staging has no editors); the password settings; the invite, recovery and magic-link templates; advance `staging`; sign out every hosted session (old magic-link sessions refresh as `otp` and would otherwise survive); reset the passwords of the test and admin accounts; check the hosted magic-link and confirmation templates carry no link or code, and set and check the email code length of 10; run the inverted hook check and the staging browser suite. Production waits for its own decision.
+Not covered by approving this plan. On staging: `supabase db push` and, in the same minute, the hook URI in the dashboard (sign-ins fail between the two; staging has no editors); the password settings; the invite, recovery and magic-link templates; advance `staging`; sign out every hosted session (old magic-link sessions refresh as `otp` and would otherwise survive); reset the passwords of the test and admin accounts; check the hosted magic-link and confirmation templates carry no link or code, and set and check the email code length of 10; run the inverted hook check and the staging browser suite; prove on staging that exhausting the password limit from one address leaves another address able to sign in (decision 72.4). Production waits for its own decision.

@@ -33,7 +33,7 @@ import { apiRows, editorHeadersOf } from './support/editor-api';
 import { CMS_URL, requireLoopback, SUPABASE_URL } from './support/local';
 import { PERSONA_EMAILS } from './support/personas';
 import { sessionState } from './support/session';
-import { signIn } from './support/sign-in';
+import { signIn, submitSignIn } from './support/sign-in';
 import { expect, newLoopbackContext, test } from './support/test';
 import { totp } from './support/totp';
 
@@ -93,9 +93,25 @@ test.describe('sign-in', () => {
     expect(faces.every((s) => s === 'loaded'), `font faces: ${faces.join(',')}`).toBe(true);
     await shoot(page, 'login');
 
-    await page.goto('/login?sent=1');
-    await expect(page.getByText(t.login.sent)).toBeVisible();
-    await shoot(page, 'login-sent');
+    // A refused sign-in: the neutral message.
+    await submitSignIn(page, PERSONA_EMAILS.editor_demo, 'not-the-password');
+    await expect(page.getByRole('main').getByRole('alert')).toHaveText(t.login.failed);
+    await shoot(page, 'login-failed');
+
+    // Auth's rate limit, which local Auth never applies: its answer is replaced with a 429.
+    await page.route(
+      (url) => url.pathname === '/auth/v1/token',
+      async (route) => {
+        if (route.request().method() !== 'POST') return route.fallback();
+        // Auth's own headers (CORS above all), without the length of its own body.
+        const headers = Object.fromEntries(Object.entries((await route.fetch()).headers()).filter(([name]) => name !== 'content-length'));
+        await route.fulfill({ status: 429, headers, json: { code: 429, error_code: 'over_request_rate_limit', msg: 'Request rate limit reached' } });
+      },
+    );
+    await submitSignIn(page, PERSONA_EMAILS.editor_demo, 'not-the-password');
+    await expect(page.getByRole('main').getByRole('alert')).toHaveText(t.login.rateLimited);
+    await shoot(page, 'login-rate-limited');
+    await page.unrouteAll();
 
     await page.goto('/login?error=link');
     await expect(page.getByRole('main').getByRole('alert')).toHaveText(t.login.linkInvalid);
@@ -105,7 +121,7 @@ test.describe('sign-in', () => {
     await expect(page.getByText(t.login.emailChangeWaiting)).toBeVisible();
     await shoot(page, 'login-email-change-waiting');
 
-    // The magic link's page: one button. A made-up hash, never pressed.
+    // The confirm page: one button. A made-up hash, never pressed.
     await page.goto(`/auth/confirm?token_hash=${'0'.repeat(56)}&type=email`);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(t.confirm.title);
     await expect(page.getByRole('button', { name: t.confirm.submit })).toBeVisible();

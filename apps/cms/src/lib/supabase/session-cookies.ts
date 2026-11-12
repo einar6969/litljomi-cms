@@ -3,7 +3,7 @@ import type { CookieOptions } from '@supabase/ssr';
 /**
  * Seconds a session cookie lasts without use (M5 finding 8). Every token refresh rewrites the
  * cookies, so with one-hour access tokens an editor at work keeps sliding this forward; a browser
- * unused for a week signs in again, which a magic link makes cheap and which loses no work (§4.4).
+ * unused for a week signs in again with the password, which loses no work (§4.4).
  * This bounds the copy in the browser only: Auth still honours the refresh token until it is used
  * or revoked.
  */
