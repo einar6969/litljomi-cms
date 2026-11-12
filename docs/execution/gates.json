@@ -205,7 +205,7 @@
         {
           "at": "2026-11-12",
           "scope": "Done: password sign-in switch on the staging Supabase project (runbook 7.3 steps 1–5, 7–9): db push of 20261112100000_sign_in_auth_hook.sql (Einar); hook switched to private.sign_in_access_token; six email templates set; email OTP length 8 → 10; all 50 sessions deleted at 07:08:19 UTC; invite, reset and deletion of the test account einsi+pwtest@litljomi.is; section 7.2 checks; rate-limit test against the password endpoint.",
-          "note": "Done under decision 73 rule 2 (standing staging approval within the approved plan, decision 72); results in docs/verification/pw-staging.md."
+          "note": "Done under decision 73 rule 2 (standing staging approval within the approved plan, decision 72); results in docs/verification/pw-production.md."
         }
       ],
       "amendments": [
@@ -278,7 +278,7 @@
         {
           "at": "2026-11-03",
           "scope": "Decision 48: the controller may create one production deployment of the decision-48 fix commit on vefumsjon-staging through the Vercel connector. Created dpl_D41E52Fvuga3qT5D1zDCL3xr494s (m1/phase-1 0ca5aee, pushed by Einar from his terminal). Nothing else: no pause, no environment variable changes, nothing on landssamband-bakarameistara.",
-          "note": "Einar in chat, 2026-11-03 (decision 48): \"Deploy the commit to `vefumsjon-staging` production the way docs/runbooks/staging.md does. The Vercel connector may create that one deployment.\" and \"The only extra write allowed is that one `vefumsjon-staging` deployment. No pause, no environment variable changes, nothing on `landssamband-bakarameistara`.\" Full quote: plan decision 48."
+          "note": "Einar in chat, 2026-11-03 (decision 48): \"Deploy the commit to `vefumsjon-staging` production the way docs/runbooks/production.md does. The Vercel connector may create that one deployment.\" and \"The only extra write allowed is that one `vefumsjon-staging` deployment. No pause, no environment variable changes, nothing on `landssamband-bakarameistara`.\" Full quote: plan decision 48."
         },
         {
           "at": "2026-11-03",
@@ -360,7 +360,7 @@
         {
           "at": "2026-11-12",
           "scope": "Done: staging advanced 09f7f62 → 7139585 (password sign-in, PRs #63–#65); vefumsjon-staging and demo-staging deployed (runbook 7.3 step 6).",
-          "note": "Done under decision 73 rule 2 (standing staging approval within the approved plan, decision 72); results in docs/verification/pw-staging.md."
+          "note": "Done under decision 73 rule 2 (standing staging approval within the approved plan, decision 72); results in docs/verification/pw-production.md."
         },
         {
           "at": "2026-11-12",

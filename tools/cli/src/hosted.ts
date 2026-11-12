@@ -1,5 +1,5 @@
-// The safety rules shared by the commands that reach the hosted staging project (`provision`,
-// `boundary-check`; decisions 44 and 46; runbook docs/runbooks/staging.md sections 7.4 and 11).
+// The safety rules shared by the commands that reach the hosted production project (`provision`,
+// `boundary-check`; decisions 44 and 46; runbook docs/runbooks/production.md sections 7.4 and 11).
 //
 // - The env file is read as text, never executed, with the rules of the runbook's `env_value`: each
 //   needed name exactly once on a plain NAME=value line, its value matching a fixed pattern. A
@@ -10,7 +10,7 @@
 //   known secret redacted, control characters removed and the length capped.
 import { isAbsolute } from 'node:path';
 
-export const DEFAULT_ENV_FILE = '/Users/einarzoega/litljomi-cms/.env.staging.local';
+export const DEFAULT_ENV_FILE = '/Users/einarzoega/litljomi-cms/.env.production.local';
 
 export const REF_RE = /^[a-z0-9]{20}$/;
 export const URL_RE = /^https:\/\/[a-z0-9]{20}\.supabase\.co$/;
@@ -125,7 +125,7 @@ export async function readTarget(
 ): Promise<Target> {
   const ref = flagValue(p, '--expect-ref') as string;
   if (!REF_RE.test(ref)) {
-    throw new Failure("FAILED: --expect-ref must be the staging project's reference (20 lowercase letters or digits); nothing was sent");
+    throw new Failure("FAILED: --expect-ref must be the hosted project's reference (20 lowercase letters or digits); nothing was sent");
   }
   const envFile = flagValue(p, '--env-file') ?? DEFAULT_ENV_FILE;
   let text: string;

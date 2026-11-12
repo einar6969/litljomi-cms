@@ -1,7 +1,7 @@
 # Task 3 (Hosted environments runbook): security review, round 2 (scoped to fix round 1)
 
 - Reviewer: fresh `cms-security-reviewer` (Opus), 2026-11-02
-- Change: 771127c (`docs/runbooks/staging.md` only)
+- Change: 771127c (`docs/runbooks/production.md` only)
 - Result: **PASS** (no checklist failure); F1, F2, F3 and ruled Minors 1–10 ADDRESSED; new: 2 Important (N1, N3), 6 Minor (N2, N4–N8)
 - Method: the section 7.2 scripts extracted to the scratchpad (`t3r2sec/`), `bash -n`, then run under /bin/bash 3.2 against a stub server on 127.0.0.1 with wrappers logging the argv of `curl`, `jq` and `openssl`; nothing hosted contacted.
 

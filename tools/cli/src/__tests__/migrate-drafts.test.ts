@@ -7,7 +7,7 @@ import { PAGE_SIZE } from '../migrate-drafts.ts';
 const REF = 'abcdefghij0123456789';
 const ORIGIN = `https://${REF}.supabase.co`;
 const KEY = 'sb_secret_TESTONLYkey-0123456789_abc.def';
-const ENV_FILE = '/test/.env.staging.local';
+const ENV_FILE = '/test/.env.production.local';
 const goodEnv = [`NEXT_PUBLIC_SUPABASE_URL=${ORIGIN}`, `SUPABASE_SECRET_KEY=${KEY}`, ''].join('\n');
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const ARGS = ['migrate-drafts', '--tenant', 'demo', '--type', 'notice', '--expect-ref', REF, `--env-file=${ENV_FILE}`];

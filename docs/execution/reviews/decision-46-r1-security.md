@@ -13,5 +13,5 @@ Minors:
 2. `boundary-check.ts:486-487, 336`: "refused" is any non-2xx, so 429/5xx would count; require 4xx (storage: the RLS answer).
 3. `boundary-check.ts:524`: an open `delivery` boundary would write a probe under `<slug>/releases/`; use `<slug>/boundary-check/<uuid>.json`.
 4. `boundary-check.ts:280-283`: each run leaves a live session per test editor (never printed); log out at the end or document it.
-5. `docs/runbooks/staging.md` section 14 leftovers list incomplete (audit rows, sessions, a stray untitled entry or object from a failing run); line 979 "No other editor"; P-3's `auth.users` count becomes 3.
+5. `docs/runbooks/production.md` section 14 leftovers list incomplete (audit rows, sessions, a stray untitled entry or object from a failing run); line 979 "No other editor"; P-3's `auth.users` count becomes 3.
 6. `boundary-check.ts:14-16`: comment omits the secret key's use in the A1 refusal checks.

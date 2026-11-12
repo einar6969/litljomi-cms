@@ -6,13 +6,13 @@ import { describe, expect, it } from 'vitest';
 // Both paths come from this file's location, so the test always reads the repository's own files.
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const envExamplePath = join(root, '.env.example');
-const runbookPath = join(root, 'docs', 'runbooks', 'staging.md');
+const runbookPath = join(root, 'docs', 'runbooks', 'production.md');
 
 // The section's level-2 heading, with or without a section number ("## 13. Environment variables").
 const RUNBOOK_SECTION_HEADING = /^## (?:\d+\. )?Environment variables$/;
 const ENV_LINE = /^([A-Z][A-Z0-9_]*)=(.*)$/;
 const BACKTICKED_NAME = /^`([A-Z][A-Z0-9_]*)`$/;
-const RUNBOOK_TABLE = 'the "Environment variables" table in docs/runbooks/staging.md';
+const RUNBOOK_TABLE = 'the "Environment variables" table in docs/runbooks/production.md';
 
 /**
  * `NAME=value` lines of `.env.example`, in file order (duplicates kept).
@@ -57,7 +57,7 @@ const missingFrom = (names: Iterable<string>, other: Iterable<string>): string[]
 const duplicatesIn = (names: string[]): string[] =>
   [...new Set(names.filter((name, index) => names.indexOf(name) !== index))].sort();
 
-describe('.env.example and the staging runbook', () => {
+describe('.env.example and the production runbook', () => {
   it('both name at least one variable', () => {
     expect(envExampleNames().length, '.env.example has no NAME= lines').toBeGreaterThan(0);
     expect(readRunbookNames().length, `${RUNBOOK_TABLE} names no variable`).toBeGreaterThan(0);

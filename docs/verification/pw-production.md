@@ -1,6 +1,6 @@
 # Password sign-in on staging: rollout record
 
-Runbook `docs/runbooks/staging.md` section 7.3, run on 2026-11-12 (UTC) against the staging project `rwpgpfsmhhtimauvpoyt`, under decision 73 rule 2 (pre-approved within the approved plan, decision 72). Executor: the controller, in Einar's Supabase dashboard session in the app's browser pane and through the Supabase connector. No secret appears here.
+Runbook `docs/runbooks/production.md` section 7.3, run on 2026-11-12 (UTC) against the staging project `rwpgpfsmhhtimauvpoyt`, under decision 73 rule 2 (pre-approved within the approved plan, decision 72). Executor: the controller, in Einar's Supabase dashboard session in the app's browser pane and through the Supabase connector. No secret appears here.
 
 | Step | Result |
 |---|---|

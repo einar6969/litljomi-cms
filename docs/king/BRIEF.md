@@ -4,7 +4,7 @@ The handoff for whoever coordinates this project. Read it with [OPEN-ISSUES.md](
 
 | | |
 |---|---|
-| State as of | 2026-11-05, after M5. `main` on GitHub carries every M5 record; `staging` is at `9d31159` |
+| State as of | 2026-11-05, after M5. `main` on GitHub carries every M5 record; `staging` (now `production`) is at `9d31159` |
 | Written by | The first KING, from its transcript and the repository. Corrected by the second KING against GitHub |
 | Keep current | Update "Where things stand" and `OPEN-ISSUES.md` at each milestone |
 
@@ -12,8 +12,8 @@ The handoff for whoever coordinates this project. Read it with [OPEN-ISSUES.md](
 
 **How to read the evidence words here:**
 
-- **Hosted:** it ran on staging, and the record says so.
-- **CI:** tests pass in CI on the local stack. It has not run on staging.
+- **Hosted:** it ran on the hosted Supabase project (called staging until 2026-11-12, production since), and the record says so.
+- **CI:** tests pass in CI on the local stack. It has not run on the hosted project.
 - **Code:** the code exists, with no specific check behind this statement.
 - **Reported:** someone said so, and nobody has re-checked it.
 
@@ -24,9 +24,9 @@ A milestone being accepted does not make every line of it hosted.
 As of 2026-11-12 (evening, after the production move).
 
 - **Accepted milestones:** M0, M1 (C4), M2 and M3 (C5), M4 (C6), M5 (C7). M6 (LABAK) is **parked** (decision 74).
-- **Done on 2026-11-12:** the UI level-up (#61) and tenant overview (#62); password sign-in (decision 72, #63–#65), rolled out and verified on the Supabase project (`docs/verification/pw-staging.md`); S29 and R7 (#66): sign-out on the set-password page, and the CMS server never refreshes a session.
-- **Production is live at `https://vefstjorn.is`** (decisions 74 and 76; `docs/verification/production.md`, 2026-11-12). The Supabase project `rwpgpfsmhhtimauvpoyt` is production, on the Free plan, with no backups and no separate staging (both accepted, R2). It runs `staging` = `a772423` (the `staging` branch is the Vercel production switch; the name is historical). `vefumsjon-staging.litljomi.is` redirects to `vefstjorn.is`. The secret key is fresh (`cms_prod_2026_11`, S17 closed), the legacy JWT keys are disabled, and the only account is `einsi@litljomi.is`.
-- **Follow-ups to the production run (Einar, 2026-11-12):** S32 closed (PR #67: Auth links skip SendGrid's click tracking, verified on real mail); S33 closed (old HS256 signing key revoked); the `m4-probe` tenant deleted (the module stays as a local test fixture). In progress: rename every staging-era name (`docs/verification/production.md`).
+- **Done on 2026-11-12:** the UI level-up (#61) and tenant overview (#62); password sign-in (decision 72, #63–#65), rolled out and verified on the Supabase project (`docs/verification/pw-production.md`); S29 and R7 (#66): sign-out on the set-password page, and the CMS server never refreshes a session.
+- **Production is live at `https://vefstjorn.is`** (decisions 74 and 76; `docs/verification/production.md`, 2026-11-12). The Supabase project `rwpgpfsmhhtimauvpoyt` is production, on the Free plan, with no backups and no separate staging (both accepted, R2). The Supabase project is named "vefstjorn"; the Vercel projects are `vefstjorn` (the CMS) and `vefstjorn-demo` (the demo site). It runs `production` = `a772423` (the `production` branch, formerly `staging`, is the Vercel production switch). `vefumsjon-staging.litljomi.is` redirects to `vefstjorn.is`. The secret key is fresh (`cms_prod_2026_11`, S17 closed), the legacy JWT keys are disabled, and the only account is `einsi@litljomi.is`.
+- **Follow-ups to the production run (Einar, 2026-11-12):** S32 closed (PR #67: Auth links skip SendGrid's click tracking, verified on real mail); S33 closed (old HS256 signing key revoked); the `m4-probe` tenant deleted (the module stays as a local test fixture). Staging-era names renamed: the Supabase project "vefstjorn", the Vercel projects `vefstjorn` and `vefstjorn-demo`, the branch `production`, the env file `.env.production.local` (Einar renames his after the repository change merges), the demo site moving to `demo.vefstjorn.is`, and `demo-next15-staging` deleted with its two inactive `cms.sites` records.
 - **Next:** onboard a **new client**. Ask Einar for the client's name and site, where the site's code lives and how it's hosted, what content they edit, and who their editors are.
 - **How agents work:** decision 75. No sandbox, full git and CLI autonomy; `CLAUDE.md` "Autonomy" lists the few things that need Einar's word. The G0–G7 gates and `gates.json` are history.
 - **Nothing real is live yet:** no real editor and no real content. labak.is is still the old Joomla site.
@@ -142,13 +142,13 @@ All numbered decisions are in `docs/plans/2026-11-01-m0-m1.md`, despite its name
 
 - The Nov 3 merge waiver, then the Nov 4 rule, which is in `environment.md`.
 - The `UPDATE (preview_url)` grant for `service_role`. The review notes and the coordinator say Einar approved it; the migration exists.
-- The `staging` freeze as a standing practice. See section 6.
+- The deploy-branch freeze (the `staging` branch then, `production` now) as a standing practice. See section 6.
 
 **Rulings worth knowing:**
 
 - Webhook replay within 5 minutes is accepted as harmless (50.5).
 - Pointer lag stays a measured limitation (50.5).
-- GitHub Pro was declined. Vercel Pro at $20 a month is approved. Staging Supabase stays on Free.
+- GitHub Pro was declined. Vercel Pro at $20 a month is approved. Staging Supabase (now the production project) stays on Free.
 - Icelandic copy: 103 strings approved at once (51.3). Treat that as approval to proceed, and expect changes once real editors use it.
 
 ## 6. Operating model
@@ -205,12 +205,12 @@ This applies to everything except docs-only commits (decision 54), which the KIN
 
 Treat every report as a claim. Before telling Einar something is done, check it at the source: `gh` for merges and CI, the Vercel connector for what is serving, Supabase for migrations and rows. This caught real errors. A coordinator's "ready for acceptance" hid a broken staging; its memory of decision 52 was wrong. Connector use on hosted systems needs Einar's OK; read-only checks have been accepted so far, but ask.
 
-### Staging
+### Deploying
 
 - **Any hosted action needs a new approval.** The approvals of decision 51 are closed in `gates.json`. A forced miss needs its own approval too, as 51.1 did.
-- The `staging` branch is the deploy switch. `vefumsjon-staging` and `demo-staging` use it as Production Branch, and an Ignored Build Step cancels everything else. Merges to `main` deployed nothing through Nov 4: every build was cancelled.
-- **Migrations and `staging` advance together.** Run `supabase db push` first and advance `staging` straight after. A migration that drops a function the old worker calls breaks the sweep for that gap. On Nov 4 that cost one failed sweep minute, on a staging site with no editors; don't assume production gets away that lightly. Check each migration: W1's drops and recreates `worker_deliveries_to_retry`. Migrations are forward-only.
-- Einar runs `db push` and the push to `staging`.
+- The `production` branch (named `staging` until 2026-11-12) is the deploy switch. `vefstjorn` and `vefstjorn-demo` use it as Production Branch, and an Ignored Build Step cancels everything else. Merges to `main` deployed nothing through Nov 4: every build was cancelled.
+- **Migrations and `production` advance together.** Run `supabase db push` first and advance `production` straight after. A migration that drops a function the old worker calls breaks the sweep for that gap. On Nov 4 that cost one failed sweep minute, on a staging site with no editors; don't assume production gets away that lightly. Check each migration: W1's drops and recreates `worker_deliveries_to_retry`. Migrations are forward-only.
+- Einar runs `db push` and the push to `production`.
 
 ### Who may touch what
 
@@ -240,21 +240,21 @@ The validation criteria are in spec §13.2. Inviting real editors and launching 
 
 ## 8. Live surfaces
 
-No secrets here. Secrets live in Vercel, Vault and Einar's `.env.staging.local`.
+No secrets here. Secrets live in Vercel, Vault and Einar's `.env.production.local`.
 
 | Surface | Value |
 |---|---|
 | Repository | `einar6969/litljomi-cms`, public since creation, by Einar's choice (decision 54) |
 | Supabase (production) | `rwpgpfsmhhtimauvpoyt`, Free, `eu-west-1`, no backups |
 | Vercel team | `team_QumUyzagQwAqXmpItxceUQ5C` |
-| CMS | `vefumsjon-staging`, https://vefstjorn.is (`www.vefstjorn.is` and `vefumsjon-staging.litljomi.is` redirect to it) |
-| Demo site | `demo-staging`, https://demo-staging.litljomi.is, site `8cead364…`, the only active `demo` site |
+| CMS | `vefstjorn`, https://vefstjorn.is (`www.vefstjorn.is` and `vefumsjon-staging.litljomi.is` redirect to it) |
+| Demo site | `vefstjorn-demo`, https://demo.vefstjorn.is (moving from `demo-staging.litljomi.is`, which will redirect), site `8cead364…`, the only active `demo` site |
 | LABAK slice | `labak-hub`, https://labak-hub.litljomi.is, site `e5b6dbba…`, branch `hub-integration` at `376402b` |
-| Next.js 15 fixture | `demo-next15-staging`, site `280f4415…` inactive. Project kept, not updating |
+| Next.js 15 fixture | Deleted on 2026-11-12: the Vercel project `demo-next15-staging` and its two inactive `cms.sites` records |
 | LABAK staging (not the Hub) | labak.litljomi.is, `landssamband-bakarameistara` at `aec9f95` |
-| Alerts | SendGrid, set on `vefumsjon-staging` |
+| Alerts | SendGrid, set on `vefstjorn` |
 
-Test content stays on staging, because entries can't be deleted through `api`. On `labak`, only `30-sudbak-kaupstefnan-haldin-i-stuttgart` is published.
+Test content stays on the production project, because entries can't be deleted through `api`. On `labak`, only `30-sudbak-kaupstefnan-haldin-i-stuttgart` is published.
 
 ## 9. Working with Einar
 
@@ -276,7 +276,7 @@ Test content stays on staging, because entries can't be deleted through `api`. O
 - **Connectors:** the Vercel connector can't set Production Branch and was refused firewall writes (403). `get_project` reports `live: false` for a serving project. Don't rely on it. `plugin:vercel` needs `/mcp` login; the separate connector works.
 - **Supabase CDN:** ignores `max-age=30`. Pointer lag is 35–54 s. The worker waits it out.
 - **Storage:** a removed public file answers HTTP 400 with a 404 in its body. Accepted (decision 52).
-- **Region:** staging is `eu-west-1`, while CMS functions are set to `fra1`. Runtime logs have shown `iad1` for the sweep. Older records said Frankfurt.
+- **Region:** the Supabase project is `eu-west-1`, while CMS functions are set to `fra1`. Runtime logs have shown `iad1` for the sweep. Older records said Frankfurt.
 - **Cron:** retries can run about two minutes after they fall due.
 - **New tenant order:** provision, publish once, then deploy the site (decision 45.1). The site build fails while the tenant has no release.
 - **`CMS_PREVIEW_*`** live on the demo site, not the CMS.
@@ -296,7 +296,7 @@ Test content stays on staging, because entries can't be deleted through `api`. O
 | M2 and M3 reviews | PR comments on GitHub |
 | Session-by-session notes | `docs/execution/progress.md`, `progress-notes.md` |
 | Deferred Minors | `docs/execution/deferred-minors.md`. Many rows are stale; see `OPEN-ISSUES.md` |
-| Hosted setup | `docs/runbooks/staging.md`, `docs/verification/` |
+| Hosted setup | `docs/runbooks/production.md`, `docs/verification/` |
 | The Nov 4 security review | Not in the repo. Local session "Litljómi CMS security review M2/M3", `local_5e7641bf-2be7-4aa2-a81f-497fdf445508`; transcript `75fe5bb3-a187-4a9a-9fc8-2a2dc8660fc8.jsonl` in the folder below. Findings are listed in `OPEN-ISSUES.md`, section A |
 | The first KING's reasoning | Its transcript: `~/.claude/projects/-Users-einarzoega-Documents-Litlj-mi-ehf-Projects-2026-LAW-Takeover-LABAK/cd6cf580-7796-4458-aed6-37411076a464.jsonl`, on Einar's laptop. Local controller transcripts are in `-Users-einarzoega-litljomi-cms` beside it |
 | Cloud thread reasoning | The Project "CMS". PR bodies link their thread |

@@ -67,7 +67,7 @@ create temporary table accepted (url text primary key) on commit drop;
 grant select on accepted to service_role;
 insert into accepted values
   ('https://a.is'),
-  ('https://demo-staging.litljomi.is/api/cms/preview'),
+  ('https://demo.vefstjorn.is/api/cms/preview'),
   ('https://Site.Example.IS/Preview'),
   ('https://203.0.113.7:8443/preview'),
   ('https://[2001:db8::1]/preview'),

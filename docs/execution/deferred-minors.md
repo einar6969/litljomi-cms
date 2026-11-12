@@ -63,7 +63,7 @@
 | 7 | security r3 | `extract_refs` XX000 count guard (fail closed, not triggerable) (`task-07-r3-security.md`) | C1 | cleared 7caffe3 (comment) |
 | 7 | spec r3 | `040_refs.test.sql:629`: the early cost check covers only probes before it (`task-07-r3-spec.md`) | C1 | accepted at C1: later probes have their own bounds |
 | 7 | Einar's notes with decisions 27 and 28 | A statement timeout on the worker's `service_role` functions as defence in depth (`service_role` has none today); decision 28: "Also park for Task 11: a statement timeout on the worker's service_role functions as defence in depth." | Task 19 | cleared 53606bd (decision 34.1: role timeout) |
-| 3 | quality r2, Minors 1–6 | `docs/runbooks/staging.md`: placeholder list; P-2 pointer to G6.2; record the `vault.secrets` count before P-2; G3.4 owner note for the Management API fallback; "as in G2.5 but not exported" wording; wrap the URL check so `exit 1` does not close the shell (`task-03-r2-quality.md`) | Task 28 (before executing the runbook) | open |
+| 3 | quality r2, Minors 1–6 | `docs/runbooks/production.md`: placeholder list; P-2 pointer to G6.2; record the `vault.secrets` count before P-2; G3.4 owner note for the Management API fallback; "as in G2.5 but not exported" wording; wrap the URL check so `exit 1` does not close the shell (`task-03-r2-quality.md`) | Task 28 (before executing the runbook) | open |
 | 3 | security r6, Minors 1–2 | `staging.md:226` whole-string `REF` check; `staging.md:737` "less likely to be swapped" wording (`task-03-r6-security.md`) | Task 28 | open |
 | 3 | spec r4, Minor 2 | `vercel link` implies Einar's Vercel login, outside the repository (`task-03-r4-spec.md`) | Task 28 | open |
 

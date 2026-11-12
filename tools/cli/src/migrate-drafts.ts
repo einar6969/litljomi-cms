@@ -1,6 +1,6 @@
 // `migrate-drafts`: brings every draft of a tenant's type to the type's current schema version
 // (spec §5.3, "On deploy, a migration script applies transforms to all drafts of that type, each as
-// a normal versioned draft update"; plan M2-13). Run by Einar only, against staging with his
+// a normal versioned draft update"; plan M2-13). Run by Einar only, against production with his
 // approval (plan M2 "Local acceptance" step 6); the tests run it against the local stack.
 //
 // For each draft written below the current version, in entry id order:

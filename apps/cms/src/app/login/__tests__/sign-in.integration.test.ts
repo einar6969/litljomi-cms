@@ -2,7 +2,7 @@
 // (lib/supabase/browser.ts, publishable key) gives the same error for a wrong password on a real
 // account as for an address with no account, so the form's one neutral message is all it can show
 // (spec §4.4). Auth's per-address limit is not tested here: local Auth limits nothing, so it is proved
-// on staging (decision 72.4).
+// on the hosted production project (decision 72.4; docs/verification/pw-production.md).
 //
 // Node, not jsdom (whose URL the integration helpers cannot use): the browser client gets a
 // `document.cookie` jar and a plain-http `location` instead of a browser's.

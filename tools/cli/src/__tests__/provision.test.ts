@@ -7,8 +7,8 @@ const REF = 'abcdefghij0123456789';
 const ORIGIN = `https://${REF}.supabase.co`;
 const KEY = 'sb_secret_TESTONLYkey-0123456789_abc.def';
 const SECRET = 'TestOnlyWebhookSecret+0123456789/abcdefgh=';
-const ENV_FILE = '/test/.env.staging.local';
-const DEFAULT_ENV_FILE = '/Users/einarzoega/litljomi-cms/.env.staging.local';
+const ENV_FILE = '/test/.env.production.local';
+const DEFAULT_ENV_FILE = '/Users/einarzoega/litljomi-cms/.env.production.local';
 const TENANT_A = '11111111-1111-4111-8111-111111111111';
 const TENANT_B = '22222222-2222-4222-8222-222222222222';
 const SITE_ID = '33333333-3333-4333-8333-333333333333';
@@ -16,7 +16,7 @@ const USER_ID = '44444444-4444-4444-8444-444444444444';
 const NEW_TENANT = '55555555-5555-4555-8555-555555555555';
 
 const goodEnv = [
-  '# staging',
+  '# production',
   `NEXT_PUBLIC_SUPABASE_URL=${ORIGIN}`,
   'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_test',
   `SUPABASE_SECRET_KEY=${KEY}`,
@@ -132,7 +132,7 @@ describe('provision: argument parsing', () => {
     ['an unknown flag', [...tenantArgs, '--local']],
     ['the secret as an argument', [...siteArgs, '--webhook-secret', SECRET]],
     ['an extra positional argument', [...siteArgs, SECRET]],
-    ['a relative --env-file', ['provision', 'tenant', 'acme', '--name', 'Acme', '--expect-ref', REF, '--env-file', '.env.staging.local']],
+    ['a relative --env-file', ['provision', 'tenant', 'acme', '--name', 'Acme', '--expect-ref', REF, '--env-file', '.env.production.local']],
     ['a malformed tenant id', ['provision', 'site', '--tenant-id', 'nope', '--base-url', 'https://a.is', '--revalidate-path', '/r', ...common]],
     ['an http base URL', ['provision', 'site', '--tenant-id', TENANT_A, '--base-url', 'http://a.is', '--revalidate-path', '/r', ...common]],
     ['a base URL with a path', ['provision', 'site', '--tenant-id', TENANT_A, '--base-url', 'https://a.is/x', '--revalidate-path', '/r', ...common]],
@@ -195,7 +195,7 @@ describe('provision: the target project', () => {
   it.each([['short'], ['ABCDEFGHIJ0123456789'], ['abcdefghij0123456789x'], ['']])('refuses --expect-ref %j before reading the env file', async (ref) => {
     const r = await run(['provision', 'tenant', 'acme', '--name', 'Acme', '--expect-ref', ref, '--env-file', ENV_FILE]);
     expect(r.code).toBe(1);
-    expect(r.err.join('\n')).toContain('FAILED: --expect-ref');
+    expect(r.err.join('\n')).toContain("FAILED: --expect-ref must be the hosted project's reference (20 lowercase letters or digits); nothing was sent");
     expect(r.calls).toHaveLength(0);
     expect(r.fileReads).toBe(0);
   });
@@ -707,7 +707,7 @@ describe('provision preview-url', () => {
 describe('provision: the preview URL rule', () => {
   it.each([
     'https://a.is',
-    'https://demo-staging.litljomi.is/api/cms/preview',
+    'https://demo.vefstjorn.is/api/cms/preview',
     'https://Site.Example.IS/Preview',
     'https://203.0.113.7:8443/preview',
     'https://[2001:db8::1]/preview',

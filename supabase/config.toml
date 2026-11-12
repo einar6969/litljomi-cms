@@ -257,7 +257,7 @@ otp_expiry = 3600
 # sender_name = "Admin"
 
 # Icelandic, Litljómi-branded templates for the email flows v1 uses (spec §4.4; Task 22). Hosted
-# projects take the same files (docs/runbooks/staging.md, "Email templates"). `content_path` is
+# projects take the same files (docs/runbooks/production.md, "Email templates"). `content_path` is
 # read from the project root, as in the Supabase CLI's own scaffold.
 [auth.email.template.magic_link]
 subject = "Innskráning í Litljómi vefumsjón"

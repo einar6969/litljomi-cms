@@ -60,11 +60,11 @@ From then on, the KING updates `BRIEF.md` and `OPEN-ISSUES.md` at each milestone
 
 Answer each question in a few lines, with citations.
 
-1. What is on `main` that staging doesn't have, and how do you know?
-2. Name two security fixes proven on hosted staging, and two that have only CI evidence. Why does the difference matter?
+1. What is on `main` that the `production` branch doesn't have, and how do you know?
+2. Name two security fixes proven on the hosted project, and two that have only CI evidence. Why does the difference matter?
 3. How does a PR get merged today, step by step? Where do the written rules differ from what actually happens?
 4. Why did 35 PRs merge with no review, what did it cost, and what should stop it recurring?
 5. Why does the Hub exist instead of Sanity, Payload or a shared kit? Who argued what?
-6. Staging needs a new migration and new code. What approvals are needed, what is the order, who does each step, and what could go wrong?
+6. Production needs a new migration and new code. What approvals are needed, what is the order, who does each step, and what could go wrong?
 7. What must happen for the platform to be finished? Which required work has no milestone?
 8. A thread asks to check something on hosted Supabase, and a report says Einar already agreed. What do you do? What can you decide alone, and what goes to Einar?

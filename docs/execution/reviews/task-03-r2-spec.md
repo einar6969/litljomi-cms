@@ -1,7 +1,7 @@
 # Task 3 (Hosted environments runbook): spec review, round 2 (scoped to fix round 1)
 
 - Reviewer: fresh `cms-spec-reviewer` (Sonnet), 2026-11-02
-- Change: 771127c (`docs/runbooks/staging.md` only)
+- Change: 771127c (`docs/runbooks/production.md` only)
 - Result: **PASS** (1 Minor)
 
 (a) Rulings applied as stated: F1 (part 1 asserts every result through `expect()` and exits 1 on mismatch; no cleanup trap; H5 runs while the account exists; part 2 and H6 a separate final step; on failure the account is kept as evidence until failure-handling step 4); F2 (`curl --config -` fed by `printf` and `jq` on stdin; no secret on a command line); F3 (Standard Protection on all three projects; `labak-hub-staging` builds limited to `hub-integration` via the Ignored Build Step, confirm at execution time, stop and report if absent; connecting the LABAK repository needs Einar's explicit approval at G6 and G7, also an open item and in the sequence table); Minors 1, 3–10 at the cited lines; Minor 2 (reason that stays true after Task 4; `ask`-rule gap raised for Einar; `.claude/**` untouched); spec Minor 1 (upgrade marker in sequence row 12) and spec Minor 2 (where secure password change is set, confirm at execution time, record which). Only the runbook changed; the section 13 table and `.env.example` untouched.

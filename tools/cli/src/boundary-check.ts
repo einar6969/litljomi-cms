@@ -1,5 +1,5 @@
-// `boundary-check`: re-proves gates A1–A4 on the hosted staging project over HTTP only (plan
-// decision 46; runbook docs/runbooks/staging.md section 14). Run by Einar only, in his own terminal.
+// `boundary-check`: re-proves gates A1–A4 on the hosted production project over HTTP only (plan
+// decision 46; runbook docs/runbooks/production.md section 14). Run by Einar only, in his own terminal.
 // It mirrors the assertions of tests/integration/src/http-boundary.test.ts and
 // storage-boundary.test.ts that need no database connection, limited to what decision 46 lists.
 //
@@ -8,9 +8,9 @@
 // that origin only with keys and tokens in headers only, no redirect followed, and output limited
 // to ids, statuses and the error code and message fields, with every key and token redacted.
 //
-// What it leaves on staging (decision 46; nothing can be removed without SQL, so nothing is ever
-// deleted): two pre-confirmed test editors created through the Auth admin API (no invitation, no
-// email, no password), one membership each, one draft entry each, and one tiny JPEG each in
+// What it leaves on the production project (decision 46; nothing can be removed without SQL, so
+// nothing is ever deleted): two pre-confirmed test editors created through the Auth admin API (no
+// invitation, no email, no password), one membership each, one draft entry each, and one tiny JPEG each in
 // media-private. Re-runs reuse all of them. The secret key is used only for the Auth admin
 // endpoints, admin_add_membership and the read-only worker_previous_release; never for a storage
 // write or delete.
