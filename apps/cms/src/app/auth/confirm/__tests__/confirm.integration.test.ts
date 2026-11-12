@@ -1,12 +1,16 @@
-// The magic link's confirm actions and the proxy against the local stack's Auth (M3-14). The
-// browser's cookies are a jar standing in for next/headers; the proxy (lib/supabase/proxy.ts) runs on
-// the same request as the confirm POST, as Next.js does, and the action sees the request cookies the
-// proxy left. Covers the C3 follow-up "proxy refresh of an expired old session on the confirm POST"
-// and Task 32 security r1's session swap: a link for another account is only held aside until the
+// The confirm page's actions and the proxy against the local stack's Auth (M3-14). The browser's
+// cookies are a jar standing in for next/headers; the proxy (lib/supabase/proxy.ts) runs on the same
+// request as the confirm POST, as Next.js does, and the action sees the request cookies the proxy
+// left. Covers the C3 follow-up "proxy refresh of an expired old session on the confirm POST" and
+// Task 32 security r1's session swap: a link for another account is only held aside until the
 // visitor answers the question.
+//
+// The visitor signs in with a password, as editors do (PW-01). The sign-in hook refuses magic
+// links, so the link for another account is an invitation, and the link for the visitor's own
+// account is the second link of an email change.
 import { NextRequest } from 'next/server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { adminAuth, auth, brief, deleteThrowawayUsers, generateLinkSession, newUser, tokenHashOf, waitMail, type TestUser } from '../../../../../../../tests/integration/src/auth-api.ts';
+import { adminAuth, auth, brief, deleteThrowawayUsers, newUser, passwordSession, tokenHashOf, waitMail, type TestUser } from '../../../../../../../tests/integration/src/auth-api.ts';
 import { env } from '../../../../../../../tests/integration/src/env.ts';
 import { closeAll } from '../../../../../../../tests/integration/src/sql.ts';
 
@@ -39,11 +43,23 @@ const QUESTION = /^REDIRECT \/auth\/confirm$/;
 // Past the access token's lifetime (`jwt_expiry`, 3600 s in supabase/config.toml).
 const LATER_MS = 2 * 3600 * 1000;
 
-/** A fresh magic-link token hash for `email`, as `{{ .TokenHash }}` carries it. */
-async function tokenHash(email: string): Promise<string> {
-  const link = await adminAuth('/admin/generate_link', { body: { type: 'magiclink', email } });
-  expect(link.status, brief(link)).toBe(200);
-  return link.json.hashed_token as string;
+/** An invitation for a new account: the account and its link's token hash, as `{{ .TokenHash }}` carries it. */
+async function invitation(): Promise<{ user: TestUser; tokenHash: string }> {
+  const user = await newUser('m314-b', { invite: true });
+  return { user, tokenHash: user.inviteTokenHash! };
+}
+
+/**
+ * The link that completes an email change `user` asked for with `accessToken`: the old address's
+ * link is verified first, so the new address's link, returned, signs `user` in.
+ */
+async function ownLink(user: TestUser, accessToken: string): Promise<string> {
+  const newAddress = `new-${user.email}`;
+  const put = await auth('/user', { method: 'PUT', token: accessToken, body: { email: newAddress } });
+  expect(put.status, brief(put)).toBe(200);
+  const first = await auth('/verify', { body: { type: 'email_change', token_hash: tokenHashOf((await waitMail(user.email))[0]!) } });
+  expect(first.status, brief(first)).toBe(200);
+  return tokenHashOf((await waitMail(newAddress))[0]!);
 }
 
 const form = (fields: Record<string, string>) => {
@@ -77,21 +93,20 @@ async function proxyPost(): Promise<Response> {
   return response;
 }
 
-/** Signs `user` in to the jar through the confirm action, as a visitor without a session. */
+/** Signs `user` in to the jar with a password, through the editor's cookie client. */
 async function signInToJar(user: TestUser) {
-  await expect(confirmSignIn(form({ token_hash: await tokenHash(user.email), type: 'email' }))).rejects.toThrow(HOME);
+  const { error } = await (await createEditorClient()).auth.signInWithPassword({ email: user.email, password: user.password! });
+  expect(error).toBeNull();
   const session = await jarSession();
   expect(session?.user.id).toBe(user.id);
   return session!;
 }
 
 let a: TestUser;
-let b: TestUser;
 beforeAll(async () => {
   vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', env.apiUrl);
   vi.stubEnv('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', env.publishableKey);
   a = await newUser('m314-a');
-  b = await newUser('m314-b');
 });
 beforeEach(() => {
   jar.clear();
@@ -125,7 +140,8 @@ describe('the proxy on the confirm POST (C3 follow-up)', () => {
     expect(response.headers.getSetCookie().some((c) => c.startsWith('sb-'))).toBe(true);
 
     // The action, on the same request, sees the refreshed session: it holds B's link aside and asks.
-    await expect(confirmSignIn(form({ token_hash: await tokenHash(b.email), type: 'email' }))).rejects.toThrow(QUESTION);
+    const b = await invitation();
+    await expect(confirmSignIn(form({ token_hash: b.tokenHash, type: 'invite' }))).rejects.toThrow(QUESTION);
     expect(jar.has(PENDING_COOKIE)).toBe(true);
     expect((await jarSession())?.user.id).toBe(a.id);
     expect(await accepted(refreshed!.access_token)).toBe(true);
@@ -134,7 +150,7 @@ describe('the proxy on the confirm POST (C3 follow-up)', () => {
     await expect(replaceSession()).rejects.toThrow(HOME);
     expect(jar.has(PENDING_COOKIE)).toBe(false);
     const now = await jarSession();
-    expect(now?.user.id).toBe(b.id);
+    expect(now?.user.id).toBe(b.user.id);
     expect(await accepted(now!.access_token)).toBe(true);
     expect(await accepted(refreshed!.access_token)).toBe(false);
   });
@@ -151,9 +167,10 @@ describe('the proxy on the confirm POST (C3 follow-up)', () => {
 
     expect(response.headers.get('location')).toBeNull();
     expect(await jarSession()).toBeNull();
-    await expect(confirmSignIn(form({ token_hash: await tokenHash(b.email), type: 'email' }))).rejects.toThrow(HOME);
+    const b = await invitation();
+    await expect(confirmSignIn(form({ token_hash: b.tokenHash, type: 'invite' }))).rejects.toThrow(HOME);
     expect(jar.has(PENDING_COOKIE)).toBe(false);
-    expect((await jarSession())?.user.id).toBe(b.id);
+    expect((await jarSession())?.user.id).toBe(b.user.id);
   });
 });
 
@@ -163,7 +180,7 @@ describe('an email change (spec §4.4, M5 finding 9)', () => {
   it('needs the POST of each address, and the second signs in with the new address', async () => {
     const user = await newUser('m503-change');
     const newAddress = `new-${user.email}`;
-    const session = await generateLinkSession(user.email, 'magiclink');
+    const session = await passwordSession(user);
     const put = await auth('/user', { method: 'PUT', token: session.json.access_token, body: { email: newAddress } });
     expect(put.status, brief(put)).toBe(200);
     const fromOld = tokenHashOf((await waitMail(user.email))[0]!);
@@ -184,13 +201,14 @@ describe('a link for another account (Task 32 security r1)', () => {
     const own = await signInToJar(a);
     const before = new Map(jar);
 
-    await expect(confirmSignIn(form({ token_hash: await tokenHash(b.email), type: 'email', next: '/t/acme' }))).rejects.toThrow(QUESTION);
+    const b = await invitation();
+    await expect(confirmSignIn(form({ token_hash: b.tokenHash, type: 'invite', next: '/t/acme' }))).rejects.toThrow(QUESTION);
     // Only the pending cookie was added; the session cookies are as they were.
     expect([...jar].filter(([name]) => name !== PENDING_COOKIE)).toEqual([...before]);
     const held = JSON.parse(jar.get(PENDING_COOKIE)!) as { accessToken: string; next: string };
     expect(held.next).toBe('/t/acme');
     const user = await auth('/user', { method: 'GET', token: held.accessToken });
-    expect(user.json.email).toBe(b.email);
+    expect(user.json.email).toBe(b.user.email);
 
     await expect(keepSession()).rejects.toThrow(HOME);
     expect(jar.has(PENDING_COOKIE)).toBe(false);
@@ -200,11 +218,14 @@ describe('a link for another account (Task 32 security r1)', () => {
   });
 
   it('a link for the account already signed in takes over without a question, revoking the old session', async () => {
-    const own = await signInToJar(a);
-    await expect(confirmSignIn(form({ token_hash: await tokenHash(a.email), type: 'email', next: '/t/acme' }))).rejects.toThrow('REDIRECT /t/acme');
+    // An account of its own, because the email change moves its address.
+    const user = await newUser('m314-own');
+    const own = await signInToJar(user);
+    const link = await ownLink(user, own.access_token);
+    await expect(confirmSignIn(form({ token_hash: link, type: 'email_change', next: '/t/acme' }))).rejects.toThrow('REDIRECT /t/acme');
     expect(jar.has(PENDING_COOKIE)).toBe(false);
     const now = await jarSession();
-    expect(now?.user.id).toBe(a.id);
+    expect(now?.user.id).toBe(user.id);
     expect(now!.access_token).not.toBe(own.access_token);
     expect(await accepted(now!.access_token)).toBe(true);
     expect(await accepted(own.access_token)).toBe(false);
@@ -212,11 +233,11 @@ describe('a link for another account (Task 32 security r1)', () => {
 
   it('a used link changes nothing for a signed-in visitor', async () => {
     await signInToJar(a);
-    const hash = await tokenHash(b.email);
-    const used = await auth('/verify', { body: { type: 'email', token_hash: hash } });
+    const { tokenHash: hash } = await invitation();
+    const used = await auth('/verify', { body: { type: 'invite', token_hash: hash } });
     expect(used.status, brief(used)).toBe(200);
     const before = new Map(jar);
-    await expect(confirmSignIn(form({ token_hash: hash, type: 'email' }))).rejects.toThrow('REDIRECT /login?error=link');
+    await expect(confirmSignIn(form({ token_hash: hash, type: 'invite' }))).rejects.toThrow('REDIRECT /login?error=link');
     expect(new Map(jar)).toEqual(before);
   });
 });

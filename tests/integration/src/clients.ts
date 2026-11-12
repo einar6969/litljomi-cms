@@ -1,13 +1,13 @@
 // Data API, Storage and Auth clients for the integration tests (plan Task 12).
 // anonClient: the publishable key, no session. secretClient: the secret key,
 // as the worker and CLI use it (local stack only, see env.ts). editorClient:
-// a persona signed in through the real OTP path, Auth's admin generate_link
-// then POST /verify with the hashed token, so every token passes the
-// passwordless hook (decision 18). Sessions are cached per persona for the run
-// (Auth limits verifications to 30 per 5 minutes) and renewed near expiry.
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+// a persona signed in with its password (PERSONA_PASSWORD, set by the seed),
+// the way editors sign in (spec §4.4), so every token passes the sign-in hook
+// (PW-01). Sessions are cached per persona for the run (Auth limits sign-ins
+// to 30 per 5 minutes per address) and renewed near expiry.
+import { createClient, type Session as AuthSession, type SupabaseClient } from '@supabase/supabase-js';
 import { env } from './env.ts';
-import { PERSONAS, type PersonaName } from './fixtures.ts';
+import { PERSONAS, PERSONA_PASSWORD, type PersonaName } from './fixtures.ts';
 
 const options = { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } };
 
@@ -28,16 +28,23 @@ export async function retryRateLimited<T extends { error: { status?: number } | 
 type Session = { client: SupabaseClient; accessToken: string; expiresAt: number };
 const sessions = new Map<PersonaName, Session>();
 
-async function signIn(persona: PersonaName): Promise<Session> {
-  const { email } = PERSONAS[persona];
-  const link = await secretClient().auth.admin.generateLink({ type: 'magiclink', email });
-  if (link.error) throw new Error(`generateLink for ${persona}: ${link.error.message}`);
+/**
+ * A new session of the persona of its own, on a client of its own (one browser): a password
+ * sign-in, as an editor signs in. Callers that end or expire the session use this one, never the
+ * cached editorClient.
+ */
+export async function signInPersona(persona: PersonaName): Promise<{ client: SupabaseClient; session: AuthSession }> {
   const client = anonClient();
-  const verified = await retryRateLimited(() =>
-    client.auth.verifyOtp({ type: 'magiclink', token_hash: link.data.properties.hashed_token }),
+  const signedIn = await retryRateLimited(() =>
+    client.auth.signInWithPassword({ email: PERSONAS[persona].email, password: PERSONA_PASSWORD }),
   );
-  const session = verified.data.session;
-  if (verified.error || !session) throw new Error(`verifyOtp for ${persona}: ${verified.error?.message ?? 'no session'}`);
+  const session = signedIn.data.session;
+  if (signedIn.error || !session) throw new Error(`password sign-in for ${persona}: ${signedIn.error?.message ?? 'no session'}`);
+  return { client, session };
+}
+
+async function signIn(persona: PersonaName): Promise<Session> {
+  const { client, session } = await signInPersona(persona);
   return { client, accessToken: session.access_token, expiresAt: (session.expires_at ?? 0) * 1000 };
 }
 

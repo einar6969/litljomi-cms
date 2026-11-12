@@ -7,8 +7,8 @@
 // removed from the tenant with a tab open (M4-01, review focus 5) is refused the next save, with a
 // session that is still good, and loses nothing either.
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { anonClient, retryRateLimited, secretClient } from '../../../../../tests/integration/src/clients.ts';
-import { PERSONAS, TENANT } from '../../../../../tests/integration/src/fixtures.ts';
+import { anonClient, secretClient, signInPersona } from '../../../../../tests/integration/src/clients.ts';
+import { PERSONAS, TENANT, type PersonaName } from '../../../../../tests/integration/src/fixtures.ts';
 import { closeAll, draftVersion, ownerQuery } from '../../../../../tests/integration/src/sql.ts';
 
 // Every action call runs with the browser's current session (the cookies all its tabs share).
@@ -50,14 +50,10 @@ class TabStorage implements Storage {
   }
 }
 
-/** A sign-in through the real OTP path, with the `api` schema the CMS's editor client uses. */
-async function signIn(persona: keyof typeof PERSONAS = 'editor_labak'): Promise<EditorSession> {
-  const link = await secretClient().auth.admin.generateLink({ type: 'magiclink', email: PERSONAS[persona].email });
-  if (link.error) throw new Error(`generateLink: ${link.error.message}`);
-  const client = anonClient();
-  const verified = await retryRateLimited(() => client.auth.verifyOtp({ type: 'magiclink', token_hash: link.data.properties.hashed_token }));
-  if (verified.error || !verified.data.session) throw new Error(`verifyOtp: ${verified.error?.message ?? 'no session'}`);
-  return { auth: client.auth, accessToken: verified.data.session.access_token, from: (table) => client.schema('api').from(table), rpc: (fn, args) => client.schema('api').rpc(fn, args) };
+/** A password sign-in of its own, with the `api` schema the CMS's editor client uses. */
+async function signIn(persona: PersonaName = 'editor_labak'): Promise<EditorSession> {
+  const { client, session } = await signInPersona(persona);
+  return { auth: client.auth, accessToken: session.access_token, from: (table) => client.schema('api').from(table), rpc: (fn, args) => client.schema('api').rpc(fn, args) };
 }
 
 /** Ends this session on the server, refresh token included (what an expired session amounts to); the persona's other sessions are left alone. */

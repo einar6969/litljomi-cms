@@ -5,7 +5,7 @@
 import { randomUUID } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { auth, brief, claims, deleteThrowawayUsers, generateLinkSession, newUser, totp, type TestUser } from './auth-api.ts';
+import { auth, brief, claims, deleteThrowawayUsers, newUser, passwordSession, totp, type TestUser } from './auth-api.ts';
 import { anonClient, editorApiClient, secretClient } from './clients.ts';
 import { env } from './env.ts';
 import { PERSONAS, TENANT, type PersonaName } from './fixtures.ts';
@@ -54,9 +54,9 @@ async function arrangeTenant(label: string) {
   return { tenantId, siteId, releaseId };
 }
 
-/** A real aal2 session: a magic link, then TOTP enrolment and step-up. */
+/** A real aal2 session: a password sign-in, then TOTP enrolment and step-up. */
 async function aal2Token(user: TestUser): Promise<string> {
-  const session = await generateLinkSession(user.email, 'magiclink');
+  const session = await passwordSession(user);
   const token: string = session.json.access_token;
   const enrol = await auth('/factors', { token, body: { factor_type: 'totp', friendly_name: 'console-views' } });
   if (enrol.status !== 200) throw new Error(`enrol: ${brief(enrol)}`);

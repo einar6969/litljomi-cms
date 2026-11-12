@@ -28,6 +28,12 @@ export const PERSONAS = {
 export type PersonaName = keyof typeof PERSONAS;
 export const PERSONA_NAMES = Object.keys(PERSONAS) as PersonaName[];
 
+/**
+ * The password every fixed persona signs in with on the local stack (spec §4.4; PW-01). A local
+ * test value, never a real one; seedIntegration sets it.
+ */
+export const PERSONA_PASSWORD = 'local-test-password-0123';
+
 /** The demo tenant's site, created by seedIntegration (the fixture site's port, plan Task 26). */
 export const DEMO_SITE = {
   baseUrl: 'http://localhost:3101',

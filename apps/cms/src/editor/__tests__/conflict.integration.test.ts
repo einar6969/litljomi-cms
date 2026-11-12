@@ -3,8 +3,8 @@
 // edits; "keep mine" saves at the newer version; the other session, now stale, reloads theirs and
 // keeps editing on top of it. Nothing of either edit is lost without the editor having seen it.
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { anonClient, retryRateLimited, secretClient } from '../../../../../tests/integration/src/clients.ts';
-import { PERSONAS, TENANT } from '../../../../../tests/integration/src/fixtures.ts';
+import { anonClient, signInPersona } from '../../../../../tests/integration/src/clients.ts';
+import { PERSONAS, TENANT, type PersonaName } from '../../../../../tests/integration/src/fixtures.ts';
 import { closeAll, draftVersion, ownerQuery } from '../../../../../tests/integration/src/sql.ts';
 
 // Every action call runs with the session of the tab that makes it.
@@ -49,15 +49,11 @@ const settled = (c: Controller, state: string) =>
 const draftData = async () => (await ownerQuery<{ data: Record<string, unknown> }>('select data from cms.drafts where entry_id = $1', [entryId]))[0]!.data;
 
 /**
- * A sign-in of the persona of its own (one browser), through the real OTP path, with the `api`
- * schema the CMS's own editor client uses (lib/supabase/server.ts).
+ * A sign-in of the persona of its own (one browser), with its password, and the `api` schema the
+ * CMS's own editor client uses (lib/supabase/server.ts).
  */
-async function signIn(persona: keyof typeof PERSONAS): Promise<EditorSession> {
-  const link = await secretClient().auth.admin.generateLink({ type: 'magiclink', email: PERSONAS[persona].email });
-  if (link.error) throw new Error(`generateLink: ${link.error.message}`);
-  const client = anonClient();
-  const verified = await retryRateLimited(() => client.auth.verifyOtp({ type: 'magiclink', token_hash: link.data.properties.hashed_token }));
-  if (verified.error || !verified.data.session) throw new Error(`verifyOtp: ${verified.error?.message ?? 'no session'}`);
+async function signIn(persona: PersonaName): Promise<EditorSession> {
+  const { client } = await signInPersona(persona);
   return { auth: client.auth, from: (table) => client.schema('api').from(table), rpc: (fn, args) => client.schema('api').rpc(fn, args) };
 }
 
