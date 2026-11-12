@@ -36,6 +36,12 @@ export default defineWorkspace([
   },
   {
     test: {
+      name: 'dld',
+      include: ['modules/dld/src/__tests__/**/*.test.ts'],
+    },
+  },
+  {
+    test: {
       name: 'm4-probe',
       include: ['modules/m4-probe/src/__tests__/**/*.test.ts'],
     },

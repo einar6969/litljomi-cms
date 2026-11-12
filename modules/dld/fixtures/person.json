@@ -1,0 +1,13 @@
+{
+  "name": "Dæmi Dæmisdóttir",
+  "jobTitle": "Dæmistitill",
+  "role": "Dæmihlutverk",
+  "email": "daemi@example.is",
+  "portrait": { "_ref": "44444444-4444-4444-8444-444444444444", "_kind": "asset", "alt": "Dæmi" },
+  "bio": [
+    {
+      "_key": "b1",
+      "value": { "heading": "Menntun", "items": [{ "_key": "t1", "value": "Dæmi um menntun" }, { "_key": "t2", "value": "Annað dæmi" }] }
+    }
+  ]
+}

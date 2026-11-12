@@ -10,6 +10,7 @@
   "dependencies": {
     "@litljomi/cms-schema": "workspace:*",
     "@litljomi/module-demo": "workspace:*",
+    "@litljomi/module-dld": "workspace:*",
     "@litljomi/module-m4-probe": "workspace:*",
     "@litljomi/module-labak": "workspace:*"
   },

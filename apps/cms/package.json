@@ -16,6 +16,7 @@
     "@litljomi/cms-schema": "workspace:*",
     "@litljomi/cms-sdk": "workspace:*",
     "@litljomi/module-demo": "workspace:*",
+    "@litljomi/module-dld": "workspace:*",
     "@litljomi/module-m4-probe": "workspace:*",
     "@litljomi/module-labak": "workspace:*",
     "@litljomi/rich-text": "workspace:*",

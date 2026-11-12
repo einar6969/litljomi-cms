@@ -1,0 +1,5 @@
+{
+  "slides": [{ "_key": "s1", "value": { "_ref": "11111111-1111-4111-8111-111111111111", "_kind": "asset", "alt": "" } }],
+  "featured": [{ "_key": "f1", "value": { "_ref": "00000000-0000-4000-8000-000000000001", "_kind": "entry" } }],
+  "slogans": [{ "_key": "g1", "value": "Dæmi um slagorð" }, { "_key": "g2", "value": "Annað dæmi" }]
+}

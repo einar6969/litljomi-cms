@@ -1,10 +1,11 @@
 // The only file in the CMS app that imports tenant modules (spec §3.1; enforced by ESLint).
 import type { ContentType, ModuleManifest } from '@litljomi/cms-schema';
 import demo from '@litljomi/module-demo';
+import dld from '@litljomi/module-dld';
 import labak from '@litljomi/module-labak';
 import m4Probe from '@litljomi/module-m4-probe';
 
-export const modules: ModuleManifest[] = [labak, demo, m4Probe];
+export const modules: ModuleManifest[] = [labak, demo, dld, m4Probe];
 
 /** The module of a tenant, by its slug. */
 export function getModule(slug: string): ModuleManifest | undefined {
