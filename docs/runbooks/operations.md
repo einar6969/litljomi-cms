@@ -45,6 +45,7 @@
 | `<team>` | Einar's Vercel team, the scope for `vercel link` | Einar's Vercel dashboard |
 | `<site-project>` | The site's Vercel project, linked in its own empty folder `~/vercel-link/<site-project>`, so a `vercel env` command can't reach the wrong project | Einar's Vercel team |
 | `<site-host>` | The site's public hostname | That project's Settings, Domains |
+| `<site>` | The absolute path of the checkout of a site that lives in its own repository | Einar's Mac |
 | `<deployment-url>` | A deployment's URL | The `vercel ls` line just before it |
 
 **The check after a publish.** Sections 2 to 5 use this one check. It needs a platform admin at `aal2` (section 6). In the console, open `/console/t/<tenant>`. In **Deliveries**, the new release's row for the site shows Notified `ok` and Live `ok`, with `1 attempt` and `–` under Last error. Pointer lag makes this take about a minute (decision 49.1). The editor shows "Birt á vef ✓".
@@ -57,7 +58,7 @@
 
 **The site is optional** for M4's test 1 (decision 58). Without it, the test ends at step 10.
 
-**The times are estimates.** The whole section took 26 min 36 s in M4's hosted run, with no site, from the first step to the public pointer (C6). They count a tenant made as a copy of `demo`. Designing a real client's content types is separate work (§9.2, step 1).
+**The times are estimates.** The whole section took 26 min 36 s in M4's hosted run, with no site, from the first step to the public pointer (C6). They count a tenant made as a copy of `demo`, and a site that already has its code. Designing a real client's content types is separate work (§9.2, step 1). So is the code of a site in its own repository (step 11).
 
 | Step | What | Where | Time |
 |---|---|---|---|
@@ -216,7 +217,7 @@ pnpm --silent --filter @litljomi/cli cli provision editor --email '<address>' --
 
 **HOSTED.** Owner: the editor, signed in to the CMS. A publish changes content on the production project, so the approval must cover it.
 
-Sign in through the invitation mail and open `/t/<tenant>`. For a copy of `demo`: open "Events", create an entry with "Ný færsla", fill Title and Start date, press "Vista slóð" to save the slug the field suggests, and press "Birta". The slug is required: without one, the request is rejected with `slug_required`. For a real tenant, fill whatever its type requires, and the slug if the type has site pages.
+Sign in through the invitation mail and open `/t/<tenant>`. For a copy of `demo`: open "Events", create an entry with "Ný færsla", fill Title and Start date, wait for "Vistað", and press "Birta". Nobody sets a slug: it follows the title each time the draft is saved, until the first publish locks it. If the type has site pages, a publish that finds no slug is rejected with `slug_required`; that happens when the title holds nothing a slug can be made of. For a real tenant, fill whatever its type requires.
 
 With no site, the editor ends at "Enginn vefur tengdur". That's the right result, and not an error.
 
@@ -234,16 +235,135 @@ curl -s -w '\n%{http_code}\n' 'https://<project-ref>.supabase.co/storage/v1/obje
 
 ### Step 11. The site
 
-**HOSTED.** Owner: Einar for every secret, `provision` and `vercel` command.
+**HOSTED** from 11a on. Owner: Einar for every secret, `provision` and `vercel` command.
 
-The site's code comes first (§9.2, step 3): the SDK and renderer, the revalidation and preview routes, entry markers in every component that renders an entry, the release marker in the layout, and the media host. The site must answer without deployment protection, or the live check can't read it.
+The site's code comes first (§9.2, step 3). `apps/demo-site` is the reference and has all of it. A site in its own repository gets it by the procedure below. Two things hold for every site:
+
+- It runs on a server. A static export (`output: 'export'`) has nowhere to run the revalidation and preview routes, and no cache to expire.
+- It answers without deployment protection, or the live check can't read it (§7.4).
+
+#### The site's code, for a site in its own repository
+
+**Owner:** Einar or a session. Local, in two checkouts: steps marked *Hub* run in `~/litljomi-cms`, the rest in `<site>`. They are numbered Site 1 to Site 9, so that "step 9" still means this section's. The site's branch is pushed under that repository's own rules.
+
+A site gets the SDK and the renderer as vendored `npm pack` tarballs with a real version. There's no package registry: Einar's ruling of 2026-11-12 replaces the one §9.1 planned for the second site. The steps come from the reference site and from one probe of a site outside this repository, on Next.js 16.2.4 with npm and a local server (the report of 2026-11-12 under `docs/clients/`, `probes/site-without-export.md`). The probe ran nothing on Vercel. The two Hub commands were run on 2026-11-12, into a scratch folder.
+
+**Site 1. Vendor the packages (Hub).** From an up-to-date `main`:
+
+```sh
+pnpm pack:sdk <site>/vendor
+```
+
+It writes two tarballs and `litljomi-packages.json`, which names each package's version, tarball and SHA-256, and the commit they were packed from. It refuses if `packages/sdk` or `packages/rich-text` has uncommitted changes, or if the folder is inside this repository. It leaves nothing behind here.
+
+In the site's `package.json`, with the file names the command printed:
+
+```json
+"@litljomi/cms-sdk": "file:vendor/litljomi-cms-sdk-<version>.tgz",
+"@litljomi/rich-text": "file:vendor/litljomi-rich-text-<version>.tgz",
+```
+
+Then run `npm install`, and commit `vendor/`, `package.json` and the lockfile together. The site needs Next.js 15 or 16 and React 19. The renderer's package declares more than a site uses (the CMS editor's libraries), so the install added 46 packages in the probe. None of them reached the browser.
+
+**Site 2. `next.config`.** The packages ship TypeScript source, so Next.js must compile them, as in `apps/demo-site/next.config.ts`:
+
+```ts
+transpilePackages: ['@litljomi/cms-sdk', '@litljomi/rich-text'],
+```
+
+Without it the build stops at `Unknown module type`.
+
+Allow the public media bucket and nothing else. The demo site's file checks the host. Add `pathname` and `search`, which it doesn't have:
+
+```ts
+images: {
+  remotePatterns: [
+    {
+      protocol: 'https',
+      hostname: mediaHost, // CMS_MEDIA_HOST
+      pathname: '/storage/v1/object/public/media-public/**',
+      search: '',
+    },
+  ],
+},
+```
+
+With `images.unoptimized: true` nothing enforces the pattern. Images inside rich text are plain `<img>` tags and never go through the optimiser.
+
+**Site 3. `tsconfig.json`.** In `compilerOptions`:
+
+```json
+"allowImportingTsExtensions": true
+```
+
+The SDK's files import each other by their `.ts` names, and the site's build type-checks them. Without the setting it stops at `An import path can only end with a '.ts' extension`. The setting needs `noEmit`, which a Next.js site has. `skipLibCheck` doesn't cover it.
+
+**Site 4. Types (Hub).**
+
+```sh
+pnpm --silent --filter @litljomi/cli cli gen-types --module <tenant> --out <site>/src/types/cms.ts
+```
+
+**`--out` is resolved from `tools/cli`,** not from where the command was typed, so give an absolute path. A relative one lands inside this repository. The file's place in the site is the site's choice. The site commits it and never edits it. Run the command again when the module's types change.
+
+**Site 5. The client.** Copy `apps/demo-site/src/lib/cms.ts`. `publishedCms()` is for code with no request, such as `generateStaticParams`. `cms()` is for everything else, and reads the editor's draft in preview. Import the SDK in server code only: a client component takes the rendered marker as a child. Never fetch with `no-store`, and never read cookies outside draft mode. Either makes the pages dynamic (§7.3).
+
+**Site 6. The two routes.** Copy `apps/demo-site/src/app/api/cms/revalidate/route.ts` and `apps/demo-site/src/app/api/cms/preview/route.ts`, to the same paths. 11c and 11d register `/api/cms/revalidate` and `/api/cms/preview`.
+
+**Site 7. Markers.** `CmsEntryMarker` goes inside every component that renders an entry, given the same entry object, as in `apps/demo-site/src/app/events/event.tsx`. Never in a layout, and with no raw author-written markup around it (§7.3). `CmsReleaseMarker` goes in the root layout, as in `apps/demo-site/src/app/layout.tsx`.
+
+**Site 8. A removed entry answers 404.** An entry's own route calls `notFound()` when the release doesn't hold the entry, as in `apps/demo-site/src/app/events/[slug]/page.tsx`. No redirect, and no page that says "not found" with status 200: an unpublish is confirmed only when the entry's own address answers 404 with no marker for it (§7.4). The reference route leaves `dynamicParams` at its default. What that costs, and what the other setting costs, is the first open question below.
+
+**Site 9. Environment.**
+
+| Variable | Value | Read | Set in |
+|---|---|---|---|
+| `CMS_DELIVERY_BASE_URL` | `https://<project-ref>.supabase.co/storage/v1/object/public/delivery` | At build, and when a page regenerates | 11b |
+| `CMS_TENANT` | `<tenant>` | At build, and when a page regenerates | 11b |
+| `CMS_MEDIA_HOST` | `<project-ref>.supabase.co` | At build, by `next.config` | 11b |
+| `CMS_WEBHOOK_SECRETS` | A secret. Two, comma-separated, during a rotation (section 3) | By the revalidation route, on each request | 11c |
+| `CMS_PREVIEW_SECRETS` | A secret | By the preview route | 11d |
+| `CMS_PREVIEW_BASE_URL` | The CMS's origin | In draft mode | 11d |
+
+The first three are public. A build without the first two fails with `CMS_DELIVERY_BASE_URL is not set`. A build also fails while the tenant has no release, on purpose.
+
+**Verify,** locally, after the first publish (step 9) and with the three public variables set:
+
+- `npm run build` passes. So does a fresh clone with no `node_modules`: `npm ci`, then `npm run build`.
+- `shasum -a 256 vendor/*.tgz` prints the two values in `vendor/litljomi-packages.json`.
+- Under `npm start`, a page that renders an entry holds `data-cms-entry`, and every page holds `<meta name="cms-release"`.
+- An address under the entry route that no entry has answers 404.
+- `curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:3000/api/cms/revalidate` prints `401`, on the port the site starts on.
+
+**Refreshing the vendored packages.** A site keeps its packages until it needs a change made in `packages/sdk` or `packages/rich-text`. Then:
+
+1. In the Hub: `pnpm pack:sdk <site>/vendor`, from an up-to-date `main`.
+2. In the site: read `git diff vendor/litljomi-packages.json`.
+   - A new version: point `package.json` at the new file names, `git rm` the older tarballs the command named, and run `npm install`.
+   - The same versions and the same SHA-256 values: nothing changed. Discard the diff.
+   - The same version with another SHA-256: stop. Either the version rule below was skipped, or npm packs differently than it did. In the Hub, compare the two commits before going on: `git diff <old sourceCommit> <new sourceCommit> -- packages/sdk packages/rich-text`.
+3. Generate the types again (Site 4) if the module changed. Then, in the site, run the checks under **Verify** and commit everything together.
+
+**The version rule.** A package's version names one set of shipped files.
+
+- A PR that changes a file `npm pack` ships raises that package's version in the same PR. The shipped files are the package's `package.json` and everything under its `src/` outside `__tests__`.
+- While the first number is 0: raise the middle number when a site must change its own code, configuration or types to take the package, and the last number otherwise.
+- The two packages have separate versions. A change to tests or docs alone raises neither.
+- Run `pnpm install` after the edit. pnpm refuses to run scripts until it has seen the new version (`ERR_PNPM_VERIFY_DEPS_BEFORE_RUN`). The lockfile doesn't change.
+
+Nothing checks this rule. The reviewer of such a PR does.
+
+**Open questions.** The probe found two things that are not settled. They are recorded so that an integration meets them knowingly. Neither is advice.
+
+1. **A new entry's page, or the site's own 404 page.** With the default `dynamicParams`, as in the reference route, an entry published after the build gets its page on the first request after the webhook. On Next.js 16.2.4 the price is that every 404 on such a route, for an unknown address or a removed entry, is a document with an empty `<body>` until JavaScript runs, and it is marked cacheable. With `export const dynamicParams = false` those addresses get the site's prerendered 404 page, and a new entry has no page until a new build, while §7.4 confirms a publish only when the pages the module declares for the entry answer 200 with its marker. One switch decides both, and which way a site should set it is not settled. The empty-body 404 meets the live check's rule for a removed entry: the status is 404, and the SDK's scanner reads the page to its end and finds no marker. The worker's own live check wasn't run against it. Not checked: Next.js 16.4, Vercel, a browser.
+2. **500 while the delivery host is unreachable after a webhook.** §7.3 says a site keeps serving its last good pages when storage is down. On a local `next start`, after a signed webhook, every page that reads the CMS answered 500 until the delivery host came back. With the release marker in the root layout (Site 7), that is every page, the 404 included. The probe's reading: the webhook expires the `cms` tag at once, so there's no older page to fall back on. Not reproduced on Vercel. The hourly revalidation with the host down wasn't tried. Whether the SDK, the spec or the marker's place changes is undecided.
 
 **11a. Create the project.** A new Vercel project is a G6 action, and its CNAME a G5 action. In Vercel:
 
 - Root directory: the site's folder. Node.js 22.
 - Functions in `fra1`, and `X-Robots-Tag: noindex`, as in `apps/demo-site/vercel.json`.
 - Deployment Protection: Vercel Authentication, Standard Protection, so the custom domain stays public and every `*.vercel.app` URL doesn't.
-- For a site in this repository: Production Branch `production`, and this Ignored Build Step. A site in another repository uses its own branch (production runbook G6.1, `labak-hub`).
+- For a site in this repository: Production Branch `production`, and this Ignored Build Step. A site in its own repository uses that repository's production branch, and builds previews or not as it chooses (production runbook G6.1 records one such setup).
 
   ```sh
   if [ "$VERCEL_ENV" = "production" ]; then exit 1; else exit 0; fi
@@ -265,6 +385,8 @@ printf '%s' '<tenant>' | vercel env add CMS_TENANT production --cwd ~/vercel-lin
 printf '%s' 'https://<project-ref>.supabase.co/storage/v1/object/public/delivery' | vercel env add CMS_DELIVERY_BASE_URL production --cwd ~/vercel-link/<site-project>
 printf '%s' '<project-ref>.supabase.co' | vercel env add CMS_MEDIA_HOST production --cwd ~/vercel-link/<site-project>
 ```
+
+A site in its own repository that also builds Preview deployments needs the same three in the Preview environment, or those builds fail on the missing variable. That hasn't been run: confirm the command's form at execution time.
 
 **11c. Create the site and its webhook secret.** One terminal, from the repository root.
 

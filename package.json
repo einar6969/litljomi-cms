@@ -12,6 +12,7 @@
     "test": "vitest run",
     "check:slugs": "node tools/checks/no-tenant-slugs.ts",
     "check:schema": "pnpm --filter @litljomi/cli cli check-schema",
+    "pack:sdk": "node tools/pack/pack-sdk.ts",
     "test:integration": "pnpm --filter @litljomi/integration-tests test && pnpm --filter cms test:integration",
     "test:delivery": "pnpm --filter cms test:delivery",
     "test:e2e-local": "pnpm --filter @litljomi/integration-tests test:e2e-local",
