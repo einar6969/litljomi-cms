@@ -8,7 +8,7 @@ import { runCli } from '../cli.ts';
 import { IMPORT_USAGE, runImport, type ImportDeps } from '../import.ts';
 import { assetIdFor } from '../import/media.ts';
 import { POLL_MS, STALL_MS } from '../import/run.ts';
-import { EMAIL, FakeHub, ORIGIN, PASSWORD, PUBLISHABLE, REF, TENANT_ID } from './import-fake-hub.ts';
+import { EMAIL, FakeHub, ORIGIN, OTHER_TENANT_ID, PASSWORD, PUBLISHABLE, REF, TENANT_ID } from './import-fake-hub.ts';
 import { MEDIA, exampleManifest, exampleMedia, sha, testModule, type FakeMedia } from './import-fixture.ts';
 
 const MANIFEST = '/work/site.manifest.json';
@@ -237,6 +237,61 @@ describe('import: someone else\'s edits are reported, not overwritten', () => {
     expect(r.text).toContain('NOT TOUCHED file projects/harbour/01.jpg');
     // Two of the three files have texts; the third has none to write.
     expect(w.hub.count('POST', '/rest/v1/rpc/update_asset_text')).toBe(2);
+  });
+});
+
+// The ledger is a local file beside the client's manifest, and the editor may be a member of several
+// tenants: an id it names, or an entry found on the server, is checked against the server's tenant
+// and type before anything is written.
+describe('import: an entry of another tenant or type is refused before any write', () => {
+  /** A planted ledger naming three empty entries, as the reviewer's probe did. */
+  function planted(rewrite: (w: World, ids: Record<string, string>) => FakeHub['rewriteDetail']): World {
+    const w = world();
+    const ids = {
+      'project/harbour': w.hub.plantEntry('project', 'harbour-path'),
+      'news/opening': w.hub.plantEntry('news', 'the-path-opens'),
+      home: w.hub.plantEntry('home', null, true),
+    };
+    const types: Record<string, string> = { 'project/harbour': 'project', 'news/opening': 'news', home: 'home' };
+    const entries = Object.fromEntries(Object.entries(ids).map(([k, id]) => [k, { id, type: types[k] }]));
+    w.files.set(LEDGER, JSON.stringify({ format: 1, ref: REF, tenant: 'acme', tenantId: TENANT_ID, entries }));
+    w.hub.rewriteDetail = rewrite(w, ids);
+    return w;
+  }
+  const writes = (w: World) =>
+    w.hub.calls.filter((c) => (c.method === 'POST' || c.method === 'PUT') && !/\/rpc\/(entry_detail_by_id|asset_summary)$/.test(c.path) && !c.path.startsWith('/auth/'));
+
+  it('a ledger record whose entry the server places in another tenant', async () => {
+    const w = planted(() => (d) => ({ ...d, tenant_id: OTHER_TENANT_ID }));
+    const r = await run(w);
+    expect(r.code).toBe(1);
+    expect(r.text).toContain(`is in tenant ${OTHER_TENANT_ID}, not ${TENANT_ID}`);
+    expect(w.hub.count('POST', '/rest/v1/rpc/save_draft')).toBe(0);
+    expect(w.hub.count('POST', '/rest/v1/rpc/request_publish')).toBe(0);
+    expect(writes(w).map((c) => c.path)).toEqual([]);
+    expect(w.hub.objects.size).toBe(0);
+  });
+
+  it('a ledger record whose entry the server has as another type', async () => {
+    const w = planted((_w, ids) => (d) => (d.id === ids['project/harbour'] ? { ...d, type: 'news' } : d));
+    const r = await run(w);
+    expect(r.code).toBe(1);
+    expect(r.text).toContain('is a news entry on the server, not project');
+    expect(writes(w).map((c) => c.path)).toEqual([]);
+  });
+
+  it('an entry found again by slug that the server places in another tenant', async () => {
+    const w = world();
+    expect((await run(w)).code).toBe(0);
+    w.files.delete(LEDGER);
+    const project = [...w.hub.entries.values()].find((e) => e.slug === 'harbour-path');
+    w.hub.rewriteDetail = (d) => (d.id === project?.id ? { ...d, tenant_id: OTHER_TENANT_ID } : d);
+    const before = w.hub.calls.length;
+    const r = await run(w);
+    expect(r.code).toBe(1);
+    expect(r.text).toContain(`is in tenant ${OTHER_TENANT_ID}, not ${TENANT_ID}`);
+    const later = w.hub.calls.slice(before).filter((c) => /\/rpc\/(save_draft|request_publish)$/.test(c.path));
+    expect(later).toEqual([]);
   });
 });
 

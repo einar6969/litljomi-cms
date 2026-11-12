@@ -48,6 +48,7 @@ type Log = (line: string) => void;
 
 interface Detail {
   id: string;
+  tenant_id: string;
   type: string;
   slug: string | null;
   schema_version: number;
@@ -94,7 +95,8 @@ export function errorSummary(error: unknown): string {
 
 function asDetail(body: unknown, key: string): Detail | null {
   if (body === null) return null;
-  if (!isObject(body) || typeof body.id !== 'string' || !Number.isSafeInteger(body.draft_version)) throw new Failure(`FAILED: ${key}: unexpected entry_detail_by_id response`);
+  if (!isObject(body) || typeof body.id !== 'string' || typeof body.tenant_id !== 'string' || typeof body.type !== 'string' || !Number.isSafeInteger(body.draft_version))
+    throw new Failure(`FAILED: ${key}: unexpected entry_detail_by_id response`);
   return body as unknown as Detail;
 }
 
@@ -147,8 +149,29 @@ export class Importer {
     return { data, hash: contentHash({ schemaVersion: item.contentType.version, data }) };
   }
 
+  /**
+   * The entry as the server has it, refused unless it is in the run's tenant and of the item's type.
+   * save_draft and request_publish take only the entry id, and the database derives the tenant from
+   * the entry: an editor of several tenants given a wrong or planted ledger id would otherwise write
+   * to another tenant. Every write to an entry follows a call to this.
+   */
   private async detail(key: string, id: string): Promise<Detail | null> {
-    return asDetail(need(await this.s.rpc('entry_detail_by_id', { p_entry_id: id }), `reading entry ${id} (${key})`), key);
+    const detail = asDetail(need(await this.s.rpc('entry_detail_by_id', { p_entry_id: id }), `reading entry ${id} (${key})`), key);
+    if (detail === null) return null;
+    const type = (this.plan.byKey.get(key) as PlanItem).type;
+    if (detail.tenant_id !== this.tenantId) throw new Failure(`FAILED: ${key}: entry ${id} is in tenant ${clean(detail.tenant_id)}, not ${this.tenantId}; nothing more was written`);
+    if (detail.type !== type) throw new Failure(`FAILED: ${key}: entry ${id} is a ${clean(detail.type)} entry on the server, not ${type}; nothing more was written`);
+    return detail;
+  }
+
+  /** Every ledger record of the manifest's keys, checked against the server before anything is written. */
+  async checkLedger(): Promise<void> {
+    for (const item of this.plan.items) {
+      const rec = this.ledger.entry(item.key);
+      if (rec === undefined) continue;
+      if (rec.type !== item.type) throw new Failure(`FAILED: ${item.key}: the ledger has it as type ${rec.type}, the manifest as ${item.type}`);
+      if ((await this.detail(item.key, rec.id)) === null) throw new Failure(`FAILED: ${item.key}: entry ${rec.id}, named by the ledger, is not visible; nothing was written`);
+    }
   }
 
   // -------------------------------------------------------------------------------------------
@@ -259,6 +282,7 @@ export class Importer {
     for (const item of this.plan.items) {
       const rec = this.ledger.entry(item.key);
       if (rec !== undefined) {
+        // Checked against the server by checkLedger, before the files.
         if (rec.type !== item.type) throw new Failure(`FAILED: ${item.key}: the ledger has it as type ${rec.type}, the manifest as ${item.type}`);
         this.ids.set(item.key, rec.id);
         continue;
@@ -533,6 +557,7 @@ export class Importer {
       thumbnailsMissing: this.thumbnailsMissing,
       ids: this.ids,
     });
+    await this.checkLedger();
     await this.files();
     await this.entries();
     await this.drafts();

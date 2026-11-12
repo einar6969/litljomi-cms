@@ -12,6 +12,8 @@ export const EMAIL = 'editor@example.test';
 export const PASSWORD = 'TestOnly-password-0123';
 export const TENANT_ID = '0a0a0a0a-0000-4000-8000-000000000001';
 export const SLUG = 'acme';
+/** A tenant the editor is also a member of (decision 4: an operator's own membership in several). */
+export const OTHER_TENANT_ID = '0a0a0a0a-0000-4000-8000-000000000009';
 
 interface Entry {
   id: string;
@@ -65,6 +67,8 @@ export class FakeHub {
   before: (n: number, method: string, path: string) => void = () => {};
   /** Replaces a delivered object's bytes (a changed byte on the public side). */
   tamperPublic: ((path: string, bytes: Uint8Array) => Uint8Array) | null = null;
+  /** Rewrites entry_detail_by_id's answer: an entry the server places in another tenant, or another type. */
+  rewriteDetail: ((detail: ReturnType<FakeHub['detailOf']>) => Record<string, unknown>) | null = null;
   private tokens = new Map<string, number>();
   private refresh = new Set<string>();
   readonly userId = '0b0b0b0b-0000-4000-8000-000000000002';
@@ -254,7 +258,8 @@ export class FakeHub {
       }
       case 'entry_detail_by_id': {
         const e = this.entries.get(a.p_entry_id as string);
-        return json(200, e === undefined ? null : this.detailOf(e));
+        if (e === undefined) return json(200, null);
+        return json(200, this.rewriteDetail ? this.rewriteDetail(this.detailOf(e)) : this.detailOf(e));
       }
       case 'save_draft': {
         const e = this.entries.get(a.p_entry_id as string);
@@ -286,6 +291,11 @@ export class FakeHub {
       default:
         return json(404, { code: 'PGRST202', message: `Could not find the function api.${name}` });
     }
+  }
+
+  /** An entry with an empty draft, made outside the importer: for a planted ledger. */
+  plantEntry(type: string, slug: string | null, singleton = false): string {
+    return this.newEntry(type, slug, singleton, 1).id;
   }
 
   /** An entry an editor made and published, outside the manifest. */
