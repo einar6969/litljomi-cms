@@ -201,6 +201,11 @@
           "at": "2026-11-12",
           "scope": "Standing approval, decision 73 rule 2: within a plan Einar has approved, the controller may advance the staging branch, run supabase db push to the staging project, change hosted Auth settings and email templates on staging, and run the plan's hosted checks on staging, without asking again. Each action is still recorded here when it happens. Excludes production, DNS, LABAK, anything that costs money, and anything outside the approved plan. Ends when Einar withdraws it.",
           "note": "Einar in chat, 2026-11-12, asked \"Do you approve rules 1–9, 11, 13 and 14 as written?\" after the rules were set out: \"Approve them all\"."
+        },
+        {
+          "at": "2026-11-12",
+          "scope": "Done: password sign-in switch on the staging Supabase project (runbook 7.3 steps 1–5, 7–9): db push of 20261112100000_sign_in_auth_hook.sql (Einar); hook switched to private.sign_in_access_token; six email templates set; email OTP length 8 → 10; all 50 sessions deleted at 07:08:19 UTC; invite, reset and deletion of the test account einsi+pwtest@litljomi.is; section 7.2 checks; rate-limit test against the password endpoint.",
+          "note": "Done under decision 73 rule 2 (standing staging approval within the approved plan, decision 72); results in docs/verification/pw-staging.md."
         }
       ],
       "amendments": [
@@ -351,6 +356,11 @@
           "at": "2026-11-12",
           "scope": "Standing approval, decision 73 rule 2: within a plan Einar has approved, the controller may advance the staging branch, run supabase db push to the staging project, change hosted Auth settings and email templates on staging, and run the plan's hosted checks on staging, without asking again. Each action is still recorded here when it happens. Excludes production, DNS, LABAK, anything that costs money, and anything outside the approved plan. Ends when Einar withdraws it.",
           "note": "Einar in chat, 2026-11-12, asked \"Do you approve rules 1–9, 11, 13 and 14 as written?\" after the rules were set out: \"Approve them all\"."
+        },
+        {
+          "at": "2026-11-12",
+          "scope": "Done: staging advanced 09f7f62 → 7139585 (password sign-in, PRs #63–#65); vefumsjon-staging and demo-staging deployed (runbook 7.3 step 6).",
+          "note": "Done under decision 73 rule 2 (standing staging approval within the approved plan, decision 72); results in docs/verification/pw-staging.md."
         }
       ]
     },
