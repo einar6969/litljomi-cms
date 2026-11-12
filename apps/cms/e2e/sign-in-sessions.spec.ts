@@ -178,8 +178,9 @@ test.describe('an email change', () => {
     }
   });
 
+  // The magic link's type (PW-03): sign-in is with a password.
   test('a link type no template sends is refused at the POST', async ({ page }) => {
-    await page.goto(`/auth/confirm?token_hash=${'a'.repeat(56)}&type=recovery`);
+    await page.goto(`/auth/confirm?token_hash=${'a'.repeat(56)}&type=email`);
     await page.getByRole('button', { name: t.confirm.submit }).click();
     await expect(page).toHaveURL(`${CMS_URL}/login?error=link`);
   });

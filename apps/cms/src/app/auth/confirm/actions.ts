@@ -1,9 +1,11 @@
 'use server';
 
 import { redirect } from 'next/navigation';
+import { SET_PASSWORD_PATH } from '@/lib/auth/password-step';
 import { safeRedirectPath } from '@/lib/auth/routing';
 import { createDetachedClient, createEditorClient } from '@/lib/supabase/server';
 import type { SupabaseClient } from '@/lib/supabase/types';
+import { writePasswordStep } from '../password/step';
 import { clearPending, readPending, writePending } from './pending';
 import { discardPending, logFailure, revoke } from './revoke';
 
@@ -24,14 +26,18 @@ const field = (formData: FormData, name: string): string | null => {
 type Session = { access_token: string; refresh_token: string; user?: { id?: string } | null };
 type Current = { accessToken: string; userId: string | null };
 type Outcome = { to: string };
-type LinkType = 'email' | 'invite' | 'email_change';
+type LinkType = 'invite' | 'recovery' | 'email_change';
 
-// Only the link types the mail templates send (supabase/templates/magic_link.html, invite.html,
-// email_change.html). Every other type Auth knows is refused here, before Auth is called.
-const isLinkType = (type: string | null): type is LinkType => type === 'email' || type === 'invite' || type === 'email_change';
+// Only the link types the mail templates send (supabase/templates/invite.html, recovery.html,
+// email_change.html). Every other type Auth knows is refused here, before Auth is called: `email`,
+// the magic link's, above all, since sign-in is with a password (spec §4.4; PW-03).
+const isLinkType = (type: string | null): type is LinkType => type === 'invite' || type === 'recovery' || type === 'email_change';
+
+/** An invitation or a reset: its session sets a password before anything else (PW-03). */
+const setsPassword = (type: LinkType): boolean => type !== 'email_change';
 
 /**
- * Signs the editor in from the magic link's confirm page (spec §4.4; decision 41.1): the button's
+ * Signs the editor in from a link's confirm page (spec §4.4; decision 41.1): the button's
  * POST, never the link's GET, so a mail scanner opening the link does not use it up. Next.js checks
  * the action's origin. The token hash is verified on the server; no PKCE verifier is needed, so the
  * link works in any browser. Any failure goes back to the sign-in page's invalid-link notice; success
@@ -47,7 +53,12 @@ const isLinkType = (type: string | null): type is LinkType => type === 'email' |
  * An email change's links from both addresses come here too (spec §4.4): each needs this POST. The
  * first one Auth accepts issues no session and changes nothing, so the visitor is told the other
  * address has to confirm as well. The second completes the change and issues a session, which is
- * handled as a magic link's is.
+ * handled as an invitation's is.
+ *
+ * An invitation or a reset (PW-03) then goes to the set-password page instead of `next`: the step
+ * is stored for the session the link made, with `next` as where to go once the password is set
+ * (app/auth/password/step.ts). If it cannot be stored, the link's session is signed out and the
+ * link counts as failed, so the step is never skipped.
  */
 export async function confirmSignIn(formData: FormData): Promise<void> {
   const tokenHash = field(formData, 'token_hash');
@@ -64,17 +75,20 @@ async function signInWithLink(tokenHash: string | null, type: string | null, nex
     const current = await currentSession(client);
     if (current === null) {
       const verified = await verify(client, tokenHash, type);
-      return verified === null ? { to: FAILED } : verified === 'waiting' ? { to: WAITING } : { to: next };
+      if (verified === null) return { to: FAILED };
+      if (verified === 'waiting') return { to: WAITING };
+      return landing(client, verified.access_token, setsPassword(type), next);
     }
 
     const session = await verify(createDetachedClient(), tokenHash, type);
     if (session === null) return { to: FAILED };
     if (session === 'waiting') return { to: WAITING };
     if (session.user?.id !== undefined && session.user.id === current.userId) {
-      return (await adopt(client, session, current.accessToken)) ? { to: next } : { to: FAILED };
+      const adopted = await adopt(client, session, current.accessToken);
+      return adopted === null ? { to: FAILED } : landing(client, adopted, setsPassword(type), next);
     }
     await discardPending();
-    await writePending({ accessToken: session.access_token, refreshToken: session.refresh_token, next });
+    await writePending({ accessToken: session.access_token, refreshToken: session.refresh_token, next, setPassword: setsPassword(type) });
     return { to: QUESTION };
   } catch (error) {
     logFailure('link verification failed', error);
@@ -114,7 +128,8 @@ async function replace(): Promise<Outcome> {
     const client = await createEditorClient();
     const current = await currentSession(client);
     const session = { access_token: pending.accessToken, refresh_token: pending.refreshToken };
-    return (await adopt(client, session, current?.accessToken ?? null)) ? { to: safeRedirectPath(pending.next) } : { to: FAILED };
+    const adopted = await adopt(client, session, current?.accessToken ?? null);
+    return adopted === null ? { to: FAILED } : landing(client, adopted, pending.setPassword, safeRedirectPath(pending.next));
   } catch (error) {
     logFailure('replacing the session failed', error);
     return { to: FAILED };
@@ -130,15 +145,38 @@ export async function keepSession(): Promise<void> {
   redirect('/');
 }
 
-/** Writes `session` to the visitor's cookies (Auth checks it), then revokes `previous` if it differs. */
-async function adopt(client: SupabaseClient, session: Pick<Session, 'access_token' | 'refresh_token'>, previous: string | null): Promise<boolean> {
+/**
+ * Writes `session` to the visitor's cookies (Auth checks it), then revokes `previous` if it differs.
+ * The access token of the session now in the cookies (Auth may have refreshed it), or null.
+ */
+async function adopt(client: SupabaseClient, session: Pick<Session, 'access_token' | 'refresh_token'>, previous: string | null): Promise<string | null> {
   const { data, error } = await client.auth.setSession({ access_token: session.access_token, refresh_token: session.refresh_token });
   if (error || !data.session) {
     if (error) console.error('[auth] taking over the session failed:', error.status, error.code);
-    return false;
+    return null;
   }
   if (previous !== null && previous !== session.access_token && previous !== data.session.access_token) await revoke(client, previous);
-  return true;
+  return data.session.access_token;
+}
+
+/**
+ * Where a link's session, now in the cookies, goes: `next`, or for an invitation or a reset the
+ * set-password page, once the step is stored for that session (PW-03). If it cannot be stored, the
+ * session is signed out on this device and the link counts as failed (fail closed).
+ */
+async function landing(client: SupabaseClient, accessToken: string, setPassword: boolean, next: string): Promise<Outcome> {
+  if (!setPassword) return { to: next };
+  try {
+    if (await writePasswordStep(accessToken, next)) return { to: SET_PASSWORD_PATH };
+  } catch (error) {
+    logFailure('starting the set-password step failed', error);
+  }
+  try {
+    await client.auth.signOut({ scope: 'local' });
+  } catch (error) {
+    logFailure('signing out after the set-password step failed', error);
+  }
+  return { to: FAILED };
 }
 
 /**

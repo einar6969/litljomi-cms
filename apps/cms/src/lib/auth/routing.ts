@@ -1,7 +1,10 @@
-// Pure routing rules of sign-in, shared by the proxy and the magic link's confirm action.
+// Pure routing rules of sign-in, shared by the proxy and the links' confirm action.
 
-/** The paths reachable without a session: the sign-in page and the magic link's confirm page. */
-const PUBLIC_PATHS = new Set(['/login', '/auth/confirm']);
+/**
+ * The paths reachable without a session: the sign-in page, its "Gleymt lykilorð?" form and the
+ * links' confirm page.
+ */
+const PUBLIC_PATHS = new Set(['/login', '/login/forgot', '/auth/confirm']);
 
 export const isPublicPath = (pathname: string): boolean => PUBLIC_PATHS.has(pathname);
 

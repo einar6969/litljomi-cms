@@ -33,8 +33,8 @@ function expectRefused(r: AuthResponse) {
 }
 
 /**
- * The token hash in an emailed link: the CMS confirm page's `token_hash`, or the `token` of Auth's
- * own GET /verify link (a template the repository does not set yet).
+ * The token hash in an emailed link: the CMS confirm page's `token_hash` (every template the
+ * repository sets, recovery.html included since PW-03), or the `token` of Auth's own GET /verify link.
  */
 function linkTokenOf(mail: MailMessage): string {
   for (const href of [...mail.HTML.matchAll(/href="([^"]+)"/g)].map((m) => m[1]!.replace(/&amp;/g, '&'))) {

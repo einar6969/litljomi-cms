@@ -36,6 +36,17 @@ A session coordinating the project as KING starts at `docs/king/START.md`. Other
 
 A permission denial, sandbox refusal or unexpected prompt is reported to the controller (and by the controller to Einar), **never worked around**.
 
+## Working rules (decision 73)
+
+- **Review scales to risk.** Boundary work (migrations, the Auth hook and Auth settings, grants and RLS, `privileged/`, sign-in and session flows, the proxy): `cms-implementer`, then `cms-spec-reviewer` and `cms-security-reviewer` in parallel, then `cms-quality-reviewer`. App logic: implementer, then one combined review. Presentation and docs: the UI fast lane, screenshots as the review.
+- **Fix rounds** run only the tests that cover the change, plus typecheck and lint; the full suite runs once before the PR, and re-reviews cover open findings only. Minors don't trigger another round.
+- **Staging** actions inside an approved plan are pre-approved (G3, G6, decision 73 rule 2) and recorded in `gates.json` when done. Production, DNS, LABAK and anything that costs money still need Einar's word.
+- **Einar approves outcomes:** the plan and its risks, copy and screenshots in one batch, and acceptance on staging. The controller settles technical calls within his intent.
+- **Probe before planning:** check every assumption about Supabase, Vercel or Next.js on the local stack before a plan goes to Einar.
+- **One agent on the local stack at a time.** Restart it (`pnpm db:stop`, `pnpm db:start`) after changing `supabase/templates/` or `config.toml`: Kong serves templates through per-file mounts, and Auth silently falls back to its English defaults otherwise.
+- **The controller runs the browser suite** before merging UI changes, as the bare command `pnpm --filter cms e2e …` (only that form runs outside the sandbox). Git and `gh` likewise run as bare commands, not after `cd … &&`.
+- **Merging** stays as decision 61: separate review PASS on the exact head, up to date with `main`, CI green; no GitHub auto-merge.
+
 ## Commands
 
 - `node --test "tools/harness/__tests__/*.test.mjs"`: the execution-state tests (Node's native test glob; quote the pattern).

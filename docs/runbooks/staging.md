@@ -8,7 +8,7 @@
 4. G2: GitHub repository, and the SDK files for the LABAK branch
 5. G3: Hosted Supabase
 6. Supabase Auth configuration (every hosted Auth setting, with the step that applies it)
-7. Passwordless Auth hook: enabling it (7.1) and the verification procedure (7.2)
+7. Sign-in hook: enabling it (7.1), the verification procedure (7.2), the switch of staging to password sign-in (7.3) and the rules for scripts that read the staging file (7.4)
 8. Email delivery through SendGrid (G4)
 9. DNS in the litljomi.is zone (G5)
 10. Vercel projects, domains, deployment protection and cron (G6), and the G7 push
@@ -25,7 +25,9 @@ This runbook sets up the M1 staging environment: the GitHub repository, the host
 
 **Status.** Written in Task 3 (2026-11-02) as a document only, and revised in Task 28 Step 0 (2026-11-03) to plan decisions 42.4 and 43; where decision 43 differs from decision 42 or an earlier version of this runbook, decision 43 applies. **Nothing in it has been executed**: no account, project, record, key or deployment exists because of it. It is executed only in Task 28 and Task 29, one gate at a time (G2, G3, G4, G5, G6, G7). Each gate is approved by Einar in his own words in chat and recorded by the controller in `docs/execution/gates.json` before any step under it runs. Approval of one gate does not cover another. The one paid step, the Vercel Pro upgrade, is Einar's (G6.1).
 
-**Sources.** `docs/architecture.md` (§2.2, §4.2, §4.4, §7.3, §7.4, §8.2, §8.4, §9.1, §11) and the plan `docs/plans/2026-11-01-m0-m1.md` (gates G2–G7, decisions 16–21, 36.7, 42 and 43, Tasks 28 and 29). If this runbook and the spec disagree, the spec wins: stop and report.
+**Password sign-in (PW-04, 2026-11-12).** Decision 72 replaced magic-link sign-in with password sign-in. Sections 6 and 7 describe the Auth configuration as it now is, and section 7.3 is the switch of staging to it. Where sections 3, 5, 14 and 15 record what was done at M1 with the passwordless hook, they stay as history, with a note that decision 72 replaced it.
+
+**Sources.** `docs/architecture.md` (§2.2, §4.2, §4.4, §7.3, §7.4, §8.2, §8.4, §9.1, §11) and the plan `docs/plans/2026-11-01-m0-m1.md` (gates G2–G7, decisions 16–21, 36.7, 42, 43, 72 to 72.5 and 73, Tasks 28 and 29) with `docs/plans/passwords.md`. If this runbook and the spec disagree, the spec wins: stop and report.
 
 **Conventions.**
 - Every step names its **Owner**, the **Settings** to apply and the **Verify** check that shows it worked. A step whose check fails stops the gate: record the result and report to the controller, who reports to Einar.
@@ -40,7 +42,7 @@ This runbook sets up the M1 staging environment: the GitHub repository, the host
   | Gate | Hosts for the executor's commands |
   |---|---|
   | G2 | `github.com`, `api.github.com` |
-  | G3 | `<project-ref>.supabase.co` (the executor's public checks, sections 5 and 6; Einar's own `supabase` commands run in his terminal) |
+  | G3 | `<project-ref>.supabase.co` (the executor's public checks, sections 5, 6 and 7; Einar's own `supabase` commands run in his terminal) |
   | G4, G5 | none (Einar works in SendGrid, Supabase and the DNS host himself, and runs the `dig` checks) |
   | G6 | `api.vercel.com`, `vefumsjon-staging.litljomi.is`, `demo-staging.litljomi.is`, `labak-hub.litljomi.is` |
   | G7 | `github.com` (G7.1's `git push` of `hub-integration` and its `git ls-remote` checks, in the LABAK checkout); `labak-hub.litljomi.is` (G7.1's live check and the `labak-hub` checks of G6.3 that wait for G7.1, since the G6 diff is removed by then). Shown to Einar as an exact diff with the G7 push request; removed when G7.1 is done |
@@ -49,9 +51,9 @@ This runbook sets up the M1 staging environment: the GitHub repository, the host
 - **Cost.** The only new cost is **Vercel Pro, $20 a month** (Einar upgrades the team at G6.1). SendGrid is Einar's existing paid plan; the Supabase organisation is on the Free plan (Pro comes with production, §2.2) and the GitHub repository is on GitHub Free. A step that would add any other cost stops: report it; Einar decides.
 - "§" numbers refer to the spec (`docs/architecture.md`); "section N" refers to this runbook. **A1–A15** are the spec's validation gates (§11.1, the A-numbered table). "**Task 29 item N**" is item N of Task 29 Step 2 in the plan (one M1 acceptance test each). The two numberings are unrelated: Task 29 item 11 is the passwordless and email-change test, A11 is custom SMTP delivery.
 - "**Confirm at execution time**" marks a value or screen this runbook could not verify when it was written (dashboard menu paths, provider record values, CLI details). The executor checks it against the live screen or the provider's current documentation and records what was found; it never guesses.
-- **Names.** The three staging hostnames are `vefumsjon-staging.litljomi.is` (the CMS), `demo-staging.litljomi.is` (the demo site) and `labak-hub.litljomi.is` (the LABAK branch); the Vercel projects are `vefumsjon-staging`, `demo-staging` and `labak-hub` (G6.1). Placeholders are in angle brackets: `<project-ref>` (the Supabase staging project's reference), `<team>` (Einar's Vercel team), `<hook-test-address>` and `<signup-test-address>` (throwaway addresses Einar controls, used only by the checks in sections 6 and 7), `<test-account-id>` (the id that section 7.2 part 1 prints; not secret).
-- **Where the staging keys live (Einar's ruling, 2026-11-03, G3).** Einar ruled in chat (recorded in `docs/execution/gates.json`, G3): "Staging keys go in a separate file, /Users/einarzoega/litljomi-cms/.env.staging.local, which I create and fill myself. Don't swap `.env.local`. Point the runbook's scripts (their `ENV_FILE`) at the staging file, and keep the project-reference check. Record this change in the runbook." So the staging URL, publishable key and secret key are read from `.env.staging.local`: a separate file Einar creates and fills himself, git-ignored by `.env*`, never sourced and read-denied to agents like `.env.local`. `.env.local` keeps the local stack's values and is not swapped. The section 7.2 and G3.2c scripts (their `ENV_FILE`) and `tools/cli` (section 11) point at the staging file; the project-reference check (`EXPECT_REF`) is unchanged.
-- **No secret, key or token value is ever written** to this repository, a commit, a chat message, a log or a report. Commands read staging secrets from `.env.staging.local` (never committed) without executing it, from a hidden prompt, or generate them and pipe them straight into the CLI that stores them; they never print them and never put them on a command line (sections 7.2, 11 and 12 show how). `.env.staging.local` (like `.env.local`) is **never sourced** (`. ./.env.staging.local`): that would run its lines as shell code in a shell that holds the secret key. See section 12.
+- **Names.** The three staging hostnames are `vefumsjon-staging.litljomi.is` (the CMS), `demo-staging.litljomi.is` (the demo site) and `labak-hub.litljomi.is` (the LABAK branch); the Vercel projects are `vefumsjon-staging`, `demo-staging` and `labak-hub` (G6.1). Placeholders are in angle brackets: `<project-ref>` (the Supabase staging project's reference), `<team>` (Einar's Vercel team), `<hook-test-address>` and `<signup-test-address>` (throwaway addresses Einar controls, used only by the checks in sections 6 and 7), `<test-account-id>` (the test account's id, from section 7.2's S9a; not secret).
+- **Where the staging keys live (Einar's ruling, 2026-11-03, G3).** Einar ruled in chat (recorded in `docs/execution/gates.json`, G3): "Staging keys go in a separate file, /Users/einarzoega/litljomi-cms/.env.staging.local, which I create and fill myself. Don't swap `.env.local`. Point the runbook's scripts (their `ENV_FILE`) at the staging file, and keep the project-reference check. Record this change in the runbook." So the staging URL, publishable key and secret key are read from `.env.staging.local`: a separate file Einar creates and fills himself, git-ignored by `.env*`, never sourced and read-denied to agents like `.env.local`. `.env.local` keeps the local stack's values and is not swapped. The G3.2c script (its `ENV_FILE`) and `tools/cli` (section 11) point at the staging file, as section 7.2's scripts did until decision 72; the project-reference check (`EXPECT_REF`) is unchanged.
+- **No secret, key or token value is ever written** to this repository, a commit, a chat message, a log or a report. Commands read staging secrets from `.env.staging.local` (never committed) without executing it, from a hidden prompt, or generate them and pipe them straight into the CLI that stores them; they never print them and never put them on a command line (sections 7.4, 11 and 12 show how). `.env.staging.local` (like `.env.local`) is **never sourced** (`. ./.env.staging.local`): that would run its lines as shell code in a shell that holds the secret key. See section 12.
 
 **Off-limits.** `labak.is` and its DNS, FILMÍS, ISNIC, the hostnames `labak.litljomi.is` and `labak.is`, the LABAK repository's `main` branch, any production project, and the existing Vercel project `landssamband-bakarameistara`, **apart from the one build setting Einar changes himself** (G6.0). Nothing else in that project is changed, by anyone, under this runbook.
 
@@ -64,7 +66,7 @@ This runbook sets up the M1 staging environment: the GitHub repository, the host
 | # | Prerequisite | Owner | Verify |
 |---|---|---|---|
 | P1 | Tasks 0–27 complete and green locally (`pnpm lint && pnpm typecheck && pnpm check:slugs && pnpm test && pnpm db:reset && pnpm db:test && pnpm test:integration`) | Executor | Every command exits 0; the controller's `state.json` shows Tasks 0–27 done |
-| P2 | Task 4's migration (creating `api`, `cms`, `private` and `private.passwordless_access_token`) and its `[api] schemas = ["api"]` are committed | Executor | `git log --oneline -- supabase/migrations` lists it; `grep -n 'schemas = \["api"\]' supabase/config.toml` matches |
+| P2 | Task 4's migration (creating `api`, `cms`, `private` and `private.passwordless_access_token`) and its `[api] schemas = ["api"]` are committed (since decision 72, `20261112100000_sign_in_auth_hook.sql` replaces that hook with `private.sign_in_access_token`, section 7) | Executor | `git log --oneline -- supabase/migrations` lists it; `grep -n 'schemas = \["api"\]' supabase/config.toml` matches |
 | P3 | The LABAK branch `hub-integration` exists locally (Task 27, G7) and has **never been pushed**; it is pushed only at G7.1, after G6.0 | Controller | G7 recorded in `gates.json`; Task 27 done in `state.json`; the G6.0 confirmation recorded before G7.1 |
 | P4 | Einar has accounts he controls at GitHub (`einar6969`, signed in to `gh` himself), Supabase, Vercel and SendGrid (his existing paid account, with litljomi.is already authenticated), and access to the litljomi.is DNS zone | Einar | Einar confirms in chat at each gate |
 | P5 | The hosts each gate needs are allowed for the session, by the per-gate diff of section 1 ("Network"), approved by Einar and removed when the gate is done | Einar approves; controller applies | The approved diff is recorded; a sandbox refusal is reported, never worked around |
@@ -90,14 +92,14 @@ G2.5 (sitting 1, order 5) is local work on the LABAK branch under the G7 extensi
 | 9 | G3.2b: Einar runs `supabase login`, `supabase link`, `supabase db push` (includes the hook function) | G3 | G3.2a, P2 |
 | 10 | G3.2c: decision 36.7, the timeout applied to `service_role` requests over REST | G3 | G3.2b |
 | 11 | G3.3: Data API exposes `api` only | G3 | G3.2b (the `api` schema must exist) |
-| 12 | G3.5: check that no account exists, enable the passwordless hook, revoke all sessions, run the hook verification (section 7) | G3 | G3.2b, G3.4; **before any editor account exists** (`select count(*) from auth.users` → 0) |
+| 12 | G3.5: check that no account exists, enable the hook, revoke all sessions, run the hook verification (section 7). At M1 this was the passwordless hook; decision 72 replaced it with the sign-in hook (section 7.1 on a new project, section 7.3 on staging) | G3 | G3.2b, G3.4; **before any editor account exists** (`select count(*) from auth.users` → 0) |
 | | **Sitting 2: G4, G5 and G6** | | |
 | 13 | G4.1–G4.2: SendGrid restricted API key, Mail Send only | G4 | P4 |
 | 14 | G5.1: read-only check of SendGrid's domain authentication for litljomi.is and its DMARC record; nothing added or changed | G5 | G4.1 |
 | 15 | G3.6: custom SMTP (SendGrid) in Supabase Auth; the email rate limit | G3 (G4 credentials) | G4.2, G5.1 |
 | 16 | G6.1: Vercel Pro (Einar), `vercel login` (Einar), Vercel's GitHub app given access to `litljomi-cms` (Einar); projects `vefumsjon-staging` and `demo-staging`; `labak-hub` created and configured but not built (connecting the LABAK repository needs the approvals in section 1) | G6 (and G7 for the LABAK repository) | G2.3, P3 |
 | 17 | G5.2: the three CNAMEs in litljomi.is, added to the Vercel projects | G5 and G6 | G6.1 |
-| 18 | G3.7: Auth Site URL and redirect URL for `vefumsjon-staging.litljomi.is`, the email templates | G3 | G5.2 |
+| 18 | G3.7: Auth Site URL and redirect URL for `vefumsjon-staging.litljomi.is`, the email templates (four at M1; the six of `supabase/templates/` since decision 72, G3.7) | G3 | G5.2 |
 | 19 | G6.2–G6.4 settings: environment variables (section 13, except each site's `CMS_WEBHOOK_SECRETS`, which P-2 sets), deployment protection, cron. Their live checks (G6.3's and G6.4's `curl` requests) run after G6.5 | G6 | G3.1, G5.2 |
 | 20 | G6.5: deploy `vefumsjon-staging` and `demo-staging` (the demo site without `CMS_WEBHOOK_SECRETS`, on purpose); then G6.3's and G6.4's live checks. `labak-hub` is first built by the G7.1 push | G6 | G6.2–G6.4 settings |
 | | **Sitting 3: the G7 push, Task 29 and C4** | | |
@@ -106,6 +108,8 @@ G2.5 (sitting 1, order 5) is local work on the LABAK branch under the G7 extensi
 | 23 | P-1–P-3: Einar provisions the tenants, the sites (webhook secrets stored in Vault) and the staging editor `einsi@litljomi.is` with `tools/cli`; sets each site's `CMS_WEBHOOK_SECRETS` and the site is redeployed (P-2 verifies it) | G3 (hosted Supabase) and G6 (site variables); the controller confirms coverage before running | G3.6, G3.7, G6.5, G7.1 |
 | 24 | G4.3: the staging editor's invitation arrives with SPF, DKIM and DMARC passing | G4 | P-3 |
 | 25 | Section 7.2 hook verification again, then Task 29 (section 14) | none beyond those recorded | everything above |
+
+**Since M1.** The table is the order Task 28 followed. Staging moves to password sign-in by section 7.3, run once (decision 72). A new hosted project (production, by its own decision) follows the table with the sign-in hook of section 7.1 at order 12, the Auth settings of section 6 as they now are at order 7, and the six templates at order 18; its section 7.2 runs in full only after order 18, since the checks need SMTP and the templates.
 
 ## 4. G2: GitHub repository, and the SDK files for the LABAK branch
 
@@ -202,11 +206,11 @@ Three parts, in this order. G3.4 has already turned sign-up off (section 3).
   supabase migration list
   ```
   (`supabase login` opens the browser sign-in; `supabase link` asks for the database password; `supabase db push` lists the migrations it will apply and asks for confirmation. Confirm the prompts at execution time.) **Never `supabase config push`:** `supabase/config.toml` describes the local stack, so a push would send local-only values to staging (the localhost Site URL and redirect URLs, the local email rate limit, and no SMTP block), while the hosted Auth settings are set by hand (section 6); a push is also an Auth configuration change that makes section 7.2 due again.
-- **Verify:** `supabase migration list` shows every local migration applied remotely (no row with a local version and an empty remote column). The executor, in the SQL editor: `select to_regprocedure('private.passwordless_access_token(jsonb)') is not null;` returns `true`.
+- **Verify:** `supabase migration list` shows every local migration applied remotely (no row with a local version and an empty remote column). The executor, in the SQL editor: `select to_regprocedure('private.sign_in_access_token(jsonb)') is not null;` returns `true` (at M1 the check named `private.passwordless_access_token`, the hook decision 72 replaced).
 
 **G3.2c Decision 36.7, after the push: the timeout applies to `service_role` requests over REST.**
 Locally this is proven by `tests/integration/src/service-role-timeout.test.ts` (and the role setting by `supabase/tests/database/095_worker_phase3.test.sql`): a secret-key REST call made to wait on two locks in turn, each wait shorter than the login role `authenticator`'s 8-second `lock_timeout`, is cancelled at about 10 s with `57014`, which only `service_role`'s 10 s can do (the authenticator's own 8 s would cancel it at about 8 s, and with no timeout the second lock wait would end with `55P03`). That test refuses a hosted stack, so the hosted equivalent is the same measurement by hand, before any tenant, editor or deployment exists (nothing else uses the tables then):
-- **Owner:** Einar, because the REST call needs the secret key (run like section 7.2) and the two SQL editor runs must start within seconds of it; the executor writes out the steps and reads back the results.
+- **Owner:** Einar, because the REST call needs the secret key (run under section 7.4's rules) and the two SQL editor runs must start within seconds of it; the executor writes out the steps and reads back the results.
 - **Settings and verify,** each statement on its own:
   1. **c1** (SQL editor): the role settings. Expected: `service_role` shows `statement_timeout=10s` (G3.2a) and `authenticated` shows `statement_timeout=3s` (migration `20261105140000_editor_limits.sql`; if it doesn't, see operations section 8); record what `authenticator` shows (locally `statement_timeout=8s` and `lock_timeout=8s`; confirm at execution time).
      ```sql
@@ -220,7 +224,7 @@ Locally this is proven by `tests/integration/src/service-role-timeout.test.ts` (
      ```sql
      do $$ begin lock table cms.tenants in access exclusive mode; perform pg_sleep(7); end $$;
      ```
-  4. **c4** (Einar's terminal, started **within 4 seconds of c3**): the script below calls `api.worker_tenants_to_release()` (read only, no arguments, returns no secret) with the secret key. It waits on `cms.tenants` until c3 ends, then on `cms.publish_requests`, so the call as a whole passes 10 s while neither wait reaches 8 s. Einar copies it to `~/timeout-check.sh` and runs `EXPECT_REF='<project-ref>' bash ~/timeout-check.sh`. It reads `.env.staging.local` exactly as section 7.2 does (its `env_value` is an identical copy) and prints only the target, the HTTP code, the error code and the elapsed time.
+  4. **c4** (Einar's terminal, started **within 4 seconds of c3**): the script below calls `api.worker_tenants_to_release()` (read only, no arguments, returns no secret) with the secret key. It waits on `cms.tenants` until c3 ends, then on `cms.publish_requests`, so the call as a whole passes 10 s while neither wait reaches 8 s. Einar copies it to `~/timeout-check.sh` and runs `EXPECT_REF='<project-ref>' bash ~/timeout-check.sh`. It reads `.env.staging.local` under section 7.4's rules (its `env_value` is the copy section 7.2's scripts shared until decision 72) and prints only the target, the HTTP code, the error code and the elapsed time.
      ```bash
      #!/usr/bin/env bash
      # G3.2c (decision 36.7): a secret-key REST call held on two locks. Run by Einar only. Never with
@@ -229,8 +233,8 @@ Locally this is proven by `tests/integration/src/service-role-timeout.test.ts` (
      ENV_FILE=~/litljomi-cms/.env.staging.local
      REF_RE='^[a-z0-9]{20}$'; URL_RE='^https://[a-z0-9]{20}\.supabase\.co$'; KEY_RE='^[A-Za-z0-9._-]+$'
 
-     # env_value NAME ERE: identical to section 7.2's copy; keep them identical (reads ENV_FILE without
-     # executing it; never prints a refused value).
+     # env_value NAME ERE: the rules of section 7.4 (reads ENV_FILE without executing it; never prints
+     # a refused value).
      env_value() {
        local assigned="^[[:space:]]*(export[[:space:]]+)?$1[[:space:]]*=" allowed="$2" line value='' n=0 plain=0
        [ -f "$ENV_FILE" ] || { echo "FAILED: $ENV_FILE not found; nothing was sent" >&2; return 1; }
@@ -290,23 +294,35 @@ Locally this is proven by `tests/integration/src/service-role-timeout.test.ts` (
 ### G3.4 Auth settings
 - **Owner:** Executor (dashboard).
 - **When:** right after G3.1, before G3.2. Sign-up is open on a new project until it is turned off, so nothing else happens on the project first.
-- **Settings:** the section 6 rows whose Step is G3.4: self sign-up, email provider, other providers, confirm email, secure email change, secure password change, Email OTP Expiration, TOTP MFA and JWT expiry. The other rows belong to other steps: exposed schemas (G3.3) and the hook (G3.5) need the migrations of G3.2b first; custom SMTP and the email rate limit are G3.6; the Site URL, redirect URL and email templates are G3.7.
+- **Settings:** the section 6 rows whose Step is G3.4: self sign-up, email provider, password sign-in, other providers, confirm email, secure email change, minimum password length, password requirements, leaked password protection, secure password change, Email OTP Length, Email OTP Expiration, TOTP MFA and JWT expiry. (The four password rows and Email OTP Length came with decisions 72 and 72.3; at M1 they were not set. On staging they are applied by section 7.3.) The other rows belong to other steps: exposed schemas (G3.3) and the hook (G3.5) need the migrations of G3.2b first; custom SMTP and the email rate limit are G3.6; the Site URL, redirect URL and email templates are G3.7.
 - **Verify:** as listed in section 6 for each of those rows.
 
-### G3.5 Passwordless hook
-- **Owner:** Executor (SQL editor and dashboard); Einar runs the section 7.2 scripts, which need the secret key. Einar is told the result before G3 continues.
-- **Settings and verify:** Section 7.1 (check that no account exists, enable, revoke all sessions), then section 7.2 (verification). Runs before any editor account exists on the project: `select count(*) from auth.users;` returns `0` (section 7.1 step 0).
+### G3.5 Sign-in hook
+- **History.** At M1 this step enabled the passwordless hook, and Einar ran section 7.2's scripts, which needed the secret key. Decision 72 replaced both: staging switches to the sign-in hook by section 7.3; the steps below are for a new hosted project.
+- **Owner:** Executor (SQL editor and dashboard); Einar does section 7.2's sign-ins, mailbox checks and the test account's invitation and deletion. Einar is told the result before G3 continues.
+- **Settings and verify:** Section 7.1 (check that no account exists, enable, revoke all sessions), then section 7.2's S1 and S2; the full section 7.2 after G3.6 and G3.7. Runs before any editor account exists on the project: `select count(*) from auth.users;` returns `0` (section 7.1 step 0).
 
 ### G3.6 Custom SMTP (SendGrid) and the email rate limit
 - **Owner:** **Einar** enters the SMTP settings himself (section 8: host, port, user, the API key as password, sender); the executor sets the rate limit (dashboard).
-- **Settings:** Section 8's SMTP fields; Auth **Rate Limits** page: emails sent per hour raised from **30** (imposed once custom SMTP is enabled) to **100**. Reason: M1 staging sends only invitations and magic links for one staging editor, and acceptance runs repeat sign-ins; 30 per hour could block a test run, while 100 stays bounded. SendGrid's own plan limits still apply (Einar's existing plan; confirm at execution time). Einar may choose another value at G3; record the value used. This is the one statement of the value and its reason; sections 6 and 16 point here.
+- **Settings:** Section 8's SMTP fields; Auth **Rate Limits** page: emails sent per hour raised from **30** (imposed once custom SMTP is enabled) to **100**. Reason: M1 staging sends only invitations and magic links for one staging editor, and acceptance runs repeat sign-ins (since decision 72: invitations, reset emails and section 7.2's mails; a password sign-in sends no email); 30 per hour could block a test run, while 100 stays bounded. SendGrid's own plan limits still apply (Einar's existing plan; confirm at execution time). Einar may choose another value at G3; record the value used. This is the one statement of the value and its reason; sections 6 and 16 point here.
 - **Verify:** the SMTP page shows custom SMTP enabled with the host, port, user, sender email and sender name of section 8 (password hidden; Einar reads them, or the executor in his signed-in session); the Rate Limits page shows 100 emails per hour; the end-to-end check is G4.3.
 
 ### G3.7 Site URL, redirect URL and email templates
 - **Owner:** Executor (dashboard).
-- **Settings:** Site URL `https://vefumsjon-staging.litljomi.is`; redirect URLs: exactly `https://vefumsjon-staging.litljomi.is/auth/confirm` (the CMS's `emailRedirectTo`, `${CMS_PUBLIC_URL}/auth/confirm`). No wildcard, no localhost (URL configuration page; confirm the menu path at execution time).
-- **Email templates:** the four files in `supabase/templates/` (`magic_link.html`, `invite.html`, `email_change.html`, `reauthentication.html`) are uploaded to the hosted project's Auth email templates page, each with its subject from the matching `[auth.email.template.*]` block of `supabase/config.toml`, the HTML pasted unchanged (confirm the menu path at execution time). A hosted project does not read the local files, so without this step it sends Supabase's English defaults. In the templates, `{{ .SiteURL }}` is the Site URL above: magic links go to `https://vefumsjon-staging.litljomi.is/auth/confirm?token_hash=…&type=email`, invitations to the same page with `type=invite` (decision 41.1), and both addresses' email-change links to it with `type=email_change` (M5-03). That page verifies nothing until the editor presses its "Halda áfram" button, so the link works in any browser and a mail scanner opening it does not use it up. **A hosted project whose `email_change` template still links to `{{ .ConfirmationURL }}` must be updated with the current file:** that link is used up on GET, which is the scanner risk this template closes. The magic-link mail carries the link only, no 6-digit code (`{{ .Token }}` is not in `magic_link.html`; decision 42.2), and says the link is valid for one hour, which the Email OTP Expiration of section 6 makes true: paste the current file, not an earlier copy.
-- **Verify:** the URL configuration page shows those two values only; Einar's next section 7.2 part 1 run, with `EXPECT_REDIRECT='https://vefumsjon-staging.litljomi.is'`, asserts that the `generate_link` response's `redirect_to` field (the only field of it printed, never the action link) equals it. The email templates page shows the Icelandic subjects, and each template's link is as above (the magic link, invitation and email change to `{{ .SiteURL }}/auth/confirm`, and no template with `{{ .ConfirmationURL }}`), and the magic-link template shows no code; the end-to-end check is G4.3 and A11.
+- **Settings:** Site URL `https://vefumsjon-staging.litljomi.is`; redirect URLs: exactly `https://vefumsjon-staging.litljomi.is/auth/confirm` (the reset form's `redirectTo`, the CMS's own origin plus `/auth/confirm`; at M1, the magic-link request's `emailRedirectTo`). No wildcard, no localhost (URL configuration page; confirm the menu path at execution time).
+- **Email templates:** the **six** files in `supabase/templates/` are uploaded to the hosted project's Auth email templates page, each with its subject from the matching `[auth.email.template.*]` block of `supabase/config.toml`, the HTML pasted unchanged from the current file, never an earlier copy (confirm the menu path and the dashboard's template names at execution time). A hosted project does not read the local files, so without this step it sends Supabase's English defaults, whose links sign in on GET.
+
+  | File | Template | Subject (`config.toml`) | What it carries |
+  |---|---|---|---|
+  | `magic_link.html` | Magic link (also sent for a sign-in code) | Innskráning í Litljómi vefumsjón | **No link, no token hash, no code**: only `{{ .SiteURL }}`, telling the editor to sign in with email and password there (decisions 72.1 and 72.2) |
+  | `confirmation.html` | Confirm sign-up (Auth sends it to a pending invitee on request) | Innskráning í Litljómi vefumsjón | **No link, no token hash, no code**: the same text as `magic_link.html` (decision 72.3) |
+  | `invite.html` | Invite | Þér er boðið í Litljómi vefumsjón | A link to `{{ .SiteURL }}/auth/confirm?token_hash=…&type=invite`; the editor then chooses a password (PW-03) |
+  | `recovery.html` | Reset password | Nýtt lykilorð í Litljómi vefumsjón | A link to `{{ .SiteURL }}/auth/confirm?token_hash=…&type=recovery` (PW-03) |
+  | `email_change.html` | Change email address | Staðfestu breytingu á netfangi | A link, to both addresses, to `{{ .SiteURL }}/auth/confirm?token_hash=…&type=email_change` (M5-03) |
+  | `reauthentication.html` | Reauthentication | Staðfestingarkóði | The reauthentication code (`{{ .Token }}`), for a password change from a session over 24 hours old (section 6) |
+
+  `{{ .SiteURL }}` is the Site URL above. The confirm page verifies nothing until the editor presses its "Halda áfram" button (a POST), so a link works in any browser and a mail scanner opening it does not use it up (decision 41.1); it accepts `invite`, `recovery` and `email_change` links and refuses `email` (a magic link, PW-03). **No hosted template may link to `{{ .ConfirmationURL }}`:** that link is used up on GET. The magic-link and confirmation templates are what stop magic-link and code sign-in (section 7): a copy that regains a link, a token hash or a code brings them back.
+- **Verify:** the URL configuration page shows those two values only. The email templates page shows each of the six with the subject and body of its file (section 7.2, S3): the invite, reset and email-change links to `{{ .SiteURL }}/auth/confirm`, no template with `{{ .ConfirmationURL }}`, and `magic_link` and `confirmation` with no placeholder but `{{ .SiteURL }}`. The end-to-end checks are section 7.2 (S5, S7 and S8), G4.3 and A11. (At M1 this step uploaded four files, before `recovery.html` and `confirmation.html` existed, and section 7.2's part 1 script asserted the `generate_link` response's `redirect_to`; decision 72 replaced both.)
 
 ## 6. Supabase Auth configuration
 
@@ -332,27 +348,32 @@ openssl rand -hex 16 | jq -Rc '{email: "<signup-test-address>", password: .}' \
   | jq -r '.error_code // "no error_code: sign-up may be on"'
 ```
 
-Expected: `signup_disabled` (HTTP 422), and `select count(*) from auth.users where email = '<signup-test-address>';` returns `0`. If the call instead succeeds, sign-up is on: an account now exists and a confirmation email may have been sent. Stop, turn sign-up off, have Einar delete that account (section 7.2 part 2, with its id from `select id from auth.users where email = '<signup-test-address>';`), record it, and tell Einar.
+Expected: `signup_disabled` (HTTP 422), and `select count(*) from auth.users where email = '<signup-test-address>';` returns `0`. If the call instead succeeds, sign-up is on: an account now exists and a confirmation email may have been sent. Stop, turn sign-up off, have Einar delete that account in the dashboard (Authentication, Users, as in section 7.2's S10, with its id from `select id from auth.users where email = '<signup-test-address>';`), record it, and tell Einar.
 
 | Setting | Step | Hosted value | Local equivalent | Why | Verify |
 |---|---|---|---|---|---|
 | Self sign-up | G3.4 | **Off** ("allow new users to sign up" disabled) | `[auth] enable_signup = false` | §4.4: editors are invited by the CLI | `/auth/v1/settings` → `"disable_signup": true`; the sign-up check above → 422 `signup_disabled` and no account created |
-| Email provider | G3.4 | **On** (sign-in by email magic link, §4.4) | `[auth.email] enable_signup = true` | Decision 17: turning the provider off disables email sign-in | `/auth/v1/settings` → `"external": {"email": true, …}` |
-| Other providers | G3.4 | All off: phone, anonymous, OAuth, SAML, WebAuthn/passkeys | defaults in `config.toml` | Decision 18: enabling any of them needs the hook's allowlist revisited | `/auth/v1/settings` → every other `external` entry `false` |
+| Email provider | G3.4 | **On**, for the invite, reset and email-change links and the reauthentication code, and for password sign-in; **not** for sign-in links: Auth still serves magic links and codes while the provider is on, so they are stopped by the templates (row "Email templates") and the code length (decisions 72 and 72.1) | `[auth.email] enable_signup = true` | Decision 17: turning the provider off disables email and password sign-in | `/auth/v1/settings` → `"external": {"email": true, …}` |
+| Password sign-in | G3.4 | **The editors' sign-in** (decision 72): email and password, from the browser straight to Auth with the publishable key (decision 72.4). Part of the email provider, with no separate switch (confirm at execution time) | `[auth.email]`, as above | §4.4 | Section 7.2, S6 |
+| Other providers | G3.4 | All off: phone, anonymous, OAuth, SAML, WebAuthn/passkeys | defaults in `config.toml` | Decisions 18 and 72: enabling any of them needs the hook's allowlist revisited | `/auth/v1/settings` → every other `external` entry `false`; section 7.2, S4 |
 | Confirm email | G3.4 | **On** | `[auth.email] enable_confirmations = true` | Decision 19 | `/auth/v1/settings` → `"mailer_autoconfirm": false` |
 | Secure email change (double confirmation) | G3.4 | **On** | `[auth.email] double_confirm_changes = true` | Decision 19: an email change needs both the old and the new address; with confirmations off it has no effect, so both stay on | The setting shows on; Task 29 item 11 checks the behaviour |
-| Secure password change | G3.4 | **On**, set in the dashboard's Auth settings for the email provider ("Secure password change"; confirm the location at execution time). The dashboard is the executor's only route. If the dashboard does not offer the setting, stop and report: the other route, the Management API, needs a personal access token (a secret), so it is Einar's (below) | `[auth.email] secure_password_change = true` | Decision 21: additional protection, not a substitute for the hook | The dashboard shows the setting on, or Einar's Management API check below prints `true` (behaviour below); record which route was used |
-| Email OTP Expiration | G3.4 | **3600** seconds (the email provider's settings; confirm the location at execution time) | `[auth.email] otp_expiry = 3600` | Decision 43: the magic-link mail says the link is valid for one hour | The dashboard shows 3600 (Einar reads it, or the executor in a browser session Einar signed in to himself); recorded in `m1-report.md` |
+| Minimum password length | G3.4 (staging: section 7.3 step 2) | **6**, Auth's lowest setting (the email provider's or Auth's password settings; confirm the location at execution time) | `[auth] minimum_password_length = 6` | Decision 72: no password rules beyond Auth's minimum | The dashboard shows 6 |
+| Password requirements | G3.4 (staging: section 7.3 step 2) | **None**: no required characters | `[auth] password_requirements = ""` | Decision 72 | The dashboard shows no requirement |
+| Leaked password protection | G3.4 (staging: section 7.3 step 2) | **Off** (it may be offered only on paid plans; confirm at execution time and record what the dashboard shows) | No local setting: the local Auth leaves the check off (comment above `minimum_password_length` in `config.toml`) | Decision 72: the leaked-password check is off, accepted | The dashboard shows it off or not offered |
+| Secure password change | G3.4 | **On**, set in the dashboard's Auth settings for the email provider ("Secure password change"; confirm the location at execution time). The dashboard is the executor's only route. If the dashboard does not offer the setting, stop and report: the other route, the Management API, needs a personal access token (a secret), so it is Einar's (below) | `[auth.email] secure_password_change = true` | Decision 21, kept by decision 72: changing a password needs a recent sign-in (§4.4); the verified 24-hour behaviour below is kept. The set-password page runs straight after an invite or reset link, so its session is new | The dashboard shows the setting on, or Einar's Management API check below prints `true` (behaviour below); record which route was used |
+| Email OTP Length | G3.4 (staging: section 7.3 step 4) | **10** digits, the longest Auth allows (the email provider's settings; confirm the location at execution time) | `[auth.email] otp_length = 10` | Decision 72.3: Auth still makes a code for every magic-link or code request and accepts it, and every token-hash link is built from such a code; 10 digits can't be guessed within the hour, even across many addresses | Section 7.2, S3 |
+| Email OTP Expiration | G3.4 | **3600** seconds (the email provider's settings; confirm the location at execution time) | `[auth.email] otp_expiry = 3600` | Decision 43 (for the magic-link mail's one hour), kept unchanged by decision 72.3: the invite, reset and email-change links last an hour | The dashboard shows 3600 (Einar reads it, or the executor in a browser session Einar signed in to himself); section 7.2, S3; recorded in `m1-report.md` |
 | TOTP MFA | G3.4 | Enrolment and verification **on** | `[auth.mfa.totp] enroll_enabled = true`, `verify_enabled = true` | §4.4: platform admins enrol TOTP; console needs `aal2` | The MFA settings show TOTP enabled |
-| JWT expiry | G3.4 | **3600** seconds, recorded and kept | `[auth] jwt_expiry = 3600` | Decision 18: bounds how long a token issued before the hook stays valid | The setting shows 3600; in section 7.2 the magic-link response has `"expires_in": 3600`; value recorded in `m1-report.md` |
+| JWT expiry | G3.4 | **3600** seconds, recorded and kept | `[auth] jwt_expiry = 3600` | Decision 18: bounds how long a token issued before the hook, or before a revocation (section 7.1 step 4), stays valid | The setting shows 3600; value recorded in `m1-report.md` (at M1, section 7.2's magic-link response also showed `"expires_in": 3600`) |
 | Exposed schemas | G3.3 | `api` only | `[api] schemas = ["api"]` | Decision 16, §4.2 | G3.3 |
-| Custom Access Token hook | G3.5 | **Enabled**, Postgres function `private.passwordless_access_token` | `[auth.hook.custom_access_token] enabled = true`, `uri = "pg-functions://postgres/private/passwordless_access_token"` | Decision 18 | Section 7 |
+| Custom Access Token hook | G3.5 (staging: section 7.3 step 1) | **Enabled**, Postgres function `private.sign_in_access_token` (at M1, `private.passwordless_access_token`, replaced by decision 72) | `[auth.hook.custom_access_token] enabled = true`, `uri = "pg-functions://postgres/private/sign_in_access_token"` | Decisions 18, 72 and 72.1 (section 7) | Section 7.2, S1 and S2 |
 | Custom SMTP | G3.6 | SendGrid (section 8), entered by Einar | `[local_smtp]` (local mail catcher) | §4.4: the built-in sender delivers only to the team's addresses, about 2 an hour, not for production | G3.6, G4.3 |
-| Email rate limit | G3.6 | The value G3.6 sets | `[auth.rate_limit] email_sent = 60` (decision 37.4) | Acceptance runs repeat sign-ins, and the post-SMTP default could block one (G3.6) | G3.6 |
-| Site URL, redirect URLs | G3.7 | `https://vefumsjon-staging.litljomi.is`; `https://vefumsjon-staging.litljomi.is/auth/confirm` | `site_url`, `additional_redirect_urls` (`http://localhost:3100`, decisions 37.4 and 41.1) | Magic links land on the staging CMS only | G3.7 |
-| Email templates | G3.7 | The four files of `supabase/templates/`, uploaded with their subjects; `{{ .SiteURL }}` is the staging CMS host, so magic links, invitations and email changes go to `https://vefumsjon-staging.litljomi.is/auth/confirm` | `[auth.email.template.*]` (`magic_link`, `invite`, `email_change`, `reauthentication`), files in `supabase/templates/` (Tasks 22 and 32) | §4.4; decision 41.1: the link works in any browser, and only the confirm page's button uses it | G3.7, G4.3 and A11 |
+| Email rate limit | G3.6 | The value G3.6 sets | `[auth.rate_limit] email_sent = 60` (decision 37.4) | Acceptance runs send invitations and resets, and the post-SMTP default could block one (G3.6) | G3.6 |
+| Site URL, redirect URLs | G3.7 | `https://vefumsjon-staging.litljomi.is`; `https://vefumsjon-staging.litljomi.is/auth/confirm` | `site_url`, `additional_redirect_urls` (`http://localhost:3100`, decisions 37.4 and 41.1) | Invite, reset and email-change links land on the staging CMS only | G3.7 |
+| Email templates | G3.7 (staging: section 7.3 step 3) | The **six** files of `supabase/templates/` (`magic_link.html`, `confirmation.html`, `invite.html`, `recovery.html`, `email_change.html`, `reauthentication.html`), uploaded with their subjects from `config.toml` (G3.7's table). `magic_link.html` and `confirmation.html` carry **no link, no token hash and no code** (decisions 72.1 and 72.3); `{{ .SiteURL }}` is the staging CMS host, so invitations, resets and email changes go to `https://vefumsjon-staging.litljomi.is/auth/confirm` | `[auth.email.template.*]` (`magic_link`, `confirmation`, `invite`, `recovery`, `email_change`, `reauthentication`), files in `supabase/templates/` (Tasks 22 and 32, PW-01, PW-03); the `tools/checks` test allows no placeholder but `{{ .SiteURL }}` in the two link-free templates | §4.4; decision 41.1: a link works in any browser, and only the confirm page's button uses it; decisions 72.1 and 72.3: the two link-free templates are what stop magic-link and code sign-in | G3.7; section 7.2, S3, S5, S7 and S8; G4.3 and A11 |
 
-**Secure password change through the Management API (Einar only).** Used only if the dashboard does not offer the setting (the row above). The Management API (`PATCH /v1/projects/<project-ref>/config/auth`) needs a Supabase personal access token, a secret, so Einar runs it in his own terminal, never an agent. He creates a token for this step (Supabase account settings, Access Tokens; confirm at execution time) with the shortest expiry or the narrowest scope Supabase offers (a personal access token is probably account-wide, so a wrong project reference would change another project; confirm the options at execution time), and **revokes it whatever the outcome**, success or failure. `<field-name>` is the Management API's name for the setting, taken from Supabase's current Management API reference at execution time, never guessed. The token is typed or pasted at a hidden prompt (`read -rs`, no echo, nothing in shell history), lives in a variable of a subshell only, is never exported and never on a command line (curl reads its headers from a configuration on standard input, written by the builtin `printf`, as in section 7.2), and is unset at the end; if he pasted it, he clears the clipboard afterwards. `REF` is the staging project's reference, the same dashboard value Einar passes as `EXPECT_REF` in section 7.2; it is typed once, checked against `^[a-z0-9]{20}$`, used in both URLs and printed before anything is sent. The commands print only the target, an HTTP code and whether the setting is `true`:
+**Secure password change through the Management API (Einar only).** Used only if the dashboard does not offer the setting (the row above). The Management API (`PATCH /v1/projects/<project-ref>/config/auth`) needs a Supabase personal access token, a secret, so Einar runs it in his own terminal, never an agent. He creates a token for this step (Supabase account settings, Access Tokens; confirm at execution time) with the shortest expiry or the narrowest scope Supabase offers (a personal access token is probably account-wide, so a wrong project reference would change another project; confirm the options at execution time), and **revokes it whatever the outcome**, success or failure. `<field-name>` is the Management API's name for the setting, taken from Supabase's current Management API reference at execution time, never guessed. The token is typed or pasted at a hidden prompt (`read -rs`, no echo, nothing in shell history), lives in a variable of a subshell only, is never exported and never on a command line (curl reads its headers from a configuration on standard input, written by the builtin `printf`, as in section 7.4), and is unset at the end; if he pasted it, he clears the clipboard afterwards. `REF` is the staging project's reference, the same dashboard value Einar passes as `EXPECT_REF` to the G3.2c script and `tools/cli`; it is typed once, checked against `^[a-z0-9]{20}$`, used in both URLs and printed before anything is sent. The commands print only the target, an HTTP code and whether the setting is `true`:
 
 ```sh
 (
@@ -380,31 +401,45 @@ Expected: the target line, `PATCH: 200`, then `true`. Anything else: stop and re
 
 **Secure password change: verified behaviour** (Supabase Auth v2.197.0, `internal/api/user.go`, verified locally on 2026-11-02 in `docs/verification/decision-21-secure-password-change.md`):
 - A session **less than 24 hours old** changes the password with no reauthentication (200).
-- A session **missing or more than 24 hours old** is refused without a nonce: HTTP 400 `reauthentication_needed` ("Password update requires reauthentication"). `GET /auth/v1/reauthenticate` emails a 6-digit code; the update carrying it as `nonce` succeeds; a wrong nonce gets 422.
+- A session **missing or more than 24 hours old** is refused without a nonce: HTTP 400 `reauthentication_needed` ("Password update requires reauthentication"). `GET /auth/v1/reauthenticate` emails a code (`reauthentication.html`; 6 digits when this was verified, and `otp_length` digits, so 10 since decision 72.3: confirm at execution time); the update carrying it as `nonce` succeeds; a wrong nonce gets 422.
 - A user with MFA enrolled needs an `aal2` session (HTTP 401 `insufficient_aal` on `aal1`).
 - Every password change revokes the user's other sessions; the session that made the change stays valid.
-- It is **additional protection only**: it does not stop a recent session from setting a password, it is not fresh email verification for every change, and it does not stop a password from signing in. The passwordless hook (section 7) is the control that keeps passwords from signing in. The Supabase CLI reference describes the setting as requiring "the user's current password"; that is not what the verified version does.
+- It is **additional protection only**: it does not stop a recent session from setting a password, and it is not fresh email verification for every change. Until decision 72 the passwordless hook (section 7) kept passwords from signing in; since then a password is the editors' sign-in, and the set-password page after an invite or reset link uses a session minutes old, so it needs no nonce. The Supabase CLI reference describes the setting as requiring "the user's current password"; that is not what the verified version does.
 - Whether the hosted project runs the same Auth version: confirm at execution time (the version is shown in the project's settings or Auth logs); if it differs, record it and re-check the behaviour before relying on this description.
 
-## 7. Passwordless Auth hook (decisions 18 and 20)
+## 7. Sign-in hook (decisions 18, 20, 72 and 72.1)
 
-The hook `private.passwordless_access_token(event jsonb) returns jsonb` (Task 4) issues a token only for the email methods, TOTP step-up and refresh, with the fail-closed `amr` rule; anything else gets `{"error": {"http_code": 403, "message": "Only email sign-in is allowed"}}`. It is part of the Auth configuration, not of a migration, so it must be enabled and verified on every hosted project.
+The hook `private.sign_in_access_token(event jsonb) returns jsonb` (migration `20261112100000_sign_in_auth_hook.sql`, PW-01) issues a token only for these sign-in methods (`authentication_method`):
 
-### 7.1 Enabling it (first time, G3.5)
+| Method | What it is | Allowed |
+|---|---|---|
+| `password` | Password sign-in, the editors' sign-in (decision 72) | Always |
+| `otp` | Every link verified by token hash: the invite, password-reset and email-change links, verified by the confirm page's POST | Always |
+| `totp` | A platform admin's TOTP step-up to `aal2` | Only if every method in the session's `amr` is `password`, `otp` or `totp` |
+| `token_refresh` | A refresh of an existing session | Only if every method in the session's `amr` is `password`, `otp` or `totp` |
+
+Anything else gets `{"error": {"http_code": 403, "message": "Sign-in not allowed"}}`, a message that names no method: sign-up, anonymous, phone, OAuth, SSO, web3, a PKCE exchange (`magiclink`, `recovery`, `invite`, which the CMS doesn't use) and a missing or malformed method or `amr` (fail closed). It reads no tables. It replaces decision 18's `private.passwordless_access_token`, which refused `password`; the same migration drops the old function.
+
+**Why `otp` must be allowed (decision 72.1).** Supabase Auth reports every link verified by token hash as `otp`, whatever its type: invite, recovery, email change and magic link alike (observed on GoTrue v2.197.0; only a PKCE exchange reports `recovery` or `magiclink`). The hook therefore can't tell a magic link from an invitation, and refusing `otp` would break invites, resets and email changes. Magic-link and code sign-in are stopped in the email instead: `magic_link.html`, which Auth also sends for a sign-in code, and `confirmation.html` carry no link, no token hash and no code, and every code Auth still makes is 10 digits (decision 72.3), so it can't be guessed within its hour. On a hosted project the control is therefore three things together: the hook, the six email templates and the code length (section 6). All three live in the Auth configuration, not in a migration, so each is set and verified on every hosted project (spec §11.2).
+
+### 7.1 Enabling it on a new hosted project
+
+**History.** At M1 (G3.5, 2026-11-03) these steps enabled `private.passwordless_access_token` on staging; decision 72 replaced that hook. Staging moves to the sign-in hook by section 7.3. On a new hosted project (production, by its own decision) the steps below apply as written.
+
 0. **No account exists yet.** Owner: executor. Verify in the SQL editor: `select count(*) from auth.users;` returns `0`. If not, stop and report: an account was created before the hook (for example while sign-up was open), and Einar decides what happens to it before anything continues.
 1. **Function present.** Owner: executor. Applied by G3.2b (`supabase db push`). Verify: G3.2b's `to_regprocedure` check returns `true`.
-2. **Function and grants (§4.5, "Auth hook grant").** Owner: executor. Verify in the SQL editor with the five statements below, each run on its own with its result recorded (section 1, "SQL blocks"). Any result other than the expected one: stop and report; do not change grants on the hosted project by hand.
+2. **Function and grants (§4.5, "Auth hook grant").** Owner: executor. Verify in the SQL editor with the six statements below, each run on its own with its result recorded (section 1, "SQL blocks"). Any result other than the expected one: stop and report; do not change grants on the hosted project by hand.
    - **2a.** The function: owner, ACL, not `SECURITY DEFINER`, `search_path` pinned to `''`.
      ```sql
      select p.proowner::regrole as owner, p.proacl, p.prosecdef,
             'search_path=""' = any(p.proconfig) as search_path_empty
      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-     where n.nspname = 'private' and p.proname = 'passwordless_access_token';
+     where n.nspname = 'private' and p.proname = 'sign_in_access_token';
      ```
      Expected: `proacl` grants `EXECUTE` only to the owner and `supabase_auth_admin`; `prosecdef` is `false`; `search_path_empty` is `true`.
    - **2b.** Who may execute it.
      ```sql
-     select r as role, has_function_privilege(r, 'private.passwordless_access_token(jsonb)', 'execute') as can_execute
+     select r as role, has_function_privilege(r, 'private.sign_in_access_token(jsonb)', 'execute') as can_execute
      from unnest(array['anon', 'authenticated', 'service_role', 'supabase_auth_admin']) r;
      ```
      Expected: `can_execute` is `true` for `supabase_auth_admin` only.
@@ -421,7 +456,7 @@ The hook `private.passwordless_access_token(event jsonb) returns jsonb` (Task 4)
      where n.nspname in ('api', 'cms', 'private')
        and has_function_privilege('supabase_auth_admin', p.oid, 'execute');
      ```
-     Expected: exactly one row, `private.passwordless_access_token(jsonb)`.
+     Expected: exactly one row, `private.sign_in_access_token(jsonb)`.
    - **2e.** Tables, views, their columns and sequences (one statement: three parts joined by `union all`).
      ```sql
      select c.oid::regclass, priv
@@ -444,8 +479,13 @@ The hook `private.passwordless_access_token(event jsonb) returns jsonb` (Task 4)
        and has_sequence_privilege('supabase_auth_admin', c.oid, priv);
      ```
      Expected: no rows.
-3. **Enable the hook.** Owner: executor. Settings: Authentication hooks page (confirm the menu path at execution time): Custom Access Token hook → enabled, type Postgres, schema `private`, function `passwordless_access_token`. If the page cannot select a function in `private`, **stop and report**; do not move the function or change its grants. Verify: the page shows the hook enabled with that schema and function.
-4. **Revoke all sessions** (immediately after step 3, still before any editor exists; again in step 3 of section 7.2's failure handling). Owner: executor, in the SQL editor, the statements below in order, each run on its own with its result recorded (section 1, "SQL blocks"):
+   - **2f.** The hook it replaces is gone.
+     ```sql
+     select to_regprocedure('private.passwordless_access_token(jsonb)') is null as old_hook_gone;
+     ```
+     Expected: `true`.
+3. **Enable the hook.** Owner: executor. Settings: Authentication hooks page (confirm the menu path at execution time): Custom Access Token hook → enabled, type Postgres, schema `private`, function `sign_in_access_token`. If the page cannot select a function in `private`, **stop and report**; do not move the function or change its grants. Verify: the page shows the hook enabled with that schema and function.
+4. **Revoke all sessions** (immediately after step 3, still before any editor exists; at the switch, section 7.3 step 5; and in step 3 of section 7.2's failure handling). Owner: executor, in the SQL editor, the statements below in order, each run on its own with its result recorded (section 1, "SQL blocks"):
    - **4a.** The role used must be allowed to delete there. Run this on its own first; **4b runs only if it returns `true`**.
      ```sql
      select current_user, has_table_privilege(current_user, 'auth.sessions', 'delete') as can_delete;
@@ -469,186 +509,69 @@ The hook `private.passwordless_access_token(event jsonb) returns jsonb` (Task 4)
      select count(*) from auth.mfa_amr_claims;
      ```
 
-   Success: 4a is `true` and 4c, 4d and 4e are each `0`. If 4a is `false` or a count is not `0`, stop and report. Access tokens already issued stay valid until they expire, at most `jwt_expiry` (3600 seconds, section 6); a refresh then fails, and the fail-closed `amr` rule refuses any earlier password session on refresh. Record the time of the revocation; nothing issued before it is relied on for one hour.
-5. **Verify** with section 7.2.
+   Success: 4a is `true` and 4c, 4d and 4e are each `0`. If 4a is `false` or a count is not `0`, stop and report. Every session is gone, so nothing issued before the revocation can be refreshed. Access tokens already issued stay valid until they expire, at most `jwt_expiry` (3600 seconds, section 6). Record the time of the revocation; nothing issued before it is relied on for one hour.
+5. **Verify** with section 7.2: S1 and S2 straight away, and the whole procedure once custom SMTP (G3.6) and the templates (G3.7) are in place, since S3 and S5 to S8 need them.
 
-### 7.2 Verification procedure (decision 20)
+### 7.2 Verification procedure (decision 20, inverted by decision 72)
 
-**When to run it:** after enabling the hook (section 7.1); after any change to hosted Auth settings (dashboard or Management API) or any configuration push; and before each acceptance run (Task 29 and later acceptances). **Recurring automation is deferred** until staging exists (Task 28 or later, by a separate decision; decision 20).
+Since decision 72 this procedure proves the opposite of M1's: a password signs in, invite and reset links sign in through the confirm page's POST, and a magic-link or code request sends a mail that can't sign anyone in. **Until decision 72 it held two scripts (parts 1 and 2, checks H1 to H6)** that proved a password was refused with 403 and a magic link signed in. They test the replaced hook and were removed; never run a copy of them. The last version is in git history (`git show 6e5f0d2:docs/runbooks/staging.md`).
 
-**Owners:** the executor runs the dashboard and SQL editor checks (H1, H2, H5, and H6's query); **Einar** runs the two scripts (H3, H4 and H6's deletion), because they need the secret key. Einar is told the result. **Record** each run (date, who, trigger, each check's result, the test account's id) in `docs/verification/m1-report.md` during M1.
+**When to run it:** after the switch to passwords (section 7.3) and after enabling the hook on a new project (section 7.1); after any change to hosted Auth settings, templates or hooks (dashboard or Management API) or any configuration push; and before each acceptance run.
+
+**Owners:** the executor runs the dashboard and SQL editor checks (in a browser session Einar signed in to himself, section 1) and the public `curl` requests; **Einar** invites and deletes the test account, reads its mailbox, does every sign-in and types every password. No password goes into chat. Einar is told the result. **Record** each run (date, who, trigger, each check's result, the test account's id; no secrets) in the record the controller names (`docs/verification/m1-report.md` during M1).
+
+**The test account** is `<hook-test-address>`, a throwaway address Einar controls (section 1, "Names"). It is invited fresh in each run (S5) and deleted at the end (S10). Its password is a throwaway Einar keeps in his password manager until S10. It has no membership, so once signed in the CMS shows its page for an account with no site (confirm the page at execution time).
+
+**What a script could do later (decision 73, suggestion 12).** Scripting the hosted checks is a task for the hosted rollout, not decided here, and no such script exists. The last column of the table says which checks a script could take over and what it would need. Until a script is written, reviewed and approved, every check is run by hand as written.
 
 **Checks, in this order, and expected results:**
 
-| # | Check | Owner | Expected |
-|---|---|---|---|
-| H1 | Authentication hooks page | Executor | Custom Access Token hook **enabled**, Postgres, `private.passwordless_access_token` |
-| H2 | Function and grants (section 7.1 step 2, statements 2a–2e, each on its own) | Executor | As in section 7.1 step 2: execute only for the owner and `supabase_auth_admin`, which has nothing else in `api`, `cms` or `private` (no schema, function, table, column or sequence privilege beyond `usage` on `private` and the hook); not `SECURITY DEFINER`; `search_path` empty |
-| H3 | Part 1 script: creates the test account (with a password) and tries a password sign-in with its real password | Einar | HTTP **403** with the hook's message ("Only email sign-in is allowed") |
-| H4 | Part 1 script: magic-link sign-in for the same account, then a refresh | Einar | Sign-in HTTP **200** with an access token and `expires_in` **3600**; refresh HTTP **200**; `redirect_to` as expected once G3.7 is done |
-| H5 | SQL editor (H5a, H5b), **while the test account still exists**, with the id part 1 printed | Executor | **0** `password` rows on the project; for the test account, **0** `password` rows and **at least 1** row in all (its H4 session, so the check is not vacuous) |
-| H6 | Part 2 script deletes the test account (the Auth admin API cannot clear a password, so the account is never reused); then the SQL check | Einar (deletion), executor (SQL) | Deletion HTTP **200**; the account is gone (H6a and H6b below each **0**) |
+| # | Check | Owner | Expected | A script could do it? |
+|---|---|---|---|---|
+| S1 | Authentication hooks page | Executor | Custom Access Token hook **enabled**, Postgres, `private.sign_in_access_token` | Yes, from the Management API's Auth configuration (needs a personal access token: Einar's, as in section 6) |
+| S2 | Function and grants: section 7.1 step 2, statements 2a–2f, each on its own | Executor | As in section 7.1 step 2: execute only for the owner and `supabase_auth_admin`, which has nothing else in `api`, `cms` or `private`; not `SECURITY DEFINER`; `search_path` empty; the old `private.passwordless_access_token` gone | Yes, over a database connection (needs the database password: Einar's) |
+| S3 | Hosted templates and code length: the Auth email templates page and the email provider's settings | Executor | Each of the six hosted templates has the subject and the body of its repository file (G3.7's table), so `magic_link` and `confirmation` hold no `{{ .ConfirmationURL }}`, `{{ .TokenHash }}` or `{{ .Token }}` and no placeholder but `{{ .SiteURL }}`; Email OTP Length **10**; Email OTP Expiration **3600** | Yes: the Management API returns the templates, subjects and code length (personal access token), to compare with the files under the same rule as the `tools/checks` template test |
+| S4 | Sign-up and anonymous sign-in, with the publishable key (commands below), then S4c in the SQL editor | Executor | Both refused with HTTP **422**, no token: sign-up `signup_disabled`; anonymous `signup_disabled` or `anonymous_provider_disabled` (record which); S4c `0` | Yes (public values only) |
+| S5 | Invite: Einar invites the test account from the dashboard (Authentication, Users, "Invite user"; confirm the path at execution time), opens the mail in a private browser window and presses "Halda áfram" | Einar | The mail ("Þér er boðið í Litljómi vefumsjón") links to `https://vefumsjon-staging.litljomi.is/auth/confirm?token_hash=…&type=invite`; opening it shows only the confirm page and its button; the button's POST signs in and opens the set-password page; Einar sets a throwaway password and reaches the CMS | Partly: a browser test against staging could, given a way to read the test mailbox |
+| S6 | Password sign-in: Einar signs out, then signs in at `/login` with a wrong password, then with the right one | Einar | Wrong password: "Innskráning tókst ekki. Athugaðu netfang og lykilorð og reyndu aftur." (decision 72.5); right password: signed in | Yes, against the password endpoint with the publishable key, for a test account the script creates (needs the secret key: Einar's) |
+| S7 | Reset: Einar signs out, uses "Gleymt lykilorð?" for the test account, opens the mail and presses "Halda áfram", sets a new password; signs out; signs in with the old password, then with the new one, and stays signed in | Einar | The mail ("Nýtt lykilorð í Litljómi vefumsjón") links to the confirm page with `type=recovery`; the button's POST opens the set-password page; the old password gets S6's message; the new one signs in | Partly, as S5 |
+| S8 | Magic-link and code request, with the publishable key (command below), for the test account; Einar reads the mail that arrives | Executor (request), Einar (mailbox) | HTTP **200**; the mail ("Innskráning í Litljómi vefumsjón") says that sign-in is with email and password at `https://vefumsjon-staging.litljomi.is`, and holds **no link to `/auth/confirm`, no token hash and no code**: no run of digits, and no `token_hash` anywhere in the message source ("show original" or equivalent) | Partly: the request, yes; the mail, only with a way to read the test mailbox |
+| S9 | SQL editor (S9a–S9c), while the test account still exists and Einar is still signed in from S7 | Executor | S9a: one id (`<test-account-id>`); S9b: every method on the project is `password`, `otp` or `totp`; S9c: `password_rows` at least `1` | Yes, over a database connection |
+| S10 | Einar deletes the test account in the dashboard (Authentication, Users; confirm at execution time); then S10a and S10b | Einar (deletion), executor (SQL) | The account is gone: S10a and S10b each **0** | Yes (the secret key or a database connection: Einar's) |
 
-**Keeping secrets off command lines.** A command line is visible to every user of the machine (`ps`) and to process auditing; a pipe is not. So in both scripts curl reads its headers, URL and body as a configuration on standard input (`curl -q --config -`; `-q` first, so `~/.curlrc` is not read), written by `printf`, a shell builtin, so its arguments never become a program's command line; request bodies are built by `jq` from values it reads on standard input; responses stay in shell variables. The values read from `.env.staging.local` stay in the script's own shell variables and are never exported, so no process's environment holds them either. The secret key, the generated password, the token hash and the refresh token therefore never appear on any command line, and nothing is written to a file (pipes only: no temporary files and no here-documents). Never run the scripts with `bash -x` or `set -x`. They print only the target host, HTTP codes (or a curl error number), `true`/`false` results, `redirect_to` and the test account's id (not a secret).
+**S4 and S8 requests (executor).** Each in one shell command that starts with section 6's URL check, so a wrong URL stops it before anything is sent. They print only error codes and HTTP codes.
 
-**Reading `.env.staging.local` without executing it.** The scripts never source `.env.staging.local` (`. ./.env.staging.local` runs every line as shell code in a shell that holds the secret key, and a later duplicate line silently wins, which could send the key to another host). Each script reads only the names it needs, line by line, and refuses to send anything when:
-- a name is assigned zero times or more than once, or not on a plain `NAME=value` line (an `export NAME=…` line or spaces around `=` count as assignments and are refused; comment lines are ignored);
-- a value contains characters that cannot occur in it: `NEXT_PUBLIC_SUPABASE_URL` must be exactly `https://`, 20 lowercase letters or digits (the project reference) and `.supabase.co`, with nothing before or after; the keys may contain only letters, digits, `.`, `_` and `-` (this also keeps quotes, spaces, `$`, `%`, `\` and a stray carriage return out of the curl configuration);
-- the URL is not the staging project's: Einar passes the project reference as `EXPECT_REF`, taken from his Supabase dashboard (or his own records), never from a repository file (the value recorded at G3.1 in `docs/verification/m1-report.md` is for the record only), and the URL must be `https://$EXPECT_REF.supabase.co`.
-
-A refusal prints a `FAILED:` line naming the variable, never its value. Before its first request, each script prints the target host (`target: <project-ref>.supabase.co`). A local-stack URL (for example `http://127.0.0.1:54321`, as `.env.local` holds for local work) is refused, so the checks can never run against, or delete an account on, the local stack by mistake; the scripts read the separate file `.env.staging.local`, which holds the staging values, and `.env.local` is not swapped (Einar's ruling, section 1). **Confirm at execution time** that the staging project's reference has 20 characters and that the publishable and secret keys contain only the characters above. If the hosted URL or a key has another shape, stop and report; do not loosen the check.
-
-**How Einar runs them.** He copies each script, as shown, into a file outside the repository (the scripts hold no secret; for example `~/hook-check-1.sh` and `~/hook-check-2.sh`) and runs it with `bash`. The scripts read `~/litljomi-cms/.env.staging.local` by its full path, so the directory he runs them from does not matter; nothing is loaded into his interactive shell:
-
-```sh
-EXPECT_REF='<project-ref>' EXPECT_REDIRECT='https://vefumsjon-staging.litljomi.is' bash ~/hook-check-1.sh
-EXPECT_REF='<project-ref>' bash ~/hook-check-2.sh '<test-account-id>'
-```
-
-Before G3.7 is done, leave out `EXPECT_REDIRECT=…`; part 1 then prints `redirect_to` without asserting it. Confirm at execution time that the hosted Auth admin endpoints accept the secret key in the `apikey` and `Authorization` headers as below.
-
-**Part 1 (H3, H4).** It creates the test account and **does not delete it**. It checks every expected result and exits non-zero on any mismatch; a curl transport error or a failed sign-in is a mismatch too, so every failure ends with the `FAILED:` line and its hint.
-
-```bash
-#!/usr/bin/env bash
-# Section 7.2, part 1 (H3, H4). Run by Einar only. Never with `bash -x` or `set -x`.
-# Prints only the target host, HTTP codes, true/false results, redirect_to and the test account's id.
-set -eu
-ENV_FILE=~/litljomi-cms/.env.staging.local
-REF_RE='^[a-z0-9]{20}$'; URL_RE='^https://[a-z0-9]{20}\.supabase\.co$'; KEY_RE='^[A-Za-z0-9._-]+$'
-
-# env_value NAME ERE: prints NAME's value from ENV_FILE without executing the file. Refuses, naming
-# only NAME, unless NAME is assigned exactly once, on a plain NAME=value line, with a value matching
-# ERE. Never prints a refused value. Part 2 has an identical copy: keep the two identical.
-env_value() {
-  local assigned="^[[:space:]]*(export[[:space:]]+)?$1[[:space:]]*=" allowed="$2" line value='' n=0 plain=0
-  [ -f "$ENV_FILE" ] || { echo "FAILED: $ENV_FILE not found; nothing was sent" >&2; return 1; }
-  while IFS= read -r line || [ -n "$line" ]; do
-    if [[ $line =~ $assigned ]]; then
-      n=$((n + 1))
-      case "$line" in "$1="*) plain=1; value="${line#*=}" ;; *) plain=0 ;; esac
-    fi
-  done < "$ENV_FILE"
-  if [ "$n" -ne 1 ] || [ "$plain" -ne 1 ]; then
-    echo "FAILED: $1 must be on exactly one plain $1=value line in .env.staging.local (found $n); nothing was sent" >&2
-    return 1
-  fi
-  if ! [[ $value =~ $allowed ]]; then
-    echo "FAILED: $1 in .env.staging.local has an unexpected form (value not shown); nothing was sent" >&2; return 1
-  fi
-  printf '%s' "$value"
-}
-
-REF="${EXPECT_REF:-}"
-if ! [[ $REF =~ $REF_RE ]]; then
-  echo "FAILED: set EXPECT_REF to the staging project's reference (from your Supabase dashboard); nothing was sent" >&2
-  exit 1
-fi
-URL="$(env_value NEXT_PUBLIC_SUPABASE_URL "$URL_RE")"
-PK="$(env_value NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY "$KEY_RE")"
-SK="$(env_value SUPABASE_SECRET_KEY "$KEY_RE")"
-if [ "$URL" != "https://$REF.supabase.co" ]; then
-  echo "FAILED: .env.staging.local points at ${URL#https://}, not $REF.supabase.co; nothing was sent" >&2; exit 1
-fi
-printf 'target: %s\n' "${URL#https://}"
-EXPECT_REDIRECT="${EXPECT_REDIRECT:-}"
-EMAIL='<hook-test-address>'
-PW="$(openssl rand -base64 24)"
-FAILED=0
-
-# call KEY METHOD PATH [DATA_LINE]: one request. curl reads headers, URL and body as a config on
-# stdin (--config -), written by printf (a builtin), so no secret is on a command line.
-# KEY is "secret" (Auth admin endpoints) or "public". Sets CODE and BODY; prints nothing itself.
-# A transport error does not stop the script: CODE becomes "curl error <n>" and BODY is empty.
-call() {
-  local resp rc=0
-  resp="$(
-    {
-      if [ "$1" = secret ]; then
-        printf 'header = "apikey: %s"\nheader = "Authorization: Bearer %s"\n' "$SK" "$SK"
-      else
-        printf 'header = "apikey: %s"\n' "$PK"
-      fi
-      printf 'header = "Content-Type: application/json"\nrequest = "%s"\nurl = "%s%s"\n' "$2" "$URL" "$3"
-      printf 'silent\nshow-error\nwrite-out = "\\n%%{http_code}"\n'
-      if [ -n "${4:-}" ]; then printf '%s\n' "$4"; fi
-    } | curl -q --config -
-  )" || rc=$?
-  if [ "$rc" -ne 0 ]; then CODE="curl error $rc"; BODY=''; return 0; fi
-  CODE="${resp##*$'\n'}"
-  BODY="${resp%$'\n'*}"
-}
-# data_line FILTER: builds a JSON request body with jq from values on stdin; prints it as a curl
-# config line (data = "...").
-# jq's error messages can quote its input, so they are discarded (a missing body fails the request).
-data_line() { jq -nr "$1"' | tojson | "data = \(tojson)"' 2>/dev/null; }
-# jq_or_false FILTER: applies a jq filter to a response on stdin; prints its result, or false.
-jq_or_false() { jq -r "$1" 2>/dev/null || echo false; }
-# expect LABEL ACTUAL EXPECTED: prints the result; a mismatch marks the run as failed.
-expect() {
-  if [ "$2" = "$3" ]; then printf '%s: %s (ok)\n' "$1" "$2"
-  else printf '%s: %s (expected %s) FAILED\n' "$1" "$2" "$3"; FAILED=1; fi
-}
-
-# The test account, with a password (the admin API can set one even with sign-up off).
-call secret POST /auth/v1/admin/users \
-  "$(printf '%s\n%s\n' "$EMAIL" "$PW" | jq -R . | data_line '[inputs] | {email: .[0], password: .[1], email_confirm: true}')"
-USER_ID="$(printf '%s' "$BODY" | jq_or_false '.id // ""')"
-if [ "$CODE" != 200 ]; then USER_ID=''; fi
-case "$USER_ID" in
-  '' | *[!0-9a-f-]*)
-    echo "test account: HTTP $CODE, no valid id"
-    echo "FAILED: the account may exist anyway; run 'If any check fails' from step 1 (look it up by email)"; exit 1 ;;
-esac
-echo "test account id: $USER_ID (keep it for H5 and part 2)"
-
-# H3: a password sign-in with the account's real password must be refused by the hook.
-call public POST '/auth/v1/token?grant_type=password' \
-  "$(printf '%s\n%s\n' "$EMAIL" "$PW" | jq -R . | data_line '[inputs] | {email: .[0], password: .[1]}')"
-expect 'H3 password sign-in, HTTP' "$CODE" 403
-expect 'H3 refused with the hook message' \
-  "$(printf '%s' "$BODY" | jq_or_false 'tostring | contains("Only email sign-in is allowed")')" true
-
-# H4: a magic-link sign-in must succeed (admin generate_link sends no email), and so must its refresh.
-call secret POST /auth/v1/admin/generate_link \
-  "$(printf '%s\n' "$EMAIL" | jq -R . | data_line 'input | {type: "magiclink", email: .}')"
-expect 'H4 generate_link, HTTP' "$CODE" 200
-LINK="$BODY"
-REDIRECT="$(printf '%s' "$LINK" | jq_or_false '.redirect_to // "missing"')"
-if [ -n "$EXPECT_REDIRECT" ]; then expect 'redirect_to' "$REDIRECT" "$EXPECT_REDIRECT"
-else printf 'redirect_to: %s (not asserted)\n' "$REDIRECT"; fi
-if [ "$CODE" = 200 ]; then
-  call public POST /auth/v1/verify \
-    "$(printf '%s' "$LINK" | data_line 'input | {type: "magiclink", token_hash: .hashed_token}')"
-  expect 'H4 magic-link sign-in, HTTP' "$CODE" 200
-  expect 'H4 access token issued, expires_in 3600' \
-    "$(printf '%s' "$BODY" | jq_or_false '(.access_token | type == "string" and length > 0) and .expires_in == 3600')" true
-  if [ "$CODE" = 200 ]; then
-    SESSION="$BODY"
-    call public POST '/auth/v1/token?grant_type=refresh_token' \
-      "$(printf '%s' "$SESSION" | data_line 'input | {refresh_token: .refresh_token}')"
-    expect 'H4 refresh, HTTP' "$CODE" 200
-  else
-    echo 'H4 refresh: skipped (the magic-link sign-in failed)'
-  fi
-else
-  echo 'H4 magic-link sign-in and refresh: skipped (generate_link failed)'
-fi
-unset PW LINK SESSION BODY PK SK
-
-if [ "$FAILED" -ne 0 ]; then
-  echo "FAILED: keep the test account ($USER_ID) as evidence; run H5, then 'If any check fails'"; exit 1
-fi
-echo "H3 and H4 passed. Next: H5 with id $USER_ID, then part 2."
-```
-
-**H5 (executor, SQL editor), before part 2.** Two statements, each run on its own with its result recorded (section 1, "SQL blocks").
-
-- **H5a.** On the whole project: no session has ever been started by a password. Expected `0`.
-  ```sql
-  select count(*) from auth.mfa_amr_claims where authentication_method = 'password';
+- **S4a, sign-up:** section 6's "Sign-up check, safely", as written. Expected `signup_disabled`.
+- **S4b, anonymous sign-in** (a sign-up with no address and no password):
+  ```sh
+  printf '{}' | curl -s -X POST "$NEXT_PUBLIC_SUPABASE_URL/auth/v1/signup" \
+      -H "apikey: $NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY" -H 'Content-Type: application/json' --data @- \
+    | jq -r '.error_code // "no error_code: anonymous sign-in may be on"'
   ```
-- **H5b.** For the test account (its id from part 1): no password row, and its H4 session is there. Expected `password_rows` `0` and `all_rows` at least `1`.
+  Expected `signup_disabled` or `anonymous_provider_disabled`.
+- **S4c** (SQL editor). Expected `0` (confirm at execution time that the hosted Auth version has the column):
+  ```sql
+  select count(*) from auth.users where is_anonymous;
+  ```
+- **S8, magic-link and code request,** for the test account only (`create_user: false`, so no account is made):
+  ```sh
+  jq -nc '{email: "<hook-test-address>", create_user: false}' \
+    | curl -s -o /dev/null -w 'otp request: HTTP %{http_code}\n' -X POST "$NEXT_PUBLIC_SUPABASE_URL/auth/v1/otp" \
+        -H "apikey: $NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY" -H 'Content-Type: application/json' --data @-
+  ```
+  Auth spaces the emails it sends to one address (confirm the interval at execution time), so S8 runs at least a minute after S7's reset mail. A `429` there means: wait a minute and repeat once.
+
+**S9 (executor, SQL editor).** Three statements, each run on its own with its result recorded (section 1, "SQL blocks").
+
+- **S9a.** The test account's id. Expected one row; record it as `<test-account-id>` (not secret).
+  ```sql
+  select id from auth.users where email = '<hook-test-address>';
+  ```
+- **S9b.** Every sign-in method on the project. Expected only `password`, `otp` and `totp` rows; any other method is a token the hook should have refused.
+  ```sql
+  select authentication_method, count(*) from auth.mfa_amr_claims group by authentication_method order by authentication_method;
+  ```
+- **S9c.** The test account's password sign-in from S7. Expected `password_rows` at least `1`.
   ```sql
   select count(*) filter (where c.authentication_method = 'password') as password_rows,
          count(*) as all_rows
@@ -656,98 +579,95 @@ echo "H3 and H4 passed. Next: H5 with id $USER_ID, then part 2."
   where s.user_id = '<test-account-id>';
   ```
 
-Run H5 even when part 1 failed: its counts are part of the evidence.
+**S10 (executor, SQL editor), after Einar's deletion.** Two statements, each run on its own.
 
-**Part 2 (H6).** Only after H5 has passed and been recorded, or, after a failure, when the failure handling below reaches its deletion step.
-
-```bash
-#!/usr/bin/env bash
-# Section 7.2, part 2 (H6): deletes the test account by its id. Run by Einar only, after H5 is
-# recorded. Never with `bash -x` or `set -x`. Prints only the target host and the HTTP code.
-set -eu
-ENV_FILE=~/litljomi-cms/.env.staging.local
-REF_RE='^[a-z0-9]{20}$'; URL_RE='^https://[a-z0-9]{20}\.supabase\.co$'; KEY_RE='^[A-Za-z0-9._-]+$'
-
-# env_value NAME ERE: identical to part 1's copy; keep the two identical (reads ENV_FILE without
-# executing it; never prints a refused value).
-env_value() {
-  local assigned="^[[:space:]]*(export[[:space:]]+)?$1[[:space:]]*=" allowed="$2" line value='' n=0 plain=0
-  [ -f "$ENV_FILE" ] || { echo "FAILED: $ENV_FILE not found; nothing was sent" >&2; return 1; }
-  while IFS= read -r line || [ -n "$line" ]; do
-    if [[ $line =~ $assigned ]]; then
-      n=$((n + 1))
-      case "$line" in "$1="*) plain=1; value="${line#*=}" ;; *) plain=0 ;; esac
-    fi
-  done < "$ENV_FILE"
-  if [ "$n" -ne 1 ] || [ "$plain" -ne 1 ]; then
-    echo "FAILED: $1 must be on exactly one plain $1=value line in .env.staging.local (found $n); nothing was sent" >&2
-    return 1
-  fi
-  if ! [[ $value =~ $allowed ]]; then
-    echo "FAILED: $1 in .env.staging.local has an unexpected form (value not shown); nothing was sent" >&2; return 1
-  fi
-  printf '%s' "$value"
-}
-
-USER_ID="${1:-}"
-case "$USER_ID" in
-  '' | *[!0-9a-f-]*) echo 'FAILED: usage: bash hook-check-2.sh <test-account-id>; nothing was sent' >&2; exit 1 ;;
-esac
-REF="${EXPECT_REF:-}"
-if ! [[ $REF =~ $REF_RE ]]; then
-  echo "FAILED: set EXPECT_REF to the staging project's reference (from your Supabase dashboard); nothing was sent" >&2
-  exit 1
-fi
-URL="$(env_value NEXT_PUBLIC_SUPABASE_URL "$URL_RE")"
-SK="$(env_value SUPABASE_SECRET_KEY "$KEY_RE")"
-if [ "$URL" != "https://$REF.supabase.co" ]; then
-  echo "FAILED: .env.staging.local points at ${URL#https://}, not $REF.supabase.co; nothing was sent" >&2; exit 1
-fi
-printf 'target: %s\n' "${URL#https://}"
-# curl reads headers and URL as a config on stdin (--config -), so the secret key is on no command line.
-# A transport error does not stop the script before its FAILED line.
-CODE="$(
-  {
-    printf 'header = "apikey: %s"\nheader = "Authorization: Bearer %s"\n' "$SK" "$SK"
-    printf 'request = "DELETE"\nurl = "%s/auth/v1/admin/users/%s"\n' "$URL" "$USER_ID"
-    printf 'silent\nshow-error\noutput = "/dev/null"\nwrite-out = "%%{http_code}"\n'
-  } | curl -q --config -
-)" || CODE="curl error $?"
-unset SK
-if [ "$CODE" = 200 ]; then echo "H6 delete: $CODE (ok)"; exit 0; fi
-echo "H6 delete: $CODE (expected 200) FAILED"
-echo "FAILED: the account may still exist; run the H6 query, record both, then 'If any check fails'"; exit 1
-```
-
-**H6 query (executor, SQL editor), after part 2.** Two statements, each run on its own with its result recorded (section 1, "SQL blocks").
-
-- **H6a.** Expected `0`.
+- **S10a.** Expected `0`.
   ```sql
   select count(*) from auth.users where id = '<test-account-id>';
   ```
-- **H6b.** Expected `0`.
+- **S10b.** Expected `0`.
   ```sql
   select count(*) from auth.users where email = '<hook-test-address>';
   ```
 
-**Success:** part 1 prints the staging host as `target:` and exits 0 with every check line `(ok)`; H5a returns `0` and H5b `0` and at least `1`; part 2 prints `200`; H6a and H6b each return `0`. A wrong password would get 400 instead of 403 (a known limitation, section 15), so H3 uses the account's real password.
+**Success:** S1 to S10 each as expected. The S6 and S7 messages are the CMS's own; a sign-in that fails with "Of margar tilraunir í bili." is the rate limit (section 7.3 step 9), not a pass or a fail: wait five minutes and repeat the step.
 
 **If any check fails:** stop; do not provision or invite anyone and do not continue the gate or the acceptance. **Keep the test account**: it is evidence until step 4 below.
-1. **Record the evidence** (executor, in `m1-report.md`, no secrets): which checks failed and what they printed, the test account's id, the time, the H5 counts, and the test account's sessions and their methods:
-   ```sql
-   select s.id, s.created_at, s.aal, c.authentication_method
-   from auth.sessions s left join auth.mfa_amr_claims c on c.session_id = s.id
-   where s.user_id = '<test-account-id>' order by s.created_at;
-   ```
-   If part 1 stopped before printing an id, look for an account left behind: `select id, created_at from auth.users where email = '<hook-test-address>';` and record it.
-2. **Assess the window** in which the hook may have been off or wrong: from the last passing run of this procedure (or the last recorded Auth configuration change, whichever is earlier) until now. The executor, with Einar for the dashboard logs (each query below run on its own):
-   - the Auth logs (dashboard Logs, Auth; confirm the path at execution time) for successful password grants (`grant_type=password`) in the window, and which accounts they were for; refused password attempts appear only there (section 15);
-   - every `password` row in `auth.mfa_amr_claims` with its session and user: `select s.user_id, s.created_at from auth.mfa_amr_claims c join auth.sessions s on s.id = c.session_id where c.authentication_method = 'password';`
-   - which accounts have a password set: `select id, email, updated_at from auth.users where coalesce(encrypted_password, '') <> '';` (confirm at execution time how the hosted Auth version stores an account without a password);
-   - every access token issued in the window is distrusted until `jwt_expiry` (3600 seconds) has passed after the revocation in step 3: nothing done with such a token is relied on, and the actions of any account found above during the window are listed for Einar to review.
-3. **Fix** (executor): re-enable the hook with the right function (section 7.1 step 3), re-run H1 and H2, and revoke all sessions again (section 7.1 step 4: 4a `true` before 4b runs, then 4c–4e each `0`); record the time of the revocation.
-4. **Delete the test account** only now: Einar runs part 2 with its id (or the id found in step 1), and the executor runs the H6 query.
-5. **Re-run section 7.2 from H1** with a new test account; record the failure, the window assessment and the fix in `m1-report.md`; tell Einar through the controller. Accounts found with a password in step 2 are reported to Einar, who decides what happens to them (the hook keeps a password from signing in once this procedure passes).
+1. **Record the evidence** (executor, no secrets): which checks failed and what was seen, the time, the test account's id, and S9's results. If the run stopped before S9, run S9 now.
+2. **Assess the window** in which the configuration may have been wrong: from the last passing run of this procedure (or the last recorded Auth configuration change, whichever is earlier) until now. Owner: executor, with Einar for the dashboard's Auth logs (confirm the path at execution time). Each query is run on its own; `<window-start>` is the start of the window.
+   - **S1 or S2 failed** (the hook off or wrong): tokens may have been issued for any method. The sessions started in the window, by method:
+     ```sql
+     select c.authentication_method, count(*) from auth.mfa_amr_claims c join auth.sessions s on s.id = c.session_id where s.created_at >= '<window-start>' group by c.authentication_method;
+     ```
+   - **S3 or S8 failed** (a template with a link or code, or a shorter code): a magic-link or code sign-in looks like an `otp` session. The `otp` sessions started in the window, with their accounts, are compared with the invites, resets and email changes the Auth logs show as sent; any other is listed for Einar:
+     ```sql
+     select s.user_id, s.created_at from auth.mfa_amr_claims c join auth.sessions s on s.id = c.session_id where c.authentication_method = 'otp' and s.created_at >= '<window-start>' order by s.created_at;
+     ```
+   - **S4 failed** (sign-up or anonymous sign-in on): the accounts created in the window:
+     ```sql
+     select id, email, created_at from auth.users where created_at >= '<window-start>' order by created_at;
+     ```
+   - **S5, S6 or S7 failed** (a link or a password doesn't sign in): editors can't sign in, but nothing was let in. There is no window to assess; go to step 3.
+   - Every access token issued in the window is distrusted until `jwt_expiry` (3600 seconds) has passed after the revocation in step 3, and the actions of any account found above are listed for Einar to review.
+3. **Fix** (executor): restore what failed from section 6 (the hook: section 7.1 step 3; the templates: G3.7; the code length and the other settings: their section 6 rows), and re-run S1 to S3. After a failed S1, S2, S3, S4 or S8, revoke all sessions (section 7.1 step 4: 4a `true` before 4b runs, then 4c–4e each `0`) and record the time.
+4. **Delete the test account** only now (S10).
+5. **Re-run section 7.2 from S1** with a fresh invite; record the failure, the window assessment and the fix; tell Einar through the controller. Accounts found in step 2 are reported to Einar, who decides what happens to them.
+
+### 7.3 Switching staging to password sign-in (decisions 72 and 72.4)
+
+Run once, to move the staging project from M1's passwordless hook to password sign-in (`docs/plans/passwords.md`, "Hosted"). **Approval:** under decision 73 rule 2, these staging steps are pre-approved within the approved plan (decision 72), so no new approval is asked for; the controller records each one in `docs/execution/gates.json` when it is done (G3 for the Supabase steps, G6 for advancing `staging`). **Production is not covered:** it waits for its own decision. A change to `.claude/**` (the network diff of section 1) still needs Einar's approval of the exact diff.
+
+**Before you start:**
+- PW-01 to PW-03 are merged to `main`, and the local acceptance of `docs/plans/passwords.md` has passed. PW-03 must land before any hosted rollout (decision 72.3: Auth's default reset email would hand over a session on GET).
+- Read what's going out, with the commands of [`operations.md`](operations.md), section 8 ("Before you start, read what's going out"). Expected among the migrations: `20261112100000_sign_in_auth_hook.sql`, whose one drop, `private.passwordless_access_token`, only Auth calls (step 1). If another migration drops something the deployed CMS calls, stop and report before step 1: steps 2 to 5 run between `db push` and the new deployment (step 6).
+- Staging has no editors who need to sign in during the switch: sign-ins fail between steps 1a and 1b, and after step 5 everyone signs in again (step 7). Einar is told when the switch starts.
+- The Auth hooks page is open in Einar's browser session before step 1, so step 1b takes seconds.
+- The executor's public checks need `<project-ref>.supabase.co` (section 1, "Network").
+
+**Steps, in this order:**
+1. **The migration and the hook, in the same minute.**
+   - **1a.** Owner: Einar, in his own terminal. Confirm the link and push the migrations, as in [`operations.md`](operations.md), section 8 ("Confirm the link", then `supabase db push` and `supabase migration list`; not yet the push to `staging`). Never `supabase config push` (G3.2b).
+   - **1b.** Owner: executor (Einar's session) or Einar, straight after 1a's `db push` ends. Authentication hooks page: Custom Access Token hook, Postgres, schema `private`, function **`sign_in_access_token`**, saved (as section 7.1 step 3).
+   - Between 1a and 1b, Auth calls a function that no longer exists, so every sign-in and refresh fails (fail closed). If 1b can't select the new function, stop and report: sign-ins keep failing until it is fixed, which on staging locks out no editor.
+   - **Verify:** `supabase migration list` shows no local version with an empty remote column; the hooks page shows `private.sign_in_access_token`; G3.2b's `to_regprocedure` check returns `true`; section 7.1 step 2 (2a–2f) as expected.
+2. **Password settings.** Owner: executor (Einar's session). The section 6 rows "Minimum password length" (6), "Password requirements" (none), "Leaked password protection" (off) and "Secure password change" (on, unchanged). Verify: as in section 6.
+3. **The six templates and their subjects.** Owner: executor (Einar's session). G3.7's "Email templates", from the files on `main` as merged, pasted unchanged. Verify: S3's template part.
+4. **The code length.** Owner: executor (Einar's session). Email OTP Length **10**; Email OTP Expiration stays **3600** (section 6). If the dashboard won't accept 10, stop and report: decision 72.3 rests on it. Verify: S3's code part.
+5. **Sign out every hosted session.** Owner: executor. Section 7.1 step 4 (4a–4e), as written. Sessions started by M1's magic links have `amr` `[otp]`, which the new hook would go on refreshing, so they must end here. This signs out Einar and the platform admins too; they sign in again in step 7. Record the time.
+6. **Advance `staging`.** Owner: Einar. [`operations.md`](operations.md), section 8: `supabase migration list` again (nothing new since step 1a), then `git push origin origin/main:refs/heads/staging`, and that section's **Verify**. Nothing else is redeployed or restarted; `labak-hub` stays at its commit. Steps 2 to 5 come between `db push` and this push, unlike that section's usual rule, because the deployed CMS's magic-link page can't sign anyone in once step 3 is done and staging has no editors: keep them to minutes.
+7. **Reset the passwords of the test and admin accounts.** Owner: Einar, for the staging editor `einsi@litljomi.is` and each platform admin account ([`operations.md`](operations.md), section 6): at `https://vefumsjon-staging.litljomi.is/login`, "Gleymt lykilorð?", the reset mail, "Halda áfram", a new password from his password manager, then on to the CMS. A platform admin then opens `/console`, which asks for the TOTP code (`aal2`). The `boundary-check` test editors (`einsi+a-labak@litljomi.is`, `einsi+a-demo@litljomi.is`) have no password and need none (section 14). **Confirm at execution time** that the set-password page completes for an account with TOTP enrolled: Auth asks such an account for an `aal2` session before it changes a password (section 6, "verified behaviour"), and the reset link's session is `aal1`. If the page refuses, stop and report; don't work around it. Verify: each account signs in with its new password.
+8. **Run section 7.2** in full. A failed check follows its failure handling.
+9. **The limit counts the editor's own address (decision 72.4).** Auth limits password attempts per IP address, about 150 per 5 minutes, shared with session refresh (`token_refresh`); local Auth limits nothing, so this is proved here only.
+   - **9a.** Owner: executor, on Einar's Mac (one address). In one shell command that starts with section 6's URL check: wrong-password attempts for `<hook-test-address>`, which has no account after S10, until Auth answers `429`. The password is a fixed wrong value, not a secret.
+     ```sh
+     n=0; code=''
+     while [ "$n" -lt 200 ] && [ "$code" != 429 ]; do
+       n=$((n + 1))
+       code="$(jq -nc '{email: "<hook-test-address>", password: "not-the-password"}' \
+         | curl -s -o /dev/null -w '%{http_code}' -X POST "$NEXT_PUBLIC_SUPABASE_URL/auth/v1/token?grant_type=password" \
+             -H "apikey: $NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY" -H 'Content-Type: application/json' --data @-)"
+     done
+     printf 'attempts: %s, last HTTP %s\n' "$n" "$code"
+     ```
+     Expected: last HTTP `429` after about 150 attempts (record the count).
+   - **9b.** Owner: Einar, at once, in a browser on the same Mac and network (no VPN; confirm that both leave from the same public address): a sign-in at `/login` with his real password shows "Of margar tilraunir í bili. Reyndu aftur eftir nokkrar mínútur." (decision 72.5). The browser signs in straight to Auth, so this is the Mac's address being counted.
+   - **9c.** Owner: Einar, within the same 5 minutes, from another address (his phone on mobile data, Wi-Fi off): a sign-in at `https://vefumsjon-staging.litljomi.is/login` with his password succeeds.
+   - **Verify:** 9a `429`, 9b the rate-limit message, 9c signed in. If 9c gets the rate-limit message, the limit isn't keyed on the editor's address: stop and report (M5 finding 7). For up to 5 minutes the Mac's sessions can't refresh either, since the limit is shared: wait 5 minutes before step 10.
+10. **The staging browser suite.** Owner: Einar runs it in his own terminal, from the one exact command the controller gives him, and pastes the output back (section 14, "Who runs what").
+11. **Record.** The controller records each step in `gates.json` (decision 73 rule 2) and the results, without secrets, in the verification record it names; each hosted change goes in the undo table (section 1, "Undo records"). There is no undo back to magic-link sign-in: the migration dropped the old hook, so going back would need a new decision and a new migration.
+
+### 7.4 Scripts that read the staging file
+
+The G3.2c script and `tools/cli` (`provision`, `boundary-check`, section 11) need the staging secret key, so they are Einar's to run, and they follow these rules. (Until decision 72, section 7.2's two scripts did too.)
+
+**Keeping secrets off command lines.** A command line is visible to every user of the machine (`ps`) and to process auditing; a pipe is not. So in a script curl reads its headers, URL and body as a configuration on standard input (`curl -q --config -`; `-q` first, so `~/.curlrc` is not read), written by `printf`, a shell builtin, so its arguments never become a program's command line; request bodies are built by `jq` from values it reads on standard input; responses stay in shell variables. The values read from `.env.staging.local` stay in the script's own shell variables and are never exported, so no process's environment holds them either. The secret key therefore never appears on any command line, and nothing is written to a file (pipes only: no temporary files and no here-documents). Never run a script with `bash -x` or `set -x`. It prints only the target host, HTTP codes (or a curl error number), error codes and results that hold no secret.
+
+**Reading `.env.staging.local` without executing it.** A script never sources `.env.staging.local` (`. ./.env.staging.local` runs every line as shell code in a shell that holds the secret key, and a later duplicate line silently wins, which could send the key to another host). It reads only the names it needs, line by line (G3.2c's `env_value`), and refuses to send anything when:
+- a name is assigned zero times or more than once, or not on a plain `NAME=value` line (an `export NAME=…` line or spaces around `=` count as assignments and are refused; comment lines are ignored);
+- a value contains characters that cannot occur in it: `NEXT_PUBLIC_SUPABASE_URL` must be exactly `https://`, 20 lowercase letters or digits (the project reference) and `.supabase.co`, with nothing before or after; the keys may contain only letters, digits, `.`, `_` and `-` (this also keeps quotes, spaces, `$`, `%`, `\` and a stray carriage return out of the curl configuration);
+- the URL is not the staging project's: Einar passes the project reference as `EXPECT_REF`, taken from his Supabase dashboard (or his own records), never from a repository file (the value recorded at G3.1 in `docs/verification/m1-report.md` is for the record only), and the URL must be `https://$EXPECT_REF.supabase.co`.
+
+A refusal prints a `FAILED:` line naming the variable, never its value. Before its first request, a script prints the target host (`target: <project-ref>.supabase.co`). A local-stack URL (for example `http://127.0.0.1:54321`, as `.env.local` holds for local work) is refused, so a script can never run against the local stack by mistake; the scripts read the separate file `.env.staging.local`, which holds the staging values, and `.env.local` is not swapped (Einar's ruling, section 1). **Confirm at execution time** that the staging project's reference has 20 characters and that the publishable and secret keys contain only the characters above. If the hosted URL or a key has another shape, stop and report; do not loosen the check.
 
 ## 8. Email delivery through SendGrid (G4)
 
@@ -914,7 +834,7 @@ This section records how the first two tenants were set up. **For a new tenant, 
 
 **Standard order for any new tenant (§9.2, decision 45.1):** the tenant's module reaches `staging` first, then provision (P-1 to P-3), publish once in the CMS, then deploy the site. The SDK fails a site's build while its tenant has no release (`current.json` 400), and it keeps doing so on purpose: a missing release is never treated as empty content.
 
-**What the tool does and refuses.** It reads `.env.staging.local` as text, never executing it, with section 7.2's `env_value` rules (`NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SECRET_KEY` each exactly once on a plain `NAME=value` line, `export` lines and spaces around `=` refused, the same value patterns; a refusal names the variable, never its value). `--expect-ref '<project-ref>'` is required, and the URL must be `https://<project-ref>.supabase.co`; any other host, the local stack included, is refused. It prints the target host (`target: <project-ref>.supabase.co`) before its first request, sends requests only to that origin with the key in headers only, follows no redirect, and prints only ids and statuses; a server error is shown as its HTTP status and the error's code and message only. `--env-file=<absolute path>` (equals form; a separate `--env-file <path>` is swallowed by vite-node when run through `pnpm … cli`) reads another file (not needed here). `--silent` stops pnpm adding its own `ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL` block after a failure; the tool's own output and exit code are unchanged. Exit codes: `0` done, `1` refused or failed, `2` wrong arguments. **Never trust the exit code alone:** a run succeeded only if it printed its result line (`tenant <slug>: <tenant-id>`, `site: <site-id>`, `membership <tenant-id>: ok`). Under vite-node an early exit once ended `provision site` after `target: …` with exit code `0` and nothing created, which let a chained `&& vercel env add …` run (fixed: stdin is read synchronously, and the exit code is `1` until the tool returns). **Reruns finish the job (spec §9.2, plan M4-02).** A rerun of `provision site` exits `0` and keeps the stored secret, so **never chain `provision site` to `vercel env add`**: run it, read its output, and run the Vercel step only if it printed `site: <site-id>`. Every command below is one line; `<project-ref>` is the staging project's reference, from Einar's Supabase dashboard, as for section 7.2.
+**What the tool does and refuses.** It reads `.env.staging.local` as text, never executing it, with section 7.4's `env_value` rules (`NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SECRET_KEY` each exactly once on a plain `NAME=value` line, `export` lines and spaces around `=` refused, the same value patterns; a refusal names the variable, never its value). `--expect-ref '<project-ref>'` is required, and the URL must be `https://<project-ref>.supabase.co`; any other host, the local stack included, is refused. It prints the target host (`target: <project-ref>.supabase.co`) before its first request, sends requests only to that origin with the key in headers only, follows no redirect, and prints only ids and statuses; a server error is shown as its HTTP status and the error's code and message only. `--env-file=<absolute path>` (equals form; a separate `--env-file <path>` is swallowed by vite-node when run through `pnpm … cli`) reads another file (not needed here). `--silent` stops pnpm adding its own `ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL` block after a failure; the tool's own output and exit code are unchanged. Exit codes: `0` done, `1` refused or failed, `2` wrong arguments. **Never trust the exit code alone:** a run succeeded only if it printed its result line (`tenant <slug>: <tenant-id>`, `site: <site-id>`, `membership <tenant-id>: ok`). Under vite-node an early exit once ended `provision site` after `target: …` with exit code `0` and nothing created, which let a chained `&& vercel env add …` run (fixed: stdin is read synchronously, and the exit code is `1` until the tool returns). **Reruns finish the job (spec §9.2, plan M4-02).** A rerun of `provision site` exits `0` and keeps the stored secret, so **never chain `provision site` to `vercel env add`**: run it, read its output, and run the Vercel step only if it printed `site: <site-id>`. Every command below is one line; `<project-ref>` is the staging project's reference, from Einar's Supabase dashboard, as for G3.2c.
 
 - **P-1 Tenants.** Owner: Einar; the executor verifies.
   ```sh
@@ -946,7 +866,7 @@ This section records how the first two tenants were set up. **For a new tenant, 
 
 ## 12. Secrets
 
-No secret is ever committed, logged, printed in an agent session, pasted into chat or written into a report. `.env*` files other than `.env.example` are never committed, and `.env.local` and `.env.staging.local` are never sourced (section 7.2, "Reading `.env.staging.local` without executing it"). The executor never reveals a secret value in the dashboard or the SQL editor and runs only the queries this runbook gives (section 1). Every staging secret is **fresh**, created for staging only. Rotation: the SDK accepts two webhook secrets during rotation (§8.2); the procedures are in [`operations.md`](operations.md), sections 3 and 4.
+No secret is ever committed, logged, printed in an agent session, pasted into chat or written into a report. `.env*` files other than `.env.example` are never committed, and `.env.local` and `.env.staging.local` are never sourced (section 7.4, "Reading `.env.staging.local` without executing it"). The executor never reveals a secret value in the dashboard or the SQL editor and runs only the queries this runbook gives (section 1). Every staging secret is **fresh**, created for staging only. Rotation: the SDK accepts two webhook secrets during rotation (§8.2); the procedures are in [`operations.md`](operations.md), sections 3 and 4.
 
 **Generating and storing the CMS secrets (G6.2).** Einar, in his own terminal, once per secret, generates the value and pipes it straight into the CLI, so it is never printed, never in a file, the clipboard or shell history, and never on a command line:
 
@@ -959,7 +879,7 @@ Mark each sensitive if the CLI offers it (for example a `--sensitive` flag; conf
 
 | Secret | Created where | Stored where | Who may read it |
 |---|---|---|---|
-| Supabase secret key | Supabase project API keys (G3.1) | `vefumsjon-staging` server environment (`SUPABASE_SECRET_KEY`, entered by Einar); Einar's `.env.staging.local` for `tools/cli`, the section 7.2 and G3.2c scripts, and Task 29's automated sign-in | Code under `apps/cms/src/privileged/**` and `tools/cli` only (lint-enforced); in operation, only Einar's own terminal, never an agent session. Never in client bundles, sites or module code |
+| Supabase secret key | Supabase project API keys (G3.1) | `vefumsjon-staging` server environment (`SUPABASE_SECRET_KEY`, entered by Einar); Einar's `.env.staging.local` for `tools/cli`, the G3.2c script, and Task 29's automated sign-in (and, until decision 72, section 7.2's scripts) | Code under `apps/cms/src/privileged/**` and `tools/cli` only (lint-enforced); in operation, only Einar's own terminal, never an agent session. Never in client bundles, sites or module code |
 | Internal worker-trigger secret | Generated fresh, 32 random bytes, piped into `vercel env add` by Einar (above) | `vefumsjon-staging` (`CMS_INTERNAL_SECRET`) | The CMS server: the trigger and `verifyInternalSecret` |
 | Cron secret | Generated fresh, 32 random bytes, piped into `vercel env add` by Einar (above) | `vefumsjon-staging` (`CRON_SECRET`) | Vercel Cron (sends it) and `verifyCronSecret` |
 | Per-site webhook secret | Generated fresh by Einar, one per site (P-2: `provision site` needs the secret key) | Supabase Vault (by `provision site`) and the site's environment (`CMS_WEBHOOK_SECRETS`) | The worker through `service_role`-only functions (A9); the site's revalidation route |
@@ -975,7 +895,7 @@ No registry token exists: the LABAK branch gets the SDK as vendored files (G2.5)
 
 ## 13. Environment variables
 
-The same set as `.env.example` (`tools/checks/__tests__/env-example.test.ts` checks that the first column of this table and the `NAME=` lines of `.env.example` match both ways). Values are set per Vercel project (G6.2) and, for local work, in `.env.local` (the local stack's values); the staging values that `tools/cli` and the section 7.2 scripts read are in `.env.staging.local` (section 1).
+The same set as `.env.example` (`tools/checks/__tests__/env-example.test.ts` checks that the first column of this table and the `NAME=` lines of `.env.example` match both ways). Values are set per Vercel project (G6.2) and, for local work, in `.env.local` (the local stack's values); the staging values that `tools/cli` and the G3.2c script read are in `.env.staging.local` (section 1).
 
 | Variable | Used by | Secret | Value and where it comes from | Set on |
 |---|---|---|---|---|
@@ -984,7 +904,7 @@ The same set as `.env.example` (`tools/checks/__tests__/env-example.test.ts` che
 | `SUPABASE_SECRET_KEY` | `apps/cms/src/privileged/**`, `tools/cli` | **Yes** | The project's secret key (API keys page); entered by Einar (section 12) | `vefumsjon-staging`; Einar's `.env.staging.local` |
 | `CMS_INTERNAL_SECRET` | CMS app (worker trigger, header `x-cms-internal-secret`) | **Yes** | 32 random bytes, generated and piped into the CLI by Einar (section 12) | `vefumsjon-staging` |
 | `CRON_SECRET` | CMS app (`/api/cron/sweep`), Vercel Cron | **Yes** | 32 random bytes, generated and piped into the CLI by Einar (section 12) | `vefumsjon-staging` |
-| `CMS_PUBLIC_URL` | CMS app (worker trigger URL, magic-link redirect) | No | `https://vefumsjon-staging.litljomi.is` | `vefumsjon-staging` |
+| `CMS_PUBLIC_URL` | CMS app (worker trigger URL; secure session cookies when the URL is not local. Until decision 72, also the magic-link redirect) | No | `https://vefumsjon-staging.litljomi.is` | `vefumsjon-staging` |
 | `CMS_ALERT_SMTP_HOST` | CMS app (`privileged/worker/alert-email.ts`, alert emails, plan M3-04) | No | `smtp.sendgrid.net` (SendGrid, decision 50.5). Unset: no alert email (alerts stay in the server log and the audit log) | `vefumsjon-staging` (M3 local acceptance step 8) |
 | `CMS_ALERT_SMTP_PORT` | CMS app (alert emails) | No | `587` (STARTTLS, required for any non-loopback host); `465` for implicit TLS. Default `587` | `vefumsjon-staging` |
 | `CMS_ALERT_SMTP_USER` | CMS app (alert emails) | No | `apikey` (SendGrid's SMTP user name) | `vefumsjon-staging` |
@@ -1003,18 +923,20 @@ Sites hold no Supabase credentials and no API URL (§8.1): they read only public
 
 ## 14. Validation procedures (Task 29)
 
+**History.** This section records Task 29 as run at M1, with magic-link sign-in. Decision 72 replaced that sign-in: the rows and the manual check marked below are M1 history. A later acceptance signs in with a password and runs section 7.2 as it now stands (S1 to S10).
+
 Before Task 29, run the full local suite (Task 29 Step 1) and the hook verification (section 7.2). Task 29 then runs `apps/cms/e2e/m1-acceptance.spec.ts` against staging, one test per M1 criterion of spec §13.2 (Task 29 items 1–11; section 1 explains the numbering), and writes the results to **`docs/verification/m1-report.md`**: each criterion pass or fail with evidence (commands, request IDs, timestamps, screenshots at 375, 768 and 1440 px), each validation gate with its result, and every known limitation.
 
 **Who runs what (decision 43.1 and 43.9).**
 - **Einar runs every browser test** (`pnpm --filter cms e2e …` and the staging acceptance spec) in his own terminal, from **one exact command** the controller gives him, and pastes the output back; the controller reads it. Agents do not run browser tests.
-- **Automated sign-in** uses the Auth admin `generateLink` route with the staging secret key from Einar's environment only (his `.env.staging.local` or his shell; never printed, never committed, never in an agent session), which is one more reason the spec runs in his terminal.
+- **Automated sign-in** (at M1) uses the Auth admin `generateLink` route with the staging secret key from Einar's environment only (his `.env.staging.local` or his shell; never printed, never committed, never in an agent session), which is one more reason the spec runs in his terminal.
 - **The staging account** is `einsi@litljomi.is`, an editor of both `labak` and `demo` (P-3). No other editor, and no access for anyone else in M1.
 - **On staging, prove A6, A7, A8, A11 and A15**, and **re-run A1–A4 against hosted Supabase** with `boundary-check` (below, decision 46). It replaces re-running the integration suite's `http-boundary.test.ts` and `storage-boundary.test.ts`, which need the local seed and owner SQL; the local suite keeps refusing a hosted URL.
-- **Einar's manual check:** request a magic link on his laptop, open it on his phone, press "Halda áfram", publish a test article from the phone, and see it on `https://labak-hub.litljomi.is`.
+- **Einar's manual check** (at M1): request a magic link on his laptop, open it on his phone, press "Halda áfram", publish a test article from the phone, and see it on `https://labak-hub.litljomi.is`. Replaced by decision 72: he signs in on the phone with his password, then publishes and checks the same way.
 
 | What Task 29 checks | Depends on (this runbook) | Gate |
 |---|---|---|
-| Magic-link sign-in delivered by custom SMTP (SendGrid) with Icelandic templates | Section 8, G3.6, G5.1 | A11 |
+| Magic-link sign-in delivered by custom SMTP (SendGrid) with Icelandic templates (M1; since decision 72, the invite and reset mails of section 7.2, S5 and S7) | Section 8, G3.6, G5.1 | A11 |
 | Publish reaches "Birt á vef ✓" on `labak-hub.litljomi.is` within 60 s | G6.3, G7.1, P-2 | A7, A15 |
 | Image public only after publish; republish moves Live; unpublish passes every `absent` check | Section 11 | — |
 | Isolation both ways through the API and storage, and A2–A3 with them (`boundary-check`, below; decision 46) | G3.2, G3.3, P-1, a delivered release per tenant | A1–A4 |
@@ -1022,8 +944,8 @@ Before Task 29, run the full local suite (Task 29 Step 1) and the hook verificat
 | With the CMS deployment paused, both sites keep serving (Einar pauses it or approves pausing, G6) | G6.5, G7.1 | — |
 | `current.json` overwritten and polled: new release within about a minute | `CMS_DELIVERY_BASE_URL` | A6 |
 | Cron log shows the sweep every minute for 10 minutes | G6.4 | A8 |
-| Passwordless and email change: hook enabled; password sign-in 403; magic link works; no `password` row in `auth.mfa_amr_claims`; an email change needs both addresses | Sections 6 and 7 | Decisions 18, 19 (Task 29 item 11) |
-| The phone check: link requested on the laptop, opened on the phone, "Halda áfram", article published from the phone and seen on `labak-hub.litljomi.is` | Sections 8 and 11 | Einar's manual check |
+| Passwordless and email change: hook enabled; password sign-in 403; magic link works; no `password` row in `auth.mfa_amr_claims`; an email change needs both addresses (M1; replaced by decision 72: section 7.2, where a password signs in and a magic-link request can't; the email-change check is unchanged) | Sections 6 and 7 | Decisions 18, 19 (Task 29 item 11) |
+| The phone check: link requested on the laptop, opened on the phone, "Halda áfram", article published from the phone and seen on `labak-hub.litljomi.is` (M1; since decision 72, a password sign-in on the phone) | Sections 8 and 11 | Einar's manual check |
 
 Each run's secrets come from Einar's local environment only; the report records results, never values.
 
@@ -1040,7 +962,7 @@ It is `provision`'s sibling and has the same safety rules (section 11, "What the
 **Setup, before any check.** If a setup step fails, the tool prints `FAILED: setup: …`, runs no checks and prints no `RESULT` line.
 1. It confirms, read-only (`api.worker_previous_release` with the secret key), that each tenant id is the tenant its flag names, from the slug in its latest release's bundle path. Swapped ids, or a tenant with no delivered release, are refused before anything is created or changed.
 2. It finds or creates the two test editors, `einsi+a-labak@litljomi.is` and `einsi+a-demo@litljomi.is`, through the Auth admin API: created confirmed (`email_confirm`), with no password and no invitation, so no email is sent. An existing user is reused.
-3. It gives each a session through `generate_link` and the hashed token's verification (as in section 7.2, H4; no email).
+3. It gives each a session through `generate_link` and the hashed token's verification, with no email: since decision 72 a recovery link, which Auth reports as `otp` and the sign-in hook allows (decision 72.1); at M1 a magic link, as in the old section 7.2's H4. The test editors have no password and get none.
 4. It adds the one membership (`api.admin_add_membership`, idempotent). It refuses to go on if a test editor is a member of any other tenant (`api.my_tenants`).
 
 **Checks, one line each:**
@@ -1055,17 +977,18 @@ It is `provision`'s sibling and has the same safety rules (section 11, "What the
 
 ## 15. Known limitations
 
-The full list is decision 18's (plan, "Implementation-level decisions") and decision 21's; the ones that matter when operating staging:
-- A password can still be set on an account (by the user's own session, or by the admin API); it never signs in.
-- A correct password gets 403 and a wrong one 400, so the password endpoint answers differently for them; it also reveals `user_banned` and `email_not_confirmed` (Supabase default).
-- Refused password attempts leave no row in `auth.audit_log_entries`; they appear only in the Auth logs.
-- The hook lives in the Auth configuration: a dashboard change or a configuration push without it switches it off silently, so section 7.2 is re-run after every Auth configuration change or configuration push, and on every hosted project.
-- Sign-in fails closed if the hook cannot run (it must answer within 2 seconds): a slow or unavailable database blocks sign-in rather than allowing passwords.
+The full list is decision 18's (plan, "Implementation-level decisions"), decision 21's and, since password sign-in, decisions 72 to 72.4's; the ones that matter when operating staging:
+- **Replaced by decision 72** (M1 history): "a password can be set on an account but never signs in" and "a correct password gets 403 and a wrong one 400". A password is now the editors' sign-in. A wrong password and an unknown address get the same Auth error (PW-02); Supabase's own `user_banned` and `email_not_confirmed` answers are unchanged (confirm at execution time).
+- Guessing is limited only per IP address: about 150 password attempts per 5 minutes per address, shared with session refresh (decision 72.4, section 7.3 step 9). Guesses spread over many addresses are not limited, and there is no CAPTCHA and no password rule beyond length 6: accepted by Einar (decisions 72 and 72.4).
+- Auth still makes a 10-digit code for every magic-link or code request and accepts it for an hour, though no email carries it (decision 72.3). An outsider can still spoil a pending invitation by requesting a sign-up confirmation; the invitation is then sent again (accepted, decision 72.3).
+- Refused sign-in attempts leave no row in `auth.audit_log_entries`; they appear only in the Auth logs (confirm at execution time for wrong passwords).
+- The hook, the six templates and the code length live in the Auth configuration: a dashboard change or a configuration push can switch the hook off, or bring back a template with a link or code, silently. So section 7.2 is re-run after every Auth configuration change or configuration push, and on every hosted project.
+- Sign-in fails closed if the hook cannot run (it must answer within 2 seconds): a slow or unavailable database blocks sign-in rather than allowing anything.
 - Holders of the JWT secret or the Supabase secret key can issue tokens without the hook (by design, §8.1).
 - Access tokens issued before the hook was enabled stay valid until they expire (at most `jwt_expiry`, 3600 seconds); hence the revocation in section 7.1.
-- Secure password change is additional protection only (section 6): a session under 24 hours old can set a password without a nonce, and any password change revokes the user's other sessions, so a session holder can sign the editor out elsewhere (the editor signs in again by email).
+- Secure password change is additional protection only (section 6): a session under 24 hours old can set a password without a nonce, and any password change revokes the user's other sessions, so a session holder can sign the editor out elsewhere (the editor signs in again with the password).
 - Enabling sign-up, MFA recovery codes, WebAuthn, phone MFA or passkeys needs the hook's allowlist revisited.
-- The hook and secure password change were verified on local Supabase Auth v2.197.0 only until Task 29.
+- The hook and secure password change were verified on local Supabase Auth v2.197.0 only until Task 29; the sign-in hook, the link-free templates and the 10-digit codes, locally only (PW-01 to PW-03) until section 7.3 runs.
 - Vercel Cron is best effort (missed or duplicate runs possible, no retries); the sweep is idempotent.
 - The live check cannot confirm a site behind deployment protection (§7.4); G6.3's Standard Protection keeps the staging domains (the production domains) public and every other deployment protected.
 - `landssamband-bakarameistara` stays connected to the LABAK repository: with G6.0's Ignored Build Step it builds nothing for `hub-integration`, but it may still list a skipped or cancelled deployment and post a commit status on that branch (G6.0).
@@ -1078,7 +1001,7 @@ The full list is decision 18's (plan, "Implementation-level decisions") and deci
 |---|---|---|
 | Per-site preview secret: **resolved by M3**. Decision 43.1 asks for one; it is created with `provision preview-secret` and stored in Vault and in the site's `CMS_PREVIEW_SECRETS` (sections 12 and 13) | Controller | Done |
 | Who enters secret values: Einar, so no secret passes through an agent session (sections 1 and 12) | Einar confirms | G3, G6 |
-| Steps that need the secret key or another secret value are Einar's (section 1), including the section 7.2 and G3.2c scripts, every `provision` command, the secrets of section 12 and section 6's Management API route | Einar confirms | G3 |
+| Steps that need the secret key or another secret value are Einar's (section 1), including the G3.2c script (and, until decision 72, section 7.2's scripts), every `provision` command, the secrets of section 12 and section 6's Management API route | Einar confirms | G3 |
 | Task 29's re-run of A1–A4 against hosted Supabase: the integration suite (`tests/integration/src/env.ts`) refuses any non-loopback stack. **Decided** (decision 46): `boundary-check` in `tools/cli` (section 14), run by Einar in his own terminal | Einar approved ("Approve adapter") | Done; run before Task 29's report |
 | The LABAK repository and Vercel: the approvals to connect it to `labak-hub` (section 1), and Einar's confirmation of G6.0's Ignored Build Step before G7.1 | Einar approves and confirms; controller raises | G6; the G7 push request |
 | `deny` rules for agents on `.env`, `.env.local` and `.env.staging.local`: **done**. Edit and Write denies for `.env` and `.env.local` (diff B, Einar 2026-11-03, `0bfb23f`); Read, Edit and Write denies for `.env.staging.local` (diff D, Einar 2026-11-03, `6504caf`), applied before Einar created the file | Einar approved | Done |
@@ -1086,6 +1009,6 @@ The full list is decision 18's (plan, "Implementation-level decisions") and deci
 | The email rate limit value (G3.6) | Einar confirms | G3 |
 | SMTP credentials in the CMS environment (§8.2): no M1 code needs them, so no variable is defined; to be named when code that sends email is planned | Controller raises with Einar | When such code is planned |
 | GitHub Packages for `@litljomi/*` (a `litljomi` GitHub organisation) replaces the vendored files of G2.5 | Einar | When a second site arrives (§9.1) |
-| Recurring automation of the hook verification (decision 20) | Einar, by a separate decision | Task 28 or later |
+| Recurring automation of the hook verification (decision 20): decision 73 left scripting the hosted checks (suggestion 12) to the hosted rollout; section 7.2's last column marks what a script could do. No script exists | Einar, by a separate decision | The hosted rollout or later |
 | Optional staging check of the 24-hour secure-password-change path (needs a session's `created_at` moved back in `auth.sessions`, as in the local verification) | Einar decides | G3 |
 | The production Supabase project (and the organisation's move to Pro, §2.2) and `cms.litljomi.is` (spec §13) are outside this staging runbook | Controller raises with Einar | After M1 |

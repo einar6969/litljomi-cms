@@ -29,7 +29,7 @@ export async function createEditorClient(): Promise<SupabaseClient> {
 
 /**
  * A client with the publishable key that neither reads nor writes the request cookies: whatever
- * session it gets stays in this object. The magic link's confirm action uses it to verify a link
+ * session it gets stays in this object. The links' confirm action uses it to verify a link
  * for a visitor who is already signed in, so the link's session is known before it replaces the
  * visitor's own (M3-14), and to check or end that pending session by its access token.
  */

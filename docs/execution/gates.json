@@ -196,6 +196,11 @@
           "at": "2026-11-05",
           "scope": "Closed: the approval of decision 68 ended with this acceptance. A later hosted action needs a new approval.",
           "note": "Einar in chat, 2026-11-05, answering \"Do you accept M5?\": \"Accept M5\"."
+        },
+        {
+          "at": "2026-11-12",
+          "scope": "Standing approval, decision 73 rule 2: within a plan Einar has approved, the controller may advance the staging branch, run supabase db push to the staging project, change hosted Auth settings and email templates on staging, and run the plan's hosted checks on staging, without asking again. Each action is still recorded here when it happens. Excludes production, DNS, LABAK, anything that costs money, and anything outside the approved plan. Ends when Einar withdraws it.",
+          "note": "Einar in chat, 2026-11-12, asked \"Do you approve rules 1–9, 11, 13 and 14 as written?\" after the rules were set out: \"Approve them all\"."
         }
       ],
       "amendments": [
@@ -341,6 +346,11 @@
           "at": "2026-11-12",
           "scope": "Closed: staging advanced 9d31159..09f7f62 at 02:53 UTC. vefumsjon-staging and demo-staging deployed (Vercel commit statuses success); the CMS serves /login 200 and the new self-hosted font 200; demo-staging /events 200. demo-next15-staging failed as it did on 9d31159 (inactive, decision 52, OPEN-ISSUES B9). A later hosted action needs a new approval.",
           "note": "Closed by the controller when the scope above was met; no further approval was given."
+        },
+        {
+          "at": "2026-11-12",
+          "scope": "Standing approval, decision 73 rule 2: within a plan Einar has approved, the controller may advance the staging branch, run supabase db push to the staging project, change hosted Auth settings and email templates on staging, and run the plan's hosted checks on staging, without asking again. Each action is still recorded here when it happens. Excludes production, DNS, LABAK, anything that costs money, and anything outside the approved plan. Ends when Einar withdraws it.",
+          "note": "Einar in chat, 2026-11-12, asked \"Do you approve rules 1–9, 11, 13 and 14 as written?\" after the rules were set out: \"Approve them all\"."
         }
       ]
     },

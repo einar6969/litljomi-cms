@@ -5,9 +5,9 @@
 // Task 32 security r1's session swap: a link for another account is only held aside until the
 // visitor answers the question.
 //
-// The visitor signs in with a password, as editors do (PW-01). The sign-in hook refuses magic
-// links, so the link for another account is an invitation, and the link for the visitor's own
-// account is the second link of an email change.
+// The visitor signs in with a password, as editors do (PW-01). The link for another account is an
+// invitation, and the link for the visitor's own account is the second link of an email change.
+// An invitation's session lands on the set-password page first (PW-03); the proxy keeps it there.
 import { NextRequest } from 'next/server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { adminAuth, auth, brief, deleteThrowawayUsers, newUser, passwordSession, tokenHashOf, waitMail, type TestUser } from '../../../../../../../tests/integration/src/auth-api.ts';
@@ -34,12 +34,14 @@ vi.mock('next/navigation', () => ({
 
 const { confirmSignIn, keepSession, replaceSession } = await import('../actions');
 const { PENDING_COOKIE } = await import('../pending');
+const { PASSWORD_STEP_COOKIE } = await import('@/lib/auth/password-step');
 const { updateSession } = await import('@/lib/supabase/proxy');
 const { createEditorClient } = await import('@/lib/supabase/server');
 
 const CMS = 'http://localhost:3100';
 const HOME = /^REDIRECT \/$/;
 const QUESTION = /^REDIRECT \/auth\/confirm$/;
+const SET_PASSWORD = /^REDIRECT \/auth\/password$/;
 // Past the access token's lifetime (`jwt_expiry`, 3600 s in supabase/config.toml).
 const LATER_MS = 2 * 3600 * 1000;
 
@@ -85,8 +87,13 @@ const accepted = async (accessToken: string) => (await auth('/user', { method: '
  * request cookies it leaves (which Next.js passes on to the action) replace the jar.
  */
 async function proxyPost(): Promise<Response> {
-  const cookie = cookieStore.getAll().map(({ name, value }) => `${name}=${value}`).join('; ');
-  const request = new NextRequest(`${CMS}/auth/confirm`, { method: 'POST', headers: { cookie } });
+  return proxy('/auth/confirm', 'POST');
+}
+
+/** The proxy on a request for `path` carrying the jar; the request cookies it leaves replace the jar. */
+async function proxy(path: string, method = 'GET'): Promise<Response> {
+  const cookie = cookieStore.getAll().map(({ name, value }) => `${name}=${encodeURIComponent(value)}`).join('; ');
+  const request = new NextRequest(`${CMS}${path}`, { method, headers: { cookie } });
   const response = await updateSession(request);
   jar.clear();
   for (const { name, value } of request.cookies.getAll()) if (value !== '') jar.set(name, value);
@@ -146,8 +153,8 @@ describe('the proxy on the confirm POST (C3 follow-up)', () => {
     expect((await jarSession())?.user.id).toBe(a.id);
     expect(await accepted(refreshed!.access_token)).toBe(true);
 
-    // "Skipta um aðgang": now B, and A's refreshed session is revoked.
-    await expect(replaceSession()).rejects.toThrow(HOME);
+    // "Skipta um aðgang": now B, on the set-password page, and A's refreshed session is revoked.
+    await expect(replaceSession()).rejects.toThrow(SET_PASSWORD);
     expect(jar.has(PENDING_COOKIE)).toBe(false);
     const now = await jarSession();
     expect(now?.user.id).toBe(b.user.id);
@@ -168,7 +175,7 @@ describe('the proxy on the confirm POST (C3 follow-up)', () => {
     expect(response.headers.get('location')).toBeNull();
     expect(await jarSession()).toBeNull();
     const b = await invitation();
-    await expect(confirmSignIn(form({ token_hash: b.tokenHash, type: 'invite' }))).rejects.toThrow(HOME);
+    await expect(confirmSignIn(form({ token_hash: b.tokenHash, type: 'invite' }))).rejects.toThrow(SET_PASSWORD);
     expect(jar.has(PENDING_COOKIE)).toBe(false);
     expect((await jarSession())?.user.id).toBe(b.user.id);
   });
@@ -241,3 +248,41 @@ describe('a link for another account (Task 32 security r1)', () => {
     expect(new Map(jar)).toEqual(before);
   });
 });
+
+// PW-03: the step stored by the confirm action names the session Auth issued for the link, and the
+// proxy, reading the real tokens, keeps that session on the set-password page until the step ends.
+describe('the set-password step (PW-03)', () => {
+  it('keeps an invitation\'s session on the set-password page, and lets a later password sign-in through', async () => {
+    const b = await invitation();
+    await expect(confirmSignIn(form({ token_hash: b.tokenHash, type: 'invite', next: '/t/acme' }))).rejects.toThrow(SET_PASSWORD);
+    const session = await jarSession();
+    expect(session?.user.id).toBe(b.user.id);
+    const stored = JSON.parse(jar.get(PASSWORD_STEP_COOKIE)!) as { sessionId: string; next: string };
+    expect(stored).toEqual({ sessionId: JSON.parse(Buffer.from(session!.access_token.split('.')[1]!, 'base64url').toString()).session_id, next: '/t/acme' });
+
+    for (const path of ['/', '/t/acme', '/console']) {
+      expect((await proxy(path)).headers.get('location'), path).toBe(`${CMS}/auth/password`);
+    }
+    expect((await proxy('/auth/password')).headers.get('location')).toBeNull();
+    expect((await proxy('/login')).headers.get('location')).toBeNull();
+
+    // The invitee sets a password (as the browser does), then signs in with it: a new session, which
+    // the step does not name, so the proxy removes it and lets the page through.
+    const set = await auth('/user', { method: 'PUT', token: session!.access_token, body: { password: 'first password 7' } });
+    expect(set.status, brief(set)).toBe(200);
+    const { error } = await (await createEditorClient()).auth.signInWithPassword({ email: b.user.email, password: 'first password 7' });
+    expect(error).toBeNull();
+    const response = await proxy('/t/acme');
+    expect(response.headers.get('location')).toBeNull();
+    expect(response.headers.getSetCookie().some((c) => c.startsWith(`${PASSWORD_STEP_COOKIE}=;`))).toBe(true);
+  });
+
+  it('an email change starts no step', async () => {
+    const user = await newUser('pw03-change');
+    const own = await signInToJar(user);
+    const link = await ownLink(user, own.access_token);
+    await expect(confirmSignIn(form({ token_hash: link, type: 'email_change' }))).rejects.toThrow(HOME);
+    expect(jar.has(PASSWORD_STEP_COOKIE)).toBe(false);
+  });
+});
+

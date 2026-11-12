@@ -1,19 +1,16 @@
 'use client';
 
-import { useRef, useState, useSyncExternalStore, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { t } from '@/i18n/is';
 import { safeRedirectPath } from '@/lib/auth/routing';
 import { createBrowserEditorClient } from '@/lib/supabase/browser';
 import { Button } from '@/ui/Button';
 import { Field } from '@/ui/Field';
 import { Notice } from '@/ui/Notice';
+import { useHydrated } from '@/ui/useHydrated';
 import { discardPendingSession } from './actions';
 import { goTo } from './navigate';
 import { signInFailureMessage } from './outcome';
-
-// True once hydrated, false on the server and during hydration.
-const noSubscription = () => () => {};
-const useHydrated = () => useSyncExternalStore(noSubscription, () => true, () => false);
 
 type Props = {
   /** Where to go once signed in, as the sign-in page's query gave it; only a path on this origin is used. */
@@ -29,8 +26,9 @@ type Props = {
  * stored or shown.
  *
  * The button is disabled until the form is hydrated: before that, a native submit (the button, or
- * Enter in a field) would send both fields to the CMS in the URL. With the only submit button
- * disabled, the browser submits nothing.
+ * Enter in a field) would send both fields to the CMS. With the only submit button disabled, the
+ * browser submits nothing. The form is a POST, so even a scripted `form.submit()`, which ignores the
+ * button, never puts the fields in a URL.
  */
 export function SignInForm({ next }: Props) {
   const [failure, setFailure] = useState<string | null>(null);
@@ -64,7 +62,7 @@ export function SignInForm({ next }: Props) {
   }
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-3.5">
+    <form method="post" onSubmit={submit} className="flex flex-col gap-3.5">
       <Field label={t.login.emailLabel} htmlFor="email">
         <input id="email" name="email" type="email" autoComplete="email" required maxLength={254} />
       </Field>

@@ -17,10 +17,11 @@ type Props = { searchParams: Promise<{ token_hash?: Param; type?: Param; next?: 
 const first = (value: Param): string => (Array.isArray(value) ? (value[0] ?? '') : (value ?? ''));
 
 /**
- * The magic link's landing page (spec §4.4; decision 41.1). Opening it verifies nothing (email
- * security scanners open links automatically): it shows one "Halda áfram" button, and only that
- * button's POST (confirmSignIn) uses the link. The link's values go to the action unchecked; the
- * action checks them. Once loaded, the page drops the link's query from the address bar (M3-14).
+ * The landing page of the invitation and password-reset links (spec §4.4; decision 41.1; PW-03).
+ * Opening it verifies nothing (email security scanners open links automatically): it shows one
+ * "Halda áfram" button, and only that button's POST (confirmSignIn) uses the link. The link's values
+ * go to the action unchecked; the action checks them, and refuses a magic link's. Once loaded, the
+ * page drops the link's query from the address bar (M3-14).
  *
  * A visitor who already has a session is told so, without naming either account (decision 42.2, Q1).
  * If the link turns out to be for another account, the action holds its session aside and comes back

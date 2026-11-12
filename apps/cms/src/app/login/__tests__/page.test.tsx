@@ -35,6 +35,10 @@ describe('the sign-in page', () => {
     expect(await render({ next: ['/t/labak', '/console'] })).toContain('data-next="none"');
   });
 
+  it('links to the "Gleymt lykilorð?" form (PW-03)', async () => {
+    expect(await render({})).toContain(`<a href="/login/forgot">${t.login.forgotLink}</a>`);
+  });
+
   it('says a link was invalid after a failed link', async () => {
     expect(await render({ error: 'link' })).toContain(t.login.linkInvalid);
   });

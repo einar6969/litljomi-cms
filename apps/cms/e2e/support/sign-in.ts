@@ -1,8 +1,9 @@
 // Signing in through the real flows: the sign-in form's email and password (PW-02), and a link's
-// "Halda áfram" button on the CMS's /auth/confirm page (decision 41.1).
+// "Halda áfram" button on the CMS's /auth/confirm page (decision 41.1). An invitation or a reset
+// link then lands on the set-password page (PW-03).
 import { expect, type Page } from '@playwright/test';
 import { t } from '../../src/i18n/is';
-import { signInTokenHash } from './console-admin';
+import { recoveryTokenHash } from './console-admin';
 import { CMS_URL } from './local';
 import { PERSONA_PASSWORD, type E2ePersona } from './personas';
 
@@ -15,12 +16,13 @@ export async function submitSignIn(page: Page, email: string, password: string, 
 }
 
 /**
- * The confirm page's sign-in link for `persona`, made by the admin script (the sign-in email carries
- * none, decision 72.1). Not opened; it works once, in any browser.
+ * A password-reset link for `persona`, as the reset mail carries it, made by the admin script (the
+ * confirm page refuses magic links, PW-03). Not opened; it works once, in any browser, and signs
+ * the persona in on the set-password page without changing its password.
  */
-export async function signInLink(persona: E2ePersona): Promise<URL> {
-  const { tokenHash } = await signInTokenHash(persona);
-  return new URL(`${CMS_URL}/auth/confirm?${new URLSearchParams({ token_hash: tokenHash, type: 'email' })}`);
+export async function recoveryLink(persona: E2ePersona): Promise<URL> {
+  const { tokenHash } = await recoveryTokenHash(persona);
+  return new URL(`${CMS_URL}/auth/confirm?${new URLSearchParams({ token_hash: tokenHash, type: 'recovery' })}`);
 }
 
 /** Opens the confirm page of `link` on `page`, without pressing its button (as a mail scanner would). */

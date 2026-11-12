@@ -122,7 +122,7 @@ test.describe('sign-in', () => {
     await shoot(page, 'login-email-change-waiting');
 
     // The confirm page: one button. A made-up hash, never pressed.
-    await page.goto(`/auth/confirm?token_hash=${'0'.repeat(56)}&type=email`);
+    await page.goto(`/auth/confirm?token_hash=${'0'.repeat(56)}&type=recovery`);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(t.confirm.title);
     await expect(page.getByRole('button', { name: t.confirm.submit })).toBeVisible();
     await shoot(page, 'confirm');
@@ -168,7 +168,7 @@ test.describe('labak: shell, list and news form', () => {
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(t.notFound.title);
     await shoot(page, 'not-found');
 
-    await page.goto(`/auth/confirm?token_hash=${'0'.repeat(56)}&type=email`);
+    await page.goto(`/auth/confirm?token_hash=${'0'.repeat(56)}&type=recovery`);
     await expect(page.getByText(t.confirm.signedIn)).toBeVisible();
     await shoot(page, 'confirm-signed-in');
   });
