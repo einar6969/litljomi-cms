@@ -13,6 +13,8 @@ const access = vi.hoisted(() => ({ consoleAccess: vi.fn() }));
 vi.mock('@/lib/console-access', () => access);
 const auth = vi.hoisted(() => ({ getUser: vi.fn() }));
 vi.mock('@/lib/supabase/server', () => ({ createEditorClient: vi.fn(async () => ({ auth })) }));
+// A client component with its own tests (ui/__tests__/keep-session-fresh.test.tsx).
+vi.mock('@/ui/KeepSessionFresh', () => ({ KeepSessionFresh: () => <i data-keep-session-fresh="" /> }));
 
 const { default: ConsoleLayout } = await import('../layout');
 const { default: GatedLayout } = await import('../(gated)/layout');
@@ -37,10 +39,11 @@ describe('the console layout', () => {
     expect(access.consoleAccess).not.toHaveBeenCalled();
   });
 
-  it.each(['needs_mfa', 'ok'])('renders its children for %s, marked as English', async (level) => {
+  // R7: the browser keeps the session fresh in every open console tab, from the admin's own address.
+  it.each(['needs_mfa', 'ok'])('renders its children for %s, marked as English, keeping the session fresh', async (level) => {
     access.consoleAccess.mockResolvedValue(level);
     const html = renderToStaticMarkup(await ConsoleLayout({ children: 'child' }));
-    expect(html).toBe('<div lang="en" class="console">child</div>');
+    expect(html).toBe('<div lang="en" class="console"><i data-keep-session-fresh=""></i>child</div>');
   });
 });
 

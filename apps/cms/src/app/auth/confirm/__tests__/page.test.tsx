@@ -6,6 +6,9 @@ const detached = vi.hoisted(() => ({ verifyOtp: vi.fn(), getUser: vi.fn(), admin
 vi.mock('@/lib/supabase/server', () => ({ createEditorClient: vi.fn(async () => ({ auth })), createDetachedClient: vi.fn(() => ({ auth: detached })) }));
 const pending = vi.hoisted(() => ({ readPending: vi.fn() }));
 vi.mock('../pending', () => pending);
+// A client component with its own tests (ui/__tests__/keep-session-fresh.test.tsx).
+vi.mock('@/ui/KeepSessionFresh', () => ({ KeepSessionFresh: () => <i data-keep-session-fresh="" /> }));
+const KEEPER = '<i data-keep-session-fresh=""></i>';
 
 const { createEditorClient } = await import('@/lib/supabase/server');
 const { default: ConfirmPage, metadata } = await import('../page');
@@ -82,6 +85,14 @@ describe('GET /auth/confirm', () => {
     expect(createEditorClient).toHaveBeenCalledOnce();
     expect(auth.getUser).toHaveBeenCalledOnce();
     expect(html).not.toContain(t.confirm.signedIn);
+    expect(html).not.toContain(KEEPER);
+  });
+
+  // R7: the browser keeps the visitor's session fresh while the page is open, so the button's POST
+  // still carries it (the server never refreshes one) and the question below is still asked.
+  it('keeps a signed-in visitor\'s session fresh while the page is open', async () => {
+    auth.getUser.mockResolvedValue(SIGNED_IN);
+    expect(await render({ token_hash: HASH, type: 'recovery' })).toContain(KEEPER);
   });
 
   // Decision 42.2 (Q1): a signed-in visitor is told so; the page itself changes nothing, and the one
@@ -127,6 +138,7 @@ describe('GET /auth/confirm with a pending link session (M3-14)', () => {
     expect(html).toContain(`${t.confirm.replaceAccount} <strong>link-owner@example.is</strong>.`);
     expect(html).toContain(t.confirm.replaceDetail);
     expect(buttons(html)).toEqual([t.confirm.replace, t.confirm.keep]);
+    expect(html).toContain(KEEPER);
     // The visitor's own account is not named, and nothing is verified, revoked or carried in the page.
     expect(html).not.toContain('someone@example.is');
     expect(html).not.toContain(PENDING.accessToken);

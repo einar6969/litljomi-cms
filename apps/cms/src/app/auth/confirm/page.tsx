@@ -3,6 +3,7 @@ import { t } from '@/i18n/is';
 import { createDetachedClient, createEditorClient } from '@/lib/supabase/server';
 import { AuthFrame } from '@/ui/AuthFrame';
 import { Button } from '@/ui/Button';
+import { KeepSessionFresh } from '@/ui/KeepSessionFresh';
 import { Notice } from '@/ui/Notice';
 import { confirmSignIn, keepSession, replaceSession } from './actions';
 import { DropLinkQuery } from './DropLinkQuery';
@@ -23,7 +24,9 @@ const first = (value: Param): string => (Array.isArray(value) ? (value[0] ?? '')
  * go to the action unchecked; the action checks them, and refuses a magic link's. Once loaded, the
  * page drops the link's query from the address bar (M3-14).
  *
- * A visitor who already has a session is told so, without naming either account (decision 42.2, Q1).
+ * A visitor who already has a session is told so, without naming either account (decision 42.2, Q1),
+ * and the browser keeps that session fresh while the page is open (R7: the server never refreshes
+ * one, so the button's POST would otherwise find it expired and ask nothing).
  * If the link turns out to be for another account, the action holds its session aside and comes back
  * here without a query: the page then names the account the link signs in to and asks before
  * replacing the visitor's session (M3-14).
@@ -45,9 +48,12 @@ export default async function ConfirmPage({ searchParams }: Props) {
       <h1>{emailChange ? t.confirm.emailChangeTitle : t.confirm.title}</h1>
       <p className="lede">{emailChange ? t.confirm.emailChangeIntro : t.confirm.intro}</p>
       {signedIn ? (
-        <Notice tone="info" role="status">
-          <span className="font-semibold">{t.confirm.signedIn}</span> {t.confirm.signedInDetail}
-        </Notice>
+        <>
+          <KeepSessionFresh />
+          <Notice tone="info" role="status">
+            <span className="font-semibold">{t.confirm.signedIn}</span> {t.confirm.signedInDetail}
+          </Notice>
+        </>
       ) : null}
       <form action={confirmSignIn}>
         <input type="hidden" name="token_hash" value={first(token_hash)} />
@@ -65,6 +71,7 @@ export default async function ConfirmPage({ searchParams }: Props) {
 function ReplaceQuestion({ email }: { email: string }) {
   return (
     <AuthFrame>
+      <KeepSessionFresh />
       <h1>{t.confirm.replaceTitle}</h1>
       <p>
         {t.confirm.replaceAccount} <strong>{email}</strong>.

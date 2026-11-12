@@ -15,6 +15,15 @@ vi.mock('../SetPasswordForm', () => ({
   SetPasswordForm: ({ email, needsCode }: { email: string; needsCode: boolean }) => <form data-email={email} data-needs-code={String(needsCode)} />,
 }));
 
+// The sign-out form is a client component with its own tests; the page passes it the action.
+vi.mock('@/ui/SignOutForm', () => ({
+  SignOutForm: ({ signOut, label }: { signOut: unknown; label?: string }) => <i data-sign-out={signOut === loginActions.signOut ? 'signOut' : 'other'} data-label={label ?? ''} />,
+}));
+const loginActions = vi.hoisted(() => ({ signOut: vi.fn(), discardPendingSession: vi.fn() }));
+vi.mock('@/app/login/actions', () => loginActions);
+// A client component with its own tests (ui/__tests__/keep-session-fresh.test.tsx).
+vi.mock('@/ui/KeepSessionFresh', () => ({ KeepSessionFresh: () => <i data-keep-session-fresh="" /> }));
+
 const { default: SetPasswordPage } = await import('../page');
 const { t } = await import('@/i18n/is');
 
@@ -40,6 +49,19 @@ describe('the set-password page (PW-03)', () => {
     expect(html).toContain(t.password.intro);
     expect(html).toContain('data-email="ritstjori@example.is"');
     expect(html).toContain('data-needs-code="false"');
+  });
+
+  // S29: someone who opened the link on a shared computer can end the session here, without setting
+  // a password (the proxy keeps every other page away while the step lasts).
+  it('offers the sign-out, with the sign-in actions\' own signOut', async () => {
+    const html = await render();
+    expect(html).toContain('<i data-sign-out="signOut" data-label=""></i>');
+  });
+
+  // R7: the browser keeps the session fresh while the page is open, as on every other signed-in
+  // page, so that the password, the code and the sign-out find it good after an hour there.
+  it('keeps the session fresh', async () => {
+    expect(await render()).toContain('<i data-keep-session-fresh=""></i>');
   });
 
   // Auth wants `aal2` to change the password of an account with a verified factor (GoTrue v2.197.0

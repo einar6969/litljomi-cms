@@ -1,12 +1,25 @@
 // Pure routing rules of sign-in, shared by the proxy and the links' confirm action.
 
+/** The page where the browser refreshes an expired session and goes back (R7; app/auth/refresh). */
+export const REFRESH_PATH = '/auth/refresh';
+
+/** The pages that use no session: the sign-in page, its "Gleymt lykilorð?" form and the refresh page. */
+const SESSIONLESS_PAGES = new Set(['/login', '/login/forgot', REFRESH_PATH]);
+
 /**
- * The paths reachable without a session: the sign-in page, its "Gleymt lykilorð?" form and the
- * links' confirm page.
+ * The paths reachable without a session: the pages that use none, and the links' confirm page.
  */
-const PUBLIC_PATHS = new Set(['/login', '/login/forgot', '/auth/confirm']);
+const PUBLIC_PATHS = new Set([...SESSIONLESS_PAGES, '/auth/confirm']);
 
 export const isPublicPath = (pathname: string): boolean => PUBLIC_PATHS.has(pathname);
+
+/**
+ * Whether a page navigation to `pathname` with an expired session goes to the refresh page first
+ * (R7): every page that uses the session, the confirm page included (it asks a signed-in visitor
+ * before a link replaces the session, M3-14). Not the pages that use none: a failed refresh ends on
+ * /login, so this never loops.
+ */
+export const refreshesExpiredSession = (pathname: string): boolean => !SESSIONLESS_PAGES.has(pathname);
 
 // A same-origin path: one leading `/`, not followed by `/` (a protocol-relative URL), and only
 // printable ASCII without a backslash (browsers read `\` as `/`, and the URL parser drops tabs

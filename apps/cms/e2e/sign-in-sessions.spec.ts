@@ -16,6 +16,7 @@ import { CMS_URL, SUPABASE_URL } from './support/local';
 import { confirmLinkOf, waitForNewMessage } from './support/mailpit';
 import { PERSONA_EMAILS } from './support/personas';
 import { sessionState } from './support/session';
+import { accessToken, expectRefreshRefused, expireSession, expOf, sessionCookies } from './support/session-cookies';
 import { signIn } from './support/sign-in';
 import { expect, newLoopbackContext, test } from './support/test';
 
@@ -66,6 +67,55 @@ test.describe('headers', () => {
 });
 
 test.describe('session cookies', () => {
+  // R7: the CMS server never refreshes a session; the browser does, from the editor's own address.
+  test('an expired session on a page navigation is refreshed in the browser, through /auth/refresh, back on the same page and still signed in', async ({ page, context }) => {
+    // A session of its own: the refresh rotates its refresh token, which the stored sessions must keep.
+    await signIn(page, PERSONA_EMAILS.editor_demo);
+    // Off the editor first, whose browser client would otherwise refresh the session itself.
+    await page.goto('about:blank');
+    await expireSession(context);
+    const forged = await accessToken(context);
+
+    const refreshes: string[] = [];
+    page.on('request', (request) => {
+      if (new URL(request.url()).searchParams.get('grant_type') === 'refresh_token') refreshes.push(request.url());
+    });
+    // The page loads, one request per redirect hop.
+    const loads: string[] = [];
+    page.on('request', (request) => {
+      if (request.isNavigationRequest() && request.frame() === page.mainFrame()) loads.push(new URL(request.url()).pathname);
+    });
+
+    await page.goto('/t/demo/event?q=a');
+    await expect(page).toHaveURL(`${CMS_URL}/t/demo/event?q=a`);
+    await expect(page.getByRole('button', { name: t.app.signOut })).toBeVisible();
+    expect(loads).toEqual(['/t/demo/event', '/auth/refresh', '/t/demo/event']);
+    // One refresh, from the browser: none from the CMS server (its client refuses them).
+    expect(refreshes).toEqual([`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`]);
+    const fresh = await accessToken(context);
+    expect(fresh).not.toBe(forged);
+    expect(expOf(fresh)).toBeGreaterThan(Date.now() / 1000);
+  });
+
+  // R7 security review: the CMS server cannot load an expired session, so "Skrá út" signs out in the
+  // browser first, which refreshes it from the editor's address and ends it in Auth.
+  test('signing out once the access token has expired ends the session in Auth: its refresh token refreshes no more', async ({ page, context }) => {
+    // A session of its own, which the sign-out ends.
+    await signIn(page, PERSONA_EMAILS.editor_demo);
+    await page.goto('/t/demo');
+    // The page's browser client has started (KeepSessionFresh) with the session still good, so it
+    // refreshes the expired one only at its next check, up to 30 s later: "Skrá út" comes first.
+    await page.waitForLoadState('networkidle');
+    await expireSession(context);
+    const expired = await sessionCookies(context);
+
+    await page.getByRole('button', { name: t.app.signOut }).click();
+    await page.waitForURL(`${CMS_URL}/login`);
+    expect(await sessionCookies(context)).toEqual([]);
+
+    await expectRefreshRefused(page, expired, '/t/demo');
+  });
+
   test('are same-site lax and bounded, readable by the browser client, and not Secure on local http', async ({ page, context }) => {
     await signIn(page, PERSONA_EMAILS.editor_demo);
     const cookies = (await context.cookies()).filter(({ name }) => name.startsWith('sb-'));

@@ -12,7 +12,9 @@ const state = vi.hoisted(() => ({
   cookies: null as null | CookieMethods,
   getSession: null as null | ReturnType<typeof vi.fn>,
 }));
-vi.mock('@supabase/ssr', () => ({
+// The real cookie helpers (combineChunks and base64url), which session-expiry.ts reads the session with.
+vi.mock('@supabase/ssr', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@supabase/ssr')>()),
   createServerClient: vi.fn((_url: string, _key: string, options: { cookies: CookieMethods }) => {
     state.cookies = options.cookies;
     state.getSession = vi.fn(async () => ({ data: { session: state.accessToken ? { access_token: state.accessToken } : null }, error: null }));
@@ -32,6 +34,7 @@ const { createServerClient } = await import('@supabase/ssr');
 const { updateSession } = await import('../proxy');
 const { SESSION_MAX_AGE } = await import('../session-cookies');
 const { PASSWORD_STEP_COOKIE, encodePasswordStep } = await import('../../auth/password-step');
+const { fetchWithoutRefresh } = await import('../no-refresh-fetch');
 
 const ORIGIN = 'http://localhost:3100';
 const request = (path: string, cookie = 'sb-access=old') => new NextRequest(`${ORIGIN}${path}`, { headers: { cookie } });
@@ -56,6 +59,13 @@ describe('updateSession', () => {
     await updateSession(request('/'));
     expect(createServerClient).toHaveBeenCalledWith('http://127.0.0.1:54321', 'sb_publishable_test_value', expect.objectContaining({ db: { schema: 'api' } }));
     expect(state.cookies!.getAll()).toEqual([{ name: 'sb-access', value: 'old' }]);
+  });
+
+  // R7: the CMS server never sends a refresh, so Auth's per-address limit never counts its address.
+  it('gives the client the fetch that refuses refreshes', async () => {
+    state.user = { id: 'u' };
+    await updateSession(request('/'));
+    expect(createServerClient).toHaveBeenCalledWith(expect.any(String), expect.any(String), expect.objectContaining({ global: { fetch: fetchWithoutRefresh } }));
   });
 
   it('lets a signed-in editor through, carrying refreshed session cookies and headers', async () => {
@@ -178,6 +188,84 @@ describe('updateSession', () => {
       const response = await updateSession(withStep('/auth/password'));
       expect(response.headers.get('location')).toBe(`${ORIGIN}/login`);
       expect(response.cookies.get(PASSWORD_STEP_COOKIE)).toBeUndefined();
+    });
+  });
+
+  // R7: an expired session is refreshed in the browser, from the editor's own address, never here.
+  describe('an expired session', () => {
+    const SESSION_COOKIE = 'sb-127-auth-token';
+    const base64url = (value: string) => Buffer.from(value).toString('base64url');
+    const session = (exp: number) => {
+      const accessToken = `h.${base64url(JSON.stringify({ exp, session_id: '3f2b8c1e-5a4d-4e6f-9b0a-1c2d3e4f5a6b' }))}.s`;
+      return `${SESSION_COOKIE}=base64-${base64url(JSON.stringify({ access_token: accessToken, refresh_token: 'r', expires_at: exp, user: { id: 'u' } }))}`;
+    };
+    const nowS = () => Math.floor(Date.now() / 1000);
+    const expired = () => session(nowS() - 60);
+    const withCookie = (path: string, cookie: string, init: { method?: string; headers?: Record<string, string> } = {}) =>
+      new NextRequest(`${ORIGIN}${path}`, { method: init.method ?? 'GET', headers: { cookie, ...init.headers } });
+    const refreshTo = (next: string) => `${ORIGIN}/auth/refresh?next=${encodeURIComponent(next)}`;
+
+    it.each([
+      ['/', '/'],
+      ['/t/acme/news/1', '/t/acme/news/1'],
+      ['/t/acme/news?q=frétt', '/t/acme/news?q=fr%C3%A9tt'],
+      ['/console', '/console'],
+      ['/auth/password', '/auth/password'],
+      // The confirm page asks a visitor with a session before a link replaces it (M3-14), so it needs the session refreshed too.
+      ['/auth/confirm?token_hash=abc&type=invite', '/auth/confirm?token_hash=abc&type=invite'],
+    ])('sends a page navigation to %s to /auth/refresh, coming back to the same page', async (path, next) => {
+      const response = await updateSession(withCookie(path, expired()));
+      expect(response.status).toBe(307);
+      expect(response.headers.get('location')).toBe(refreshTo(next));
+      expect(createServerClient).not.toHaveBeenCalled();
+    });
+
+    // A client-side navigation fetches the page with `_rsc`, a cache key of the router's; the full
+    // load after the refresh must not carry it.
+    it('drops the router\'s _rsc from the page it comes back to', async () => {
+      const response = await updateSession(withCookie('/t/acme/news?q=1&_rsc=abc12', expired(), { headers: { rsc: '1' } }));
+      expect(response.headers.get('location')).toBe(refreshTo('/t/acme/news?q=1'));
+    });
+
+    it('leaves the session cookies for the browser to refresh', async () => {
+      const response = await updateSession(withCookie('/t/acme', expired()));
+      expect(response.cookies.getAll()).toEqual([]);
+    });
+
+    it('keeps the set-password step for after the refresh', async () => {
+      const cookie = `${expired()}; ${PASSWORD_STEP_COOKIE}=${encodeURIComponent(encodePasswordStep({ sessionId: '3f2b8c1e-5a4d-4e6f-9b0a-1c2d3e4f5a6b', next: '/' }))}`;
+      const response = await updateSession(withCookie('/t/acme', cookie));
+      expect(response.headers.get('location')).toBe(refreshTo('/t/acme'));
+      expect(response.cookies.get(PASSWORD_STEP_COOKIE)).toBeUndefined();
+    });
+
+    it.each(['/login', '/login/forgot', '/auth/refresh?next=%2Ft%2Facme'])('lets a navigation to %s through as it is, with no refresh anywhere', async (path) => {
+      const response = await updateSession(withCookie(path, expired()));
+      expect(response.headers.get('location')).toBeNull();
+      expect(response.cookies.getAll()).toEqual([]);
+      expect(createServerClient).not.toHaveBeenCalled();
+    });
+
+    // Not a page navigation: the server cannot refresh, so the request counts as signed out. The
+    // editor's own handling keeps the work (spec §4.4; e2e/session-expiry.spec.ts).
+    it('sends a server action on to /login as a 307, as without a session', async () => {
+      const response = await updateSession(withCookie('/t/acme/news/1', expired(), { method: 'POST', headers: { 'next-action': 'an-action-id' } }));
+      expect(response.status).toBe(307);
+      expect(response.headers.get('location')).toBe(`${ORIGIN}/login`);
+      expect(createServerClient).not.toHaveBeenCalled();
+    });
+
+    it.each(['/login', '/auth/confirm'])('lets a server action on %s through, where it counts as signed out', async (path) => {
+      const response = await updateSession(withCookie(path, expired(), { method: 'POST', headers: { 'next-action': 'an-action-id' } }));
+      expect(response.headers.get('location')).toBeNull();
+      expect(createServerClient).not.toHaveBeenCalled();
+    });
+
+    it('checks a session that has not expired with Auth, as before', async () => {
+      state.user = { id: 'u' };
+      const response = await updateSession(withCookie('/t/acme', session(nowS() + 30)));
+      expect(response.headers.get('location')).toBeNull();
+      expect(createServerClient).toHaveBeenCalledOnce();
     });
   });
 });

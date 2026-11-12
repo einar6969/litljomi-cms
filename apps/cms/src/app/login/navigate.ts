@@ -6,3 +6,8 @@
 export function goTo(path: string): void {
   window.location.assign(path);
 }
+
+/** The same, replacing the current page in the tab's history (a page that only passes through). */
+export function replaceTo(path: string): void {
+  window.location.replace(path);
+}

@@ -2,6 +2,7 @@
 
 import { redirect } from 'next/navigation';
 import { discardPending } from '@/app/auth/confirm/revoke';
+import { clearPasswordStep } from '@/app/auth/password/step';
 import { createEditorClient } from '@/lib/supabase/server';
 
 // Password sign-in runs in the browser, straight to Auth with the publishable key (spec §4.4;
@@ -20,12 +21,14 @@ export async function discardPendingSession(): Promise<void> {
 /**
  * Ends the editor's session on this device and returns to the sign-in page. A session a link left
  * waiting for the confirm page's question (M3-14) is discarded first, so it cannot be taken over
- * after the editor has signed out; a failure there does not keep the editor signed in.
+ * after the editor has signed out; a failure there does not keep the editor signed in. The
+ * set-password step (PW-03) ends with the session, as when signing out from that page (S29).
  */
 export async function signOut(): Promise<void> {
   await discardPendingQuietly();
   const client = await createEditorClient();
   await client.auth.signOut({ scope: 'local' });
+  await clearPasswordStep();
   redirect('/login');
 }
 
