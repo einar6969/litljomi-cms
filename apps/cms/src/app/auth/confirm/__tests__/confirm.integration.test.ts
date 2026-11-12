@@ -11,7 +11,7 @@
 import { NextRequest } from 'next/server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { adminAuth, auth, brief, deleteThrowawayUsers, newUser, passwordSession, tokenHashOf, waitMail, type TestUser } from '../../../../../../../tests/integration/src/auth-api.ts';
-import { env } from '../../../../../../../tests/integration/src/env.ts';
+import { env, stack } from '../../../../../../../tests/integration/src/env.ts';
 import { closeAll } from '../../../../../../../tests/integration/src/sql.ts';
 
 type Cookie = { name: string; value: string };
@@ -38,7 +38,7 @@ const { PASSWORD_STEP_COOKIE } = await import('@/lib/auth/password-step');
 const { updateSession } = await import('@/lib/supabase/proxy');
 const { createEditorClient } = await import('@/lib/supabase/server');
 
-const CMS = 'http://localhost:3100';
+const CMS = stack.cmsUrl;
 const HOME = /^REDIRECT \/$/;
 const QUESTION = /^REDIRECT \/auth\/confirm$/;
 const SET_PASSWORD = /^REDIRECT \/auth\/password$/;

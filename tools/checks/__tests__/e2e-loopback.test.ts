@@ -11,11 +11,15 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MANAGED_CLI_VARIABLES, stackSlot } from '../../stack/slot.ts';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
 /** The variables every Supabase CLI call on the e2e path must carry. */
 const SUPABASE_QUIET = { SUPABASE_NO_UPDATE_NOTIFIER: '1', SUPABASE_TELEMETRY_DISABLED: '1' };
+/** The stack slot this test run is in (the modules imported below read it too). */
+const STACK = stackSlot();
+const SLOT_2 = stackSlot({ CMS_STACK_SLOT: '2' });
 
 // Only `spawn` is replaced (global-setup.ts starts the seed with it); `spawnSync`, which these tests
 // use to run cms-next.sh for real, keeps Node's own implementation.
@@ -36,9 +40,10 @@ afterEach(() => {
 
 /**
  * A fake `supabase` on PATH: it writes its environment to $FAKE_ENV_OUT and prints a loopback
- * stack's status in the format asked for (`-o env` or `-o json`). $FAKE_API_URL replaces the env
- * format's API_URL; $FAKE_STATUS_ERROR makes it fail with that message on stderr, as the real CLI
- * does without a running stack.
+ * stack's status in the format asked for (`-o env` or `-o json`), on the ports the slot's
+ * SUPABASE_*_PORT overrides name, as the real CLI does. $FAKE_API_URL replaces the env format's
+ * API_URL, $FAKE_JSON_API_PORT the json format's API port; $FAKE_STATUS_ERROR makes it fail with that
+ * message on stderr, as the real CLI does without a running stack.
  */
 function fakeSupabase(binDir: string): void {
   mkdirSync(binDir, { recursive: true });
@@ -50,8 +55,8 @@ function fakeSupabase(binDir: string): void {
       'env > "$FAKE_ENV_OUT"',
       'if [ -n "${FAKE_STATUS_ERROR:-}" ]; then echo "$FAKE_STATUS_ERROR" >&2; exit 1; fi',
       'case "$*" in',
-      '  *json*) printf \'%s\\n\' \'{"API_URL":"http://127.0.0.1:54321","DB_URL":"postgresql://postgres:postgres@127.0.0.1:54322/postgres","MAILPIT_URL":"http://127.0.0.1:54324","PUBLISHABLE_KEY":"pk","SECRET_KEY":"sk"}\' ;;',
-      '  *) printf \'%s\\n\' "API_URL=\\"${FAKE_API_URL:-http://127.0.0.1:54321}\\"" \'PUBLISHABLE_KEY="pk"\' \'SECRET_KEY="sk"\' ;;',
+      '  *json*) printf \'{"API_URL":"http://127.0.0.1:%s","DB_URL":"postgresql://postgres:postgres@127.0.0.1:%s/postgres","MAILPIT_URL":"http://127.0.0.1:%s","PUBLISHABLE_KEY":"pk","SECRET_KEY":"sk"}\\n\' "${FAKE_JSON_API_PORT:-${SUPABASE_API_PORT:-54321}}" "${SUPABASE_DB_PORT:-54322}" "${SUPABASE_LOCAL_SMTP_PORT:-54324}" ;;',
+      '  *) printf \'%s\\n\' "API_URL=\\"${FAKE_API_URL:-http://127.0.0.1:${SUPABASE_API_PORT:-54321}}\\"" \'PUBLISHABLE_KEY="pk"\' \'SECRET_KEY="sk"\' ;;',
       'esac',
       '',
     ].join('\n'),
@@ -69,11 +74,14 @@ function readEnvDump(path: string): Record<string, string> {
   return out;
 }
 
-/** The env of this process without the variables under test, so a pass never comes from the caller. */
+/**
+ * The env of this process without the variables under test (the quieting ones, the stack slot and
+ * its CLI overrides), so a pass never comes from the caller; then `extra`.
+ */
 function cleanEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env, ...extra };
-  for (const k of ['SUPABASE_NO_UPDATE_NOTIFIER', 'SUPABASE_TELEMETRY_DISABLED', 'NEXT_TELEMETRY_DISABLED']) delete env[k];
-  return env;
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const k of ['SUPABASE_NO_UPDATE_NOTIFIER', 'SUPABASE_TELEMETRY_DISABLED', 'NEXT_TELEMETRY_DISABLED', 'CMS_STACK_SLOT', ...MANAGED_CLI_VARIABLES]) delete env[k];
+  return { ...env, ...extra };
 }
 
 describe('tests/integration/scripts/cms-next.sh', () => {
@@ -82,6 +90,10 @@ describe('tests/integration/scripts/cms-next.sh', () => {
     const script = join(tmp, 'repo', 'tests', 'integration', 'scripts', 'cms-next.sh');
     mkdirSync(dirname(script), { recursive: true });
     copyFileSync(join(repoRoot, 'tests', 'integration', 'scripts', 'cms-next.sh'), script);
+    // cms-next.sh runs `supabase status` through the stack slot's wrapper.
+    const stackDir = join(tmp, 'repo', 'tools', 'stack');
+    mkdirSync(stackDir, { recursive: true });
+    for (const f of ['slot.ts', 'supabase.ts', 'package.json']) copyFileSync(join(repoRoot, 'tools', 'stack', f), join(stackDir, f));
     const cmsDir = join(tmp, 'repo', 'apps', 'cms');
     const nextBin = join(cmsDir, 'node_modules', 'next', 'dist', 'bin', 'next');
     mkdirSync(dirname(nextBin), { recursive: true });
@@ -111,6 +123,31 @@ describe('tests/integration/scripts/cms-next.sh', () => {
     const result = run(script, bin);
     expect(result.status, result.stderr).toBe(0);
     expect(readEnvDump(join(tmp, 'supabase.env'))).toMatchObject(SUPABASE_QUIET);
+  });
+
+  it('runs `supabase status` on slot 1 with no stack overrides', () => {
+    const { script, bin } = scratchRepo();
+    const result = run(script, bin);
+    expect(result.status, result.stderr).toBe(0);
+    const supabaseEnv = readEnvDump(join(tmp, 'supabase.env'));
+    for (const name of MANAGED_CLI_VARIABLES) expect(supabaseEnv, name).not.toHaveProperty(name);
+    expect(readEnvDump(join(tmp, 'next.env'))).toMatchObject({ NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321' });
+  });
+
+  it('runs `supabase status` on slot 2 with its overrides, and gives next slot 2’s stack', () => {
+    const { script, bin } = scratchRepo();
+    const result = run(script, bin, { CMS_STACK_SLOT: '2' });
+    expect(result.status, result.stderr).toBe(0);
+    expect(readEnvDump(join(tmp, 'supabase.env'))).toMatchObject({ ...SUPABASE_QUIET, ...SLOT_2.cliEnv });
+    expect(readEnvDump(join(tmp, 'next.env'))).toMatchObject({ NEXT_PUBLIC_SUPABASE_URL: SLOT_2.apiUrl });
+  });
+
+  it('refuses an invalid slot before running next', () => {
+    const { script, bin } = scratchRepo();
+    const result = run(script, bin, { CMS_STACK_SLOT: '9' });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('CMS_STACK_SLOT must be unset, 1 or 2');
+    expect(() => readFileSync(join(tmp, 'next.env'))).toThrow();
   });
 
   it('runs `next` with Next.js telemetry off', () => {
@@ -170,16 +207,34 @@ describe('tests/integration/scripts/cms-next.sh', () => {
 });
 
 describe('tests/integration/src/env.ts', () => {
-  it('runs `supabase status` with the update check and telemetry off', () => {
+  const envTs = pathToFileURL(join(repoRoot, 'tests', 'integration', 'src', 'env.ts')).href;
+  function load(extra: Record<string, string> = {}) {
     const bin = join(tmp, 'bin');
     fakeSupabase(bin);
-    const envTs = pathToFileURL(join(repoRoot, 'tests', 'integration', 'src', 'env.ts')).href;
-    const result = spawnSync(process.execPath, ['--input-type=module', '-e', `await import(${JSON.stringify(envTs)});`], {
+    return spawnSync(process.execPath, ['--input-type=module', '-e', `const m = await import(${JSON.stringify(envTs)}); console.log(m.env.apiUrl);`], {
       encoding: 'utf8',
-      env: cleanEnv({ PATH: `${bin}:${process.env.PATH ?? ''}`, FAKE_ENV_OUT: join(tmp, 'supabase.env') }),
+      env: cleanEnv({ PATH: `${bin}:${process.env.PATH ?? ''}`, FAKE_ENV_OUT: join(tmp, 'supabase.env'), ...extra }),
     });
+  }
+
+  it('runs `supabase status` with the update check and telemetry off', () => {
+    const result = load();
     expect(result.status, result.stderr).toBe(0);
     expect(readEnvDump(join(tmp, 'supabase.env'))).toMatchObject(SUPABASE_QUIET);
+    expect(result.stdout.trim()).toBe('http://127.0.0.1:54321');
+  });
+
+  it('reads slot 2’s stack with its overrides', () => {
+    const result = load({ CMS_STACK_SLOT: '2' });
+    expect(result.status, result.stderr).toBe(0);
+    expect(readEnvDump(join(tmp, 'supabase.env'))).toMatchObject({ ...SUPABASE_QUIET, ...SLOT_2.cliEnv });
+    expect(result.stdout.trim()).toBe(SLOT_2.apiUrl);
+  });
+
+  it('refuses a stack that is not the slot’s', () => {
+    const result = load({ CMS_STACK_SLOT: '2', FAKE_JSON_API_PORT: '54321' });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("refusing the stack at 127.0.0.1:54321: slot 2's stack uses port 54331");
   });
 });
 
@@ -206,6 +261,9 @@ describe('apps/cms/playwright.config.ts', () => {
     };
     expect(config.webServer.map((w) => w.name)).toEqual(['cms', 'demo-site']);
     for (const server of config.webServer) expect(server.env, server.name).toMatchObject({ ...SUPABASE_QUIET, NEXT_TELEMETRY_DISABLED: '1' });
+    // Each server is given the run's stack slot, so all of them read the same stack.
+    for (const server of config.webServer) expect(server.env, server.name).toMatchObject({ CMS_STACK_SLOT: String(STACK.slot) });
+    expect(config.webServer[0]!.command).toContain(`start -p ${STACK.ports.cms} -H 127.0.0.1`);
     // The demo site is started by the guarded script, with this Node binary (no package manager).
     expect(config.webServer[1]!.command).toBe(`${JSON.stringify(process.execPath)} e2e/demo-site-server.ts`);
   });
@@ -248,9 +306,10 @@ describe('apps/cms/e2e/demo-site-server.ts', () => {
     const { siteEnv } = await load();
     const env = siteEnv({});
     expect(env).toMatchObject({ NEXT_TELEMETRY_DISABLED: '1', NODE_ENV: 'production', CMS_TENANT: 'demo' });
-    expect(env.CMS_DELIVERY_BASE_URL).toBe('http://127.0.0.1:54321/storage/v1/object/public/delivery');
+    // The slot's stack and CMS (slot 1: 54321 and 3100).
+    expect(env.CMS_DELIVERY_BASE_URL).toBe(`${STACK.apiUrl}/storage/v1/object/public/delivery`);
     // Preview (M3-12): the seeded preview secret and the loopback CMS.
-    expect(env).toMatchObject({ CMS_PREVIEW_SECRETS: 'demo-preview-s3cr3t-local-test-value-0123', CMS_PREVIEW_BASE_URL: 'http://localhost:3100' });
+    expect(env).toMatchObject({ CMS_PREVIEW_SECRETS: 'demo-preview-s3cr3t-local-test-value-0123', CMS_PREVIEW_BASE_URL: STACK.cmsUrl });
   });
 
   // Task 25 security r1: the site gets an allowlisted environment, not the whole parent one.
@@ -271,7 +330,7 @@ describe('apps/cms/e2e/demo-site-server.ts', () => {
     for (const name of ['SOME_API_KEY', 'CMS_INTERNAL_SECRET', 'CRON_SECRET', 'GITHUB_TOKEN', 'NODE_OPTIONS']) expect(env, name).not.toHaveProperty(name);
   });
 
-  it('builds and starts the site on 127.0.0.1:3101 with that environment, reaching only loopback', async () => {
+  it('builds and starts the site on 127.0.0.1 on the slot’s demo-site port (3101 on slot 1), reaching only loopback', async () => {
     freePortAndPointer();
     const siteDir = mkdtempSync(join(tmp, 'site-'));
     const { main } = await load();
@@ -280,7 +339,7 @@ describe('apps/cms/e2e/demo-site-server.ts', () => {
     type Call = [string, string[], { cwd: string; env: NodeJS.ProcessEnv }];
     const [build, start] = spawnMock.mock.calls as unknown as [Call, Call];
     expect(build[1].slice(1)).toEqual(['build']);
-    expect(start[1].slice(1)).toEqual(['start', '-p', '3101', '-H', '127.0.0.1']);
+    expect(start[1].slice(1)).toEqual(['start', '-p', String(STACK.ports.demoSite), '-H', '127.0.0.1']);
     for (const call of [build, start]) {
       expect(call[0]).toBe(process.execPath);
       expect(call[2].cwd).toBe(siteDir);

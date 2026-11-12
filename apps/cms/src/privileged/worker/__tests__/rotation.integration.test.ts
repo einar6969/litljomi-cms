@@ -16,7 +16,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { SIGNATURE_HEADER, TIMESTAMP_HEADER, verifyWebhook, type Bundle, type BundleEntry, type Pointer } from '@litljomi/cms-sdk';
 import { editorClient, publicUrl, secretClient } from '../../../../../../tests/integration/src/clients.ts';
-import { env } from '../../../../../../tests/integration/src/env.ts';
+import { env, stack } from '../../../../../../tests/integration/src/env.ts';
 import { TENANT } from '../../../../../../tests/integration/src/fixtures.ts';
 import { closeAll, ownerQuery } from '../../../../../../tests/integration/src/sql.ts';
 import { runProvision } from '../../../../../../tools/cli/src/provision.ts';
@@ -27,13 +27,14 @@ import { entryMarker, html, releaseMeta, startFakeSite, type FakeSite, type Reco
 import { prepareLabak } from './labak-setup';
 import { TEST_JPEG, TEST_JPEG_METADATA } from './test-image';
 
-const PORT = 3193;
+/** The fake site's port: the stack slot's (3193 on slot 1), so the two slots can run at once. */
+const PORT = stack.ports.rotationSite;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const REVALIDATE = '/api/cms/revalidate';
 const fast = { pollMs: 100, timeoutMs: 15_000 };
 const MINUTE = 60_000;
-/** The labak sites this file deactivated and has not restored yet (a run killed midway leaves it). */
-const DEACTIVATED_FILE = join(tmpdir(), 'litljomi-cms-rotation-deactivated-sites.json');
+/** The labak sites this file deactivated and has not restored yet (a run killed midway leaves it); one per slot. */
+const DEACTIVATED_FILE = join(tmpdir(), `${stack.projectId}-rotation-deactivated-sites.json`);
 /** A project reference of the right form that belongs to no project; see `hostedFetch`. */
 const REF = 'rotationtest00000000';
 const PROJECT_ORIGIN = `https://${REF}.supabase.co`;

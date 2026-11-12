@@ -15,6 +15,7 @@ import {
   adminAuth, auth, brief, claims, clearMail, deleteThrowawayUsers, followVerify, generateLinkSession, newUser, passwordSession,
   passwordSignIn, pkce, sleep, tokenHashOf, totp, verifyUrlFor, waitMail, requestEmail, type AuthResponse, type MailMessage,
 } from './auth-api.ts';
+import { stack } from './env.ts';
 import { closeAll, ownerQuery } from './sql.ts';
 
 /** The hook's refusal, as Auth passes it on. It names no method. */
@@ -69,7 +70,7 @@ function expectSignsNoOneIn(mail: MailMessage, tokenHashes: string[]) {
     for (const hash of tokenHashes) expect(body).not.toContain(hash);
   }
   expect(mail.HTML).toContain('lykilorði');
-  expect(mail.HTML).toContain('http://localhost:3100');
+  expect(mail.HTML).toContain(stack.cmsUrl);
 }
 
 /** The amr methods Auth has recorded for a user's sessions (what a refresh is built from). */

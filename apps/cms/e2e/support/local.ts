@@ -1,11 +1,18 @@
 // The only places the CMS's Playwright tests reach (Einar, 2026-11-02: they run outside the Bash
 // sandbox, so they reach only loopback addresses and this repository): the local CMS
-// (`next start` on `CMS_PORT` below), the local Supabase API (54321) and its Mailpit (54324).
+// (`next start` on `CMS_PORT` below), the local Supabase API and its Mailpit. Their ports are the
+// stack slot's (CMS_STACK_SLOT, tools/stack/slot.ts): slot 1 is 3100, 54321 and 54324.
+import { SLOT_VARIABLE, stackSlot, type StackSlot } from '../../../../tools/stack/slot.ts';
+
+/** The stack slot this run uses. */
+export const STACK: StackSlot = stackSlot();
+/** The slot, passed on to every process the run starts. */
+export const STACK_SLOT_ENV = { [SLOT_VARIABLE]: String(STACK.slot) } as const;
 /** The port `next start` listens on (on 127.0.0.1), and the local Auth site URL's port (decision 37.4). */
-export const CMS_PORT = 3100;
-export const CMS_URL = `http://localhost:${CMS_PORT}`;
-export const SUPABASE_URL = 'http://127.0.0.1:54321';
-export const MAILPIT_URL = 'http://127.0.0.1:54324';
+export const CMS_PORT = STACK.ports.cms;
+export const CMS_URL = STACK.cmsUrl;
+export const SUPABASE_URL = STACK.apiUrl;
+export const MAILPIT_URL = STACK.mailpitUrl;
 
 /**
  * Turns off the network calls of the CLIs the run starts (the Supabase CLI's GitHub release check
