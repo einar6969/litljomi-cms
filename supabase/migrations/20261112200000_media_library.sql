@@ -26,17 +26,34 @@
 -- editor's functions and views are for authenticated only, the worker's function for service_role
 -- only. Errors follow decision 3: P0001 with not_found, tenant_inactive or forbidden.
 
+-- Every lock below is held to the end of this migration's transaction, and while one waits, every
+-- new request on that table queues behind it. So no wait may be long: past 5 s the migration
+-- fails, whole, having changed nothing, and is simply run again (docs/runbooks/operations.md §8).
+set local lock_timeout = '5s';
+
 -- ---------------------------------------------------------------------------
--- 1 and 2. The table changes, in the order the live app takes the same tables' locks, so this
--- migration and a request in flight wait for each other in turn and never in a ring:
+-- 1 and 2. The table changes, in the order the live app takes the same tables' locks, so for
+-- these tables this migration and a request in flight wait for each other in turn:
 --   - a draft save writes cms.draft_refs and then checks its foreign key into cms.assets;
 --   - the worker's commit locks its assets FOR SHARE and then writes cms.revision_refs.
 -- So: draft_refs first, then assets, then revision_refs. An index build blocks writes to its
 -- table and the ALTER blocks everything on cms.assets, each for the moment a small table takes.
+--
+-- One ring can still form, and no order of statements avoids it: part 3 replaces api.asset_list
+-- while this transaction holds cms.assets, and an asset_list read that opened the view just
+-- before waits for cms.assets. The deadlock detector, or else the lock timeout above, then
+-- cancels one of the two. If that is the migration, it fails whole and is run again; if it is
+-- the read, the editor's request fails once.
 
 -- 2a. The refs tables' only indexes were their primary keys, which lead with the referring entry
--- or revision; this one and 2c's lead with the file that is referred to (plan section 4.3).
-create index draft_refs_tenant_target_asset_idx on cms.draft_refs (tenant_id, target_asset_id)
+-- or revision; this one and 2c's lead with the file that is referred to (plan section 4.3), and
+-- then its tenant. Led by the tenant, as the primary keys are, they could lose to the primary
+-- keys whenever the planner's statistics predated the tenant's data (just after a large import):
+-- it then read all the tenant's references once per file, about a second for the unused filter
+-- and the summary. The tenant is still in every lookup and every key, but the index's order is
+-- not what keeps tenants apart (RLS and the composite foreign keys are), and after a file id the
+-- tenant narrows nothing, since a file belongs to one tenant.
+create index draft_refs_target_asset_tenant_idx on cms.draft_refs (target_asset_id, tenant_id)
   where target_asset_id is not null;
 
 -- 1. Per-file texts and the thumbnail (plan section 3.1).
@@ -69,7 +86,7 @@ create index assets_tenant_created_at_idx on cms.assets (tenant_id, created_at d
 create index assets_thumb_path_idx on cms.assets (thumb_path) where thumb_path is not null;
 
 -- 2c. The same lookup by file for published revisions and history.
-create index revision_refs_tenant_target_asset_idx on cms.revision_refs (tenant_id, target_asset_id)
+create index revision_refs_target_asset_tenant_idx on cms.revision_refs (target_asset_id, tenant_id)
   where target_asset_id is not null;
 
 -- ---------------------------------------------------------------------------
@@ -101,8 +118,9 @@ create index revision_refs_tenant_target_asset_idx on cms.revision_refs (tenant_
 -- to choose. Written as joins, it could start from all of the tenant's entries instead, and did
 -- so whenever its statistics did not yet know the tenant's size (just after a large import):
 -- every entry was then read once per file, and 5,000 files with 1,000 entries took 5.7 s, past
--- the editor's timeout. Which index serves the first lookup is still the planner's choice from
--- its statistics; media-library.test.ts measures with fresh ones, as autovacuum keeps them.
+-- the editor's timeout. The first lookup is by the file and then its tenant, the order of 2a's
+-- and 2c's indexes. Which index serves it is still the planner's choice from its statistics;
+-- media-library.test.ts measures with statistics that predate the data and with fresh ones.
 create or replace view api.asset_list with (security_invoker = true) as
 select a.id, a.tenant_id, a.filename, a.mime, a.width, a.height, a.focal_x, a.focal_y, a.default_alt,
        a.original_path, a.archived_at,
@@ -112,7 +130,7 @@ select a.id, a.tenant_id, a.filename, a.mime, a.width, a.height, a.focal_x, a.fo
        (exists (
           select 1
           from cms.draft_refs dr
-          where dr.tenant_id = a.tenant_id and dr.target_asset_id = a.id
+          where dr.target_asset_id = a.id and dr.tenant_id = a.tenant_id
             and (select e.archived_at is null
                  from cms.entries e
                  where e.tenant_id = dr.tenant_id and e.id = dr.entry_id)
@@ -120,7 +138,7 @@ select a.id, a.tenant_id, a.filename, a.mime, a.width, a.height, a.focal_x, a.fo
         or exists (
           select 1
           from cms.revision_refs rr
-          where rr.tenant_id = a.tenant_id and rr.target_asset_id = a.id
+          where rr.target_asset_id = a.id and rr.tenant_id = a.tenant_id
             and rr.revision_id = (
               select e.published_rev_id
               from cms.entries e
@@ -142,27 +160,28 @@ from cms.assets a;
 --
 -- Written like in_use: the references first, then each row's entry, revision, type and title by
 -- their unique keys, as scalar subqueries. A filter on asset_id and tenant_id reaches the refs
--- tables through the grouping, so one file's usage starts at its few references. With joins the
--- planner was free to start from every entry of the tenant, several levels deep.
+-- tables through the grouping as target_asset_id and tenant_id, the order of 2a's and 2c's
+-- indexes, so one file's usage starts at its few references. With joins the planner was free to
+-- start from every entry of the tenant, several levels deep.
 create view api.asset_usage with (security_invoker = true) as
 select u.tenant_id, u.asset_id, u.entry_id,
        (select e.type from cms.entries e where e.tenant_id = u.tenant_id and e.id = u.entry_id) as type,
        (select d.title from cms.drafts d where d.tenant_id = u.tenant_id and d.entry_id = u.entry_id) as title,
        u.in_draft, u.in_published
 from (
-  select x.tenant_id, x.asset_id, x.entry_id,
+  select x.asset_id, x.tenant_id, x.entry_id,
          pg_catalog.bool_or(x.in_draft) as in_draft, pg_catalog.bool_or(x.in_published) as in_published
   from (
-    select dr.tenant_id, dr.target_asset_id as asset_id, dr.entry_id, true as in_draft, false as in_published
+    select dr.target_asset_id as asset_id, dr.tenant_id, dr.entry_id, true as in_draft, false as in_published
     from cms.draft_refs dr
     where dr.target_asset_id is not null
       and (select e.archived_at is null
            from cms.entries e
            where e.tenant_id = dr.tenant_id and e.id = dr.entry_id)
     union all
-    select p.tenant_id, p.asset_id, p.entry_id, false, true
+    select p.asset_id, p.tenant_id, p.entry_id, false, true
     from (
-      select rr.tenant_id, rr.target_asset_id as asset_id, rr.revision_id,
+      select rr.target_asset_id as asset_id, rr.tenant_id, rr.revision_id,
              (select r.entry_id
               from cms.revisions r
               where r.tenant_id = rr.tenant_id and r.id = rr.revision_id) as entry_id
@@ -173,7 +192,7 @@ from (
                            from cms.entries e
                            where e.tenant_id = p.tenant_id and e.id = p.entry_id)
   ) x
-  group by x.tenant_id, x.asset_id, x.entry_id
+  group by x.asset_id, x.tenant_id, x.entry_id
 ) u;
 
 revoke all on api.asset_usage from public, anon, service_role;
@@ -184,7 +203,8 @@ grant select on api.asset_usage to authenticated;
 -- because no id determines it, so the caller must be a member (not_found otherwise, as for a
 -- tenant that does not exist). files, bytes, images, documents, missing_alt and unused count the
 -- files that are not archived, which is what the library lists; archived counts the rest. The
--- columns are the view's, so kind, missing_alt and in_use keep one definition.
+-- columns are the view's, so kind, missing_alt and in_use keep one definition, and the unused
+-- count looks each file's references up by the file and then its tenant, as in_use does.
 create function api.asset_summary(p_tenant_id uuid)
 returns jsonb
 language plpgsql
@@ -202,13 +222,13 @@ begin
     raise exception 'not_found' using errcode = 'P0001';
   end if;
   select pg_catalog.jsonb_build_object(
-    'files', count(*) filter (where l.archived_at is null),
-    'bytes', coalesce(sum(l.bytes) filter (where l.archived_at is null), 0)::bigint,
-    'images', count(*) filter (where l.archived_at is null and l.kind = 'image'),
-    'documents', count(*) filter (where l.archived_at is null and l.kind = 'document'),
-    'missing_alt', count(*) filter (where l.archived_at is null and l.missing_alt),
-    'unused', count(*) filter (where l.archived_at is null and not l.in_use),
-    'archived', count(*) filter (where l.archived_at is not null))
+    'files', pg_catalog.count(*) filter (where l.archived_at is null),
+    'bytes', coalesce(pg_catalog.sum(l.bytes) filter (where l.archived_at is null), 0)::bigint,
+    'images', pg_catalog.count(*) filter (where l.archived_at is null and l.kind = 'image'),
+    'documents', pg_catalog.count(*) filter (where l.archived_at is null and l.kind = 'document'),
+    'missing_alt', pg_catalog.count(*) filter (where l.archived_at is null and l.missing_alt),
+    'unused', pg_catalog.count(*) filter (where l.archived_at is null and not l.in_use),
+    'archived', pg_catalog.count(*) filter (where l.archived_at is not null))
   into v_summary
   from api.asset_list l
   where l.tenant_id = p_tenant_id;

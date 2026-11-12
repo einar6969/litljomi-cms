@@ -26,7 +26,7 @@
 --   demo asset b001 demo.png, no alt            the draft of demo entry c179
 begin;
 \ir _helpers.sql
-select plan(134);
+select plan(135);
 
 create function tests.k(p_key text) returns uuid
 language plpgsql
@@ -213,18 +213,24 @@ select set_eq($$ select a.attname::text, pg_catalog.format_type(a.atttypid, a.at
 
 -- Indexes (plan section 4.3).
 select set_eq($$ select indexname::text collate "default", indexdef from pg_catalog.pg_indexes
-     where schemaname = 'cms' and indexname in ('draft_refs_tenant_target_asset_idx', 'revision_refs_tenant_target_asset_idx',
+     where schemaname = 'cms' and indexname in ('draft_refs_target_asset_tenant_idx', 'revision_refs_target_asset_tenant_idx',
                                                 'assets_tenant_created_at_idx', 'assets_thumb_path_idx') $$,
   $$ values
-     ('draft_refs_tenant_target_asset_idx',
-      'CREATE INDEX draft_refs_tenant_target_asset_idx ON cms.draft_refs USING btree (tenant_id, target_asset_id) WHERE (target_asset_id IS NOT NULL)'),
-     ('revision_refs_tenant_target_asset_idx',
-      'CREATE INDEX revision_refs_tenant_target_asset_idx ON cms.revision_refs USING btree (tenant_id, target_asset_id) WHERE (target_asset_id IS NOT NULL)'),
+     ('draft_refs_target_asset_tenant_idx',
+      'CREATE INDEX draft_refs_target_asset_tenant_idx ON cms.draft_refs USING btree (target_asset_id, tenant_id) WHERE (target_asset_id IS NOT NULL)'),
+     ('revision_refs_target_asset_tenant_idx',
+      'CREATE INDEX revision_refs_target_asset_tenant_idx ON cms.revision_refs USING btree (target_asset_id, tenant_id) WHERE (target_asset_id IS NOT NULL)'),
      ('assets_tenant_created_at_idx',
       'CREATE INDEX assets_tenant_created_at_idx ON cms.assets USING btree (tenant_id, created_at DESC, id)'),
      ('assets_thumb_path_idx',
       'CREATE INDEX assets_thumb_path_idx ON cms.assets USING btree (thumb_path) WHERE (thumb_path IS NOT NULL)') $$,
   'the four indexes');
+-- The refs tables: their primary keys and the index led by the file, nothing else.
+select set_eq($$ select tablename::text collate "default", indexname::text collate "default" from pg_catalog.pg_indexes
+     where schemaname = 'cms' and tablename in ('draft_refs', 'revision_refs') $$,
+  $$ values ('draft_refs', 'draft_refs_pkey'), ('draft_refs', 'draft_refs_target_asset_tenant_idx'),
+            ('revision_refs', 'revision_refs_pkey'), ('revision_refs', 'revision_refs_target_asset_tenant_idx') $$,
+  'draft_refs and revision_refs: the primary key and the index led by the file, each');
 -- The audit triggers are the same two (050 pins the full trigger list).
 select set_eq($$ select t.tgname::text collate "default" from pg_catalog.pg_trigger t
      where t.tgrelid = 'cms.assets'::regclass and not t.tgisinternal and t.tgname::text like '%audit%' $$,

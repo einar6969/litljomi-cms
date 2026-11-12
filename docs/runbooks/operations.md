@@ -892,7 +892,7 @@ supabase migration list
 git push origin origin/main:refs/heads/production
 ```
 
-`supabase db push` lists what it will apply and asks to confirm. `supabase migration list` must show no local version with an empty remote column. If `db push` fails, stop: don't push `production`, and report. Never `supabase config push` (production runbook G3.2b).
+`supabase db push` lists what it will apply and asks to confirm. `supabase migration list` must show no local version with an empty remote column. If `db push` fails, stop: don't push `production`, and report. One failure is the exception: a migration that fails on a lock timeout (`canceling statement due to lock timeout`) changed nothing, so run `supabase db push` again. Never `supabase config push` (production runbook G3.2b).
 
 Never force the push to `production`. It must be a fast-forward.
 

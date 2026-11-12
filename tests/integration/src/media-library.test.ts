@@ -474,7 +474,8 @@ describe('the new asset functions lock the tenant row', () => {
 
 // The plan's measure before L1 merges (section 4.4): one tenant with 5,000 files and 20,000
 // references; the list, the unused filter and the summary each well under a second, as an editor
-// under RLS with the editor's 3 s statement timeout, and with the statistics autovacuum keeps.
+// under RLS with the editor's 3 s statement timeout: the lookups by file first with statistics
+// that predate the data, then everything with the statistics autovacuum keeps.
 // The data lives in one transaction that is rolled back, so no other test, and no later release
 // build, ever sees it; the editor's queries run in that same transaction after the role is
 // switched, the way PostgREST impersonates.
@@ -541,17 +542,15 @@ describe('timings at 5,000 files and 20,000 references', () => {
       expect(counts).toEqual({ files: 5000, refs: 20000 });
       const columns = 'id, filename, mime, width, height, bytes, created_at, default_alt, caption, credit, thumb_path, kind, missing_alt, in_use';
       const page = `from api.asset_list where tenant_id = $1 and archived_at is null`;
-      // Autovacuum cannot see these uncommitted rows, so the statistics production would have
-      // within a minute of such an import are made here. (ANALYZE's row estimates in pg_class
-      // outlive the rollback until the next autovacuum, harmlessly.) With statistics that predate
-      // the data the planner's choices vary, and so do the times: not measured here.
-      await c.query('analyze cms.assets, cms.entries, cms.drafts, cms.revisions, cms.draft_refs, cms.revision_refs, cms.memberships');
-
-      // From here on: the editor, as PostgREST would run each request.
-      await c.query(`select set_config('role', 'authenticated', true), set_config('request.jwt.claims', $1, true)`, [
-        JSON.stringify({ sub: editor, role: 'authenticated', aal: 'aal1' }),
-      ]);
-      await c.query(`set local statement_timeout = '3s'`);
+      const unusedCount = `select count(*)::int as n ${page} and in_use is false`;
+      const summary = { files: 5000, bytes: 512502500, images: 5000, documents: 0, missing_alt: 1666, unused: 993, archived: 0 };
+      // The editor, as PostgREST would run each request.
+      const asEditor = async () => {
+        await c.query(`select set_config('role', 'authenticated', true), set_config('request.jwt.claims', $1, true)`, [
+          JSON.stringify({ sub: editor, role: 'authenticated', aal: 'aal1' }),
+        ]);
+        await c.query(`set local statement_timeout = '3s'`);
+      };
       const timed = async <T>(name: string, text: string, params: unknown[]): Promise<T[]> => {
         const started = performance.now();
         const { rows } = await c.query(text, params);
@@ -560,11 +559,50 @@ describe('timings at 5,000 files and 20,000 references', () => {
         expect(ms, name).toBeLessThan(1000);
         return rows as T[];
       };
+
+      // First with the statistics that predate the data, as in the minute after a large import
+      // before autovacuum has analysed it: the lookups by file the unused filter, the summary and
+      // the usage make must not depend on the statistics knowing this tenant.
+      await asEditor();
+      expect(await timed('before analyze: unused filter, first 60', `select ${columns} ${page} and in_use is false order by created_at desc, id limit 60`, [tenant])).toHaveLength(60);
+      expect((await timed<{ n: number }>('before analyze: unused filter, exact count', unusedCount, [tenant]))[0]!.n).toBe(993);
+      expect((await timed<{ s: Record<string, number> }>('before analyze: summary', 'select api.asset_summary($1) as s', [tenant]))[0]!.s).toEqual(summary);
+      expect(await timed('before analyze: usage of one file', 'select * from api.asset_usage where tenant_id = $1 and asset_id = md5($2)::uuid', [tenant, `${run}:a:2600`])).not.toHaveLength(0);
+
+      // Then with fresh statistics. Autovacuum cannot see these uncommitted rows, so the
+      // statistics production would have within a minute of such an import are made here.
+      // (ANALYZE's row estimates in pg_class outlive the rollback until the next autovacuum,
+      // harmlessly.)
+      await c.query('reset role');
+      await c.query('set local statement_timeout to default');
+      await c.query('analyze cms.assets, cms.entries, cms.drafts, cms.revisions, cms.draft_refs, cms.revision_refs, cms.memberships');
+      await asEditor();
+
+      // The unused filter looks each file up by the indexes led by the file, not by the refs
+      // tables' primary keys, which lead by tenant and would read all its references per file.
+      // The tenant id is a random UUID, inlined so EXPLAIN plans the query the view runs.
+      const indexNames = (node: unknown, found = new Set<string>()): Set<string> => {
+        if (Array.isArray(node)) for (const child of node) indexNames(child, found);
+        else if (node && typeof node === 'object') {
+          for (const [key, value] of Object.entries(node)) {
+            if (key === 'Index Name' && typeof value === 'string') found.add(value);
+            else indexNames(value, found);
+          }
+        }
+        return found;
+      };
+      const plan = (await c.query(`explain (format json) ${unusedCount.replace('$1', `'${tenant}'::uuid`)}`)).rows[0]['QUERY PLAN'];
+      const used = indexNames(plan);
+      expect([...used], 'the unused filter\'s plan').toEqual(
+        expect.arrayContaining(['draft_refs_target_asset_tenant_idx', 'revision_refs_target_asset_tenant_idx']),
+      );
+      expect(used.has('draft_refs_pkey') || used.has('revision_refs_pkey'), 'the unused filter uses no refs primary key').toBe(false);
+
       expect(await timed('list, newest 60', `select ${columns} ${page} order by created_at desc, id limit 60`, [tenant])).toHaveLength(60);
       expect(await timed('list, 60 from offset 4,900', `select ${columns} ${page} order by created_at desc, id limit 60 offset 4900`, [tenant])).toHaveLength(60);
       expect(await timed('unused filter, first 60', `select ${columns} ${page} and in_use is false order by created_at desc, id limit 60`, [tenant])).toHaveLength(60);
       expect(await timed('unused filter, last page', `select ${columns} ${page} and in_use is false order by created_at desc, id limit 60 offset 960`, [tenant])).toHaveLength(33);
-      expect((await timed<{ n: number }>('unused filter, exact count', `select count(*)::int as n ${page} and in_use is false`, [tenant]))[0]!.n).toBe(993);
+      expect((await timed<{ n: number }>('unused filter, exact count', unusedCount, [tenant]))[0]!.n).toBe(993);
       expect(await timed('in use, by name', `select ${columns} ${page} and in_use order by filename, id limit 60`, [tenant])).toHaveLength(60);
       expect(await timed('missing alt filter', `select ${columns} ${page} and missing_alt order by created_at desc, id limit 60`, [tenant])).toHaveLength(60);
       expect(await timed('search', `select ${columns} ${page} and search_text ilike $2 order by created_at desc, id limit 60`, [tenant, titlePattern('ljósmyndari 16')])).toHaveLength(60);
@@ -573,8 +611,7 @@ describe('timings at 5,000 files and 20,000 references', () => {
       expect(await timed('usage of 60 files', 'select * from api.asset_usage where tenant_id = $1 and asset_id in (select md5($2::text || n)::uuid from generate_series(2570, 2629) n)', [tenant, `${run}:a:`])).not.toHaveLength(0);
       // 1,000 drafts and 500 published revisions, ten files each, no pair twice.
       expect((await timed<{ n: number }>('usage of the whole tenant', 'select count(*)::int as n from api.asset_usage where tenant_id = $1', [tenant]))[0]!.n).toBe(15000);
-      const total = (await timed<{ s: Record<string, number> }>('summary', 'select api.asset_summary($1) as s', [tenant]))[0]!.s;
-      expect(total).toEqual({ files: 5000, bytes: 512502500, images: 5000, documents: 0, missing_alt: 1666, unused: 993, archived: 0 });
+      expect((await timed<{ s: Record<string, number> }>('summary', 'select api.asset_summary($1) as s', [tenant]))[0]!.s).toEqual(summary);
     } finally {
       await closeClient(c); // rolls everything back
     }
