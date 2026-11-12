@@ -27,7 +27,8 @@ Your first job is the "Next action" row of STATUS.md. Tell me in a few lines wha
 
 ## What the new session should know that is easy to miss
 
-- A workflow started by the earlier session may still be running there. Its agents hold the two local stacks. Don't use a stack, and don't start a competing build of the same slices, until its PRs show their review comments. Its journal: `~/.claude/projects/-Users-einarzoega-Documents-Litlj-mi-ehf-Projects-2026-LAW-Takeover-DLD/56627df8-9791-44e5-adbe-050bfcaf3d9b/subagents/workflows/wf_cbbad69a-75a/journal.jsonl`.
+- The earlier session's workflow finished at 23:30 on 2026-11-12: eight PRs are built, reviewed and green, none merged. Both local stacks are stopped and free. Each agent's full report is in its journal: `~/.claude/projects/-Users-einarzoega-Documents-Litlj-mi-ehf-Projects-2026-LAW-Takeover-DLD/56627df8-9791-44e5-adbe-050bfcaf3d9b/subagents/workflows/wf_cbbad69a-75a/journal.jsonl`.
+- **Two of the PRs collide in the database** in ways no review saw (same migration number; the same function replaced twice). STATUS.md "Merge phase" says how to fix each. Do that before merging the second PR of either pair.
 - After a merge that changes the workspace, the main checkout needs `CI=true pnpm install`.
-- The disk is small: about 8–10 GB free. Check before starting a stack; clear `.next` folders and finished worktrees.
+- The disk is small: about 6.5 GB free. Check before starting a stack; clear `.next` folders and finished worktrees.
 - The earlier session's scratchpad (the DLD site worktrees, the converter's output) is temporary. Recreate a worktree with `git -C <dld-is> worktree add <path> <branch>`; the converter regenerates its output.

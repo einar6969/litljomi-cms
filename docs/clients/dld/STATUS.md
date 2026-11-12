@@ -4,14 +4,14 @@ The living record of onboarding DLD (Dagný Land Design) as a tenant. A later se
 
 | | |
 |---|---|
-| Last updated | 2026-11-12, after Einar's rulings |
-| **Current stage** | **3, platform work, and 4, tenant and site, side by side.** Five PRs are merged; the rest of Track A is being built by a second workflow |
-| Next action | When workflow `wf_cbbad69a-75a` reports: check each PR at the source, merge in the order below, then advance `production` once (migrations first). Then finish `modules/dld` and connect the site |
+| Last updated | 2026-11-12, 23:45, after the second workflow reported |
+| **Current stage** | **3, platform work, and 4, tenant and site, side by side.** Five PRs are merged. Eight more are built, reviewed and green, and none is merged |
+| Next action | **The merge phase**, section "Merge phase" below: fix the two migration collisions first, then merge the eight PRs in order, then advance `production` once (migrations first). Then finish `modules/dld` and connect the site |
 | How agents run | Models sized to the task. Briefs point at `docs/agents/CONTEXT.md` and `AGENT-CONTEXT.md` here. Parallel lanes run as workflow scripts. **Every pass on a final head is posted by a reviewer agent, never by the coordinator**; the coordinator merges |
 
-## Where every piece stands (2026-11-12, 21:20)
+## Where every piece stands (2026-11-12, 23:45)
 
-**Merged to `main`** (none of it is on production yet; `production` is still at `a772423`):
+**Merged to `main`** (none of it is on production yet; `production` is at `b8c702c`):
 
 | PR | What |
 |---|---|
@@ -21,17 +21,53 @@ The living record of onboarding DLD (Dagný Land Design) as a tenant. A later se
 | #75 | A2: the generic `import` command, with its plan `docs/plans/import.md` |
 | #70 | A11: the `video` field kind; SDK 0.2.1 |
 
-**Being built by workflow `wf_cbbad69a-75a`** (each slice: build, separate reviews on the final head, fix rounds; nothing merges itself):
+**Built, reviewed and green, not merged** (workflow `wf_cbbad69a-75a`, finished 23:30). Checked at the source by the coordinator: each has `Review: PASS` on its exact head from a reviewer agent, CI green, and GitHub reports it mergeable.
 
-| Lane | Slices, in order | Branch |
-|---|---|---|
-| Slot 1 | Editor fixes brought up to date with their browser specs run (PR #73); library L2 thumbnails; L4 + L5 library page and multi-upload; L6 picker in forms | `fix/editor-probe-findings`; `feat/media-library-l2`; `…-l4-l5` (stacked on L2); `…-l6` (stacked on L4 + L5) |
-| Slot 2 | Library L3 caption and credit on the site; A7 live confirmation without an own page; A4 local rehearsal with images | `feat/media-library-l3`; `feat/a7-live-checks-without-own-path`; `feat/a4-local-rehearsal` |
-| CI only | A12 manual ordering | `feat/a12-manual-ordering` |
+| PR | What | Head | Migration |
+|---|---|---|---|
+| #73 | A6 + A10: archive an entry, and the editor fixes from the probe | `7bff99a` | none |
+| #78 | Library L2: thumbnails | `9163224` | none |
+| #81 | Library L4 + L5: the library page, several files per upload (stacked on #78) | `8c38170` | none |
+| #82 | Library L6: choose from the library, pick many into a list (stacked on #81) | `922ef79` | none |
+| #76 | Library L3: caption and credit reach the site; SDK 0.2.2 | `4ff5d03` | `20261112210000_media_library_delivery.sql` |
+| #79 | A7: live confirmation for content with no page of its own | `474dc48` | `20261112210000_nothing_checked.sql` |
+| #77 | A12: manual ordering of entries | `78b7ccb` | `20261112230000_manual_order.sql` |
+| #80 | A4: rehearse a tenant on a local stack, images included; rich-text 0.2.1 | `411ef5d` | none |
 
-**Merge order when they pass:** #73; L2, then L4 + L5, then L6 (stacked, in that order); L3; A7; A12; A4. Bring each up to date with `main` first if `main` moved outside `docs/`; a reviewer agent passes the final head.
+**Waiting on those:** `modules/dld` (PR #71, draft, review passed at `33ed9aa`, now conflicting with `main`) needs the site entries for person, home and contact (A7) and the ordering opt-in (A12), then a merge of `main`.
 
-**Waiting on those:** `modules/dld` (PR #71, draft, review passed) needs the site entries for person, home and contact (A7) and the ordering opt-in (A12), then a merge of `main`.
+## Merge phase
+
+**Two collisions the reviews could not see, because each PR was reviewed against `main` alone. Fix both before the second PR of each pair merges.**
+
+1. **Same migration version.** #76 and #79 both add a migration numbered `20261112210000`. Supabase keys migrations by that number. Rename A7's to `20261112220000_nothing_checked.sql` on its branch (it then sorts between L3's and A12's).
+2. **Same function replaced twice.** #76 and #77 both `create or replace function api.worker_release_snapshot`, each starting from `main`'s body. A12's migration runs last and would silently remove L3's `caption` and `credit` from every release. After #76 merges, A12's migration must be rewritten on top of L3's body. L3's database test `118_media_library_delivery.test.sql` pins both keys, so CI should fail on A12 until this is done; don't rely on that alone. This is boundary work: spec and security review again.
+
+**Order:** #73 → #78 → #81 → #82 → #76 → #79 (migration renamed) → #77 (migration rebuilt on L3's) → #80.
+
+**For each PR:** merge `main` into the branch, let CI run, have a reviewer agent pass the new head (a small model is enough where the delta is the merge alone; the full boundary reviewers for the A12 migration), then merge. No pair of branches conflicts textually today (`git merge-tree`, checked pairwise), but these files are touched by three or more: `is.ts`, `docs/architecture.md`, `modules/demo/` (source, tests, `schema.snapshot.json`), `apps/demo-site/src/types/cms.ts`, `packages/schema/src/module.ts`, `build-release.ts`, `projection-context.ts`, `tools/cli/src/import/report.ts`. Regenerate the snapshot and the demo site's types after each merge, never hand-merge them.
+
+**Versions.** #76 raises the SDK to 0.2.2 and #80 raises rich-text to 0.2.1. #79 and #77 change `packages/schema` and what the bundle carries (an entry reference's `path` may be `null`; a new demo type) without raising the SDK: once #76 is in, check whether their shipped SDK files changed and raise to 0.2.3 if so (runbook §2, step 11).
+
+**After the eight:** run the full browser suite once on a stack (CI has none); `supabase db push` the three migrations, then advance `production`; set A4, A6, A7, A10, A12 and L1–L6 to done in ENHANCEMENTS.md.
+
+**Owed on a stack, never run:**
+- A12's browser spec `manual-order.spec.ts` (built without a stack; only parsed).
+- `design.spec.ts:383` fails on `main` since A11 (#70): its "Bæta við" locator now matches two lists. Test-only fix.
+- The plan's local trials: L2 with a 20 MB image (time, memory, the sweep), L5 with twelve real 5–10 MB photographs on a slow connection, L6 at phone and desktop width.
+- L2's memory was measured on macOS only. Vercel runs Linux.
+
+**Choices the agents made that Einar may want to see** (none blocks a merge; reviewers passed them):
+- **L2:** an image whose decoding would need more than about 320 MB (a progressive JPEG above about 55 megapixels, for one) gets no thumbnail and shows the original. One image is decoded at a time per server instance; when eight are waiting, a further file gets its thumbnail on a later view.
+- **L4 + L5:** the library lists at most 960 files and says so (the database interface returns 1,000 rows). A file's use is labelled "Á vefnum" as soon as the publish is committed, before it is confirmed live: the plan says so, spec §7.4 says success is never shown before its proof. A reviewer flagged the contradiction for Einar.
+- **L6:** one PR, not the plan's two. Replacing an image keeps the alt text it had. The approved "Velja mynd" became "Hlaða upp mynd" (DRAFT), as the plan says. "Velja 21 myndir" is ungrammatical; the plan gives no other form.
+- **L3:** a saved caption or credit reaches the site with the tenant's next release of anything (library decision 5). The import report now compares captions and credits.
+- **A7:** a new final state, "Birt, ekki staðfest á vef" (DRAFT), for content no page is checked for; the same for unpublishing. It is recorded on the release.
+- **A12:** `api.move_entry` accepts entries of any type; on a type that isn't ordered by hand the keys are stored and unused.
+- **A4:** `--local` accepts only the two slots' `127.0.0.1` addresses. Images on `http` are delivered only when the worker's own Supabase address is a loopback address.
+- **#73:** a paragraph pasted from Word into a list item merges into that item.
+
+**The copy batch.** Every new editor string is DRAFT. Don't collect them from agent reports: after the merges, take them from `git diff origin/production..main -- apps/cms/src/i18n/is.ts`, plus the labels in `modules/dld`.
 
 **Done in DLD's repository, not merged anywhere:** `cms/integration` at `d604687` (the site without the static export, and one async data layer; all 64 pages unchanged) and `cms/converter` at `aef0cd1` (the content converter; fidelity check passed).
 
@@ -39,12 +75,14 @@ The living record of onboarding DLD (Dagný Land Design) as a tenant. A later se
 
 **Debts**
 - #69 and #75 carry a final-head pass posted by the coordinator after changes that were docs-only (#69) or one test-only commit (#75). Einar was told; a reviewer can re-read #75's test commit if he wants.
-- CI has no browser tests. New browser specs run only when an agent holds a stack.
+- CI has no browser tests. New browser specs run only when an agent holds a stack; what is still owed is listed under "Merge phase".
 - `deliver.test.ts` flaked once more in CI (OPEN-ISSUES R6).
 
 ## Disk and stacks
 
-The Mac's disk filled at 19:25 and stopped Docker. Einar allowed the npm cache to be cleared ("Yes, clear it") and Docker's unused images to be pruned ("Yes, prune them"). About 10 GB is free; both stacks can run. Agents stop and report if less than 3 GB is free.
+The Mac's disk filled at 19:25 and stopped Docker. Einar allowed the npm cache to be cleared ("Yes, clear it") and Docker's unused images to be pruned ("Yes, prune them"). Agents stop and report if less than 3 GB is free.
+
+**At 23:45:** about 6.5 GB free. Both stacks are stopped and their data removed (`pnpm db:stop --no-backup`, both slots); start with `pnpm db:start` and `pnpm db:reset`. Every finished agent worktree is removed (all were clean and pushed); one locked worktree remains (`agent-a49e502da79bcd0cd`, the merged A3 branch).
 
 - The main checkout needs `CI=true pnpm install` after merges that change the workspace (pnpm refuses to purge `node_modules` without a terminal).
 - The DLD site worktrees are in the session scratchpad (temporary) without `node_modules`; their work is on the pushed branches.
@@ -54,7 +92,7 @@ The Mac's disk filled at 19:25 and stopped Docker. Einar allowed the npm cache t
 | Probe | Result | Report |
 |---|---|---|
 | The site without the static export | **Passed.** All 64 pages stay static and match today's output; the signed webhook refreshes content; preview works. Risks for stage 4 are listed in ENHANCEMENTS.md, last section | [probes/site-without-export.md](probes/site-without-export.md). Clone kept in the session scratchpad (temporary) |
-| The editor with portfolio-shaped content | **Works, with blockers** an editor cannot get past: no way to remove a draft or an image, singletons and shared-page types cannot be confirmed live, nothing orders projects, no images in rich text. 13 Hub bugs with steps | [probes/editor.md](probes/editor.md). Code on local branch `probe/dld-shape` (`80080c5`) in `.claude/worktrees/agent-a402a992b16ee4985`; never pushed |
+| The editor with portfolio-shaped content | **Works, with blockers** an editor cannot get past: no way to remove a draft or an image, singletons and shared-page types cannot be confirmed live, nothing orders projects, no images in rich text. 13 Hub bugs with steps | [probes/editor.md](probes/editor.md). Code on local branch `probe/dld-shape` (`80080c5`); never pushed, its worktree is gone |
 | A release of DLD's size | **No obstacle found locally.** 230 image copies in 2 s; bundle about 275 KB. Hosted storage is unmeasured: the import publishes in batches and measures the first | In the editor report |
 
 Each probe's blockers became a row in ENHANCEMENTS.md (A6, A7, A10, B9, B10).
@@ -185,7 +223,7 @@ Asked how to make the workflow more efficient, the coordinator proposed seven ch
 
 - How fast hosted storage copies images at publish. Measured only locally.
 - Whether a site on Vercel really answers 500 when storage is unreachable right after a publish (ENHANCEMENTS.md A8). Seen on a local server only.
-- Whether the local stack can deliver images in a bundle at all (A4): today every image arrives as `null` there.
+- Answered by A4 (#80, not merged): a local stack delivers images; a full rehearsal ran on slot 2.
 - Which preview host the integration branch gets. Vercel's protection on `dld` covers everything but custom domains, and the worker follows no redirects and cannot pass protection, so it needs a custom domain (one DNS record, Einar's).
 
 ## Verified by the coordinator
