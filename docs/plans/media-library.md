@@ -163,6 +163,8 @@ The Hub's look is its own (`docs/design/ui-level-up/BRIEF.md` §3): cards, 1 px 
 1. the current draft of an entry that is not archived refers to it (`draft_refs`, joined to `entries.archived_at is null`); or
 2. the revision that an entry's `published_rev_id` points to refers to it (`revision_refs`), which is exactly the test `archive_asset` applies (`mig/20261102000800_api_editor.sql:237-242`).
 
+**Missing alt.** An image whose default alt is null or empty is missing its alt, and so is one whose default alt is white space only.
+
 **Unused.** Not in use, and not archived. **Older published revisions do not count.** History is append-only and never shrinks, so counting it would make every image ever published "used" for good, and the filter would be useless.
 
 What follows from leaving history out:
@@ -201,7 +203,7 @@ All new functions are `SECURITY INVOKER` with `search_path = ''` and schema-qual
 | RLS | No new policy on `cms.assets`: the three existing policies cover the new columns. The two new views are `security_invoker` | L1 |
 | Tenant lock | `update_asset_text` and `set_asset_thumbnail` lock the tenant row through the existing lock-only grant (`mig/20261103000700_asset_trust.sql:39-48`) | L1 |
 | Storage | **No policy change.** The existing insert policy tests only the first folder, so an editor may already write `{tenant_id}/{asset_id}/thumb/480.webp`; the select policy lets the same editor sign it (to probe, section 12) | L2 |
-| Indexes | `draft_refs (tenant_id, target_asset_id)` and `revision_refs (tenant_id, target_asset_id)`, both partial on a non-null target; `assets (tenant_id, created_at desc, id)`; `assets (thumb_path)` partial | L1 |
+| Indexes | `draft_refs (target_asset_id, tenant_id)` and `revision_refs (target_asset_id, tenant_id)`, both partial on a non-null target; `assets (tenant_id, created_at desc, id)`; `assets (thumb_path)` partial | L1 |
 | Audit | `asset.updated` also records caption and credit (bounded by their limits); the audit trigger's `WHEN` clause is replaced to match, which touches no data. Thumbnails are not audited. `asset.restored` arrives with L7 | L1, L7 |
 | New tenant table | `cms.asset_folders`: `tenant_id NOT NULL`, composite keys, RLS, per-column grants, and a place in §4.3's list of tenant tables, which the catalog test pins (`supabase/tests/database/010_catalog.test.sql:179, 200`) | L10 |
 
