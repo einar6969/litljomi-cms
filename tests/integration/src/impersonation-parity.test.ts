@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { anonClient, editorClient, secretClient } from './clients.ts';
-import { TENANT, type PersonaName } from './fixtures.ts';
+import { DEMO_SITE, TENANT, type PersonaName } from './fixtures.ts';
 import { closeAll, closeClient, pgAs } from './sql.ts';
 
 type Caller = PersonaName | 'anon' | 'service';
@@ -59,7 +59,7 @@ const PARITY_CASES: Case[] = [
     args: () => ({ p_tenant_id: TENANT.labak, p_type: 'news' }), expected: denied('42501', 'permission denied for schema api') }, // anon has no USAGE on api
   { name: 'secret key reads the sites through Vault', as: 'service', rpc: 'worker_sites', setof: true,
     args: () => ({ p_tenant_id: TENANT.demo }),
-    shape: (v) => (v as { base_url: string }[]).map((s) => s.base_url).sort(), expected: { ok: true, value: ['http://localhost:3101'] } },
+    shape: (v) => (v as { base_url: string }[]).map((s) => s.base_url).sort(), expected: { ok: true, value: [DEMO_SITE.baseUrl] } },
   { name: 'editor lists entries: own tenant only', as: 'editor_labak', view: 'entry_list', column: 'tenant_id',
     expected: { ok: true, value: [TENANT.labak] } },
   { name: 'platform admin without membership sees no tenants', as: 'platform_admin', view: 'my_tenants', column: 'id',

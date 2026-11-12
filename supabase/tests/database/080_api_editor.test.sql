@@ -120,8 +120,11 @@ insert into editor_views values
   -- M5-02 removed data (20261105140100_view_data_removal.sql; 116_editor_limits).
   ('entry_detail', array['id', 'tenant_id', 'type', 'slug', 'schema_version', 'draft_version',
                          'published_draft_version', 'first_published_at', 'status']),
+  -- Media library L1 appended the nine columns after archived_at (20261112200000_media_library.sql;
+  -- 117_media_library).
   ('asset_list', array['id', 'tenant_id', 'filename', 'mime', 'width', 'height', 'focal_x', 'focal_y', 'default_alt',
-                       'original_path', 'archived_at']),
+                       'original_path', 'archived_at', 'bytes', 'created_at', 'caption', 'credit', 'thumb_path',
+                       'kind', 'missing_alt', 'in_use', 'search_text']),
   -- Task 25 replaced this view (20261102001500_publication_status.sql; 099_publication_status).
   ('publication_status', array['request_id', 'tenant_id', 'entry_id', 'action', 'status', 'error', 'requested_at',
                                'release_number', 'release_status', 'omitted', 'missing_assets', 'site_count',

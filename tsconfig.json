@@ -1,6 +1,6 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": { "types": ["node"], "lib": ["ES2023", "DOM"], "jsx": "react-jsx" },
-  "include": ["tools/checks/**/*.ts", "tools/pack/**/*.ts", "packages/schema/src/**/*.ts", "modules/*/src/**/*.ts", "packages/rich-text/src/**/*.{ts,tsx}", "packages/sdk/src/**/*.{ts,tsx}", "vitest.workspace.ts", "tests/integration/src/**/*.ts", "tests/integration/scripts/**/*.ts", "tests/integration/vitest.config.ts", "tests/integration/vitest.e2e-local.config.ts", "tools/cli/src/**/*.ts", "apps/demo-site/**/*.{ts,tsx}"],
+  "include": ["tools/checks/**/*.ts", "tools/stack/**/*.ts", "tools/pack/**/*.ts", "packages/schema/src/**/*.ts", "modules/*/src/**/*.ts", "packages/rich-text/src/**/*.{ts,tsx}", "packages/sdk/src/**/*.{ts,tsx}", "vitest.workspace.ts", "tests/integration/src/**/*.ts", "tests/integration/scripts/**/*.ts", "tests/integration/vitest.config.ts", "tests/integration/vitest.e2e-local.config.ts", "tools/cli/src/**/*.ts", "apps/demo-site/**/*.{ts,tsx}"],
   "exclude": ["**/__tests__/fixtures/**", "node_modules", "**/node_modules", "**/.next"]
 }
