@@ -1,17 +1,17 @@
 // alert()'s email against the local stack (M3-04): the same SMTP code that sends through SendGrid
-// when hosted sends to the local stack's Mailpit (127.0.0.1:54325), and the incident claim in the
+// when hosted sends to the local stack's Mailpit (127.0.0.1:54325 on slot 1), and the incident claim in the
 // database (api.worker_claim_alert_email) lets one email through per incident, however often the
 // alert is raised. The exhausted-retry email is tested in pipeline.integration.test.ts.
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { mailsTo, sleep, waitMail } from '../../../../../../tests/integration/src/auth-api.ts';
-import { env } from '../../../../../../tests/integration/src/env.ts';
+import { env, stack } from '../../../../../../tests/integration/src/env.ts';
 import { TENANT } from '../../../../../../tests/integration/src/fixtures.ts';
 import { closeAll, ownerQuery } from '../../../../../../tests/integration/src/sql.ts';
 import { alert } from '../alerts';
 
-/** The local stack's Mailpit SMTP port (supabase/config.toml, [local_smtp] smtp_port). */
-const MAILPIT_SMTP_PORT = '54325';
+/** The local stack's Mailpit SMTP port (supabase/config.toml, [local_smtp] smtp_port; the stack slot's). */
+const MAILPIT_SMTP_PORT = String(stack.ports.smtp);
 
 let to: string;
 

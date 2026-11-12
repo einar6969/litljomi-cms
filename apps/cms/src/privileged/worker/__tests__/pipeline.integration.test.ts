@@ -16,7 +16,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { SIGNATURE_HEADER, TIMESTAMP_HEADER, verifyWebhook, type Bundle, type BundleEntry, type Pointer } from '@litljomi/cms-sdk';
 import { mailsTo, sleep, waitMail } from '../../../../../../tests/integration/src/auth-api.ts';
 import { editorClient, publicUrl, secretClient } from '../../../../../../tests/integration/src/clients.ts';
-import { env } from '../../../../../../tests/integration/src/env.ts';
+import { env, stack } from '../../../../../../tests/integration/src/env.ts';
 import { TENANT } from '../../../../../../tests/integration/src/fixtures.ts';
 import { closeAll, ownerQuery, withTx } from '../../../../../../tests/integration/src/sql.ts';
 import { createAdminClient } from '../../admin-client';
@@ -32,12 +32,13 @@ import { entryMarker, html, releaseMeta, startFakeSite, type FakeSite } from './
 import { prepareLabak } from './labak-setup';
 import { TEST_JPEG, TEST_JPEG_METADATA } from './test-image';
 
-const PORT = 3198;
+/** The fake site's port: the stack slot's (3198 on slot 1), so the two slots can run at once. */
+const PORT = stack.ports.pipelineSite;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const SECRET = 'pipeline-fake-site-secret';
 const fast = { pollMs: 100, timeoutMs: 15_000 };
-/** The labak sites this file deactivated and has not restored yet (a run killed midway leaves it). */
-const DEACTIVATED_FILE = join(tmpdir(), 'litljomi-cms-pipeline-deactivated-sites.json');
+/** The labak sites this file deactivated and has not restored yet (a run killed midway leaves it); one per slot. */
+const DEACTIVATED_FILE = join(tmpdir(), `${stack.projectId}-pipeline-deactivated-sites.json`);
 
 let editor: SupabaseClient;
 let site: FakeSite;
@@ -451,7 +452,7 @@ describe('sweep', () => {
     // M3-04: alert emails go to the local stack's Mailpit through the hosted SMTP code path.
     const adminEmail = `alerts-${randomUUID().slice(0, 8)}@test.local`;
     vi.stubEnv('CMS_ALERT_SMTP_HOST', '127.0.0.1');
-    vi.stubEnv('CMS_ALERT_SMTP_PORT', '54325');
+    vi.stubEnv('CMS_ALERT_SMTP_PORT', String(stack.ports.smtp));
     vi.stubEnv('CMS_ALERT_EMAIL_FROM', 'cms-alerts@test.local');
     vi.stubEnv('CMS_ALERT_EMAIL_TO', adminEmail);
     webhookStatus = 500;
