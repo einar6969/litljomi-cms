@@ -73,3 +73,22 @@ Einar confirmed all three. Memberships removed (`einsi+a-labak` from `labak`, `e
 - Storage objects deleted through the dashboard's Storage view (Storage API). Rows deleted as `postgres` in one transaction, in dependency order: publish_requests 1, drafts 1, revisions 1 (after clearing the entry's `published_rev_id`), entries 1, releases 1, audit_log 9, tenants 1.
 - After: no row with its `tenant_id`, no audit detail naming it, no Storage object, no tenant row. `demo` and `labak` row counts are identical before and after (demo 46 entries, 43 releases, 259 audit rows; labak 8 entries, 12 releases, 70 audit rows, 13 objects, among others).
 - The module `modules/m4-probe` stays: it is the browser suite's local fixture tenant (`apps/cms/e2e/design.spec.ts`), not hosted data.
+
+## Follow-up 4: staging-era names renamed (2026-11-12)
+
+| What | Now | Was | Check |
+|---|---|---|---|
+| Supabase project name | "vefstjorn" | "staging" | General settings read back after reload |
+| Vercel project, CMS | `vefstjorn` (`prj_uF0w…`) | `vefumsjon-staging` | API read back; `~/vercel-link/vefstjorn` |
+| Vercel project, demo site | `vefstjorn-demo` (`prj_vxOd…`) | `demo-staging` | API read back; `~/vercel-link/vefstjorn-demo` |
+| Next.js 15 fixture | deleted | `demo-next15-staging` | API 404. Its two inactive site records (`8b4bc4d0…`, `280f4415…`) deleted in one transaction with their 3 site deliveries and 2 Vault webhook secrets; no audit rows referenced them. Its DNS record `demo-next15-staging.litljomi.is` removed by Einar |
+| Demo site host | `https://demo.vefstjorn.is` | `demo-staging.litljomi.is` | Einar's CNAME `demo` → `529d21ae137f44ca.vercel-dns-017.com.`; certificate valid to 2027-02-10; `x-robots-tag: noindex`; old host 308 to the new one. `cms.sites` `8cead364…`: base, revalidate and preview URLs on the new host. No site variable names its own host |
+| Git branch | `production` | `staging` | GitHub rename (no open PRs targeted it; the ruleset covers `main` only) |
+| Vercel Production Branch | `production` on `vefstjorn` and `vefstjorn-demo` | `staging` | Set in the dashboard (no API for it); API reads back `production`. The Ignored Build Step checks `VERCEL_ENV`, not a branch, so it is unchanged |
+| Env file for `tools/cli` | `.env.production.local` | `.env.staging.local` | PR #68 changes the default; Einar renames his file |
+| Runbook, record | `docs/runbooks/production.md`, `docs/verification/pw-production.md` | `staging.md`, `pw-staging.md` | PR #68, every link fixed |
+
+- PR #68 (`chore/rename-production`, head `169a4e9`), merged as `b8c702c`: combined review PASS (Minors fixed on `main` after); unit 3341, integration 152, pgTAP 2622 passed; browser suite 80 passed plus R9's flaky publish test on rerun; CI green.
+- Demo checks on the new host: the preview button opened the unpublished draft on `demo.vefstjorn.is`; a publish (draft version 17) went live there in about 70 s; release 44 delivered to `https://demo.vefstjorn.is` (notify ok on attempt 1, live check ok).
+- Deploy from the new branch: `production` advanced to `b8c702c` (no new migrations since `a772423`, no app code change); Vercel built both projects as production deployments from `production` (Ready); the same commit on `main` was skipped by the Ignored Build Step, as intended. `vefstjorn.is/login` and `demo.vefstjorn.is/events` answer 200; both old hosts answer 308.
+- `git grep -i staging` outside history finds only `.gitignore`'s `test-results-staging/` (the old staging browser suite's untracked output folder, B8) and a comment in an applied migration; the remaining docs hits are history, quoted past names, or the future staging project as a concept.

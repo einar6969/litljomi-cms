@@ -33,7 +33,7 @@ This runbook set up the M1 staging environment (now production, see below): the 
 | Vercel project of the CMS (`apps/cms`) | `vefstjorn`, linked at `~/vercel-link/vefstjorn` | `vefumsjon-staging` |
 | Vercel project of the demo site (`apps/demo-site`) | `vefstjorn-demo`, linked at `~/vercel-link/vefstjorn-demo` | `demo-staging` |
 | CMS host | `https://vefstjorn.is` (`www.vefstjorn.is` and `vefumsjon-staging.litljomi.is` redirect to it) | `vefumsjon-staging.litljomi.is` |
-| Demo site host | `https://demo.vefstjorn.is` (moving on 2026-11-12; the old host then redirects to it) | `demo-staging.litljomi.is` |
+| Demo site host | `https://demo.vefstjorn.is` (moved on 2026-11-12; the old host redirects to it, 308) | `demo-staging.litljomi.is` |
 | Deploy branch (Vercel's Production Branch for both projects, G6.6) | `production` | `staging` |
 | Einar's env file for `tools/cli` | `/Users/einarzoega/litljomi-cms/.env.production.local` | `.env.staging.local` |
 | Next.js 15 fixture | deleted, with its two inactive `cms.sites` records | `demo-next15-staging` |
@@ -249,7 +249,7 @@ Locally this is proven by `tests/integration/src/service-role-timeout.test.ts` (
      ```sql
      do $$ begin lock table cms.tenants in access exclusive mode; perform pg_sleep(7); end $$;
      ```
-  4. **c4** (Einar's terminal, started **within 4 seconds of c3**): the script below calls `api.worker_tenants_to_release()` (read only, no arguments, returns no secret) with the secret key. It waits on `cms.tenants` until c3 ends, then on `cms.publish_requests`, so the call as a whole passes 10 s while neither wait reaches 8 s. Einar copies it to `~/timeout-check.sh` and runs `EXPECT_REF='<project-ref>' bash ~/timeout-check.sh`. It reads `.env.staging.local` under section 7.4's rules (its `env_value` is the copy section 7.2's scripts shared until decision 72) and prints only the target, the HTTP code, the error code and the elapsed time.
+  4. **c4** (Einar's terminal, started **within 4 seconds of c3**): the script below calls `api.worker_tenants_to_release()` (read only, no arguments, returns no secret) with the secret key. It waits on `cms.tenants` until c3 ends, then on `cms.publish_requests`, so the call as a whole passes 10 s while neither wait reaches 8 s. *(History: the script below names the M1 env file; to run it today, set `ENV_FILE` to `~/litljomi-cms/.env.production.local`.)* Einar copies it to `~/timeout-check.sh` and runs `EXPECT_REF='<project-ref>' bash ~/timeout-check.sh`. It reads `.env.staging.local` under section 7.4's rules (its `env_value` is the copy section 7.2's scripts shared until decision 72) and prints only the target, the HTTP code, the error code and the elapsed time.
      ```bash
      #!/usr/bin/env bash
      # G3.2c (decision 36.7): a secret-key REST call held on two locks. Run by Einar only. Never with
