@@ -1,6 +1,6 @@
 # Production on vefstjorn.is: plan
 
-> **Status: DRAFT for Einar's approval.** Written 2026-11-12 from decisions 74 and 75. When Einar approves it in chat, the executing session records that in decision 76 (`docs/plans/2026-11-01-m0-m1.md`) and starts with step 0.
+> **Status: APPROVED by Einar on 2026-11-12 (decision 76).** Written from decisions 74 and 75. Execute from step 0.
 
 **Goal:** the CMS runs as production at **`https://vefstjorn.is`**, on the existing Supabase project, with a fresh secret key and no test accounts, ready for the first new client (decision 74's next step).
 
