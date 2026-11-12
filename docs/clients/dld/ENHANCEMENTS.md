@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Written | 2026-11-12 |
-| State | **Proposed. Einar approves which go in.** The library's first version (A1) is already ordered |
+| State | **Track A approved by Einar on 2026-11-12** ("Approve as recommended"), with the five library decisions as recommended. **Track B is proposed, not approved** |
 | Rule | "Improve the platform, don't work around it." Every row is generic, for all tenants. Nothing DLD-shaped in core |
 | Evidence | [recon/](recon/), [probes/](probes/), `docs/plans/media-library.md` |
 

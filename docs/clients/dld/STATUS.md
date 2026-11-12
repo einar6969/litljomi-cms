@@ -81,9 +81,17 @@ Split it as you see fit. My expectation: a first version before DLD's editors st
 
 The reference is a screenshot of another admin's "Myndasafn" page, described in `docs/plans/media-library.md`. The spec is to be amended to match this ruling.
 
+### 2026-11-12: the enhancement list
+
+Asked: "Approve Track A and the five library decisions as recommended?" Einar: "**Approve as recommended**".
+
+- **Track A goes in:** A1–A8 and A10. A8 is verified on Vercel before any fix. A9 (a second admin language) only if DLD asks.
+- **The five library decisions, as recommended:** no video files; no copyable file URLs; one web-sized published copy instead of several sizes (B3, later); PDF only for documents; a changed caption waits for the next publish in the first version.
+- **Track B is not approved.** Nothing in it is built until Einar says so. That includes B7 (a `video` field kind) and B10 (manual ordering), so the content model is drafted without them: a video is a link and a still image, and project order is a number field.
+
 ### Gates still ahead, each needing Einar
 
-- Which enhancements go in ([ENHANCEMENTS.md](ENHANCEMENTS.md)).
+- Track B rows, whenever he wants them ([ENHANCEMENTS.md](ENHANCEMENTS.md)).
 - The content model (stage 2).
 - The copy batch (stage 6).
 - Go-live (stage 7).
