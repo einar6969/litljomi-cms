@@ -6,12 +6,15 @@ vi.mock('next/navigation', () => ({
     throw new Error(`REDIRECT ${to}`);
   }),
 }));
-const auth = vi.hoisted(() => ({ verifyOtp: vi.fn(), getSession: vi.fn(), getUser: vi.fn(), setSession: vi.fn(), admin: { signOut: vi.fn() } }));
+const auth = vi.hoisted(() => ({ verifyOtp: vi.fn(), getSession: vi.fn(), getUser: vi.fn(), setSession: vi.fn(), signOut: vi.fn(), admin: { signOut: vi.fn() } }));
 // The detached client (no cookies) a signed-in visitor's link is verified with (M3-14).
 const detached = vi.hoisted(() => ({ verifyOtp: vi.fn(), admin: { signOut: vi.fn() } }));
 vi.mock('@/lib/supabase/server', () => ({ createEditorClient: vi.fn(async () => ({ auth })), createDetachedClient: vi.fn(() => ({ auth: detached })) }));
 const pending = vi.hoisted(() => ({ readPending: vi.fn(), writePending: vi.fn(), clearPending: vi.fn() }));
 vi.mock('../pending', () => pending);
+// The set-password step after an invitation or a reset (PW-03).
+const step = vi.hoisted(() => ({ writePasswordStep: vi.fn() }));
+vi.mock('../../password/step', () => step);
 
 const { createDetachedClient, createEditorClient } = await import('@/lib/supabase/server');
 const { confirmSignIn, keepSession, replaceSession } = await import('../actions');
@@ -38,7 +41,9 @@ const signedIn = (userId = OLD_USER) => {
   auth.getUser.mockResolvedValue({ data: { user: { id: userId } }, error: null });
 };
 const linkSession = { access_token: NEW_TOKEN, refresh_token: NEW_REFRESH, user: { id: NEW_USER } };
-const PENDING = { accessToken: NEW_TOKEN, refreshToken: NEW_REFRESH, next: '/t/acme' };
+const PENDING = { accessToken: NEW_TOKEN, refreshToken: NEW_REFRESH, next: '/t/acme', setPassword: false };
+/** The set-password page, where an invitation or a reset lands (PW-03). */
+const SET_PASSWORD = /^REDIRECT \/auth\/password$/;
 
 const form = (fields: Record<string, string | Blob | undefined>) => {
   const data = new FormData();
@@ -56,6 +61,8 @@ beforeEach(() => {
   auth.getUser.mockResolvedValue({ data: { user: null }, error: { status: 401, code: 'no_authorization', message: 'x' } });
   auth.setSession.mockImplementation(async (session: { access_token: string }) => ({ data: { session, user: {} }, error: null }));
   auth.admin.signOut.mockResolvedValue({ data: null, error: null });
+  auth.signOut.mockResolvedValue({ error: null });
+  step.writePasswordStep.mockResolvedValue(true);
   detached.verifyOtp.mockResolvedValue({ data: { session: linkSession, user: linkSession.user }, error: null });
   detached.admin.signOut.mockResolvedValue({ data: null, error: null });
   pending.readPending.mockResolvedValue(null);
@@ -94,7 +101,7 @@ describe('confirmSignIn with an email change link (spec §4.4)', () => {
     expect(pending.writePending).not.toHaveBeenCalled();
   });
 
-  it('after the second link, the session Auth issues takes over as a magic link\'s does', async () => {
+  it('after the second link, the session Auth issues takes over as another link\'s does', async () => {
     signedIn(NEW_USER);
     await expect(confirmSignIn(form({ token_hash: HASH, type: 'email_change' }))).rejects.toThrow(HOME);
     expect(detached.verifyOtp).toHaveBeenCalledExactlyOnceWith({ token_hash: HASH, type: 'email_change' });
@@ -113,7 +120,7 @@ describe('confirmSignIn with an email change link (spec §4.4)', () => {
     await expect(confirmSignIn(form({ token_hash: HASH, type: 'email_change' }))).rejects.toThrow(FAILED);
   });
 
-  it.each(['email', 'invite'])('still counts a %s link that issues no session as failed', async (type) => {
+  it.each(['invite', 'recovery'])('still counts a %s link that issues no session as failed', async (type) => {
     auth.verifyOtp.mockResolvedValue(FIRST_OF_TWO);
     await expect(confirmSignIn(form({ token_hash: HASH, type }))).rejects.toThrow(FAILED);
   });
@@ -121,29 +128,30 @@ describe('confirmSignIn with an email change link (spec §4.4)', () => {
 
 describe('confirmSignIn', () => {
   it.each([
-    ['email', HASH],
-    ['email', PKCE_HASH],
     ['invite', HASH],
     ['invite', PKCE_HASH],
-  ])('verifies a %s link (%s) with the editor client and goes to /', async (type, token_hash) => {
-    await expect(confirmSignIn(form({ token_hash, type }))).rejects.toThrow(HOME);
+    ['recovery', HASH],
+    ['recovery', PKCE_HASH],
+  ])('verifies a %s link (%s) with the editor client and goes to the set-password page', async (type, token_hash) => {
+    await expect(confirmSignIn(form({ token_hash, type }))).rejects.toThrow(SET_PASSWORD);
     expect(createEditorClient).toHaveBeenCalledOnce();
     expect(auth.verifyOtp).toHaveBeenCalledExactlyOnceWith({ token_hash, type });
   });
 
   it('goes to a same-origin `next` path after signing in', async () => {
-    await expect(confirmSignIn(form({ token_hash: HASH, type: 'email', next: '/t/acme?x=1' }))).rejects.toThrow('REDIRECT /t/acme?x=1');
+    await expect(confirmSignIn(form({ token_hash: HASH, type: 'email_change', next: '/t/acme?x=1' }))).rejects.toThrow('REDIRECT /t/acme?x=1');
   });
 
   it.each(['//evil.example', '/\\evil.example', 'https://evil.example/', '/\t/evil.example', 'javascript:alert(1)', 't/acme', ''])(
     'never leaves the origin: next=%j goes to /',
     async (next) => {
-      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email', next }))).rejects.toThrow(/^REDIRECT \/$/);
+      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email_change', next }))).rejects.toThrow(/^REDIRECT \/$/);
       expect(auth.verifyOtp).toHaveBeenCalledOnce();
     },
   );
 
-  it.each(['magiclink', 'signup', 'recovery', 'sms', 'phone_change', 'email_change_new', 'email_change_current', 'EMAIL', 'EMAIL_CHANGE', ' email', '', undefined])(
+  // `email` is the magic link's type: sign-in is with a password (spec §4.4; PW-03).
+  it.each(['email', 'magiclink', 'signup', 'sms', 'phone_change', 'email_change_new', 'email_change_current', 'RECOVERY', 'Invite', 'EMAIL_CHANGE', ' recovery', 'recovery ', '', undefined])(
     'refuses the type %j without calling Auth',
     async (type) => {
       await expect(confirmSignIn(form({ token_hash: HASH, type }))).rejects.toThrow(FAILED);
@@ -167,18 +175,18 @@ describe('confirmSignIn', () => {
     `${HASH.slice(0, 55)}g`,
     '123456',
   ])('refuses the malformed token hash %j without calling Auth', async (token_hash) => {
-    await expect(confirmSignIn(form({ token_hash, type: 'email' }))).rejects.toThrow(FAILED);
+    await expect(confirmSignIn(form({ token_hash, type: 'recovery' }))).rejects.toThrow(FAILED);
     expect(auth.verifyOtp).not.toHaveBeenCalled();
   });
 
   it('ignores files in place of the fields', async () => {
     const data = new FormData();
     data.set('token_hash', new Blob([HASH]), 'hash.txt');
-    data.set('type', 'email');
+    data.set('type', 'recovery');
     await expect(confirmSignIn(data)).rejects.toThrow(FAILED);
     const typed = new FormData();
     typed.set('token_hash', HASH);
-    typed.set('type', new Blob(['email']), 'type.txt');
+    typed.set('type', new Blob(['recovery']), 'type.txt');
     await expect(confirmSignIn(typed)).rejects.toThrow(FAILED);
     expect(auth.verifyOtp).not.toHaveBeenCalled();
   });
@@ -190,13 +198,14 @@ describe('confirmSignIn', () => {
     ['throws', () => auth.verifyOtp.mockRejectedValue(new Error(`network failed for ${HASH}`))],
   ])('goes back to the sign-in page when Auth %s, and never logs the token', async (_case, arrange) => {
     arrange();
-    await expect(confirmSignIn(form({ token_hash: HASH, type: 'email', next: '/t/acme' }))).rejects.toThrow(FAILED);
+    await expect(confirmSignIn(form({ token_hash: HASH, type: 'recovery', next: '/t/acme' }))).rejects.toThrow(FAILED);
     expect(consoleText()).not.toContain(HASH);
+    expect(step.writePasswordStep).not.toHaveBeenCalled();
   });
 
   it('goes back to the sign-in page when the client cannot be created', async () => {
     vi.mocked(createEditorClient).mockRejectedValueOnce(new Error('NEXT_PUBLIC_SUPABASE_URL is not set'));
-    await expect(confirmSignIn(form({ token_hash: HASH, type: 'email' }))).rejects.toThrow(FAILED);
+    await expect(confirmSignIn(form({ token_hash: HASH, type: 'recovery' }))).rejects.toThrow(FAILED);
   });
 
   // Decision 42.2 (Q1) and M3-14: with a session already in the browser, the link is verified first
@@ -206,9 +215,9 @@ describe('confirmSignIn', () => {
   describe('the session already in the browser, if any', () => {
     it('verifies the link without touching the cookies, holds its session aside and goes to the question', async () => {
       signedIn();
-      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email', next: '/t/acme' }))).rejects.toThrow(QUESTION);
+      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email_change', next: '/t/acme' }))).rejects.toThrow(QUESTION);
       expect(createDetachedClient).toHaveBeenCalled();
-      expect(detached.verifyOtp).toHaveBeenCalledExactlyOnceWith({ token_hash: HASH, type: 'email' });
+      expect(detached.verifyOtp).toHaveBeenCalledExactlyOnceWith({ token_hash: HASH, type: 'email_change' });
       expect(auth.verifyOtp).not.toHaveBeenCalled();
       expect(auth.setSession).not.toHaveBeenCalled();
       expect(pending.writePending).toHaveBeenCalledExactlyOnceWith(PENDING);
@@ -221,21 +230,21 @@ describe('confirmSignIn', () => {
 
     it('holds only a same-origin next path', async () => {
       signedIn();
-      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email', next: '//evil.example' }))).rejects.toThrow(QUESTION);
+      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email_change', next: '//evil.example' }))).rejects.toThrow(QUESTION);
       expect(pending.writePending).toHaveBeenCalledExactlyOnceWith({ ...PENDING, next: '/' });
     });
 
     it('ends an earlier pending session before holding the new one', async () => {
       signedIn();
       pending.readPending.mockResolvedValue({ accessToken: 'eyJearlier.pending', refreshToken: 'r', next: '/' });
-      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email' }))).rejects.toThrow(QUESTION);
+      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email_change' }))).rejects.toThrow(QUESTION);
       expect(detached.admin.signOut).toHaveBeenCalledExactlyOnceWith('eyJearlier.pending', 'local');
       expect(pending.clearPending.mock.invocationCallOrder[0]!).toBeLessThan(pending.writePending.mock.invocationCallOrder[0]!);
     });
 
     it('lets a link for the same account take over at once, revoking only the old session', async () => {
       signedIn(NEW_USER);
-      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email', next: '/t/acme' }))).rejects.toThrow('REDIRECT /t/acme');
+      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email_change', next: '/t/acme' }))).rejects.toThrow('REDIRECT /t/acme');
       expect(auth.setSession).toHaveBeenCalledExactlyOnceWith({ access_token: NEW_TOKEN, refresh_token: NEW_REFRESH });
       expect(auth.admin.signOut).toHaveBeenCalledExactlyOnceWith(OLD_TOKEN, 'local');
       expect(auth.setSession.mock.invocationCallOrder[0]!).toBeLessThan(auth.admin.signOut.mock.invocationCallOrder[0]!);
@@ -244,7 +253,7 @@ describe('confirmSignIn', () => {
 
     it('compares the account Auth verifies for the cookie\'s token, not what the cookie claims', async () => {
       signedIn(NEW_USER);
-      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email' }))).rejects.toThrow(HOME);
+      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email_change' }))).rejects.toThrow(HOME);
       expect(auth.getUser).toHaveBeenCalledExactlyOnceWith(OLD_TOKEN);
     });
 
@@ -254,23 +263,23 @@ describe('confirmSignIn', () => {
     ])('asks when Auth cannot say whose the old session is (getUser %s)', async (_case, arrange) => {
       signedIn(NEW_USER);
       arrange();
-      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email' }))).rejects.toThrow(QUESTION);
+      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email_change' }))).rejects.toThrow(QUESTION);
       expect(auth.setSession).not.toHaveBeenCalled();
     });
 
     it('goes to the sign-in page, revoking nothing, when Auth refuses the same account\'s new session', async () => {
       signedIn(NEW_USER);
       auth.setSession.mockResolvedValue({ data: { session: null, user: null }, error: { status: 403, code: 'session_not_found', message: 'x' } });
-      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email' }))).rejects.toThrow(FAILED);
+      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email_change' }))).rejects.toThrow(FAILED);
       expect(auth.admin.signOut).not.toHaveBeenCalled();
     });
 
     it.each([
-      ['the token hash is malformed', () => undefined, { token_hash: '123456', type: 'email' }],
-      ['the type is not allowed', () => undefined, { token_hash: HASH, type: 'recovery' }],
-      ['Auth refuses the link', () => detached.verifyOtp.mockResolvedValue({ data: {}, error: { status: 403, code: 'otp_expired', message: 'expired' } }), { token_hash: HASH, type: 'email' }],
-      ['Auth answers without a session', () => detached.verifyOtp.mockResolvedValue({ data: { session: null, user: null }, error: null }), { token_hash: HASH, type: 'email' }],
-      ['Auth throws', () => detached.verifyOtp.mockRejectedValue(new Error(`network failed for ${HASH}`)), { token_hash: HASH, type: 'email' }],
+      ['the token hash is malformed', () => undefined, { token_hash: '123456', type: 'recovery' }],
+      ['the type is not allowed', () => undefined, { token_hash: HASH, type: 'email' }],
+      ['Auth refuses the link', () => detached.verifyOtp.mockResolvedValue({ data: {}, error: { status: 403, code: 'otp_expired', message: 'expired' } }), { token_hash: HASH, type: 'recovery' }],
+      ['Auth answers without a session', () => detached.verifyOtp.mockResolvedValue({ data: { session: null, user: null }, error: null }), { token_hash: HASH, type: 'recovery' }],
+      ['Auth throws', () => detached.verifyOtp.mockRejectedValue(new Error(`network failed for ${HASH}`)), { token_hash: HASH, type: 'recovery' }],
     ])('leaves the old session alone when %s', async (_case, arrange, fields) => {
       signedIn();
       arrange();
@@ -286,14 +295,14 @@ describe('confirmSignIn', () => {
       ['Auth answers an error', () => auth.getSession.mockResolvedValue({ data: { session: null }, error: { status: 400, code: 'refresh_token_not_found', message: 'x' } })],
     ])('signs in directly when the old session cannot be read (%s)', async (_case, arrange) => {
       arrange();
-      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email' }))).rejects.toThrow(HOME);
+      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email_change' }))).rejects.toThrow(HOME);
       expect(auth.verifyOtp).toHaveBeenCalledOnce();
       expect(detached.verifyOtp).not.toHaveBeenCalled();
       expect(auth.admin.signOut).not.toHaveBeenCalled();
     });
 
     it('signs in directly, asking nothing and revoking nothing, when there was no session', async () => {
-      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email' }))).rejects.toThrow(HOME);
+      await expect(confirmSignIn(form({ token_hash: HASH, type: 'email_change' }))).rejects.toThrow(HOME);
       expect(detached.verifyOtp).not.toHaveBeenCalled();
       expect(pending.writePending).not.toHaveBeenCalled();
       expect(auth.admin.signOut).not.toHaveBeenCalled();
@@ -380,7 +389,88 @@ describe('confirmSignIn', () => {
   });
 
   it('logs nothing about a successful sign-in', async () => {
-    await expect(confirmSignIn(form({ token_hash: PKCE_HASH, type: 'email' }))).rejects.toThrow(HOME);
+    await expect(confirmSignIn(form({ token_hash: PKCE_HASH, type: 'email_change' }))).rejects.toThrow(HOME);
     expect(consoleText()).toBe('[[],[],[]]');
+  });
+});
+
+// PW-03 (spec §4.4): an invitation or a reset signs the editor in, then the set-password page comes
+// first. The step is stored for the session the link made, with the link's next path; an email
+// change has no step.
+describe('confirmSignIn: the set-password step after an invitation or a reset (PW-03)', () => {
+  it.each(['invite', 'recovery'])('starts the step for the %s link\'s session, with its next path, and goes to the set-password page', async (type) => {
+    await expect(confirmSignIn(form({ token_hash: HASH, type, next: '/t/acme/news' }))).rejects.toThrow(SET_PASSWORD);
+    expect(step.writePasswordStep).toHaveBeenCalledExactlyOnceWith(NEW_TOKEN, '/t/acme/news');
+    expect(auth.verifyOtp.mock.invocationCallOrder[0]!).toBeLessThan(step.writePasswordStep.mock.invocationCallOrder[0]!);
+  });
+
+  it('stores only a same-origin next path', async () => {
+    await expect(confirmSignIn(form({ token_hash: HASH, type: 'recovery', next: '//evil.example' }))).rejects.toThrow(SET_PASSWORD);
+    expect(step.writePasswordStep).toHaveBeenCalledExactlyOnceWith(NEW_TOKEN, '/');
+  });
+
+  it('starts no step for an email change', async () => {
+    await expect(confirmSignIn(form({ token_hash: HASH, type: 'email_change', next: '/t/acme' }))).rejects.toThrow('REDIRECT /t/acme');
+    expect(step.writePasswordStep).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the step cannot be stored: the link\'s session is signed out and the link counts as failed', async () => {
+    step.writePasswordStep.mockResolvedValue(false);
+    await expect(confirmSignIn(form({ token_hash: HASH, type: 'invite' }))).rejects.toThrow(FAILED);
+    expect(auth.signOut).toHaveBeenCalledExactlyOnceWith({ scope: 'local' });
+  });
+
+  it('fails closed when storing the step throws', async () => {
+    step.writePasswordStep.mockRejectedValue(new Error('cookies() outside a request'));
+    await expect(confirmSignIn(form({ token_hash: HASH, type: 'recovery' }))).rejects.toThrow(FAILED);
+    expect(auth.signOut).toHaveBeenCalledExactlyOnceWith({ scope: 'local' });
+  });
+
+  it('a reset for the account already signed in takes over and starts the step for the new session', async () => {
+    signedIn(NEW_USER);
+    await expect(confirmSignIn(form({ token_hash: HASH, type: 'recovery', next: '/t/acme' }))).rejects.toThrow(SET_PASSWORD);
+    expect(auth.setSession).toHaveBeenCalledExactlyOnceWith({ access_token: NEW_TOKEN, refresh_token: NEW_REFRESH });
+    expect(auth.admin.signOut).toHaveBeenCalledExactlyOnceWith(OLD_TOKEN, 'local');
+    expect(step.writePasswordStep).toHaveBeenCalledExactlyOnceWith(NEW_TOKEN, '/t/acme');
+  });
+
+  it('uses the session Auth hands back when it takes over, if it refreshed it', async () => {
+    signedIn(NEW_USER);
+    auth.setSession.mockResolvedValue({ data: { session: { access_token: 'eyJrefreshed.access.token' }, user: {} }, error: null });
+    await expect(confirmSignIn(form({ token_hash: HASH, type: 'invite' }))).rejects.toThrow(SET_PASSWORD);
+    expect(step.writePasswordStep).toHaveBeenCalledExactlyOnceWith('eyJrefreshed.access.token', '/');
+  });
+
+  it.each([
+    ['invite', true],
+    ['recovery', true],
+    ['email_change', false],
+  ])('holds a %s link for another account aside with whether it needs a password, and starts no step yet', async (type, setPassword) => {
+    signedIn();
+    await expect(confirmSignIn(form({ token_hash: HASH, type, next: '/t/acme' }))).rejects.toThrow(QUESTION);
+    expect(pending.writePending).toHaveBeenCalledExactlyOnceWith({ ...PENDING, setPassword });
+    expect(step.writePasswordStep).not.toHaveBeenCalled();
+  });
+
+  it('"Skipta um aðgang" for a held invitation or reset starts the step and goes to the set-password page', async () => {
+    signedIn();
+    pending.readPending.mockResolvedValue({ ...PENDING, setPassword: true });
+    await expect(replaceSession()).rejects.toThrow(SET_PASSWORD);
+    expect(auth.admin.signOut).toHaveBeenCalledExactlyOnceWith(OLD_TOKEN, 'local');
+    expect(step.writePasswordStep).toHaveBeenCalledExactlyOnceWith(NEW_TOKEN, '/t/acme');
+  });
+
+  it('"Skipta um aðgang" for a held email change starts no step', async () => {
+    signedIn();
+    pending.readPending.mockResolvedValue(PENDING);
+    await expect(replaceSession()).rejects.toThrow('REDIRECT /t/acme');
+    expect(step.writePasswordStep).not.toHaveBeenCalled();
+  });
+
+  it('"Skipta um aðgang" fails closed when the step cannot be stored', async () => {
+    pending.readPending.mockResolvedValue({ ...PENDING, setPassword: true });
+    step.writePasswordStep.mockResolvedValue(false);
+    await expect(replaceSession()).rejects.toThrow(FAILED);
+    expect(auth.signOut).toHaveBeenCalledExactlyOnceWith({ scope: 'local' });
   });
 });

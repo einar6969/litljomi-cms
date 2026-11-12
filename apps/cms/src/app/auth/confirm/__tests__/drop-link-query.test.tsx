@@ -21,7 +21,7 @@ afterEach(() => {
 
 describe('dropLinkQuery (Task 32 security r1)', () => {
   it('replaces the address with the bare path, keeping the router state and the fragment', () => {
-    const p = place(`?token_hash=${HASH}&type=email&next=%2Ft%2Facme`, '#x');
+    const p = place(`?token_hash=${HASH}&type=recovery&next=%2Ft%2Facme`, '#x');
     dropLinkQuery(p);
     expect(p.history.replaceState).toHaveBeenCalledExactlyOnceWith({ tree: 'next-router-state' }, '', '/auth/confirm#x');
   });
@@ -35,7 +35,7 @@ describe('dropLinkQuery (Task 32 security r1)', () => {
 
 describe('<DropLinkQuery />', () => {
   it('drops the token hash from the address bar once mounted, without adding a history entry', async () => {
-    window.history.replaceState(null, '', `/auth/confirm?token_hash=${HASH}&type=email`);
+    window.history.replaceState(null, '', `/auth/confirm?token_hash=${HASH}&type=recovery`);
     const length = window.history.length;
     const root = createRoot(document.body.appendChild(document.createElement('div')));
     await act(async () => root.render(<DropLinkQuery />));

@@ -273,6 +273,12 @@ content_path = "./supabase/templates/confirmation.html"
 subject = "Þér er boðið í Litljómi vefumsjón"
 content_path = "./supabase/templates/invite.html"
 
+# Password resets (PW-03): the "Gleymt lykilorð?" form. Like the invitation, its one link goes to
+# the CMS's confirm page with the token hash, never to Auth's own GET /verify.
+[auth.email.template.recovery]
+subject = "Nýtt lykilorð í Litljómi vefumsjón"
+content_path = "./supabase/templates/recovery.html"
+
 [auth.email.template.email_change]
 subject = "Staðfestu breytingu á netfangi"
 content_path = "./supabase/templates/email_change.html"

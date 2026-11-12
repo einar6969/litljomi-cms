@@ -2,7 +2,7 @@
 // stack's secret key, which these tests never hold or name, so they run in
 // tests/integration/scripts/console-admin.ts (as the global setup does the seed), with this Node
 // binary and the CLIs' network calls off. Each prints one line of JSON, never the secret key, a
-// password or a session (signInTokenHash's step prints a one-time link token).
+// password or a session (recoveryTokenHash's step prints a one-time link token).
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { NO_CLI_NETWORK_ENV } from './local';
@@ -62,7 +62,14 @@ export const addressOf = (id: string) => run<{ email: string }>('address-of', id
 export const removeUser = (id: string) => run<{ removed: true }>('remove-user', id);
 
 /**
- * A one-time token hash for the confirm page's sign-in link of a fixed persona. The sign-in email
- * carries no link (decision 72.1), so the confirm page's tests get their links here.
+ * A one-time token hash of a password-reset link for a fixed persona (PW-03). The confirm page
+ * refuses magic links, so its tests get their links here; following one leads to the set-password
+ * page and changes no password.
  */
-export const signInTokenHash = (persona: E2ePersona) => run<{ tokenHash: string }>('sign-in-link', persona);
+export const recoveryTokenHash = (persona: E2ePersona) => run<{ tokenHash: string }>('recovery-link', persona);
+
+/** A throwaway account invited by Auth, whose invitation mail is in Mailpit (PW-03). */
+export const inviteAccount = () => run<{ id: string; email: string }>('invite-account');
+
+/** A throwaway account with the personas' fixture password, for a reset (PW-03). */
+export const arrangeAccount = () => run<{ id: string; email: string }>('arrange-account');

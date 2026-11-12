@@ -87,12 +87,14 @@ describe('<SignInForm />', () => {
     expect(alertText()).toBeNull();
   });
 
-  // Before hydration a native submit would send the fields to the CMS in the URL. With the only
-  // submit button disabled, neither the button nor Enter in a field submits (implicit submission).
-  it('cannot be sent from the server-rendered page before it is hydrated', () => {
+  // Before hydration a native submit would send the fields to the CMS. With the only submit button
+  // disabled, neither the button nor Enter in a field submits (implicit submission). A scripted
+  // form.submit() ignores the button, so the form is a POST: the fields never go into a URL.
+  it('cannot be sent from the server-rendered page before it is hydrated, and never puts the fields in a URL', () => {
     const html = renderToString(<SignInForm />);
     expect(html).toMatch(/<button type="submit"[^>]* disabled=""/);
-    expect(html).not.toMatch(/<form[^>]* (action|method)=/);
+    expect(html).toMatch(/<form[^>]* method="post"/);
+    expect(html).not.toMatch(/<form[^>]* action=/);
   });
 
   it('signs in straight to Auth with the browser client, then goes to / by a full navigation', async () => {

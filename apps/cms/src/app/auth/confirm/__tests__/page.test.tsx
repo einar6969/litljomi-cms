@@ -33,7 +33,7 @@ beforeEach(() => {
 describe('GET /auth/confirm', () => {
   // Email security scanners open links automatically: opening the link must not use it up.
   it('renders one "Halda áfram" button and verifies nothing', async () => {
-    const html = await render({ token_hash: HASH, type: 'email' });
+    const html = await render({ token_hash: HASH, type: 'recovery' });
     expect(auth.verifyOtp).not.toHaveBeenCalled();
     expect(auth.admin.signOut).not.toHaveBeenCalled();
     expect(html.match(/<button/g)).toHaveLength(1);
@@ -72,13 +72,13 @@ describe('GET /auth/confirm', () => {
   });
 
   it('escapes what the link carries', async () => {
-    const html = await render({ token_hash: '"><script>x</script>', type: 'email' });
+    const html = await render({ token_hash: '"><script>x</script>', type: 'recovery' });
     expect(html).not.toContain('<script>x');
     expect(hidden(html, 'token_hash')).toBe('&quot;&gt;&lt;script&gt;x&lt;/script&gt;');
   });
 
   it('says nothing about a session to a visitor without one', async () => {
-    const html = await render({ token_hash: HASH, type: 'email' });
+    const html = await render({ token_hash: HASH, type: 'recovery' });
     expect(createEditorClient).toHaveBeenCalledOnce();
     expect(auth.getUser).toHaveBeenCalledOnce();
     expect(html).not.toContain(t.confirm.signedIn);
@@ -88,7 +88,7 @@ describe('GET /auth/confirm', () => {
   // button is still the only thing that uses the link (and then replaces that session).
   it('tells a signed-in visitor so, still with the one button, without showing the account', async () => {
     auth.getUser.mockResolvedValue(SIGNED_IN);
-    const html = await render({ token_hash: HASH, type: 'email' });
+    const html = await render({ token_hash: HASH, type: 'recovery' });
     expect(t.confirm.signedIn).toBe('Þú ert þegar skráð/ur inn');
     expect(html).toContain(`>${t.confirm.signedIn}</span> ${t.confirm.signedInDetail}<`);
     expect(html.match(/<button/g)).toHaveLength(1);
@@ -101,9 +101,9 @@ describe('GET /auth/confirm', () => {
 
   it('shows no notice when the session cannot be checked', async () => {
     auth.getUser.mockRejectedValueOnce(new Error('network failed'));
-    expect(await render({ token_hash: HASH, type: 'email' })).not.toContain(t.confirm.signedIn);
+    expect(await render({ token_hash: HASH, type: 'recovery' })).not.toContain(t.confirm.signedIn);
     vi.mocked(createEditorClient).mockRejectedValueOnce(new Error('NEXT_PUBLIC_SUPABASE_URL is not set'));
-    const html = await render({ token_hash: HASH, type: 'email' });
+    const html = await render({ token_hash: HASH, type: 'recovery' });
     expect(html).not.toContain(t.confirm.signedIn);
     expect(html).toContain(`>${t.confirm.submit}</button>`);
   });
@@ -161,7 +161,7 @@ describe('GET /auth/confirm with a pending link session (M3-14)', () => {
 
   it('shows a newly opened link\'s page, not the question, when the address has a token hash', async () => {
     pending.readPending.mockResolvedValue(PENDING);
-    const html = await render({ token_hash: HASH, type: 'email' });
+    const html = await render({ token_hash: HASH, type: 'recovery' });
     expect(pending.readPending).not.toHaveBeenCalled();
     expect(buttons(html)).toEqual([t.confirm.submit]);
     expect(hidden(html, 'token_hash')).toBe(HASH);

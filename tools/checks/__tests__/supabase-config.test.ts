@@ -105,15 +105,17 @@ describe('supabase/config.toml security settings', () => {
   // Invitations and both addresses' email-change links go to the CMS's own /auth/confirm page
   // with the token hash, which verifies it on the server only when the editor presses its button,
   // so the link works in any browser (decision 41.1) and a mail scanner opening it confirms nothing
-  // (M5 finding 9); `{{ .SiteURL }}` is the Auth Site URL, the CMS host. The magic-link and sign-up
-  // confirmation mails have no link at all: they name the CMS address in their text (decisions 72.1,
-  // 72.3).
+  // (M5 finding 9); `{{ .SiteURL }}` is the Auth Site URL, the CMS host. Password resets do the same
+  // (PW-03). The magic-link and sign-up confirmation mails have no link at all: they name the CMS
+  // address in their text (decisions 72.1, 72.3).
   const INVITE_LINK = '{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=invite';
+  const RECOVERY_LINK = '{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery';
   const EMAIL_CHANGE_LINK = '{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email_change';
   describe.each([
     ['magic_link', ['{{ .SiteURL }}'], []],
     ['confirmation', ['{{ .SiteURL }}'], []],
     ['invite', [INVITE_LINK], [INVITE_LINK]],
+    ['recovery', [RECOVERY_LINK], [RECOVERY_LINK]],
     ['email_change', [EMAIL_CHANGE_LINK, '{{ .Email }}', '{{ .NewEmail }}'], [EMAIL_CHANGE_LINK]],
     ['reauthentication', ['{{ .Token }}'], []],
   ])('[auth.email.template.%s]', (name, variables, links) => {
@@ -143,7 +145,7 @@ describe('supabase/config.toml security settings', () => {
   });
 
   // `{{ .ConfirmationURL }}` is Auth's own GET /verify, which a mail scanner's open would use up.
-  it.each(['magic_link', 'confirmation', 'invite', 'email_change'])('[auth.email.template.%s] has no link Auth consumes on GET', (name) => {
+  it.each(['magic_link', 'confirmation', 'invite', 'recovery', 'email_change'])('[auth.email.template.%s] has no link Auth consumes on GET', (name) => {
     expect(readFileSync(join(repoRoot, `supabase/templates/${name}.html`), 'utf8')).not.toContain('.ConfirmationURL');
   });
 
@@ -205,6 +207,30 @@ describe('supabase/config.toml security settings', () => {
     expect(html).toContain('<h1 style="margin:0 0 16px 0;font-size:20px;">Innskráning í Litljómi vefumsjón</h1>');
     expect(html).toContain('Innskráning í Litljómi vefumsjón er með netfangi og lykilorði á {{ .SiteURL }}.');
     expect(html).toContain('Ef þú baðst ekki um innskráningu geturðu hunsað þennan póst.');
+  });
+
+  // PW-03: the invitation and reset mails sign in only through their one confirm-page link, which
+  // the confirm page verifies by POST. Besides that link's own `{{ .SiteURL }}` and `{{ .TokenHash }}`,
+  // they may use only `{{ .SiteURL }}`: no code (`{{ .Token }}`), no Auth link, nothing else.
+  it.each([
+    ['invite', INVITE_LINK],
+    ['recovery', RECOVERY_LINK],
+  ])('[auth.email.template.%s] has no template action beyond its one confirm-page link', (name, link) => {
+    const html = readFileSync(join(repoRoot, `supabase/templates/${name}.html`), 'utf8');
+    const parts = html.split(`href="${link}"`);
+    expect(parts, `${name}.html has the link ${link} exactly once`).toHaveLength(2);
+    expect(actionsBeyondSiteUrl(parts.join('')), `${name}.html may use only its link and ${ALLOWED_ACTION}`).toEqual([]);
+  });
+
+  it.each(['invite', 'recovery'])('[auth.email.template.%s] has no one-time code', (name) => {
+    const html = readFileSync(join(repoRoot, `supabase/templates/${name}.html`), 'utf8');
+    expect(html).not.toMatch(/kóð/i);
+  });
+
+  it('[auth.email.template.invite] says the editor chooses a password (PW-03)', () => {
+    const html = readFileSync(join(repoRoot, 'supabase/templates/invite.html'), 'utf8');
+    expect(html).toContain('lykilorð');
+    expect(html).not.toContain('þarft ekkert lykilorð');
   });
 
   it('has no [remotes.*] block (config push would apply it to a hosted project)', () => {

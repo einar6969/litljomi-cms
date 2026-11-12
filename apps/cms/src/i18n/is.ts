@@ -19,14 +19,41 @@ export const is = {
     failed: 'Innskráning tókst ekki. Athugaðu netfang og lykilorð og reyndu aftur.',
     // Auth's per-address limit (spec §4.4).
     rateLimited: 'Of margar tilraunir í bili. Reyndu aftur eftir nokkrar mínútur.',
-    linkInvalid: 'Innskráningarhlekkurinn er ógildur eða útrunninn. Biddu um nýjan.',
+    // After a failed invitation, reset or email-change link. A reset serves an invitee too (PW-03).
+    linkInvalid: 'Hlekkurinn er ógildur eða útrunninn. Veldu „Gleymt lykilorð?“ til að fá nýjan.',
+    forgotLink: 'Gleymt lykilorð?',
     // After the first of an email change's two links (spec §4.4).
     emailChangeWaiting: 'Netfangið er staðfest. Breytingin tekur gildi þegar hitt netfangið hefur líka verið staðfest.',
     // The ink panel's line; the second part is set in the accent.
     panelLead: 'Þitt efni, ',
     panelRest: 'á þínum vef.',
   },
-  // The magic link's landing page (decision 41.1): only its button signs in.
+  // "Gleymt lykilorð?" (PW-03): the same confirmation whatever Auth answers, so it never shows
+  // whether an account exists.
+  forgot: {
+    title: 'Gleymt lykilorð',
+    intro: 'Sláðu inn netfangið þitt og við sendum þér hlekk til að velja nýtt lykilorð.',
+    submit: 'Senda hlekk',
+    sent: 'Ef netfangið er skráð færðu póst með hlekk innan skamms. Ef enginn póstur berst skaltu athuga netfangið og reyna aftur.',
+    back: 'Til baka í innskráningu',
+  },
+  // The set-password page after an invitation or a reset link (PW-03). Auth's own minimum of 6 is
+  // the only rule (spec §4.4).
+  password: {
+    title: 'Veldu lykilorð',
+    account: 'Þú ert skráð/ur inn sem',
+    intro: 'Veldu lykilorð til að halda áfram. Framvegis skráir þú þig inn með netfanginu og lykilorðinu.',
+    label: 'Nýtt lykilorð',
+    help: 'Að minnsta kosti 6 stafir.',
+    submit: 'Vista lykilorð',
+    tooShort: 'Lykilorðið þarf að vera að minnsta kosti 6 stafir.',
+    same: 'Veldu annað lykilorð en það sem þú ert með núna.',
+    // Auth's reauthentication refusal: the link's session is more than a day old.
+    stale: 'Of langt er liðið frá því að hlekkurinn var opnaður. Biddu um nýjan með „Gleymt lykilorð?“.',
+    failed: 'Ekki tókst að vista lykilorðið. Reyndu aftur.',
+  },
+  // The landing page of the invitation, reset and email-change links (decision 41.1): only its
+  // button uses the link.
   confirm: {
     title: 'Ljúka innskráningu',
     intro: 'Smelltu á hnappinn til að skrá þig inn í Litljómi vefumsjón.',

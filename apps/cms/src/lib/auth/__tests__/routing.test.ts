@@ -36,10 +36,11 @@ describe('safeRedirectPath (no open redirect)', () => {
 });
 
 describe('isPublicPath', () => {
-  it.each(['/login', '/auth/confirm'])('%s is reachable without a session', (path) => {
+  it.each(['/login', '/login/forgot', '/auth/confirm'])('%s is reachable without a session', (path) => {
     expect(isPublicPath(path)).toBe(true);
   });
-  it.each(['/', '/t/acme', '/login/x', '/loginx', '/auth', '/auth/confirm/x', '/auth/callback', '/auth/other'])('%s needs a session', (path) => {
+  // The set-password page (PW-03) needs the session the link made.
+  it.each(['/', '/t/acme', '/login/x', '/login/forgot/x', '/loginx', '/auth', '/auth/confirm/x', '/auth/callback', '/auth/other', '/auth/password'])('%s needs a session', (path) => {
     expect(isPublicPath(path)).toBe(false);
   });
 });

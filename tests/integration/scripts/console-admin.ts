@@ -2,7 +2,7 @@
 // sign-in-sessions.spec.ts, on the LOCAL stack only
 // (env.ts refuses any host that is not loopback). They need the secret key, which the browser tests
 // never hold, so the spec starts this file with `node`. Each step prints one line of JSON, never the
-// secret key, a password or a session (sign-in-link prints a one-time link token, see there):
+// secret key, a password or a session (recovery-link prints a one-time link token, see there):
 //   reset             removes the persona's MFA factors and sessions, so a rerun enrols from nothing;
 //   factors           counts its verified and unverified factors.
 import { randomBytes } from 'node:crypto';
@@ -12,8 +12,8 @@ import { closeAll, ownerQuery } from '../src/sql.ts';
 // Also: arrange-pages and clean-pages, the fixtures of console-pages.spec.ts (M4-05);
 // arrange-email-change, address-of <id> and remove-user <id>, those of sign-in-sessions.spec.ts (M5-03);
 // arrange-overview <state>, clean-overview, revoke-status-read and grant-status-read, those of the
-// tenant overview's screenshots in design.spec.ts; sign-in-link <persona>, the confirm page's link for
-// auth.spec.ts (PW-02).
+// tenant overview's screenshots in design.spec.ts; recovery-link <persona>, the confirm page's link for
+// auth.spec.ts (PW-03); invite-account and arrange-account, the accounts of password.spec.ts (PW-03).
 
 const { id } = PERSONAS.platform_admin;
 /** The module tenant of the overview's fixture; nothing seeds it, so the slug is free. */
@@ -217,14 +217,34 @@ const steps: Record<string, (arg?: string) => Promise<unknown>> = {
     return { removed: true };
   },
 
-  // PW-02: the confirm page's sign-in link for a fixed persona, as Auth would build it for
-  // `{{ .TokenHash }}`. The sign-in email carries no link (decision 72.1), so auth.spec.ts gets its
-  // links here. Printed: a one-time token hash for a local test account, as the mailbox would show.
-  async 'sign-in-link'(persona) {
+  // PW-03: the token hash of a password-reset link for a fixed persona, as Auth builds it for
+  // `{{ .TokenHash }}` in the reset mail. The confirm page refuses magic links, so auth.spec.ts's
+  // link cases (M3-14 among them) use these. Following one signs the persona in on the set-password
+  // page; the persona's password stays as it is unless one is set there, and the persona's other
+  // sessions go on. Printed: a one-time token hash for a local test account, as the mailbox would show.
+  async 'recovery-link'(persona) {
     if (persona === undefined || !Object.hasOwn(PERSONAS, persona)) throw new Error(`unknown persona: ${persona}`);
-    const link = await adminAuth('/admin/generate_link', { body: { type: 'magiclink', email: PERSONAS[persona as PersonaName].email } });
+    const link = await adminAuth('/admin/generate_link', { body: { type: 'recovery', email: PERSONAS[persona as PersonaName].email } });
     if (link.status !== 200) throw new Error(`generating the link answered ${brief(link)}`);
     return { tokenHash: link.json.hashed_token as string };
+  },
+
+  // PW-03: a throwaway account invited by Auth itself, so the invitation mail (supabase/templates/
+  // invite.html) arrives in Mailpit. It has no password and belongs to no tenant.
+  async 'invite-account'() {
+    const email = `pw03-invite-${randomBytes(6).toString('hex')}@test.local`;
+    const invited = await adminAuth('/invite', { body: { email } });
+    if (invited.status !== 200) throw new Error(`inviting the account answered ${brief(invited)}`);
+    return { id: invited.json.id as string, email };
+  },
+
+  // PW-03: a throwaway account for a password reset, which signs in with the personas' fixture
+  // password until it is reset. It belongs to no tenant.
+  async 'arrange-account'() {
+    const email = `pw03-reset-${randomBytes(6).toString('hex')}@test.local`;
+    const created = await adminAuth('/admin/users', { body: { email, email_confirm: true, password: PERSONA_PASSWORD } });
+    if (created.status !== 200) throw new Error(`creating the account answered ${brief(created)}`);
+    return { id: created.json.id as string, email };
   },
 };
 

@@ -26,6 +26,9 @@ export default async function LoginPage({ searchParams }: Props) {
         </Notice>
       ) : null}
       <SignInForm next={typeof next === 'string' ? next : undefined} />
+      <p>
+        <a href="/login/forgot">{t.login.forgotLink}</a>
+      </p>
     </AuthFrame>
   );
 }
