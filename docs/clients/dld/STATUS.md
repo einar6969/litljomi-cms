@@ -5,38 +5,49 @@ The living record of onboarding DLD (Dagný Land Design) as a tenant. A later se
 | | |
 |---|---|
 | Last updated | 2026-11-12, after Einar's rulings |
-| **Current stage** | **3, platform work, and 4, tenant and site, side by side.** Most of Track A is built and reviewed; little is merged yet |
-| Next action | **Free disk space on the Mac first** (see "Blocked" below). Then: start a stack, run the browser batch, merge in the order below |
-| How agents run | Models sized to the task. Briefs point at `docs/agents/CONTEXT.md` and `AGENT-CONTEXT.md` here. Parallel lanes run as workflow scripts; the coordinator merges |
+| **Current stage** | **3, platform work, and 4, tenant and site, side by side.** Five PRs are merged; the rest of Track A is being built by a second workflow |
+| Next action | When workflow `wf_cbbad69a-75a` reports: check each PR at the source, merge in the order below, then advance `production` once (migrations first). Then finish `modules/dld` and connect the site |
+| How agents run | Models sized to the task. Briefs point at `docs/agents/CONTEXT.md` and `AGENT-CONTEXT.md` here. Parallel lanes run as workflow scripts. **Every pass on a final head is posted by a reviewer agent, never by the coordinator**; the coordinator merges |
 
-## Where every piece stands (2026-11-12, 20:20)
+## Where every piece stands (2026-11-12, 21:20)
 
-| Piece | Where | State |
+**Merged to `main`** (none of it is on production yet; `production` is still at `a772423`):
+
+| PR | What |
+|---|---|
+| #69 | A3: SDK 0.2.0, `pnpm pack:sdk`, the procedure for a site in its own repository |
+| #74 | Library L1: data and API (one additive migration) |
+| #72 | A second local stack (`CMS_STACK_SLOT=2`) |
+| #75 | A2: the generic `import` command, with its plan `docs/plans/import.md` |
+| #70 | A11: the `video` field kind; SDK 0.2.1 |
+
+**Being built by workflow `wf_cbbad69a-75a`** (each slice: build, separate reviews on the final head, fix rounds; nothing merges itself):
+
+| Lane | Slices, in order | Branch |
 |---|---|---|
-| A3, SDK version and site procedure | PR #69 | **Merged** |
-| A11, `video` field kind | PR #70, head `e089e8a` | Review PASS on `b6f441b`; since then only a merge of `main` and the SDK bump to 0.2.1. Needs: its browser spec run, a pass on the new head, a green `database` job (the failure looks like the known flake in `pipeline.integration.test.ts`) |
-| Library L1, data and API | PR #74 | Spec PASS and security PASS on `63f45b4`. A fix round followed (indexes led by the file, a lock timeout, two small corrections). Needs: CI on the new head, delta re-reviews, the quality review |
-| `modules/dld` | PR #71 (draft), head `33ed9aa` | Review PASS. Built on #70. Waits for A7 (site checks for person, home, contact) and A12 |
-| A2, import command | PR #75, head `0af351d` | Quality PASS and security PASS after three rounds (the reviews caught a password read from the environment and a write to the wrong tenant through the ledger). Its `database` job fails until L1 is on `main`: the import needs `api.asset_summary` |
-| Import plan | `docs/plans/import.md`, inside PR #75 | Written. Its open decisions are listed at the end of the plan |
-| A6 + A10, editor fixes | PR #73, head `9a76fce` | Review PASS after one fix round. CI green. Browser specs written, not run |
-| Second local stack | PR #72, head `06b662e` | Built, CI green. **Not reviewed.** Its proof run was cut short when the disk filled |
-| DLD site: leave the export, then one data layer | `dld-is` branch `cms/integration`, head `d604687` | Both tasks reviewed PASS: an independent rebuild matched all 64 pages and the 404 |
-| DLD content converter | `dld-is` branch `cms/converter`, head `aef0cd1` | Fidelity review PASS. Output was written to the session scratchpad (temporary); the script regenerates it |
+| Slot 1 | Editor fixes brought up to date with their browser specs run (PR #73); library L2 thumbnails; L4 + L5 library page and multi-upload; L6 picker in forms | `fix/editor-probe-findings`; `feat/media-library-l2`; `…-l4-l5` (stacked on L2); `…-l6` (stacked on L4 + L5) |
+| Slot 2 | Library L3 caption and credit on the site; A7 live confirmation without an own page; A4 local rehearsal with images | `feat/media-library-l3`; `feat/a7-live-checks-without-own-path`; `feat/a4-local-rehearsal` |
+| CI only | A12 manual ordering | `feat/a12-manual-ordering` |
 
-**Not started:** library L2–L6, A12 (manual ordering), A7 (live confirmation without a page), A4 (local rehearsal with images), A5 (move a site), A8 (verify the outage finding on Vercel). All need a database.
+**Merge order when they pass:** #73; L2, then L4 + L5, then L6 (stacked, in that order); L3; A7; A12; A4. Bring each up to date with `main` first if `main` moved outside `docs/`; a reviewer agent passes the final head.
 
-**Merge order once a stack is back:** #74, then #75 (re-run its CI), #70, #73, #72. Each needs a pass on its final head. Then advance `production` once, migrations first.
+**Waiting on those:** `modules/dld` (PR #71, draft, review passed) needs the site entries for person, home and contact (A7) and the ordering opt-in (A12), then a merge of `main`.
 
-## Disk and stacks (2026-11-12, 20:45)
+**Done in DLD's repository, not merged anywhere:** `cms/integration` at `d604687` (the site without the static export, and one async data layer; all 64 pages unchanged) and `cms/converter` at `aef0cd1` (the content converter; fidelity check passed).
 
-The Mac's disk filled at 19:25 and stopped Docker. Einar allowed the npm cache to be cleared ("Yes, clear it"); with that and the session's build folders removed, about 8 GB is free. Docker is back. Slot 1 was reset and carries the merged library migration. Slot 2 is stopped and its volumes removed.
+**Not started:** A5 (move or retire a site, needed by go-live), A8 (verify the outage finding on Vercel), the site's switch from its own content to the CMS bundle, provisioning the tenant, the import rehearsal, the copy batch and handbook.
 
-- **8 GB is enough for one stack, not safely for two.** Docker holds about 3 GB of unused images; pruning them is Einar's call, since they may belong to other projects.
-- The main checkout needed `CI=true pnpm install` after the merges (pnpm refuses to purge `node_modules` without a terminal).
-- The DLD site worktrees in the session scratchpad have no `node_modules` any more; `npm ci` restores them.
+**Debts**
+- #69 and #75 carry a final-head pass posted by the coordinator after changes that were docs-only (#69) or one test-only commit (#75). Einar was told; a reviewer can re-read #75's test commit if he wants.
+- CI has no browser tests. New browser specs run only when an agent holds a stack.
+- `deliver.test.ts` flaked once more in CI (OPEN-ISSUES R6).
 
-**Merged since the table above:** #74 (library L1, `82b5813`) and #72 (second stack, `b97dbb1`). **In flight:** #75 (its integration test fails against a real stack; a fix agent iterates on CI), #70 (one integration test and the unrun browser spec; an agent holds slot 1), #73 (updated with `main`; browser specs still unrun).
+## Disk and stacks
+
+The Mac's disk filled at 19:25 and stopped Docker. Einar allowed the npm cache to be cleared ("Yes, clear it") and Docker's unused images to be pruned ("Yes, prune them"). About 10 GB is free; both stacks can run. Agents stop and report if less than 3 GB is free.
+
+- The main checkout needs `CI=true pnpm install` after merges that change the workspace (pnpm refuses to purge `node_modules` without a terminal).
+- The DLD site worktrees are in the session scratchpad (temporary) without `node_modules`; their work is on the pushed branches.
 
 ## Probe results, 2026-11-12
 
