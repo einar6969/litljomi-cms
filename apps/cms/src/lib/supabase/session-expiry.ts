@@ -24,7 +24,19 @@ function expiryOf(value: string): number | null {
   try {
     const session: unknown = JSON.parse(value.startsWith(BASE64_PREFIX) ? stringFromBase64URL(value.slice(BASE64_PREFIX.length)) : value);
     const accessToken = (session as { access_token?: unknown } | null)?.access_token;
-    if (typeof accessToken !== 'string') return null;
+    return typeof accessToken === 'string' ? accessTokenExpiry(accessToken) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The `exp` (seconds) of an access token, read from its payload without a signature check, or null
+ * when it cannot be read. For the proxy above and the refresh page (app/auth/refresh), which only
+ * decide from it whether to refresh.
+ */
+export function accessTokenExpiry(accessToken: string): number | null {
+  try {
     const payload = accessToken.split('.')[1];
     if (!payload) return null;
     const { exp } = JSON.parse(stringFromBase64URL(payload)) as { exp?: unknown };

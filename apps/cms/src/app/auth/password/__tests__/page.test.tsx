@@ -21,6 +21,8 @@ vi.mock('@/ui/SignOutForm', () => ({
 }));
 const loginActions = vi.hoisted(() => ({ signOut: vi.fn(), discardPendingSession: vi.fn() }));
 vi.mock('@/app/login/actions', () => loginActions);
+// A client component with its own tests (ui/__tests__/keep-session-fresh.test.tsx).
+vi.mock('@/ui/KeepSessionFresh', () => ({ KeepSessionFresh: () => <i data-keep-session-fresh="" /> }));
 
 const { default: SetPasswordPage } = await import('../page');
 const { t } = await import('@/i18n/is');
@@ -54,6 +56,12 @@ describe('the set-password page (PW-03)', () => {
   it('offers the sign-out, with the sign-in actions\' own signOut', async () => {
     const html = await render();
     expect(html).toContain('<i data-sign-out="signOut" data-label=""></i>');
+  });
+
+  // R7: the browser keeps the session fresh while the page is open, as on every other signed-in
+  // page, so that the password, the code and the sign-out find it good after an hour there.
+  it('keeps the session fresh', async () => {
+    expect(await render()).toContain('<i data-keep-session-fresh=""></i>');
   });
 
   // Auth wants `aal2` to change the password of an account with a verified factor (GoTrue v2.197.0

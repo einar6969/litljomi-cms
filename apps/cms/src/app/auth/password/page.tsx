@@ -6,6 +6,7 @@ import { t } from '@/i18n/is';
 import { createEditorClient } from '@/lib/supabase/server';
 import type { SupabaseClient } from '@/lib/supabase/types';
 import { AuthFrame } from '@/ui/AuthFrame';
+import { KeepSessionFresh } from '@/ui/KeepSessionFresh';
 import { SignOutForm } from '@/ui/SignOutForm';
 import { SetPasswordForm } from './SetPasswordForm';
 import { readPasswordStep } from './step';
@@ -19,6 +20,8 @@ import { readPasswordStep } from './step';
  *
  * It offers the sign-out too (S29): someone who opened the link on a shared computer can end the
  * session without setting a password. Signing out also ends the step.
+ *
+ * The browser keeps the session fresh while the page is open (R7), as on the other signed-in pages.
  *
  * Auth sets the password of an account with a verified factor only from an `aal2` session (GoTrue
  * answers `insufficient_aal`), and a link's session is `aal1`. So an account with TOTP, a platform
@@ -34,6 +37,7 @@ export default async function SetPasswordPage() {
   const needsCode = await needsTotpCode(client, accessToken);
   return (
     <AuthFrame>
+      <KeepSessionFresh />
       <h1>{t.password.title}</h1>
       <p>
         {t.password.account} <strong>{email}</strong>.

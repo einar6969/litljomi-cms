@@ -18,6 +18,7 @@ import { arrangeAccount, arrangeTotpAdmin, inviteAccount, removeUser } from './s
 import { CMS_URL } from './support/local';
 import { confirmLinkOf, messageIds, waitForNewMessage } from './support/mailpit';
 import { PERSONA_PASSWORD } from './support/personas';
+import { expectRefreshRefused, expireSession, sessionCookies } from './support/session-cookies';
 import { openLink, signIn, submitSignIn } from './support/sign-in';
 import { expect, newLoopbackContext, test } from './support/test';
 import { totp, wrongCode } from './support/totp';
@@ -131,6 +132,28 @@ test('signing out on the set-password page ends the session and the step, and la
     await context.addCookies(signedIn);
     await page.goto('/auth/password');
     await expect(page).toHaveURL(`${CMS_URL}/login`);
+  } finally {
+    await removeUser(id);
+  }
+});
+
+// R7 security review: an hour after the link, the session's access token has expired, and the CMS
+// server cannot load an expired session to end it. "Skrá út" signs out in the browser first, which
+// refreshes the session from the editor's address and ends it in Auth.
+test('signing out on the set-password page once the access token has expired ends the session in Auth', async ({ page, context }) => {
+  test.setTimeout(60_000);
+  const { id, email } = await inviteAccount();
+  try {
+    await pressLink(page, await mailedLink(email, new Set(), 'invite'), email);
+    await expireSession(context);
+    const expired = await sessionCookies(context);
+
+    await signOut(page);
+    const left = (await context.cookies()).map(({ name }) => name);
+    expect(left.filter((name) => name.startsWith('sb-'))).toEqual([]);
+    expect(left).not.toContain(PASSWORD_STEP_COOKIE);
+
+    await expectRefreshRefused(page, expired, '/auth/password');
   } finally {
     await removeUser(id);
   }

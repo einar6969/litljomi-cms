@@ -1,6 +1,6 @@
 import { createChunks, stringToBase64URL } from '@supabase/ssr';
 import { describe, expect, it } from 'vitest';
-import { sessionCookieName, sessionHasExpired } from '../session-expiry';
+import { accessTokenExpiry, sessionCookieName, sessionHasExpired } from '../session-expiry';
 
 const URL_ = 'http://127.0.0.1:54321';
 const NOW = 1_800_000_000_000;
@@ -58,5 +58,21 @@ describe('sessionHasExpired (R7)', () => {
     ['a token whose exp is not a number', cookies(session(token({ exp: '1' })))],
   ])('is false for %s, which goes on as today (Auth checks it)', async (_case, given) => {
     expect(await sessionHasExpired(given, URL_, NOW)).toBe(false);
+  });
+});
+
+// The refresh page reads the token auth-js gives it the same way (app/auth/refresh).
+describe('accessTokenExpiry (R7)', () => {
+  it('is the token\'s exp', () => {
+    expect(accessTokenExpiry(token({ exp: 1_800_000_000 }))).toBe(1_800_000_000);
+  });
+
+  it.each([
+    ['a token that is not a JWT', 'not-a-jwt'],
+    ['a payload that is not JSON', 'a.bm90IGpzb24.c'],
+    ['a token without exp', token({ sub: 'u' })],
+    ['an exp that is not a number', token({ exp: '1' })],
+  ])('is null for %s', (_case, given) => {
+    expect(accessTokenExpiry(given)).toBeNull();
   });
 });
