@@ -366,7 +366,7 @@ export class FakeHub {
         const e = published.find((x) => x.id === id);
         if (e === undefined) return null;
         const integration = this.module.site[e.type];
-        return { id: e.id, type: e.type, slug: e.slug, title: e.published?.title ?? null, path: integration ? integration.path({ id: e.id, type: e.type, slug: e.slug, sortAt: e.published?.sortAt ?? null }) : null };
+        return { id: e.id, type: e.type, slug: e.slug, title: e.published?.title ?? null, path: integration?.path ? integration.path({ id: e.id, type: e.type, slug: e.slug, sortAt: e.published?.sortAt ?? null }) : null };
       },
       asset: (id) => {
         const a = this.assets.get(id);

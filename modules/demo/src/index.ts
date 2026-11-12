@@ -81,6 +81,23 @@ const siteInfoType = defineType({
   orderBy: 'title',
 });
 
+/**
+ * A singleton with no page of its own (A7; spec §3.2, §7.4): the events page's introduction and
+ * featured events, shown on the shared `/events` page only, as a portfolio's home-page settings
+ * are. Its title field is a list, never text, so it never gets a slug, and it needs none.
+ */
+const eventsPageType = defineType({
+  name: 'events-page',
+  version: 1,
+  label: 'Events page',
+  fields: {
+    intro: text({ label: 'Introduction', multiline: true, required: true }),
+    featured: list(reference({ label: 'Event', to: ['event'] }), { label: 'Featured events', max: 3 }),
+  },
+  preview: { title: 'featured' },
+  orderBy: 'intro',
+});
+
 const eventPath = (e: SiteEntry): string => {
   if (e.slug === null) throw new Error(`event entry ${e.id} has no slug`);
   return '/events/' + e.slug;
@@ -90,10 +107,11 @@ export default defineModule({
   tenant: 'demo',
   locale: 'is',
   branding: { name: 'Demo' },
-  types: [eventType, noticeType, siteInfoType],
+  types: [eventType, noticeType, siteInfoType, eventsPageType],
   structure: [
     { group: 'Content', items: [{ type: 'event', label: 'Events' }] },
     { type: 'site-info', label: 'Site info', singleton: true },
+    { type: 'events-page', label: 'Events page', singleton: true },
   ],
   site: {
     event: {
@@ -104,6 +122,13 @@ export default defineModule({
           { path: eventPath(e), expect },
           { path: '/events', expect },
         ];
+      },
+    },
+    // No `path`: the entry is checked where it is shown, on the shared events page (A7).
+    'events-page': {
+      checks(e, release) {
+        const expect = release.entries('events-page').some((x) => x.id === e.id) ? 'present' : 'absent';
+        return [{ path: '/events', expect }];
       },
     },
   },

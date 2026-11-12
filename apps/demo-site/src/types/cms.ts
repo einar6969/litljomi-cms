@@ -55,3 +55,8 @@ export interface SiteInfoEntry {
   title: string | null;
   tagline: string | null;
 }
+
+export interface EventsPageEntry {
+  intro: string | null;
+  featured: Array<{ _key: string; value: EntrySummary | null }> | null;
+}

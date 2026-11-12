@@ -492,6 +492,7 @@ test.describe('demo: groups, singleton, every field, publishing', () => {
       live_retrying: false,
       latest_request_id: 'r1',
       latest_action: 'publish',
+      nothing_checked: false,
     };
     const out = { action: 'unpublish', latest_action: 'unpublish' };
     const rows: Array<[name: string, label: string, row: Record<string, unknown>]> = [
@@ -622,7 +623,7 @@ test.describe('the tenant overview', () => {
     await expect(viewChanges(page)).toBeVisible();
     await expect(page.getByRole('heading', { name: t.overview.pages })).toBeVisible();
     await expect(page.locator('.pg-row').filter({ hasText: 'Site info' }).locator('.pill')).toBeVisible();
-    await expect(page.getByRole('main').getByRole('link', { name: 'Events' })).toHaveCount(1);
+    await expect(page.getByRole('main').getByRole('link', { name: 'Events', exact: true })).toHaveCount(1);
     await expect(recentRows(page).first()).toBeVisible();
     await expect(clear(page)).toHaveCount(0);
     await expectTapTargets(page);

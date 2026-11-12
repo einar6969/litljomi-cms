@@ -26,19 +26,19 @@ const run = (o: {
   contentHash?: string | null;
   mediaUrls?: string[];
   resend?: () => Promise<void>;
-  ownPath?: string;
+  ownPath?: string | null;
   window?: { pollMs: number; timeoutMs: number };
 }) =>
   runLiveChecks({
     baseUrl: site.origin,
     checks: o.checks,
-    ownPath: o.ownPath ?? OWN,
+    ownPath: o.ownPath === undefined ? OWN : o.ownPath,
     entry: { id: ID, contentHash: o.contentHash === undefined ? NEW : o.contentHash },
     mediaUrls: o.mediaUrls ?? [],
     resend: o.resend ?? (async () => {}),
     ...(o.window ?? fast),
   });
-type RunInput = { checks: LiveCheck[]; contentHash?: string | null };
+type RunInput = { checks: LiveCheck[]; contentHash?: string | null; ownPath?: string | null };
 /** The fake site's page for `path`, as the fake site would serve it (404 when there is none). */
 const servedPage = (path: string) => {
   const found = site.pages.get(path);
@@ -57,7 +57,7 @@ async function runOnFakeClock(o: RunInput): Promise<Awaited<ReturnType<typeof ru
     const done = runLiveChecks({
       baseUrl: site.origin,
       checks: o.checks,
-      ownPath: OWN,
+      ownPath: o.ownPath === undefined ? OWN : o.ownPath,
       entry: { id: ID, contentHash: o.contentHash === undefined ? NEW : o.contentHash },
       mediaUrls: [],
       resend: async () => {},
@@ -150,6 +150,36 @@ describe('absent', () => {
     site.pages.set(OWN, page('', 404));
     site.pages.set('/frettir', page('', 503));
     expect((await run({ checks: [absent(), absent('/frettir')], contentHash: null })).live).toBe(false);
+  });
+});
+
+// A7: an entry with no page of its own (a staff list, a home-page singleton) is checked only on
+// shared pages, so no check is held to 404.
+describe('an entry without its own path', () => {
+  const SHARED = '/folk';
+  it('absent passes when the shared page answers 200 without the marker', async () => {
+    site.pages.set(SHARED, page(`<ul>${entryMarker('other', OLD)}</ul>`));
+    expect(await run({ checks: [absent(SHARED)], ownPath: null, contentHash: null })).toEqual({ live: true, failures: [] });
+  });
+  it('absent fails while the shared page still carries the marker', async () => {
+    site.pages.set(SHARED, page(`<ul>${entryMarker(ID, OLD)}</ul>`));
+    expect(await runOnFakeClock({ checks: [absent(SHARED)], ownPath: null, contentHash: null })).toMatchObject({
+      live: false,
+      failures: [{ path: SHARED, reason: 'marker_present' }],
+    });
+  });
+  it('absent fails when the shared page answers 404 (an error page proves nothing)', async () => {
+    site.pages.set(SHARED, page('<h1>404</h1>', 404));
+    expect(await runOnFakeClock({ checks: [absent(SHARED)], ownPath: null, contentHash: null })).toMatchObject({
+      live: false,
+      failures: [{ path: SHARED, reason: 'status 404' }],
+    });
+  });
+  it('present is unchanged: 200 and the new hash', async () => {
+    site.pages.set(SHARED, page(entryMarker(ID, NEW)));
+    expect(await run({ checks: [present(SHARED)], ownPath: null })).toEqual({ live: true, failures: [] });
+    site.pages.set(SHARED, page(entryMarker(ID, OLD)));
+    expect(await runOnFakeClock({ checks: [present(SHARED)], ownPath: null })).toMatchObject({ live: false, failures: [{ path: SHARED, reason: 'stale_hash' }] });
   });
 });
 

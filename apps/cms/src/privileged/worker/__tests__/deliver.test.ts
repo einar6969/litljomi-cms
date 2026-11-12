@@ -199,11 +199,75 @@ describe('liveTargets', () => {
     expect(only).toMatchObject({ failure: 'still_published', checks: [] });
   });
 
-  it('a type without site pages has no checks, but its media is still checked', () => {
+  it('a type without site pages has no checks, but its media is still checked; nothing on a page is (A7)', () => {
     const other = bundle(3, []);
     other.entries['page'] = [{ ...entry(E1, 'a', null, { image }) }];
     const [t] = liveTargets(module, { bundle: other, previousBundle: null, requests: [{ id: 'q8', entryId: E1, action: 'publish', wasDelivered: true }] }, MEDIA);
-    expect(t).toMatchObject({ failure: null, checks: [], mediaUrls: [image.url], contentHash: 'h-' + E1 });
+    expect(t).toMatchObject({ failure: null, checks: [], ownPath: null, mediaUrls: [image.url], contentHash: 'h-' + E1, nothingChecked: true });
+  });
+
+  // A7: content with no page of its own (a staff list, a singleton shown on shared pages).
+  describe('a type without its own path', () => {
+    const shared = {
+      site: {
+        ...module.site,
+        person: {
+          checks(e: SiteEntry, release: { entries(t: string): SiteEntry[] }) {
+            return [{ path: '/folk', expect: release.entries('person').some((x) => x.id === e.id) ? 'present' : 'absent' }];
+          },
+        },
+        quiet: { checks: () => [] },
+      },
+    } as unknown as ModuleManifest;
+    const people = (release: number, entries: BundleEntry[]): Bundle => ({ ...bundle(release, []), entries: { person: entries } });
+    const person = { ...entry(E1, 'x', null), slug: null };
+
+    it('a publish: the module’s checks on the shared page, and no own path, so nothing is held to 404', () => {
+      const [t] = liveTargets(shared, { bundle: people(3, [person]), previousBundle: null, requests: [{ id: 'p1', entryId: E1, action: 'publish', wasDelivered: true }] }, MEDIA);
+      expect(t).toEqual({
+        entryId: E1,
+        requestIds: ['p1'],
+        failure: null,
+        checks: [{ path: '/folk', expect: 'present' }],
+        ownPath: null,
+        contentHash: 'h-' + E1,
+        mediaUrls: [],
+      });
+    });
+
+    it('an unpublish: absent on the shared page, from the previous release’s record', () => {
+      const [t] = liveTargets(shared, { bundle: people(4, []), previousBundle: people(3, [person]), requests: [{ id: 'p2', entryId: E1, action: 'unpublish', wasDelivered: true }] }, MEDIA);
+      expect(t).toMatchObject({ failure: null, checks: [{ path: '/folk', expect: 'absent' }], ownPath: null, withdrawal: true });
+      expect(t).not.toHaveProperty('nothingChecked');
+    });
+
+    it('a type whose checks are empty has nothing checked, for a publish and for an unpublish', () => {
+      const quiet = { ...person, id: E2 };
+      const q = (release: number, entries: BundleEntry[]): Bundle => ({ ...bundle(release, []), entries: { quiet: entries } });
+      const [published] = liveTargets(shared, { bundle: q(3, [quiet]), previousBundle: null, requests: [{ id: 'p3', entryId: E2, action: 'publish', wasDelivered: true }] }, MEDIA);
+      expect(published).toMatchObject({ failure: null, checks: [], nothingChecked: true });
+      const [withdrawn] = liveTargets(shared, { bundle: q(4, []), previousBundle: q(3, [quiet]), requests: [{ id: 'p4', entryId: E2, action: 'unpublish', wasDelivered: true }] }, MEDIA);
+      expect(withdrawn).toMatchObject({ failure: null, checks: [], nothingChecked: true, withdrawal: true });
+    });
+
+    it('an unpublish of a type without site pages has nothing checked too', () => {
+      const other = bundle(2, []);
+      other.entries['page'] = [entry(E3, 'c', null)];
+      const [t] = liveTargets(shared, { bundle: bundle(3, []), previousBundle: other, requests: [{ id: 'p5', entryId: E3, action: 'unpublish', wasDelivered: true }] }, MEDIA);
+      expect(t).toMatchObject({ failure: null, checks: [], nothingChecked: true, withdrawal: true });
+    });
+
+    it('nothing to check because no site ever held the entry is not "nothing checked": there was nothing to withdraw', () => {
+      const [t] = liveTargets(shared, { bundle: people(3, []), previousBundle: null, requests: [{ id: 'p6', entryId: E4, action: 'unpublish', wasDelivered: false }] }, MEDIA);
+      expect(t).toMatchObject({ failure: null, checks: [] });
+      expect(t).not.toHaveProperty('nothingChecked');
+    });
+
+    it('a failure is never "nothing checked"', () => {
+      const [t] = liveTargets(shared, { bundle: people(3, []), previousBundle: null, requests: [{ id: 'p7', entryId: E1, action: 'publish', wasDelivered: true }] }, MEDIA);
+      expect(t).toMatchObject({ failure: 'delivery_failed' });
+      expect(t).not.toHaveProperty('nothingChecked');
+    });
   });
 
   it('a module whose checks throw gives a failure, not an exception', () => {
@@ -609,7 +673,7 @@ describe('confirmRelease: the public pointer', () => {
 
     it('a withdrawal that cannot be checked is stored as such before the poll, and never recorded live', async () => {
       const unchecked: DeliveredRelease = { ...withdrawing, previousBundle: null };
-      const entry = { entryId: E2, requestIds: ['u2'], checks: [], ownPath: '', unchecked: true };
+      const entry = { entryId: E2, requestIds: ['u2'], checks: [], ownPath: null, unchecked: true };
       await confirmRelease(db, unchecked, clock, new Set(['s1']));
       expect(recorded.map((r) => r.p_notify_status)).toEqual(['pending', 'ok', null]);
       expect(recorded[0]).toMatchObject({ p_error: { withdrawals: [entry], withdrawals_others: true } });

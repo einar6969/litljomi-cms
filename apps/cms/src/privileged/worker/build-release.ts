@@ -39,6 +39,7 @@ import { supabaseUrl } from '../../lib/supabase/env';
 import type { SupabaseClient } from '../../lib/supabase/types';
 import { createAdminClient } from '../admin-client';
 import { alert } from './alerts';
+import { liveTargets } from './live-targets';
 import { buildProjectionContext, publicMediaUrl, type ContextAsset, type ContextEntry } from './projection-context';
 import { callRpc, isApiError } from './rpc';
 import {
@@ -239,6 +240,12 @@ export async function buildRelease(tenantId: string, options: BuildOptions = {})
     fallback = projected.fallback;
     const generatedAt = now().toISOString();
     const bundle: Bundle = { format: 1, tenant: slug, release: number, generatedAt, entries: projected.entries };
+    // A7, §7.4: the linked entries no page is checked for, decided from the targets the delivery
+    // checks, before anything is written.
+    const requests = snapshot.requests.map((r) => ({ id: r.id, entryId: r.entry_id, action: r.action, wasDelivered: r.was_delivered }));
+    const nothingChecked = liveTargets(module, { bundle, previousBundle, requests }, mediaUrl(''))
+      .filter((t) => t.nothingChecked)
+      .map((t) => ({ entryId: t.entryId }));
 
     // Step 4. Record every public object before writing it (M3-06, §7.2): the bundle path is fixed
     // by the release row; the media is every asset the included entries reference. Then copy what
@@ -307,11 +314,16 @@ export async function buildRelease(tenantId: string, options: BuildOptions = {})
       if (p.release !== number || p.bundle !== pointer.bundle) throw new Error(`the pointer reads back release ${String(p.release)}`);
     });
 
-    // Step 9. Delivered: every request of the snapshot is linked; failed entries are the release's error.
+    // Step 9. Delivered: every request of the snapshot is linked; failed entries are the release's error,
+    // with the entries no page is checked for (A7, §7.4: never shown live).
     // forbidden: the release is no longer building (the sweep failed it as stale); it stays failed.
     const stored = storedOmissions(omitted);
     const storedFallback = storedOmissions(fallback);
-    const entryErrors = { ...(stored.length > 0 ? { omitted: stored } : {}), ...(storedFallback.length > 0 ? { fallback: storedFallback } : {}) };
+    const entryErrors = {
+      ...(stored.length > 0 ? { omitted: stored } : {}),
+      ...(storedFallback.length > 0 ? { fallback: storedFallback } : {}),
+      ...(nothingChecked.length > 0 ? { nothingChecked } : {}),
+    };
     await at('finish', () =>
       callRpc(db, 'worker_finish_release', {
         p_release_id: releaseId,
@@ -328,7 +340,6 @@ export async function buildRelease(tenantId: string, options: BuildOptions = {})
     // Step 10. Failed entries are visible and alerted ("Withdrawal and failure visibility"; §7.1).
     if (omitted.length > 0) await alert('release.entry_omitted', { tenantId, releaseId, number, omitted: stored });
     if (fallback.length > 0) await alert('release.entry_fallback', { tenantId, releaseId, number, fallback: storedFallback });
-    const requests = snapshot.requests.map((r) => ({ id: r.id, entryId: r.entry_id, action: r.action, wasDelivered: r.was_delivered }));
     return {
       status: 'delivered',
       releaseId,

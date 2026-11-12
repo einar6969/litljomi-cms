@@ -26,6 +26,7 @@ export const OVERVIEW_STATUS_FIELDS = [
   'retries_exhausted',
   'live_retrying',
   'latest_action',
+  'nothing_checked',
 ] as const satisfies readonly (keyof PublicationStatusRow)[];
 
 export type OverviewStatusRow = Pick<PublicationStatusRow, (typeof OVERVIEW_STATUS_FIELDS)[number]>;

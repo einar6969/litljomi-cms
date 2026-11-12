@@ -246,6 +246,35 @@ describe('processRequestById (publish)', () => {
     expect(await revisionCount(entry.id)).toBe(0);
   });
 
+  // A7: a singleton shown on a shared page has no path of its own, and its title is never text, so
+  // it never gets a slug; the slug is required only where the type has a path.
+  it('commits an entry without a slug when its type has site checks but no path of its own (A7)', async () => {
+    const demo = (await editorClient('editor_demo')).schema('api');
+    const call = async <T>(fn: string, args: Record<string, unknown>): Promise<T> => {
+      const { data, error } = await demo.rpc(fn, args);
+      if (error) throw new Error(`${fn}: ${error.code} ${error.message}`);
+      return data as T;
+    };
+    const id = await call<string>('create_singleton_entry', { p_tenant_id: TENANT.demo, p_type: 'events-page', p_schema_version: 1 });
+    const detail = await call<{ slug: string | null; draft_version: number }>('entry_detail_by_id', { p_entry_id: id });
+    expect(detail.slug).toBeNull();
+    const version = await call<number>('save_draft', {
+      p_entry_id: id,
+      p_expected_version: detail.draft_version,
+      p_data: { intro: `A7 ${randomUUID().slice(0, 8)}` },
+      p_schema_version: 1,
+      p_title: null,
+      p_sort_at: null,
+    });
+    const requestId = await call<string>('request_publish', { p_entry_id: id, p_expected_draft_version: version });
+
+    const outcome = await processRequestById(requestId);
+
+    expect(outcome).toMatchObject({ status: 'committed' });
+    // Withdrawn again, so no later demo release carries it.
+    expect((await processRequestById(await call<string>('request_unpublish', { p_entry_id: id }))).status).toBe('committed');
+  });
+
   it('skips a request that is not claimable (already processed)', async () => {
     const image = await labakAsset();
     const entry = await newsEntry(validNews(image));

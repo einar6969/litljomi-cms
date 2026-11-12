@@ -8,10 +8,10 @@ const e: SiteEntry = { id: '00000000-0000-4000-8000-000000000001', type: 'event'
 const release = (present: boolean): ReleaseView => ({ entries: (t) => (t === 'event' && present ? [e] : []) });
 
 describe('demo module', () => {
-  it('declares the tenant and three types, event, the schema-evolution test type notice and the singleton site-info; there is no news type', () => {
+  it('declares the tenant and four types, event, the schema-evolution test type notice and the singletons site-info and events-page; there is no news type', () => {
     expect(demo.tenant).toBe('demo');
-    expect(demo.types.map((t) => t.name)).toEqual(['event', 'notice', 'site-info']);
-    expect(structureItems(demo).map((s) => s.type)).toEqual(['event', 'site-info']);
+    expect(demo.types.map((t) => t.name)).toEqual(['event', 'notice', 'site-info', 'events-page']);
+    expect(structureItems(demo).map((s) => s.type)).toEqual(['event', 'site-info', 'events-page']);
     expect(demo.structure[0]).toMatchObject({ group: 'Content' });
     expect(isSingleton(demo, 'site-info')).toBe(true);
     expect(isSingleton(demo, 'event')).toBe(false);
@@ -74,7 +74,7 @@ describe('demo module', () => {
   });
   it('builds paths and checks', () => {
     const s = demo.site.event!;
-    expect(s.path(e)).toBe('/events/opid-hus');
+    expect(s.path!(e)).toBe('/events/opid-hus');
     expect(s.checks(e, release(true), null)).toEqual([
       { path: '/events/opid-hus', expect: 'present' },
       { path: '/events', expect: 'present' },
@@ -84,8 +84,33 @@ describe('demo module', () => {
   it('refuses to build a path for an entry without a slug', () => {
     const s = demo.site.event!;
     const noSlug: SiteEntry = { ...e, slug: null };
-    expect(() => s.path(noSlug)).toThrow(/has no slug/);
+    expect(() => s.path!(noSlug)).toThrow(/has no slug/);
     expect(() => s.checks(noSlug, release(true), null)).toThrow(/has no slug/);
+  });
+});
+
+// A7: content with no page of its own, shown on a shared page (as a home page's settings are).
+describe('demo events-page singleton', () => {
+  const type = demo.types.find((t) => t.name === 'events-page')!;
+  const p: SiteEntry = { id: '00000000-0000-4000-8000-000000000002', type: 'events-page', slug: null, sortAt: null };
+  const view = (present: boolean): ReleaseView => ({ entries: (t) => (t === 'events-page' && present ? [p] : []) });
+
+  it('is a singleton with a site integration that has no path of its own', () => {
+    expect(isSingleton(demo, 'events-page')).toBe(true);
+    expect(demo.site['events-page']).toBeDefined();
+    expect(demo.site['events-page']!.path).toBeUndefined();
+  });
+
+  it('is checked on the events page: present while published, absent once withdrawn, with no slug', () => {
+    const s = demo.site['events-page']!;
+    expect(s.checks(p, view(true), null)).toEqual([{ path: '/events', expect: 'present' }]);
+    expect(s.checks(p, view(false), view(true))).toEqual([{ path: '/events', expect: 'absent' }]);
+  });
+
+  it('has no text title, so it never gets a slug, and requires only its introduction', () => {
+    expect(type.queryColumns({ intro: 'Velkomin', featured: [] })).toEqual({ title: null, sortAt: null });
+    const r = type.publishValidator().safeParse({});
+    expect(r.success ? [] : r.error.issues.map((i) => i.path[0])).toEqual(['intro']);
   });
 });
 

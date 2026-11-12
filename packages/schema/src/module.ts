@@ -18,9 +18,16 @@ export interface ReleaseView {
 export type LiveCheck = { path: string; expect: 'present' | 'absent' };
 
 export interface SiteIntegration {
-  /** The entry's public path on the site. */
-  path(e: SiteEntry): string;
-  /** The live checks for a release; `previous` is the release before it (null for the first). */
+  /**
+   * The entry's own public path on the site. Absent for content with no page of its own (a staff
+   * list, a home page's settings), shown only on shared pages: such an entry needs no slug, an
+   * `absent` check is never held to 404, and preview opens its first checked page (§3.2, §7.4, §7.5).
+   */
+  path?(e: SiteEntry): string;
+  /**
+   * The live checks for a release, declared per entry; `previous` is the release before it (null
+   * for the first). An entry with no check is delivered but never confirmed live (§7.4).
+   */
   checks(e: SiteEntry, release: ReleaseView, previous: ReleaseView | null): LiveCheck[];
 }
 

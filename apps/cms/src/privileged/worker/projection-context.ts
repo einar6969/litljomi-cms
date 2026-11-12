@@ -27,8 +27,8 @@ export interface ContextAsset {
 /**
  * Lookups over the given entries and assets. An entry that is not in `entries` (not published,
  * archived or unknown) resolves to null (spec §6.2). An entry's path comes from the module's site
- * integration for its type; it is null when the type has no site pages or the integration cannot
- * compute one (for example, no slug). An asset resolves only once it has a public path; its URL is
+ * integration for its type; it is null when the type has no site pages, no page of its own (A7),
+ * or the integration cannot compute one (for example, no slug). An asset resolves only once it has a public path; its URL is
  * `mediaUrl(public_path)`, and `resolveAsset` in the schema package keeps it only if it is https.
  */
 export function buildProjectionContext(o: {
@@ -41,7 +41,8 @@ export function buildProjectionContext(o: {
   const assets = new Map(o.assets.map((a) => [a.id, a]));
   const pathOf = (e: ContextEntry): string | null => {
     const integration = o.module.site[e.type];
-    if (!integration) return null;
+    // A type with no page of its own (A7) has no path to link to.
+    if (!integration?.path) return null;
     try {
       return integration.path({ id: e.id, type: e.type, slug: e.slug, sortAt: e.sortAt });
     } catch {

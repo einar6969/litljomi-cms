@@ -23,13 +23,14 @@ const base: PublicationStatusRow = {
   sites_not_confirmed: 0,
   retries_exhausted: false,
   live_retrying: false,
+  nothing_checked: false,
 };
 const row = (patch: Partial<PublicationStatusRow>): PublicationStatusRow => ({ ...base, ...patch });
 const unpublish = (patch: Partial<PublicationStatusRow> = {}) => row({ action: 'unpublish', ...patch });
 
 // Every value the view can give a delivered release's counts over two active sites: 0..2 notified,
 // live ok and not confirmed (not more than the sites), with the retries exhausted or not (M3-02),
-// and a live check retried or not (M3-03).
+// a live check retried or not (M3-03), and the entry recorded with nothing to check or not (A7).
 function* deliveredCombinations(): Generator<PublicationStatusRow> {
   for (const action of ['publish', 'unpublish'] as const)
     for (const omitted of [false, true])
@@ -38,15 +39,17 @@ function* deliveredCombinations(): Generator<PublicationStatusRow> {
           for (let notConfirmed = 0; live + notConfirmed <= notified; notConfirmed++)
             for (const exhausted of [false, true])
               for (const retrying of [false, true])
-                yield row({
-                  action,
-                  omitted,
-                  sites_notified: notified,
-                  sites_live_ok: live,
-                  sites_not_confirmed: notConfirmed,
-                  retries_exhausted: exhausted,
-                  live_retrying: retrying && notConfirmed > 0 && !exhausted,
-                });
+                for (const nothing_checked of [false, true])
+                  yield row({
+                    action,
+                    omitted,
+                    sites_notified: notified,
+                    sites_live_ok: live,
+                    sites_not_confirmed: notConfirmed,
+                    retries_exhausted: exhausted,
+                    live_retrying: retrying && notConfirmed > 0 && !exhausted,
+                    nothing_checked,
+                  });
 }
 
 describe('displayState: requested, committed and delivered (§7.4)', () => {
@@ -100,10 +103,10 @@ describe('displayState: live (decision 35)', () => {
       const everySiteOk = r.sites_live_ok === r.site_count;
       if (state.label === 'Birt á vef ✓') {
         live++;
-        expect(r).toMatchObject({ action: 'publish', status: 'committed', release_status: 'delivered', omitted: false });
+        expect(r).toMatchObject({ action: 'publish', status: 'committed', release_status: 'delivered', omitted: false, nothing_checked: false });
         expect(everySiteOk).toBe(true);
       }
-      if (r.action === 'publish' && !r.omitted && everySiteOk) expect(state.label).toBe('Birt á vef ✓');
+      if (r.action === 'publish' && !r.omitted && !r.nothing_checked && everySiteOk) expect(state.label).toBe('Birt á vef ✓');
     }
     expect(live).toBeGreaterThan(0);
     for (const status of ['pending', 'validating', 'failed_validation', 'superseded', 'rejected', 'failed'] as const) {
@@ -120,8 +123,53 @@ describe('displayState: live (decision 35)', () => {
   });
 
   it('every combination maps to one of the §7.4 labels', () => {
-    const labels = new Set<string>([t.publish.inProgress, t.publish.revalidated, t.publish.live, t.publish.removed, t.publish.deliveryFailed, t.publish.notConfirmed, t.publish.notConfirmedRetrying]);
+    const labels = new Set<string>([
+      t.publish.inProgress,
+      t.publish.revalidated,
+      t.publish.live,
+      t.publish.removed,
+      t.publish.liveNothingChecked,
+      t.publish.removedNothingChecked,
+      t.publish.deliveryFailed,
+      t.publish.notConfirmed,
+      t.publish.notConfirmedRetrying,
+    ]);
     for (const r of deliveredCombinations()) expect(labels).toContain(displayState(r).label);
+  });
+});
+
+// A7, §7.4: an entry with no page check was delivered, and the site accepted the notification, but
+// nothing on the site was looked at: never the confirmed tick, never "Tekið af vef".
+describe('displayState: nothing to check (A7)', () => {
+  it('a publish is "published, not confirmed", a final warning with its reason in words', () => {
+    const state = displayState(row({ nothing_checked: true }));
+    expect(state).toEqual({ label: t.publish.liveNothingChecked, tone: 'warning', detail: t.publish.liveNothingCheckedDetail });
+    expect(state.label).not.toContain('✓');
+    expect(isFinal(state)).toBe(true);
+  });
+
+  it('an unpublish is "withdrawn, not confirmed", a final warning, never "Tekið af vef"', () => {
+    const state = displayState(unpublish({ nothing_checked: true }));
+    expect(state).toEqual({ label: t.publish.removedNothingChecked, tone: 'warning', detail: t.publish.removedNothingCheckedDetail });
+    expect(isFinal(state)).toBe(true);
+  });
+
+  it('applies only once every active site accepted the release: before that, and on any failure, the state is as without it', () => {
+    for (const r of deliveredCombinations()) {
+      if (!r.nothing_checked) continue;
+      const state = displayState(r);
+      const without = displayState({ ...r, nothing_checked: false });
+      if (without.label === t.publish.live || without.label === t.publish.removed) {
+        expect(state.label).toBe(r.action === 'publish' ? t.publish.liveNothingChecked : t.publish.removedNothingChecked);
+      } else {
+        expect(state).toEqual(without);
+      }
+    }
+  });
+
+  it('a row that does not say (the column not read) fails closed: never the confirmed tick', () => {
+    const { nothing_checked: _, ...unread } = base;
+    expect(displayState(unread as PublicationStatusRow).label).toBe(t.publish.liveNothingChecked);
   });
 });
 
@@ -348,13 +396,14 @@ describe('displayState: unpublish', () => {
 });
 
 describe('tones', () => {
-  it('only "Birt á vef ✓" is ok, only "Tekið af vef" is neutral, and only "Enginn vefur tengdur" is a warning', () => {
+  it('only "Birt á vef ✓" is ok, only "Tekið af vef" is neutral, and only "Enginn vefur tengdur" and the nothing-checked states are warnings', () => {
     const rows = [...deliveredCombinations()].flatMap((r) => [r, { ...r, site_count: 0, sites_notified: 0, sites_live_ok: 0, sites_not_confirmed: 0 }]);
+    const warnings = new Set<string>([t.publish.noSite, t.publish.liveNothingChecked, t.publish.removedNothingChecked]);
     for (const r of rows) {
       const { label, tone } = displayState(r);
       expect(tone === 'ok', label).toBe(label === t.publish.live);
       expect(tone === 'neutral', label).toBe(label === t.publish.removed);
-      expect(tone === 'warning', label).toBe(label === t.publish.noSite);
+      expect(tone === 'warning', label).toBe(warnings.has(label));
     }
   });
 });

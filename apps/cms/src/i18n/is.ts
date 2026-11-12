@@ -320,6 +320,11 @@ export const is = {
     live: 'Birt á vef ✓',
     removed: 'Tekið af vef',
     removedDetail: 'Færslan sést ekki lengur á þeim síðum vefsins sem voru athugaðar. Eldri afrit geta enn verið til um tíma í skyndiminni vafra, leitarvéla og annarra.',
+    // A7 (draft): delivered, but no page of the site is checked for this kind of content, so it is never shown as confirmed.
+    liveNothingChecked: 'Birt, ekki staðfest á vef',
+    liveNothingCheckedDetail: 'Vefurinn tók við breytingunni, en engin síða vefsins er athuguð fyrir þessa tegund efnis. Því er ekki hægt að staðfesta að færslan sjáist þar.',
+    removedNothingChecked: 'Tekið úr birtingu, ekki staðfest á vef',
+    removedNothingCheckedDetail: 'Vefurinn tók við breytingunni, en engin síða vefsins er athuguð fyrir þessa tegund efnis. Því er ekki hægt að staðfesta að færslan sé horfin þaðan.',
     invalid: 'Ekki hægt að birta:',
     invalidGeneric: 'efnið stenst ekki kröfur efnisflokksins',
     invalidDetail: 'Lagaðu reitina og birtu aftur.',
