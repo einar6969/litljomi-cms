@@ -339,7 +339,7 @@ REF_RE='^[a-z0-9]{20}$'; URL_RE='^https://[a-z0-9]{20}\.supabase\.co$'; KEY_RE='
 ID_RE='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 HOST_RE='^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$'
 
-# env_value NAME ERE: identical to staging section 7.2's copy; keep them identical (reads ENV_FILE
+# env_value NAME ERE: identical to the copy in staging section G3.2c, under section 7.4's rules; keep them identical (reads ENV_FILE
 # without executing it; never prints a refused value).
 env_value() {
   local assigned="^[[:space:]]*(export[[:space:]]+)?$1[[:space:]]*=" allowed="$2" line value='' n=0 plain=0
