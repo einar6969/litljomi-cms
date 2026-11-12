@@ -1,5 +1,10 @@
 // The fixed test identities (plan, "Fixed test identities"). They must agree
 // with supabase/tests/database/_helpers.sql; fixtures.test.ts checks that.
+import { stackSlot } from '../../../tools/stack/slot.ts';
+
+/** The stack slot's site ports (CMS_STACK_SLOT, tools/stack/slot.ts; slot 1: 3101 and 3200). */
+const stack = stackSlot();
+
 export const TENANT = {
   labak: '00000000-0000-4000-8000-00000000a001',
   demo: '00000000-0000-4000-8000-00000000a002',
@@ -36,11 +41,11 @@ export const PERSONA_PASSWORD = 'local-test-password-0123';
 
 /** The demo tenant's site, created by seedIntegration (the fixture site's port, plan Task 26). */
 export const DEMO_SITE = {
-  baseUrl: 'http://localhost:3101',
-  revalidateUrl: 'http://localhost:3101/api/cms/revalidate',
+  baseUrl: stack.demoSiteUrl,
+  revalidateUrl: `${stack.demoSiteUrl}/api/cms/revalidate`,
   webhookSecret: 's3cr3t',
   /** The demo site's preview route and secret (M3-12; a local test value, stored in the local Vault). */
-  previewUrl: 'http://localhost:3101/api/cms/preview',
+  previewUrl: `${stack.demoSiteUrl}/api/cms/preview`,
   previewSecret: 'demo-preview-s3cr3t-local-test-value-0123',
 } as const;
 
@@ -50,7 +55,7 @@ export const DEMO_SITE = {
  * the design e2e expects labak to have no site after a reset.
  */
 export const LABAK_LOCAL_SITE = {
-  baseUrl: 'http://localhost:3200',
-  revalidateUrl: 'http://localhost:3200/api/cms/revalidate',
+  baseUrl: stack.labakSiteUrl,
+  revalidateUrl: `${stack.labakSiteUrl}/api/cms/revalidate`,
   webhookSecret: 'labak-local-secret',
 } as const;

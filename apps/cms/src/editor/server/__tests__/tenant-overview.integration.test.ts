@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import type { StructureNode } from '@litljomi/cms-schema';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { editorApiClient, editorClient } from '../../../../../../tests/integration/src/clients.ts';
-import { PERSONAS, TENANT } from '../../../../../../tests/integration/src/fixtures.ts';
+import { DEMO_SITE, PERSONAS, TENANT } from '../../../../../../tests/integration/src/fixtures.ts';
 import { closeAll, ownerQuery } from '../../../../../../tests/integration/src/sql.ts';
 import { t } from '@/i18n/is';
 import { loadTenantOverview } from '../tenant-overview';
@@ -62,7 +62,7 @@ describe('loadTenantOverview under RLS', () => {
     expect(own.recent.ok && own.recent.value.map((row) => row.id)).toContain(demoEvent);
     expect(own.counts.get('event')?.total).toBeGreaterThan(0);
     expect(own.status.ok && [...own.status.value.unproven.keys()]).toContain(demoEvent);
-    expect(own.band.siteUrl).toBe('http://localhost:3101');
+    expect(own.band.siteUrl).toBe(DEMO_SITE.baseUrl);
 
     const labak = await load('editor_labak', 'labak');
     expect(labak.recent.ok && labak.recent.value.map((row) => row.id)).toContain(labakNews);
