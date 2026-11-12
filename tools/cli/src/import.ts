@@ -6,10 +6,10 @@
 // - It is an editor. It never reads the secret key: the env file is read for the URL and the
 //   publishable key only. It calls no worker route and no `admin_*` or `worker_*` function, writes
 //   to no cms table, and archives, unpublishes or deletes nothing.
-// - The password is read from the CMS_IMPORT_PASSWORD environment variable the operator sets for
-//   this one command, else from standard input (piped, or typed at a prompt that does not echo).
-//   It is never written to a file, logged or echoed. Tokens stay in memory; everything printed is
-//   redacted of the password and every token.
+// - The password is read from standard input only, as provision reads secrets (piped, or typed at
+//   a prompt that does not echo); never from an environment variable or an argument, which would
+//   leave it in the shell history. It is never written to a file, logged or echoed. Tokens stay in
+//   memory; everything printed is redacted of the password and every token.
 // - The URL must be https://<--expect-ref>.supabase.co, or with --local exactly the local stack's
 //   http://127.0.0.1:54321 (import decision 3); requests go to that origin only and never follow a
 //   redirect (./hosted.ts).
@@ -28,14 +28,13 @@ import { EditorSession } from './import/session.ts';
 export const LOCAL_ORIGIN = 'http://127.0.0.1:54321';
 /** The ledger and report name of a --local run, in place of a project ref. */
 export const LOCAL_REF = 'local';
-export const PASSWORD_ENV = 'CMS_IMPORT_PASSWORD';
 export const MAX_BATCH = 9;
 
 export interface ImportDeps extends MediaFs, LedgerStore, Omit<RunDeps, 'readBytes'> {
   fetch: FetchFn;
   /** A text file: the manifest, the env file. */
   readTextFile(path: string): Promise<string>;
-  /** The password: from CMS_IMPORT_PASSWORD, else standard input; null when there is none. Never echoed. */
+  /** The password, from standard input only; null when there is none. Never echoed. */
   readPassword(): Promise<string | null>;
   inspectImage: InspectImage;
   loadModule(slug: string): Promise<ModuleManifest>;
@@ -50,7 +49,7 @@ export const IMPORT_USAGE = [
   'usage: import --tenant <slug> --manifest <absolute path> --media <absolute folder> --dry-run',
   '       import --tenant <slug> --manifest <absolute path> --media <absolute folder> --email <editor> (--expect-ref <ref> | --local)',
   '              [--env-file=<absolute path>] [--batch-size <1-9>] [--first-batch-only] [--report <absolute path>]',
-  `         (the password is read from ${PASSWORD_ENV}, else from standard input; --local needs --env-file)`,
+  '         (the password is read from standard input only, piped or typed; --local needs --env-file)',
 ].join('\n');
 
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -228,7 +227,7 @@ export async function runImport(args: string[], io: ImportIo, deps: ImportDeps):
     secrets.push(target.publishableKey);
     log(`target: ${target.origin.replace(/^https?:\/\//, '')}`);
     const password = await deps.readPassword();
-    if (password === null || password === '') throw new Failure(`FAILED: no password: set ${PASSWORD_ENV} for this command, or pipe or type it on standard input; nothing was sent`);
+    if (password === null || password === '') throw new Failure('FAILED: no password: pipe or type it on standard input; nothing was sent');
     secrets.push(password);
     const session = new EditorSession({ origin: target.origin, publishableKey: target.publishableKey }, deps.fetch, secrets, deps.now);
     await session.signIn(a.email as string, password);

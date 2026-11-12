@@ -1,11 +1,10 @@
-// The import's password (docs/plans/import.md section 2.2): from an environment variable the
-// operator sets for the one command, else piped on standard input, else typed at a prompt on the
-// terminal with echo turned off. It is returned to the caller only: never written to a file,
+// The import's password (docs/plans/import.md section 2): from standard input only, as provision
+// reads secrets: piped, or typed at a prompt on the terminal with echo turned off. Never from an
+// environment variable or an argument, which would put it in the shell history and in the
+// environment of every parent process. It is returned to the caller only: never written to a file,
 // logged or echoed. Synchronous reads, as ./stdin.ts explains (vite-node and async stdin).
 
 export interface PasswordSources {
-  /** The environment variable's value, read once and then removed from the environment. */
-  takeEnv(): string | undefined;
   /** True when standard input is a terminal (fd 0, without creating process.stdin). */
   stdinIsTerminal(): boolean;
   /** All of piped standard input. */
@@ -22,15 +21,13 @@ const MAX_PASSWORD_BYTES = 1024;
 
 /** A password, or null when there is none to read. */
 export function readPassword(src: PasswordSources): string | null {
-  const fromEnv = src.takeEnv();
-  if (fromEnv !== undefined && fromEnv !== '') return fromEnv;
   if (!src.stdinIsTerminal()) {
     const piped = src.readPiped();
     const line = piped.endsWith('\r\n') ? piped.slice(0, -2) : piped.endsWith('\n') ? piped.slice(0, -1) : piped;
     return line === '' ? null : line;
   }
   src.prompt('password (not shown): ');
-  if (!src.setEcho(false)) throw new Error('the terminal echo could not be turned off; set the environment variable or pipe the password instead');
+  if (!src.setEcho(false)) throw new Error('the terminal echo could not be turned off; pipe the password on standard input instead');
   const bytes: number[] = [];
   try {
     for (;;) {

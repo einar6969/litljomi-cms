@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { isatty } from 'node:tty';
 import { fileURLToPath } from 'node:url';
 import type { CheckSchemaDeps } from './check-schema.ts';
-import { PASSWORD_ENV, type ImportDeps } from './import.ts';
+import type { ImportDeps } from './import.ts';
 import { imageInspector } from './import/media.ts';
 import { readPassword } from './password.ts';
 import type { BoundaryCheckDeps } from './boundary-check.ts';
@@ -104,11 +104,6 @@ const importDeps: Omit<ImportDeps, 'loadModule'> = {
   },
   readPassword: async () =>
     readPassword({
-      takeEnv: () => {
-        const value = process.env[PASSWORD_ENV];
-        delete process.env[PASSWORD_ENV];
-        return value;
-      },
       stdinIsTerminal: () => isatty(0),
       readPiped: () => readStdinSync() ?? '',
       prompt: (text) => process.stderr.write(text),

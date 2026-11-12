@@ -5,7 +5,7 @@
 // request outside the target, no password or token in any output.
 import { afterEach, describe, expect, it } from 'vitest';
 import { runCli } from '../cli.ts';
-import { runImport, type ImportDeps } from '../import.ts';
+import { IMPORT_USAGE, runImport, type ImportDeps } from '../import.ts';
 import { assetIdFor } from '../import/media.ts';
 import { POLL_MS, STALL_MS } from '../import/run.ts';
 import { EMAIL, FakeHub, ORIGIN, PASSWORD, PUBLISHABLE, REF, TENANT_ID } from './import-fake-hub.ts';
@@ -419,6 +419,17 @@ describe('import: signing in and refusals', () => {
     const w = world((x) => (x.password = null));
     expect((await run(w)).text).toContain('no password');
     expect(w.hub.calls).toEqual([]);
+  });
+
+  // Import plan section 2: the password comes from standard input only, never the environment.
+  it('points the operator at standard input only, never an environment variable', async () => {
+    const r = await run(world((x) => (x.password = null)));
+    const failure = r.text.split('\n').find((l) => l.includes('no password')) ?? '';
+    expect(failure).toContain('pipe or type it on standard input');
+    for (const text of [failure, IMPORT_USAGE]) {
+      expect(text).not.toMatch(/CMS_IMPORT_PASSWORD|environment|\bset\b/i);
+    }
+    expect(IMPORT_USAGE).toContain('the password is read from standard input only');
   });
 
   it('refuses an env file for another project, and never reads the secret key', async () => {

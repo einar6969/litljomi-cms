@@ -1,14 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { readPassword, type PasswordSources } from '../password.ts';
 
-function sources(o: { env?: string; terminal?: boolean; piped?: string; typed?: string; echoFails?: boolean }) {
+function sources(o: { terminal?: boolean; piped?: string; typed?: string; echoFails?: boolean }) {
   const calls: string[] = [];
   const typed = [...new TextEncoder().encode(o.typed ?? '')];
   const src: PasswordSources = {
-    takeEnv: () => {
-      calls.push('env');
-      return o.env;
-    },
     stdinIsTerminal: () => o.terminal ?? false,
     readPiped: () => {
       calls.push('piped');
@@ -25,10 +21,20 @@ function sources(o: { env?: string; terminal?: boolean; piped?: string; typed?: 
 }
 
 describe('readPassword', () => {
-  it('takes the environment variable first, and reads nothing else', () => {
-    const { src, calls } = sources({ env: 'from-env', piped: 'from-stdin' });
-    expect(readPassword(src)).toBe('from-env');
-    expect(calls).toEqual(['env']);
+  // Import plan section 2: standard input only, as provision reads secrets. A password in the
+  // environment would sit in the shell history and in the parent processes' environments.
+  it('never takes the password from the environment', () => {
+    const before = process.env.CMS_IMPORT_PASSWORD;
+    process.env.CMS_IMPORT_PASSWORD = 'from-env';
+    try {
+      const { src, calls } = sources({ piped: 'from-stdin\n' });
+      expect(readPassword(src)).toBe('from-stdin');
+      expect(calls).toEqual(['piped']);
+      expect(readPassword(sources({ piped: '' }).src)).toBeNull();
+    } finally {
+      if (before === undefined) delete process.env.CMS_IMPORT_PASSWORD;
+      else process.env.CMS_IMPORT_PASSWORD = before;
+    }
   });
 
   it('reads piped standard input, without its final newline', () => {
@@ -40,7 +46,7 @@ describe('readPassword', () => {
   it('prompts on a terminal with echo off, and turns it back on', () => {
     const { src, calls } = sources({ terminal: true, typed: 'þögn-123\nrest' });
     expect(readPassword(src)).toBe('þögn-123');
-    expect(calls).toEqual(['env', 'prompt:password (not shown): ', 'echo off', 'echo on', 'prompt:\n']);
+    expect(calls).toEqual(['prompt:password (not shown): ', 'echo off', 'echo on', 'prompt:\n']);
   });
 
   it('turns echo back on when reading fails', () => {
@@ -54,6 +60,7 @@ describe('readPassword', () => {
 
   it('refuses to prompt when echo cannot be turned off', () => {
     expect(() => readPassword(sources({ terminal: true, typed: 'x\n', echoFails: true }).src)).toThrow('echo could not be turned off');
+    expect(() => readPassword(sources({ terminal: true, typed: 'x\n', echoFails: true }).src)).not.toThrow(/environment/);
   });
 
   it('gives up on Ctrl-C or Ctrl-D, and on an empty line', () => {
