@@ -11,7 +11,8 @@ const state = vi.hoisted(() => ({
   rpc: {} as Record<string, Answer>,
   object: null as { data: Blob | null; error: { message: string } | null } | null,
   signed: { data: { signedUrl: 'http://127.0.0.1:54321/storage/v1/object/sign/media-private/x?token=t' }, error: null } as Signed | ((path: string) => Signed),
-  upload: { error: null } as { error: { message: string } | null },
+  /** The upload's answer, or an error it throws. */
+  upload: { error: null } as { error: { message: string } | null } | Error,
   calls: [] as { name: string; args: unknown }[],
   queries: [] as { table: string; columns: string; filters: [string, unknown][] }[],
   storage: [] as { bucket: string; method: string; args: unknown[] }[],
@@ -39,7 +40,11 @@ const fake = {
       createSignedUrl: async (...args: unknown[]) => (
         state.storage.push({ bucket, method: 'createSignedUrl', args }), typeof state.signed === 'function' ? state.signed(args[0] as string) : state.signed
       ),
-      upload: async (...args: unknown[]) => (state.storage.push({ bucket, method: 'upload', args }), state.upload),
+      upload: async (...args: unknown[]) => {
+        state.storage.push({ bucket, method: 'upload', args });
+        if (state.upload instanceof Error) throw state.upload;
+        return state.upload;
+      },
     }),
   },
 };
@@ -160,9 +165,14 @@ describe('registerAssetAction', () => {
     state.rpc.set_asset_thumbnail = { error: { code: 'P0001', message: 'forbidden' } };
     await expect(registerAssetAction(SLUG, ASSET, PATH, FILE)).resolves.toEqual({ ok: true, assetId: ASSET });
 
-    // Even a throwing upload leaves the registration standing.
-    state.upload = null as unknown as typeof state.upload;
+    // Even a throwing upload leaves the registration standing, with the database ready to record.
+    state.storage = [];
+    state.calls = [];
+    state.upload = new Error('fetch failed');
+    state.rpc.set_asset_thumbnail = {};
     await expect(registerAssetAction(SLUG, ASSET, PATH, FILE)).resolves.toEqual({ ok: true, assetId: ASSET });
+    expect(state.storage.map((c) => c.method)).toEqual(['download', 'upload']);
+    expect(state.calls.map((c) => c.name)).toEqual(['register_asset']);
   });
 
   it('makes no thumbnail when the registration fails', async () => {
@@ -296,10 +306,12 @@ describe('assetPreviewAction', () => {
       ['corrupt', () => (state.object = { data: blobOf(truncated), error: null })],
       ['the original unreadable', () => (state.object = { data: null, error: { message: 'Object not found' } })],
       ['not recorded', () => (state.rpc.set_asset_thumbnail = { error: { code: 'P0001', message: 'forbidden' } })],
+      ['the upload throws', () => (state.upload = new Error('fetch failed'))],
       ['recorded but its object gone', () => (state.tables.asset_list = { data: row({ thumb_path: THUMB }) })],
     ];
     for (const [name, arrange] of cases) {
       state.object = { data: blobOf(jpeg), error: null };
+      state.upload = { error: null };
       state.rpc.set_asset_thumbnail = {};
       state.tables.asset_list = { data: row() };
       state.signed = (path) => (path === THUMB && name === 'recorded but its object gone' ? NOT_SIGNED : signedAt(path));
