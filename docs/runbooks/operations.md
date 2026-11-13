@@ -991,7 +991,7 @@ curl -s '<api-url>/storage/v1/object/public/delivery/<tenant>/releases/1.json' |
 
 **Verify:** the pointer names `releases/1.json`. Each image address, `url` in an image field and `src` in rich text, starts with `<api-url>/storage/v1/object/public/media-public/<tenant>/`, and `curl -s -o /dev/null -w '%{http_code}\n' '<address>'` prints `200` for it. A `url` without `/media-public/` is a link or a video's address, not an image. An image delivered as `null` means the CMS is not running against this stack's own address: stop and report.
 
-**L5b. Import (optional).** In the first terminal, the tenant's content from a manifest (`docs/plans/import.md`), as the editor invited in L3, once that editor has chosen a password. It needs the sweep loop from L4. The dry run is offline; the real run reads the password from standard input and never the secret key.
+**L5b. Import (optional).** In the first terminal, the tenant's content from a manifest (`docs/plans/import.md`), as the editor invited in L3, once that editor has chosen a password. It needs the sweep loop from L4. The dry run is offline; the real run reads the password from standard input and never the secret key. The editor must be an account with no authenticator: the import signs in with a password only and stops, having written nothing, on an account that has a verified second factor. A platform admin's own address won't do; invite a second address for the import.
 
 ```sh
 pnpm --silent --filter @litljomi/cli cli import --tenant '<tenant>' --manifest '<manifest>' --media '<media-folder>' --dry-run

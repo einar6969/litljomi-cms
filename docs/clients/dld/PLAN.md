@@ -58,7 +58,7 @@ Einar approved the fast lane on 2026-11-13 ("your recommendation of '2. Fast lan
 |---|---|---|---|
 | E1 | Reads and approves copy batch 1 (the platform's new strings) | Any time after WP7 hands it over | 20 min |
 | E2 | Nothing: the coordinator deploys ("Coordinator deploys", 2026-11-13). The number is kept so the others don't move | | |
-| E3 | Provisions tenant `dld`, and an editor address he controls for the import (runbook §2, steps 7 and 8) | After the deploy that carries the module | 5 min |
+| E3 | Provisions tenant `dld`, and an editor address he controls for the import, one with no authenticator set up (runbook §2, steps 7 and 8) | After the deploy that carries the module | 5 min |
 | E4 | Runs the production import, signed in as that editor: the first batch, a look, then the rest | After E3 and a clean rehearsal | Measured in WP5 |
 | E5 | Sets the site's variables on Vercel project `dld`, provisions the site at `https://dld.litljomi.is` and its preview (runbook §2, 11b–11d), and says yes to merging the site branch into `dld-is` `main` | After E4 | 15 min |
 | E6 | Approves copy batch 2 (DLD's labels) and the handbook | After WP3 and WP7 | 20 min |
