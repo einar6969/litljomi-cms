@@ -64,8 +64,8 @@ describe('labak module', () => {
     expect(news.fields.sourceLabel!.project('Lesa frétt á mbl.is', ctx)).toBe('Lesa frétt á mbl.is');
   });
   it('builds the path from the slug and refuses an entry without one', () => {
-    expect(site.path(entry(1))).toBe('/frettir/frett-1');
-    expect(() => site.path({ ...entry(1), slug: null })).toThrow();
+    expect(site.path!(entry(1))).toBe('/frettir/frett-1');
+    expect(() => site.path!({ ...entry(1), slug: null })).toThrow();
   });
   it('checks own path, list and home for an entry among the latest six', () => {
     expect(HOME_LATEST_COUNT).toBe(6);

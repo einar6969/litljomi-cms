@@ -7,7 +7,7 @@ import { createBrowserEditorClient } from '@/lib/supabase/browser';
 import { Button } from '@/ui/Button';
 import { Notice } from '@/ui/Notice';
 import { StatusBadge } from '@/ui/StatusBadge';
-import { answers, displayState, IN_PROGRESS, isFinal, PUBLICATION_STATUS_COLUMNS, type DisplayState, type PublicationStatusRow } from './status';
+import { answers, displayState, IN_PROGRESS, isFinal, PUBLICATION_STATUS_COLUMNS, refusedEntryIds, type DisplayState, type PublicationStatusRow } from './status';
 
 /** The panel polls the entry's status this often while it is not final (plan Task 25). */
 export const POLL_MS = 2000;
@@ -20,11 +20,25 @@ type Props = {
   disabled?: boolean;
   /** The entry has a published revision now (the entry's `status` is published or changed). */
   initiallyPublished: boolean;
+  /**
+   * The draft version that is published now (`published_draft_version`), or null. When the draft's
+   * `version` has moved past it, a live entry reads "Óbirtar breytingar", not "Birt á vef ✓".
+   */
+  publishedVersion?: number | null;
   /** The type's field labels by key, to name the fields a validation failure is about. */
   fieldLabels: Readonly<Record<string, string>>;
   publish?: typeof requestPublishAction;
   unpublish?: typeof requestUnpublishAction;
   loadStatus?: (entryId: string) => Promise<PublicationStatusRow | null>;
+  /**
+   * The entry's `published_draft_version` now. Read when a publish this panel did not send settles
+   * (the page was opened while it was on its way): the version the page was rendered with is stale.
+   */
+  loadPublishedVersion?: (entryId: string) => Promise<number | null>;
+  /** Titles of entries by id, to name the references a refused publish was about. */
+  loadTitles?: (ids: readonly string[]) => Promise<Record<string, string | null>>;
+  /** Told whether the entry can be archived now: not published, and no request on its way (A6). */
+  onArchivableChange?: (archivable: boolean) => void;
   /** Shown at the panel's foot: the preview button. */
   children?: ReactNode;
 };
@@ -46,6 +60,21 @@ async function loadPublicationStatus(entryId: string): Promise<PublicationStatus
     .maybeSingle();
   if (error) throw new Error(`publication_status: ${error.code}`);
   return (data as PublicationStatusRow | null) ?? null;
+}
+
+/** The entry's `published_draft_version` from `api.entry_detail`, read with the editor's own session (RLS). */
+async function loadEntryPublishedVersion(entryId: string): Promise<number | null> {
+  const { data, error } = await createBrowserEditorClient().from('entry_detail').select('published_draft_version').eq('id', entryId).maybeSingle();
+  if (error) throw new Error(`entry_detail: ${error.code}`);
+  if (!data) throw new Error('entry_detail: no row');
+  return (data as { published_draft_version: number | null }).published_draft_version;
+}
+
+/** The titles of the given entries from `api.entry_list`, read with the editor's own session (RLS). */
+async function loadEntryTitles(ids: readonly string[]): Promise<Record<string, string | null>> {
+  const { data, error } = await createBrowserEditorClient().from('entry_list').select('id, title').in('id', [...ids]);
+  if (error) throw new Error(`entry_list: ${error.code}`);
+  return Object.fromEntries(((data ?? []) as { id: string; title: string | null }[]).map((row) => [row.id, row.title]));
 }
 
 const requestNotice = (result: Exclude<PublishActionResult, { requestId: string }>['error']): string => {
@@ -72,15 +101,25 @@ export function PublishPanel({
   version,
   disabled = false,
   initiallyPublished,
+  publishedVersion: initialPublishedVersion = null,
   fieldLabels,
   publish = requestPublishAction,
   unpublish = requestUnpublishAction,
   loadStatus = loadPublicationStatus,
+  loadTitles = loadEntryTitles,
+  loadPublishedVersion = loadEntryPublishedVersion,
+  onArchivableChange,
   children,
 }: Props) {
   const [row, setRow] = useState<PublicationStatusRow | null>(null);
+  // False until the first status read answers: until then nothing is claimed (probe §14, 10).
+  const [loaded, setLoaded] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [published, setPublished] = useState(initiallyPublished);
+  const [publishedVersion, setPublishedVersion] = useState<number | null>(initialPublishedVersion);
+  // The draft version this panel's own publish request carried.
+  const sentVersionRef = useRef<number | null>(null);
+  const [titles, setTitles] = useState<Record<string, string | null>>({});
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   // The request this panel just made: until the view shows it, the state is "Í birtingu…".
@@ -90,6 +129,8 @@ export function PublishPanel({
   awaitingRef.current = awaiting;
   const labelsRef = useRef(fieldLabels);
   labelsRef.current = fieldLabels;
+  const loadPublishedVersionRef = useRef(loadPublishedVersion);
+  loadPublishedVersionRef.current = loadPublishedVersion;
 
   useEffect(() => {
     let cancelled = false;
@@ -102,15 +143,41 @@ export function PublishPanel({
         next = undefined;
       }
       if (cancelled) return;
-      setLoadFailed(next === undefined);
-      if (next !== undefined) setRow(next);
       const waitingFor = awaitingRef.current;
       const settled =
         next === null
           ? waitingFor === null
           : next !== undefined && answers(next, waitingFor) && isFinal(displayState(next, { fieldLabels: labelsRef.current }));
-      if (settled) {
-        if (next && next.status === 'committed') setPublished(next.action === 'publish');
+      // The version a settled committed publish made the published one. The worker publishes
+      // exactly the version a request carried (§6.2), so for this panel's own request that is the
+      // version it sent. Any other (one on its way when the page was opened, or one the view shows
+      // in place of this panel's) is read again: the version the page was rendered with may be
+      // older, and a "Birt á vef ✓" over unpublished edits is the false success of §7.4.
+      let settledVersion: number | null | undefined;
+      if (settled && next && next.status === 'committed' && next.action === 'publish') {
+        if (waitingFor !== null && next.request_id === waitingFor && sentVersionRef.current !== null) {
+          settledVersion = sentVersionRef.current;
+        } else {
+          try {
+            settledVersion = await loadPublishedVersionRef.current(entryId);
+          } catch {
+            // Nothing is claimed until it can be read: the row is not shown, and is read again.
+            next = undefined;
+          }
+          if (cancelled) return;
+        }
+      }
+      setLoadFailed(next === undefined);
+      if (next !== undefined) {
+        setRow(next);
+        setLoaded(true);
+      }
+      if (settled && next !== undefined) {
+        if (next && next.status === 'committed') {
+          setPublished(next.action === 'publish');
+          if (next.action === 'unpublish') setPublishedVersion(null);
+          else if (settledVersion !== undefined) setPublishedVersion(settledVersion);
+        }
         return;
       }
       timer = setTimeout(() => void tick(), POLL_MS);
@@ -123,12 +190,13 @@ export function PublishPanel({
   }, [entryId, loadStatus, pollRun]);
 
   const send = useCallback(
-    async (call: () => Promise<PublishActionResult>) => {
+    async (call: () => Promise<PublishActionResult>, sentVersion: number | null) => {
       setBusy(true);
       setNotice(null);
       try {
         const result = await call();
         if ('requestId' in result) {
+          sentVersionRef.current = sentVersion;
           setAwaiting(result.requestId);
           awaitingRef.current = result.requestId;
           setPollRun((n) => n + 1);
@@ -144,18 +212,43 @@ export function PublishPanel({
     [],
   );
 
-  const shown = row && answers(row, awaiting) ? displayState(row, { fieldLabels }) : null;
-  const state: DisplayState | null = shown ?? (awaiting !== null ? IN_PROGRESS : null);
-  const inFlight = busy || (state !== null && !isFinal(state));
+  const answering = row && answers(row, awaiting) ? row : null;
+  // A refused publish names its references by title (A10): read once per refused request.
+  const refused = refusedEntryIds(answering);
+  const refusedKey = answering && refused.length > 0 ? `${answering.request_id}:${refused.join(',')}` : null;
+  useEffect(() => {
+    if (refusedKey === null) return;
+    let live = true;
+    loadTitles(refusedKey.slice(refusedKey.indexOf(':') + 1).split(','))
+      .then((found) => live && setTitles((known) => ({ ...known, ...found })))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [refusedKey, loadTitles]);
+
+  const shown = answering ? displayState(answering, { fieldLabels, entryTitles: titles }) : null;
+  const requestState = shown ?? (awaiting !== null ? IN_PROGRESS : null);
+  const inFlight = busy || (requestState !== null && !isFinal(requestState));
+  // Live, but the draft has saved changes since the published version (probe §14, 11).
+  const state: DisplayState | null =
+    requestState?.tone === 'ok' && publishedVersion !== null && version !== publishedVersion
+      ? { label: t.publish.changed, tone: 'warning', detail: t.publish.changedDetail }
+      : requestState;
+  const archivable = loaded && !published && !inFlight;
+  useEffect(() => {
+    onArchivableChange?.(archivable);
+  }, [archivable, onArchivableChange]);
 
   const track = state ? TRACKS[state.label] : undefined;
+  const label = state?.label ?? (loaded ? t.publish.none : t.publish.loading);
 
   return (
     <section aria-labelledby="publish-heading" className="card pub">
       <h2 id="publish-heading">{t.publish.heading}</h2>
       {/* Not role="status": the form's save status is the page's one status region. */}
       <StatusBadge as="p" look="state" tone={state?.tone ?? 'neutral'} data-testid="publish-state" data-tone={state?.tone ?? 'none'} aria-live="polite">
-        {state?.label ?? t.publish.none}
+        {label}
       </StatusBadge>
       {track ? (
         <div className="track" aria-hidden="true">
@@ -163,6 +256,13 @@ export function PublishPanel({
             <i key={index} className={step} />
           ))}
         </div>
+      ) : null}
+      {state?.lines ? (
+        <ul data-testid="publish-lines" className="text-sm">
+          {state.lines.map((line, index) => (
+            <li key={index}>{line}</li>
+          ))}
+        </ul>
       ) : null}
       {state?.detail ? (
         <p data-testid="publish-detail" className="text-sm text-muted">
@@ -176,11 +276,11 @@ export function PublishPanel({
         </Notice>
       ) : null}
       <div className={published ? 'btns' : 'btns one'}>
-        <Button variant="primary" disabled={disabled || inFlight} onClick={() => void send(() => publish(entryId, version))}>
+        <Button variant="primary" disabled={disabled || inFlight} onClick={() => void send(() => publish(entryId, version), version)}>
           {t.publish.publish}
         </Button>
         {published ? (
-          <Button variant="danger" disabled={inFlight} onClick={() => void send(() => unpublish(entryId))}>
+          <Button variant="danger" disabled={inFlight} onClick={() => void send(() => unpublish(entryId), null)}>
             {t.publish.unpublish}
           </Button>
         ) : null}

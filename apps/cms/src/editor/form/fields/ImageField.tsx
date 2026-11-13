@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { assetPreviewAction, registerAssetAction, updateAssetAction } from '@/app/(editor)/t/[tenant]/asset-actions';
 import { MAX_ALT_LENGTH, type AssetChange } from '@/editor/media/asset-metadata';
 import { FocalPointPicker } from '@/editor/media/FocalPointPicker';
+import { LibraryPicker } from '@/editor/media/LibraryPicker';
+import { imageValueOf, type ImageValue } from '@/editor/media/picker-selection';
 import { t } from '@/i18n/is';
 import { createBrowserEditorClient } from '@/lib/supabase/browser';
 import { prepareUpload, uploadOriginal } from '../../upload';
@@ -13,9 +15,6 @@ import { Button, buttonClasses } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Field } from '@/ui/Field';
 import { Notice as NoticeBox, type NoticeTone } from '@/ui/Notice';
-
-/** The stored value of an image field: an asset reference with this use's alt text (§5.2). */
-type ImageValue = { _ref: string; _kind: 'asset'; alt: string };
 
 type Preview = { url: string; defaultAlt: string | null; focalX: number | null; focalY: number | null };
 
@@ -58,10 +57,17 @@ const imageOf = (value: unknown): ImageValue | null => {
 /**
  * An image field (§5.2, §5.6). A chosen file is checked before upload (`prepareUpload`), uploaded
  * from the browser to `media-private` with the editor's session, then registered by the server,
- * which reads the object back. The preview is a signed URL valid for 600 seconds, signed again if
- * it fails to load (expired), at most `MAX_PREVIEW_RESIGNS` times, then a notice. The alt text
+ * which reads the object back and makes its thumbnail. The preview is the thumbnail, never the
+ * original unless the file cannot have one (`assetPreviewAction`), through a signed URL valid for
+ * 600 seconds, signed again if it fails to load (expired), at most `MAX_PREVIEW_RESIGNS` times,
+ * then a notice. The alt text
  * belongs to this use; the asset's own default alt text and focal point are edited here too
  * (`update_asset`), and on the asset's detail page, linked from here.
+ *
+ * "Velja úr safni" opens the library in pick mode (docs/plans/media-library.md section 6.3): a
+ * chosen file arrives with its default alt text. A file dropped on the empty field's dashed box is
+ * uploaded as a chosen one is. Replacing an image, by upload or from the library, keeps the alt
+ * text this use already has.
  */
 export function ImageField({ id, label, required, value, onChange }: FieldProps) {
   const tenant = useEditorTenant();
@@ -71,6 +77,25 @@ export function ImageField({ id, label, required, value, onChange }: FieldProps)
   const [resigns, setResigns] = useState(0);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [busy, setBusy] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [over, setOver] = useState(false);
+  // This use's alt text as it is now, for an upload that finishes after the editor typed more.
+  const alt = useRef(image?.alt ?? '');
+  alt.current = image?.alt ?? '';
+  const libraryButton = useRef<HTMLButtonElement>(null);
+
+  // The picker gives focus back to the button that opened it; when choosing swapped the empty box
+  // for the image, that button is a new one, and takes it instead. Only once a picker has closed.
+  const pickerClosed = useRef(false);
+  useEffect(() => {
+    if (picking) {
+      pickerClosed.current = true;
+      return;
+    }
+    if (!pickerClosed.current) return;
+    pickerClosed.current = false;
+    if (document.activeElement === null || document.activeElement === document.body) libraryButton.current?.focus();
+  }, [picking]);
 
   useEffect(() => {
     setPreview(null);
@@ -114,7 +139,7 @@ export function ImageField({ id, label, required, value, onChange }: FieldProps)
         return;
       }
       setNotice(null);
-      onChange({ _ref: result.assetId, _kind: 'asset', alt: '' } satisfies ImageValue);
+      onChange({ _ref: result.assetId, _kind: 'asset', alt: alt.current } satisfies ImageValue);
     } catch {
       setNotice('uploadError');
     } finally {
@@ -145,6 +170,33 @@ export function ImageField({ id, label, required, value, onChange }: FieldProps)
       setNotice('updateError');
     }
   };
+
+  const hasFiles = (event: DragEvent) => event.dataTransfer?.types.includes('Files') ?? false;
+  const drop = {
+    onDragOver: (event: DragEvent) => {
+      if (!hasFiles(event)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = busy ? 'none' : 'copy';
+      setOver(true);
+    },
+    onDragLeave: (event: DragEvent) => {
+      if (!(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))) setOver(false);
+    },
+    onDrop: (event: DragEvent) => {
+      if (!hasFiles(event)) return;
+      event.preventDefault();
+      setOver(false);
+      const file = event.dataTransfer.files[0];
+      if (file && !busy) void upload(file);
+    },
+  };
+
+  // A plain button, for the ref that focus comes back to.
+  const fromLibrary = (
+    <button ref={libraryButton} type="button" className={buttonClasses('secondary', 'sm')} disabled={busy} onClick={() => setPicking(true)}>
+      {t.editor.image.fromLibrary}
+    </button>
+  );
 
   // The picker is a <label>, which has no disabled state: while busy it says so with aria-disabled.
   // The native input is visually hidden but still the label's control: focusable, named, and what a
@@ -195,6 +247,7 @@ export function ImageField({ id, label, required, value, onChange }: FieldProps)
             </Field>
             <div className="acts">
               {picker}
+              {fromLibrary}
               <Button variant="danger" size="sm" onClick={() => onChange(undefined)}>
                 {t.editor.image.remove}
               </Button>
@@ -217,9 +270,12 @@ export function ImageField({ id, label, required, value, onChange }: FieldProps)
           </div>
         </div>
       ) : (
-        <div className="drop">
+        <div className="drop" data-over={over || undefined} {...drop}>
           <Icon name="image" size={20} />
-          {picker}
+          <div className="acts justify-center">
+            {picker}
+            {fromLibrary}
+          </div>
         </div>
       )}
       {notice ? (
@@ -232,6 +288,18 @@ export function ImageField({ id, label, required, value, onChange }: FieldProps)
         >
           {messages[notice]}
         </NoticeBox>
+      ) : null}
+      {picking ? (
+        <LibraryPicker
+          mode="one"
+          fieldLabel={label}
+          onPick={([file]) => {
+            if (!file) return;
+            setNotice(null);
+            onChange(imageValueOf(file, alt.current));
+          }}
+          onClose={() => setPicking(false)}
+        />
       ) : null}
     </fieldset>
   );

@@ -49,7 +49,7 @@ test('a video in a list in a group: address recognised, title and still, autosav
 
   await videos.getByRole('button', { name: t.editor.list.add }).click();
   const item = videos.getByRole('group', { name: itemName(1), exact: true });
-  const address = item.getByLabel(v.url, { exact: true });
+  const address = item.getByRole('textbox', { name: v.url, exact: true });
   // A new item's first control takes focus.
   await expect(address).toBeFocused();
   await expect(item.getByText(v.help)).toBeVisible();
@@ -67,7 +67,7 @@ test('a video in a list in a group: address recognised, title and still, autosav
     await expect(address).toHaveAttribute('aria-invalid', 'false');
   });
 
-  await item.getByLabel(v.title, { exact: true }).fill('Opnunin');
+  await item.getByRole('textbox', { name: v.title, exact: true }).fill('Opnunin');
 
   const uploadRequest = page.waitForRequest((r) => r.method() === 'POST' && r.url().startsWith(UPLOAD_PREFIX));
   await item.locator('input[type="file"]').setInputFiles({ name: 'Rúgbrauð.jpg', mimeType: 'image/jpeg', buffer: JPEG });
@@ -85,9 +85,9 @@ test('a video in a list in a group: address recognised, title and still, autosav
 
   await page.reload();
   const reloaded = page.getByRole('group', { name: itemName(1), exact: true });
-  await expect(reloaded.getByLabel(v.url, { exact: true })).toHaveValue(`https://youtu.be/${YT}`);
+  await expect(reloaded.getByRole('textbox', { name: v.url, exact: true })).toHaveValue(`https://youtu.be/${YT}`);
   await expect(reloaded.getByText(recognised('youtube', YT))).toBeVisible();
-  await expect(reloaded.getByLabel(v.title, { exact: true })).toHaveValue('Opnunin');
+  await expect(reloaded.getByRole('textbox', { name: v.title, exact: true })).toHaveValue('Opnunin');
   await expect(reloaded.locator('img[data-testid$="-still-preview"]')).toHaveAttribute('src', /\/object\/sign\/media-private\//, SAVED);
 
   await test.step('publishing delivers the provider and id, and copies the still to media-public', async () => {
@@ -96,10 +96,19 @@ test('a video in a list in a group: address recognised, title and still, autosav
     await page.getByRole('button', { name: t.publish.publish }).click();
     await expect.poll(() => deliveredVideos(entryId), RELEASED).not.toBeNull();
     const [delivered] = (await deliveredVideos(entryId)) as Array<{ _key: string; value: Record<string, unknown> }>;
-    // The local stack serves media over http, which the projection does not deliver (only https
-    // addresses resolve; ENHANCEMENTS A4), so the still is null here and a full asset on https.
-    expect(delivered!.value).toEqual({ provider: 'youtube', id: YT, url: `https://youtu.be/${YT}`, title: 'Opnunin', still: null });
-    // The copy exists only because extraction found the reference at program.videos[0].value.still.
+    // The local stack serves media over http on its own loopback address, which the projection
+    // delivers on a local stack (enhancement A4): the still is the full asset, as on a hosted project.
+    const stillUrl = new URL(`${SUPABASE_URL}${publicPath}`).href;
+    expect(delivered!.value).toEqual({
+      provider: 'youtube',
+      id: YT,
+      url: `https://youtu.be/${YT}`,
+      title: 'Opnunin',
+      still: { id: assetId, url: stillUrl, width: expect.any(Number), height: expect.any(Number), mime: 'image/jpeg', alt: '', focal: null },
+    });
+    // The copy exists only because extraction found the reference at program.videos[0].value.still,
+    // and the delivered address is the one a site loads.
     await expect.poll(async () => (await supabaseGet(publicPath)).status, RELEASED).toBe(200);
+    expect((await fetch(stillUrl, { cache: 'no-store' })).status).toBe(200);
   });
 });

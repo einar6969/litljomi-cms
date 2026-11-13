@@ -167,6 +167,9 @@ describe('list and group fields (demo event.program.highlights)', () => {
           value: { id: target.id, type: 'event', slug: target.slug, title: 'Opið hús', path: `/events/${target.slug}` },
         },
       ],
+      // A group delivers every nested field, an absent one as null (group.ts projection).
+      videos: null,
+      gallery: null,
     });
   });
 });

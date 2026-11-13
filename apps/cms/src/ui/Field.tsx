@@ -68,11 +68,19 @@ function LabelText({ label, required }: { label: string; required: boolean }) {
   return (
     <span className="lab">
       {label}
-      {required ? (
-        <span aria-hidden="true" data-required-marker="" className="req">
-          *
-        </span>
-      ) : null}
+      {required ? <RequiredMarker /> : null}
+    </span>
+  );
+}
+
+/**
+ * The required marker after a label, for a field whose label is not a `Field` or `FieldGroup`
+ * (the rich-text box). Only visual: the control states it with `required` or `aria-required`.
+ */
+export function RequiredMarker() {
+  return (
+    <span aria-hidden="true" data-required-marker="" className="req">
+      *
     </span>
   );
 }

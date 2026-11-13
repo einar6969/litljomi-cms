@@ -3,7 +3,7 @@ import { canonicalJson, contentHash, defineType, entryContentHash, image, projec
 import { fakeCtx } from './helpers.ts';
 
 const A = '11111111-1111-4111-8111-111111111111';
-const asset = (url: string) => ({ id: A, url, width: 1, height: 1, mime: 'image/png', alt: '', focal: null });
+const asset = (url: string) => ({ id: A, url, width: 1, height: 1, mime: 'image/png', alt: '', focal: null, caption: null, credit: null });
 
 describe('canonicalJson and contentHash', () => {
   it('canonical JSON sorts keys at every depth and hashes deterministically', () => {
@@ -47,6 +47,15 @@ describe('canonicalJson and contentHash', () => {
     const hashes = [h(null), h({ x: 0.5, y: 0.5 }), h({ x: 0.5, y: 0.6 })];
     expect(new Set(hashes).size).toBe(3);
     expect(h({ x: 0.5, y: 0.6 })).toBe(hashes[2]);
+  });
+  it("hash changes when the file's caption or credit is set, changed or cleared (media library L3)", () => {
+    const t = defineType({ name: 'p', version: 1, label: 'P', fields: { pic: image({ label: 'I' }) }, preview: { title: 'pic' }, orderBy: 'pic' });
+    const data = { pic: { _ref: A, _kind: 'asset', alt: 'a' } };
+    const h = (caption: string | null, credit: string | null) =>
+      contentHash(projectEntry(t, data, fakeCtx({ assets: { [A]: { ...asset('https://m.test/1.png'), caption, credit } } })));
+    const hashes = [h(null, null), h('Snúðar', null), h('Kleinur', null), h('Kleinur', 'Anna')];
+    expect(new Set(hashes).size).toBe(4);
+    expect(h('Kleinur', 'Anna')).toBe(hashes[3]);
   });
   // Documented in canonicalJson: only plain objects (prototype Object.prototype or null) are
   // hashed, so the hash covers exactly what JSON delivers to a site.

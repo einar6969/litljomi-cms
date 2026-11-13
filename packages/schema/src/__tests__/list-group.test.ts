@@ -33,6 +33,8 @@ const asset = (id: string, o: Partial<PublicAsset> = {}): PublicAsset => ({
   mime: 'image/jpeg',
   alt: 'Sjálfgefið',
   focal: null,
+  caption: null,
+  credit: null,
   ...o,
 });
 const summary = (id: string, o: Partial<EntrySummary> = {}): EntrySummary => ({

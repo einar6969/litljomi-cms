@@ -92,7 +92,40 @@
                 "required": false,
                 "still": "optional"
               }
+            },
+            "gallery": {
+              "kind": "list",
+              "required": false,
+              "max": 12,
+              "of": {
+                "kind": "image",
+                "required": false
+              }
             }
+          }
+        }
+      },
+      "retired": {}
+    },
+    "events-page": {
+      "version": 1,
+      "transforms": [],
+      "fields": {
+        "intro": {
+          "kind": "text",
+          "required": true,
+          "multiline": true
+        },
+        "featured": {
+          "kind": "list",
+          "required": false,
+          "max": 3,
+          "of": {
+            "kind": "reference",
+            "required": false,
+            "to": [
+              "event"
+            ]
           }
         }
       },
@@ -122,6 +155,23 @@
       "retired": {
         "heading": "text"
       }
+    },
+    "partner": {
+      "version": 1,
+      "transforms": [],
+      "fields": {
+        "title": {
+          "kind": "text",
+          "required": true,
+          "multiline": false
+        },
+        "website": {
+          "kind": "link",
+          "required": false,
+          "entryTypes": null
+        }
+      },
+      "retired": {}
     },
     "site-info": {
       "version": 1,

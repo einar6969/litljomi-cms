@@ -81,13 +81,36 @@ const pair = defineType({
   preview: { title: 'target' },
   orderBy: 'target',
 });
+// A type with no site integration: nothing on the site is checked for it (A7).
+const blurb = defineType({
+  name: 'blurb',
+  version: 1,
+  label: 'Klausa',
+  fields: { title: text({ label: 'Titill', required: true }) },
+  preview: { title: 'title' },
+  orderBy: 'title',
+});
+// A12: a type whose entries editors put in order (spec §5.1).
+const card = defineType({
+  name: 'card',
+  version: 1,
+  label: 'Spjald',
+  fields: { title: text({ label: 'Titill' }) },
+  preview: { title: 'title' },
+  orderBy: 'manual',
+});
 const testModule = defineModule({
   tenant: 'prufa',
   locale: 'is',
   branding: { name: 'Prufa' },
-  types: [article, pair],
+  types: [article, pair, blurb, card],
   structure: [],
-  site: { article: { path: (e) => `/greinar/${e.slug}`, checks: () => [] } },
+  site: {
+    article: {
+      path: (e) => `/greinar/${e.slug}`,
+      checks: (e, release) => [{ path: `/greinar/${e.slug}`, expect: release.entries('article').some((x) => x.id === e.id) ? 'present' : 'absent' }],
+    },
+  },
 });
 vi.mock('@/modules/registry', () => ({
   getModule: (slug: string) => (slug === 'prufa' ? testModule : undefined),
@@ -128,6 +151,8 @@ type SnapEntry = {
   sort_at: string | null;
   first_published_at: string;
   last_published_at: string;
+  /** A12: the entry's place among the snapshot's entries of its type (absent from a database before A12). */
+  order_rank?: number;
   refs: Array<{ path: string; kind: 'entry' | 'asset'; id: string }>;
 };
 const entry = (id: string, data: Record<string, unknown>, o: Partial<SnapEntry> = {}): SnapEntry => ({
@@ -156,6 +181,8 @@ const asset = (id: string, o: Record<string, unknown> = {}) => ({
   default_alt: 'alt',
   public_path: null,
   archived: false,
+  caption: null,
+  credit: null,
   ...o,
 });
 const picRef = (id: string) => ({ path: '$."pic"', kind: 'asset' as const, id });
@@ -337,7 +364,17 @@ describe('buildRelease: delivery', () => {
       schemaVersion: 2,
       data: {
         title: 'Eitt',
-        pic: { id: A1, url: `https://media.test/prufa/${A1}/a.jpg`, width: 800, height: 600, mime: 'image/jpeg', alt: 'mynd', focal: null },
+        pic: {
+          id: A1,
+          url: `https://media.test/prufa/${A1}/a.jpg`,
+          width: 800,
+          height: 600,
+          mime: 'image/jpeg',
+          alt: 'mynd',
+          focal: null,
+          caption: null,
+          credit: null,
+        },
         related: { entry: { id: E2, type: 'article', slug: two!.slug, title: 'Tvö', path: `/greinar/${two!.slug}` } },
       },
     });
@@ -346,6 +383,26 @@ describe('buildRelease: delivery', () => {
     ]);
     expect(two!.data).toEqual({ title: 'Tvö', pic: null, related: null });
     expect(one!.contentHash).not.toBe(two!.contentHash);
+  });
+
+  // Media library L3: the file's caption and credit come from the snapshot's asset row and are
+  // delivered with the image (plan section 3.3); the alt text is the use's own.
+  it("delivers the file's caption and credit with the image, inside the entry's hash", async () => {
+    snapshot.assets = [asset(A1, { caption: 'Kanilsnúðar á bakka', credit: 'Anna Önnudóttir' })];
+    const first = (await build()).bundle!.entries['article']![0]!;
+    expect(first.data['pic']).toEqual({
+      id: A1,
+      url: `https://media.test/prufa/${A1}/a.jpg`,
+      width: 800,
+      height: 600,
+      mime: 'image/jpeg',
+      alt: 'mynd',
+      focal: null,
+      caption: 'Kanilsnúðar á bakka',
+      credit: 'Anna Önnudóttir',
+    });
+    // The hash covers the whole record (§7.2), so it covers the caption and credit too.
+    expect(first.contentHash).toBe(entryContentHash(first as unknown as Record<string, unknown>));
   });
 
   it('reads the previous release right after beginning and returns its bundle', async () => {
@@ -380,6 +437,24 @@ describe('buildRelease: delivery', () => {
     expect((result.bundle!.entries['article']![0]!.data as { pic: { url: string } }).pic.url).toBe(`https://media.test/prufa/${A1}/a.jpg`);
   });
 
+  // Enhancement A4: the project's own URL decides; only a loopback http one (a local stack) delivers http media.
+  it.each([
+    ['a local stack', 'http://127.0.0.1:54331', `http://127.0.0.1:54331/storage/v1/object/public/media-public/prufa/${A1}/a.jpg`],
+    ['a hosted project', 'https://abcdefghijklmnopqrst.supabase.co', `https://abcdefghijklmnopqrst.supabase.co/storage/v1/object/public/media-public/prufa/${A1}/a.jpg`],
+    ['an http address that is not loopback', 'http://abcdefghijklmnopqrst.supabase.co', null],
+  ])('with the project URL of %s, an image resolves to %s', async (_name, projectUrl, expected) => {
+    snapshot.assets = [asset(A1, { public_path: `prufa/${A1}/a.jpg` })];
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', projectUrl);
+    try {
+      const result = await buildRelease(TENANT, { storage: mem.storage, now, clock });
+      expect(result.status).toBe('delivered');
+      const pic = (result.bundle!.entries['article']![0]!.data as { pic: { url: string } | null }).pic;
+      expect(pic === null ? null : pic.url).toBe(expected);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('an archived asset is neither copied nor resolved', async () => {
     snapshot.assets = [asset(A1, { archived: true })];
 
@@ -398,6 +473,27 @@ describe('buildRelease: delivery', () => {
     expect(result.status).toBe('delivered');
     expect(result.bundle!.entries).toEqual({});
     expect(finishCalls()[0]!.p_request_ids).toEqual([]);
+  });
+});
+
+// A7, §7.4: an entry whose type has no integration, or whose checks are empty, can be delivered but
+// never proven live; the release records it so the editor sees "published, not confirmed".
+describe('buildRelease: entries with nothing to check (A7)', () => {
+  it('records the linked entries with no page check as nothing checked, beside the release’s other entry errors', async () => {
+    snapshot.entries.push(entry(E3, { title: 'Þrjú' }, { type: 'blurb', slug: null, schema_version: 1 }));
+    snapshot.requests = [
+      { id: 'r1', entry_id: E1, action: 'publish', revision_id: 'x' },
+      { id: 'r3', entry_id: E3, action: 'publish', revision_id: 'z' },
+    ];
+    const result = await build();
+    expect(result.status).toBe('delivered');
+    expect(finishCalls()[0]!.p_error).toEqual({ nothingChecked: [{ entryId: E3 }] });
+    expect(alertMock).not.toHaveBeenCalled();
+  });
+
+  it('records nothing when every linked entry has a page check', async () => {
+    await build();
+    expect(finishCalls()[0]!.p_error).toBeNull();
   });
 });
 
@@ -550,6 +646,22 @@ describe('buildRelease: fallback to the previous projection (§7.1, plan M3-05)'
     expect(finish.p_request_ids).toEqual(['r1', 'r2', 'r3']);
     expect(alertMock).toHaveBeenCalledTimes(1);
     expect(alertMock).toHaveBeenCalledWith('release.entry_fallback', { tenantId: TENANT, releaseId: RELEASE, number: 3, fallback });
+  });
+
+  // Media library L3: the fallback reuses the earlier record as it was. A record written before
+  // caption and credit were delivered keeps its image without them, though the file has both now.
+  it('reuses a record from before captions were delivered as it was, adding no caption or credit', async () => {
+    const prev = previousE2(snapshot.entries[1]!.revision_id);
+    withPrevious({ article: [prev] });
+    snapshot.assets = [asset(A1), asset(A2, { public_path: `prufa/${A2}/a.jpg`, caption: 'Nýr myndatexti', credit: 'Anna' })];
+
+    const result = await build();
+
+    expect(result.status).toBe('delivered');
+    const reused = result.bundle!.entries['article']!.find((e) => e.id === E2)!;
+    expect(reused).toEqual(prev);
+    expect(reused.data['pic']).not.toHaveProperty('caption');
+    expect(reused.data['pic']).not.toHaveProperty('credit');
   });
 
   it('covers a failure before projection too (a revision that cannot be upcast after a transform deploy)', async () => {
@@ -1089,5 +1201,68 @@ describe('supabaseReleaseStorage', () => {
     await expect(
       supabaseReleaseStorage(client).upload('delivery', 'x', new Uint8Array(), { cacheControl: 'x', contentType: 'application/json', upsert: false }),
     ).rejects.toThrow(/already exists/);
+  });
+});
+
+describe('buildRelease: manually ordered types (A12; spec §5.1, §7.2)', () => {
+  it("lists a manually ordered type's entries by the snapshot's order_rank, and every other type as the snapshot lists them", async () => {
+    snapshot.entries = [
+      entry(E1, { title: 'Eitt' }, { order_rank: 2 }),
+      entry(E2, { title: 'Tvö' }, { order_rank: 1 }),
+      entry(E1.replace(/^1/, '4'), { title: 'Fjögur' }, { type: 'card', schema_version: 1, order_rank: 3 }),
+      entry(E2.replace(/^2/, '5'), { title: 'Fimm' }, { type: 'card', schema_version: 1, order_rank: 1 }),
+      entry(E3, { title: 'Þrjú' }, { type: 'card', schema_version: 1, order_rank: 2 }),
+    ];
+    snapshot.assets = [];
+
+    const { status, bundle } = await build();
+
+    expect(status).toBe('delivered');
+    expect(bundle!.format).toBe(1);
+    expect(bundle!.entries['card']!.map((e) => e.title)).toEqual(['Fimm', 'Þrjú', 'Fjögur']);
+    // Not manually ordered: the snapshot's order (by entry id), whatever its ranks say.
+    expect(bundle!.entries['article']!.map((e) => e.title)).toEqual(['Eitt', 'Tvö']);
+    // The order is in the list only: no record gains a field, and sortAt is left alone.
+    for (const e of bundle!.entries['card']!) {
+      expect(Object.keys(e)).toEqual(['id', 'revisionId', 'contentHash', 'slug', 'title', 'sortAt', 'firstPublishedAt', 'lastPublishedAt', 'schemaVersion', 'data']);
+      expect(e.sortAt).toBeNull();
+    }
+  });
+
+  it('keeps the snapshot order of a manually ordered type when the database gives no ranks (before the A12 migration)', async () => {
+    snapshot.entries = [entry(E1, { title: 'Eitt' }, { type: 'card', schema_version: 1 }), entry(E2, { title: 'Tvö' }, { type: 'card', schema_version: 1 })];
+    snapshot.assets = [];
+
+    const { bundle } = await build();
+
+    expect(bundle!.entries['card']!.map((e) => e.title)).toEqual(['Eitt', 'Tvö']);
+  });
+
+  it("an entry reused from the previous release keeps its place in the type's order", async () => {
+    // Written at a version newer than the type's: it cannot be upcast, so the previous projection of
+    // the same revision is reused (§7.1).
+    const reused = entry(E3, { title: 'Gamalt' }, { type: 'card', schema_version: 2, order_rank: 1 });
+    withPreviousRelease();
+    const old = {
+      id: E3,
+      revisionId: reused.revision_id,
+      contentHash: 'h',
+      slug: reused.slug,
+      title: 'Gamalt',
+      sortAt: null,
+      firstPublishedAt: '2026-11-01T10:00:00.000Z',
+      lastPublishedAt: '2026-11-02T10:00:00.123Z',
+      schemaVersion: 1,
+      data: { title: 'Gamalt' },
+    };
+    mem.put('delivery/prufa/releases/2.json', { format: 1, tenant: 'prufa', release: 2, generatedAt: STAMP, entries: { card: [old] } });
+    snapshot.entries = [entry(E1, { title: 'Eitt' }, { type: 'card', schema_version: 1, order_rank: 2 }), reused];
+    snapshot.assets = [];
+
+    const { status, bundle, fallback } = await build();
+
+    expect(status).toBe('delivered');
+    expect(fallback?.map((f) => f.entryId)).toEqual([E3]);
+    expect(bundle!.entries['card']!.map((e) => e.id)).toEqual([E3, E1]);
   });
 });

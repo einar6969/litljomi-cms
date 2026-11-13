@@ -7,6 +7,8 @@
 | Status file | [STATUS.md](STATUS.md) (current stage, rulings, open questions) |
 | Evidence | [recon/client-needs.md](recon/client-needs.md), [recon/site-map.md](recon/site-map.md), [recon/platform-offer.md](recon/platform-offer.md) |
 
+**2026-11-13: stages 3–8 below are replaced by [PLAN.md](PLAN.md).** Einar restated the destination (the CMS connects to `dld.litljomi.is`, editors sign in at vefstjorn.is, no date for `dld.is`) and chose a faster way of working. This file stays as the record of how the plan was reached.
+
 **What the approval changed** (sections 5 and 6 show the outcome):
 
 - **The launch waits for the CMS** (D2). The CMS is now on the launch's critical path.

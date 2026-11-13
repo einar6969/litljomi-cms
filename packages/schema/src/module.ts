@@ -10,7 +10,10 @@ export interface SiteEntry {
 
 /** The published entries of one release. */
 export interface ReleaseView {
-  /** Entries of the type, sorted by `sortAt` descending. */
+  /**
+   * Entries of the type, sorted by `sortAt` descending; a manually ordered type's (`orderBy:
+   * 'manual'`, §5.1) in the editors' order, as the bundle lists them.
+   */
   entries(type: string): SiteEntry[];
 }
 
@@ -18,9 +21,16 @@ export interface ReleaseView {
 export type LiveCheck = { path: string; expect: 'present' | 'absent' };
 
 export interface SiteIntegration {
-  /** The entry's public path on the site. */
-  path(e: SiteEntry): string;
-  /** The live checks for a release; `previous` is the release before it (null for the first). */
+  /**
+   * The entry's own public path on the site. Absent for content with no page of its own (a staff
+   * list, a home page's settings), shown only on shared pages: such an entry needs no slug, an
+   * `absent` check is never held to 404, and preview opens its first checked page (§3.2, §7.4, §7.5).
+   */
+  path?(e: SiteEntry): string;
+  /**
+   * The live checks for a release, declared per entry; `previous` is the release before it (null
+   * for the first). An entry with no check is delivered but never confirmed live (§7.4).
+   */
   checks(e: SiteEntry, release: ReleaseView, previous: ReleaseView | null): LiveCheck[];
 }
 
@@ -88,8 +98,26 @@ function checkStructure(m: ModuleManifest): void {
   }
 }
 
-/** Declares a module. Throws when its structure does not fit its types (see `checkStructure`). */
+/**
+ * Names no content type may have: the editor's own pages beside the type lists under
+ * `/t/<tenant>/` (apps/cms/src/app/(editor)/t/[tenant]/). A type's list is `/t/<tenant>/<type>`, so
+ * a type named after one of them could never be opened. The CMS app's tests hold this list to the
+ * folders there.
+ */
+export const RESERVED_TYPE_NAMES: readonly string[] = Object.freeze(['assets']);
+
+function checkTypeNames(m: ModuleManifest): void {
+  for (const type of m.types) {
+    if (RESERVED_TYPE_NAMES.includes(type.name)) throw new Error(`types: type "${type.name}" is the name of an editor page; choose another name`);
+  }
+}
+
+/**
+ * Declares a module. Throws when a type has a reserved name (`RESERVED_TYPE_NAMES`) or its
+ * structure does not fit its types (see `checkStructure`).
+ */
 export function defineModule(m: ModuleManifest): ModuleManifest {
+  checkTypeNames(m);
   checkStructure(m);
   return m;
 }

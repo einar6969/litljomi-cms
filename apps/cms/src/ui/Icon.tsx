@@ -18,6 +18,14 @@ const PATHS: Record<string, ReactNode> = {
   chevronLeft: <path d="m15 18-6-6 6-6" />,
   chevronUp: <path d="m6 15 6-6 6 6" />,
   close: <path d="M6 6l12 12M18 6 6 18" />,
+  grid: (
+    <>
+      <rect x="4" y="4" width="6.5" height="6.5" rx="1" />
+      <rect x="13.5" y="4" width="6.5" height="6.5" rx="1" />
+      <rect x="4" y="13.5" width="6.5" height="6.5" rx="1" />
+      <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1" />
+    </>
+  ),
   grip: <path d="M9 5h.01M15 5h.01M9 12h.01M15 12h.01M9 19h.01M15 19h.01" />,
   hardBreak: <path d="M3 6h18M3 12h15a3 3 0 1 1 0 6h-4M16 16l-2 2 2 2M3 18h6" />,
   help: (
@@ -52,6 +60,7 @@ const PATHS: Record<string, ReactNode> = {
     </>
   ),
   signOut: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />,
+  upload: <path d="M12 15V4M7 9l5-5 5 5M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4" />,
   warning: <path d="m12 3 10 18H2zM12 10v4M12 17h.01" />,
 };
 

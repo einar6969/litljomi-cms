@@ -49,6 +49,17 @@ describe.each(SITE_BUILDS)('demo site (%s) against the fixture bundle', (build) 
     expect(html).toContain(String((x.data as { title: string }).title));
     expect(parseReleaseMarker(html)).toBe(bundle.release);
   });
+  // Media library L3: an image is delivered with its file's caption and credit, and the site renders
+  // both under it. The fixture's event x has one video whose still carries them.
+  it("/events/x renders an image with its file's caption and credit", async () => {
+    const res = await get('/events/x');
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    const figcaption = /<figcaption>(.*?)<\/figcaption>/s.exec(html)?.[1] ?? '';
+    expect(figcaption).toContain('Gestir við opnun');
+    expect(figcaption).toContain('Anna Önnudóttir');
+    expect(html).toContain('alt="Kyrrmynd úr upptökunni"');
+  });
   it('/events lists every event with its marker', async () => {
     expect(events.length, 'the listing needs more than one event to prove anything').toBeGreaterThan(1);
     const res = await get('/events');

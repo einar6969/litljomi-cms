@@ -29,7 +29,7 @@ export function image(o: ImageOptions): FieldKind<ImageValue, PublicAsset> {
     publishSchema: () => publishOf(base, required),
     // The use's own alt text replaces the asset's default alt, even when it is empty (an empty alt
     // marks a decorative image on purpose; the asset default is not substituted back). Null when the asset is unknown or
-    // its URL is not https (see resolveAsset).
+    // its URL is not https, nor http on a local stack's own address (see resolveAsset).
     project: (v, ctx) => {
       if (v == null) return null;
       const asset = resolveAsset(ctx, v._ref);

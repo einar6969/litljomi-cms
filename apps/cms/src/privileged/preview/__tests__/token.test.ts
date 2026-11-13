@@ -99,6 +99,15 @@ describe('mintPreviewToken', () => {
     expect(r.ok && new URL(r.url).searchParams.get('path')).toBe('/events/tonleikar');
   });
 
+  // A7: a type with no page of its own previews where it is shown.
+  it("sends the editor to the first checked page for a type without its own path, with or without a slug", async () => {
+    for (const slug of [null, 'x']) {
+      state.entry.data = { ...state.entry.data, type: 'events-page', slug };
+      const r = await mintPreviewToken(fakes(), { entryId: ENTRY });
+      expect(r.ok && new URL(r.url).searchParams.get('path')).toBe('/events');
+    }
+  });
+
   it.each([
     ['a type without site pages', { type: 'site-info', slug: null }],
     ['an event without a slug yet', { type: 'event', slug: null }],

@@ -10,11 +10,11 @@
 import { randomUUID } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
-import { env } from '../../../../../../tests/integration/src/env.ts';
+import { env, stack } from '../../../../../../tests/integration/src/env.ts';
 
 const { updateSession } = await import('../proxy');
 
-const CMS = 'http://localhost:3100';
+const CMS = stack.cmsUrl;
 const NOW_S = () => Math.floor(Date.now() / 1000);
 // supabase-js's default storage key, which @supabase/ssr names the session cookie after.
 const COOKIE = `sb-${new URL(env.apiUrl).hostname.split('.')[0]}-auth-token`;

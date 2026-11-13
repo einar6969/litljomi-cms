@@ -1,6 +1,7 @@
 import { CmsEntryMarker, type BundleEntry } from '@litljomi/cms-sdk';
 import { RichText } from '@litljomi/rich-text';
 import type { EventEntry } from '../../types/cms';
+import { VideoLink } from '../figure';
 
 export type EventItem = BundleEntry<EventEntry>;
 
@@ -30,6 +31,7 @@ export function EventDetail({ event }: { event: EventItem }) {
       {data.location ? <p>{data.location}</p> : null}
       {data.description ? <RichText doc={data.description} /> : null}
       {data.registration && 'href' in data.registration ? <a href={data.registration.href}>Skráning</a> : null}
+      {data.program?.videos?.map((v) => (v.value === null ? null : <VideoLink key={v._key} video={v.value} />))}
     </article>
   );
 }

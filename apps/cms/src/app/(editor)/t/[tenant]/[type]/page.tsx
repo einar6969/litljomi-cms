@@ -1,8 +1,9 @@
-import { isSingleton } from '@litljomi/cms-schema';
+import { isManuallyOrdered, isSingleton } from '@litljomi/cms-schema';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { NewEntryButton } from '@/editor/NewEntryButton';
 import { OpenSingleton } from '@/editor/OpenSingleton';
+import { OrderedEntryTable, type OrderedRow } from '@/editor/OrderedEntryTable';
 import { SearchShortcut } from '@/editor/SearchShortcut';
 import { structureLabel } from '@/editor/structure';
 import { applyEntryListFilter, isFiltered, MAX_QUERY_LENGTH, parseEntryListFilter, STATUS_FILTERS, type StatusFilter } from '@/editor/entry-list-filter';
@@ -30,7 +31,10 @@ const STATUS_TONE: Partial<Record<Row['status'], BadgeTone>> = { published: 'ok'
 
 const FILTER_LABELS: Record<StatusFilter, string> = { ...t.entries.statuses, unpublished: t.entries.filter.unpublished };
 
-// The entries of one content type, newest edit first. The tenant is resolved through
+const formatTime = (iso: string) => new Date(iso).toLocaleString('is-IS', { timeZone: 'Atlantic/Reykjavik' });
+
+// The entries of one content type, newest edit first, or for a manually ordered type (A12, §5.1)
+// in the order the site shows, which the editor changes here. The tenant is resolved through
 // api.my_tenants and the type must be in its module; the rows come from api.entry_list under the
 // editor's session, so RLS decides what is listed. The title search and status filter (M2-10) are
 // in the URL, sent by a plain GET form, so they work before the page's JavaScript has loaded. A
@@ -63,13 +67,27 @@ export default async function EntryListPage({ params, searchParams }: Props) {
     .select('id, slug, title, status, updated_at')
     .eq('tenant_id', tenant.id)
     .eq('type', type.name);
-  const { data, error } = await applyEntryListFilter(query, filter)
-    .order('updated_at', { ascending: false })
-    .limit(MAX_ROWS);
+  // A manually ordered type: by api.entry_list's order_position, then id, as api.move_entry and
+  // the release build order it (migration 20261112230000_manual_order).
+  const manual = isManuallyOrdered(type);
+  const narrowed = applyEntryListFilter(query, filter);
+  const ordered = manual ? narrowed.order('order_position', { ascending: true }).order('id', { ascending: true }) : narrowed.order('updated_at', { ascending: false });
+  const { data, error } = await ordered.limit(MAX_ROWS);
   if (error) throw new Error(`entry_list: ${error.code}`);
   const rows = (data ?? []) as Row[];
   const base = `/t/${encodeURIComponent(tenant.slug)}/${encodeURIComponent(type.name)}`;
   const filtered = isFiltered(filter);
+  // Archived entries have no place on the site, and api.move_entry refuses them: listed, not moved.
+  const movable = manual && filter.status !== 'archived';
+  const orderedRows: OrderedRow[] = !movable ? [] : rows.map((row) => ({
+    id: row.id,
+    href: `${base}/${row.id}`,
+    title: row.title,
+    statusLabel: t.entries.statuses[row.status] ?? row.status,
+    tone: STATUS_TONE[row.status] ?? 'neutral',
+    updatedAt: row.updated_at,
+    updatedText: formatTime(row.updated_at),
+  }));
   return (
     <>
       {bar}
@@ -117,6 +135,8 @@ export default async function EntryListPage({ params, searchParams }: Props) {
             <p>{filtered ? t.entries.filter.none : t.entries.empty}</p>
             {filtered ? null : <NewEntryButton tenantSlug={tenant.slug} type={type.name} />}
           </div>
+        ) : movable ? (
+          <OrderedEntryTable rows={orderedRows} filtered={filtered} />
         ) : (
           <div className="card tbl-w">
             {/* Below 768 px the table is restyled as stacked rows (globals.css). Some screen readers
@@ -146,7 +166,7 @@ export default async function EntryListPage({ params, searchParams }: Props) {
                     </td>
                     <td role="cell">
                       <time className="mono text-muted" dateTime={row.updated_at}>
-                        {new Date(row.updated_at).toLocaleString('is-IS', { timeZone: 'Atlantic/Reykjavik' })}
+                        {formatTime(row.updated_at)}
                       </time>
                     </td>
                   </tr>

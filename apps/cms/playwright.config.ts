@@ -1,18 +1,19 @@
 import { randomBytes } from 'node:crypto';
 import { defineConfig, devices } from '@playwright/test';
 import { DEMO_SITE_READY_LINE } from './e2e/support/demo-site';
-import { CMS_PORT, CMS_URL, NO_CLI_NETWORK_ENV } from './e2e/support/local';
+import { CMS_PORT, CMS_URL, NO_CLI_NETWORK_ENV, STACK_SLOT_ENV } from './e2e/support/local';
 
 // Browser tests of the CMS (decision 37.3). They run outside the Bash sandbox (Einar's
 // `sandbox.excludedCommands` for `pnpm --filter cms e2e`), so they reach only loopback addresses
-// and this repository (Einar, 2026-11-02): the CMS on CMS_PORT, the demo site on 3101, Supabase on
-// 54321, Mailpit on 54324.
+// and this repository (Einar, 2026-11-02): the CMS on CMS_PORT, the demo site, Supabase and Mailpit,
+// on the ports of the stack slot (CMS_STACK_SLOT, tools/stack/slot.ts; slot 1: 3100, 3101, 54321
+// and 54324). Every web server gets the slot, so each one reads the same stack.
 //
 // The CMS is built and started through tests/integration/scripts/cms-next.sh, which reads the
 // local stack's URL and keys from `supabase status` at run time and refuses a non-loopback stack;
 // nothing is written to a file. The global setup seeds the fixed identities (`pnpm seed:local`'s
 // script). The `editor-session` setup project signs editor_labak and editor_demo in once; specs
-// reuse their state. The demo site (Task 25) is served on 3101 by e2e/demo-site-server.ts, also
+// reuse their state. The demo site (Task 25) is served on its port by e2e/demo-site-server.ts, also
 // loopback only, reading the local stack's public delivery bucket; the `demo-release` setup project
 // makes the demo tenant's first release when there is none and waits for the site.
 const cmsNext = 'sh ../../tests/integration/scripts/cms-next.sh';
@@ -47,6 +48,7 @@ export default defineConfig({
         CMS_PUBLIC_URL: CMS_URL,
         CMS_INTERNAL_SECRET: randomBytes(24).toString('hex'),
         CRON_SECRET: randomBytes(24).toString('hex'),
+        ...STACK_SLOT_ENV,
         ...NO_CLI_NETWORK_ENV,
       },
     },
@@ -61,7 +63,7 @@ export default defineConfig({
       timeout: 60_000,
       stdout: 'pipe',
       stderr: 'pipe',
-      env: { ...NO_CLI_NETWORK_ENV },
+      env: { ...STACK_SLOT_ENV, ...NO_CLI_NETWORK_ENV },
     },
   ],
   projects: [

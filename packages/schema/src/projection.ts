@@ -1,8 +1,12 @@
 import type { z } from 'zod';
-import { canonicalHttpsUrl, isRootRelativePath } from '@litljomi/rich-text';
+import { canonicalMediaUrl, isRootRelativePath } from '@litljomi/rich-text';
 import type { AnyFieldKind, ContentType } from './define-type.ts';
 
-/** An asset as delivered to sites (spec §7.1). */
+/**
+ * An asset as delivered to sites (spec §7.1). `caption` and `credit` are the file's own (the media
+ * library, plan L3): the same with every use of the file, null when it has none. The site types
+ * (codegen, the SDK) mark them and `focal` optional, because an older bundle lacks them.
+ */
 export interface PublicAsset {
   id: string;
   url: string;
@@ -11,6 +15,8 @@ export interface PublicAsset {
   mime: string;
   alt: string;
   focal: { x: number; y: number } | null;
+  caption: string | null;
+  credit: string | null;
 }
 
 /** A referenced entry as delivered to sites (spec §4.3, §7.1). */
@@ -36,16 +42,27 @@ export interface ProjectionContext {
    * and, in a release build, also null for an entry that the build leaves out (fail closed).
    */
   entry(id: string): EntrySummary | null;
+  /**
+   * The local stack's own loopback http origin, set only by a worker whose Supabase address is a
+   * loopback address (enhancement A4): local Storage serves http, so asset URLs on exactly that
+   * origin are delivered too. Absent or null everywhere else, a hosted project included: `https:`
+   * only. A value that is not a loopback http origin lets nothing through (`canonicalMediaUrl`).
+   */
+  readonly localMediaOrigin?: string | null;
 }
 
+const textOrNull = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+
 /**
- * Asset lookup with the result checked: only `https:` URLs without credentials are accepted,
+ * Asset lookup with the result checked: only `https:` URLs without credentials are accepted, and
+ * on a local stack `http:` URLs on exactly its own loopback origin (`ctx.localMediaOrigin`);
  * anything else counts as unresolved (null). Returns a copy with exactly the `PublicAsset` fields,
- * the URL in its canonical form (`new URL(url).href`).
+ * the URL in its canonical form (`new URL(url).href`), and a caption or credit that is not a
+ * string delivered as null, so every image carries both keys.
  */
 export function resolveAsset(ctx: ProjectionContext, id: string): PublicAsset | null {
   const a = ctx.asset(id);
-  const url = a === null ? null : canonicalHttpsUrl(a.url);
+  const url = a === null ? null : canonicalMediaUrl(a.url, ctx.localMediaOrigin ?? null);
   if (a === null || url === null) return null;
   return {
     id: a.id,
@@ -55,6 +72,8 @@ export function resolveAsset(ctx: ProjectionContext, id: string): PublicAsset | 
     mime: a.mime,
     alt: a.alt,
     focal: a.focal === null ? null : { x: a.focal.x, y: a.focal.y },
+    caption: textOrNull(a.caption),
+    credit: textOrNull(a.credit),
   };
 }
 

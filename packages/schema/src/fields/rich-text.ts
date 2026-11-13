@@ -21,6 +21,7 @@ export function richText(o: RichTextOptions): FieldKind<RichTextDoc, ProjectedRi
         : projectRichText(v, {
             asset: (id) => resolveAsset(ctx, id),
             entryPath: (id) => resolveEntry(ctx, id)?.path ?? null,
+            localMediaOrigin: ctx.localMediaOrigin ?? null,
           }),
     tsType: () => 'ProjectedRichTextDoc | null',
     withOptions: (x) => richText({ ...o, ...definedOnly(x) }),

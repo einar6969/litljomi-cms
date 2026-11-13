@@ -20,8 +20,9 @@
 // (M3-08: the pointer lag, a measured limitation).
 // M5-01: a release's withdrawal state is stored on each delivery before that wait, so a run killed
 // during the poll or the live window leaves a row the sweep retries and alerts on.
-import type { LiveCheck, ModuleManifest, ReleaseView, SiteEntry } from '@litljomi/cms-schema';
-import type { Bundle, BundleEntry } from '@litljomi/cms-sdk';
+// What each entry is checked by is decided in live-targets.ts, shared with the release build (A7).
+import type { LiveCheck } from '@litljomi/cms-schema';
+import type { Bundle } from '@litljomi/cms-sdk';
 import { getModule } from '@/modules/registry';
 import { supabaseUrl } from '../../lib/supabase/env';
 import type { SupabaseClient } from '../../lib/supabase/types';
@@ -29,10 +30,13 @@ import { createAdminClient } from '../admin-client';
 import { alert } from './alerts';
 import { buildRelease, type BuildOptions, type BuildResult, type LinkedRequest } from './build-release';
 import { DEFAULT_TIMEOUT_MS, createPageFetcher, runLiveChecks, type LiveCheckFailure } from './live-check';
+import { liveTargets, type LiveTarget } from './live-targets';
 import { notifySite } from './notify';
 import { waitForPublicPointer, type PointerSeams, type PointerWaitResult } from './pointer-fresh';
 import { publicMediaUrl } from './projection-context';
 import { callRpc } from './rpc';
+
+export { liveTargets, manualTypes, releaseView, type LiveTarget } from './live-targets';
 
 /** At most this many live-check failures are stored in last_error. */
 const MAX_STORED_FAILURES = 50;
@@ -66,33 +70,13 @@ export type DeliveredRelease = {
   pointerWrittenAt?: number;
 };
 
-/** One entry to confirm: a failure decided before any fetch, or its checks. */
-export type LiveTarget = {
-  entryId: string;
-  requestIds: string[];
-  /**
-   * `delivery_failed` (left out of the release, §7.1), `still_published` (withdrawn, but the entry is
-   * in the release), `withdrawal_unchecked` (withdrawn, an earlier release reached a site with it,
-   * and no bundle here holds a record to check it by) or `checks_failed` (the module threw).
-   */
-  failure: string | null;
-  checks: LiveCheck[];
-  ownPath: string;
-  contentHash: string | null;
-  mediaUrls: string[];
-  /**
-   * W1: a withdrawal of this release (the entry's last request is an unpublish, the entry is not in
-   * the release, no failure but `withdrawal_unchecked`). Its checks are stored on a delivery that
-   * misses them.
-   */
-  withdrawal?: true;
-};
-
 /**
  * A withdrawal check as a delivery stores it (W1): enough to run it again without any bundle.
- * `unchecked`: no record to check it by (`withdrawal_unchecked`), so it can never pass.
+ * `unchecked`: no record to check it by (`withdrawal_unchecked`), so it can never pass. `ownPath`
+ * is null for an entry with no page of its own (A7); rows stored before it hold '' there, which
+ * no check path equals, so they read the same.
  */
-export type StoredWithdrawal = { entryId: string; requestIds: string[]; checks: LiveCheck[]; ownPath: string; unchecked?: true };
+export type StoredWithdrawal = { entryId: string; requestIds: string[]; checks: LiveCheck[]; ownPath: string | null; unchecked?: true };
 
 /**
  * A site's withdrawal state for a superseded release, as api.worker_deliveries_to_retry gives it
@@ -121,94 +105,6 @@ const beyondWithdrawalChecks = (t: LiveTarget): boolean => !t.withdrawal || t.fa
 function unconfirmedState(targets: LiveTarget[]): { withdrawals: StoredWithdrawal[]; withdrawals_others: boolean } | null {
   const withdrawals = targets.filter((t) => t.withdrawal);
   return withdrawals.length > 0 ? { withdrawals: withdrawals.map(stored), withdrawals_others: targets.some(beyondWithdrawalChecks) } : null;
-}
-
-/** A bundle as the module's `checks` see it: each type's entries by sortAt descending. */
-export function releaseView(bundle: Bundle | null): ReleaseView {
-  return {
-    entries(type: string): SiteEntry[] {
-      const list = bundle && Object.hasOwn(bundle.entries, type) ? (bundle.entries[type] ?? []) : [];
-      return list
-        .map((e) => siteEntry(type, e))
-        .sort((a, b) => (a.sortAt === b.sortAt ? 0 : a.sortAt === null ? 1 : b.sortAt === null ? -1 : a.sortAt < b.sortAt ? 1 : -1));
-    },
-  };
-}
-
-const siteEntry = (type: string, e: BundleEntry): SiteEntry => ({ id: e.id, type, slug: e.slug, sortAt: e.sortAt });
-
-function find(bundle: Bundle | null, id: string): { type: string; entry: BundleEntry } | null {
-  if (!bundle) return null;
-  for (const [type, list] of Object.entries(bundle.entries)) {
-    const entry = list.find((e) => e.id === id);
-    if (entry) return { type, entry };
-  }
-  return null;
-}
-
-/** Every string in the projected data that is a public media URL (`mediaPrefix` + path), in order, once. */
-function mediaUrlsIn(data: unknown, mediaPrefix: string): string[] {
-  const found = new Set<string>();
-  const walk = (v: unknown, depth: number) => {
-    if (depth > 256) return;
-    if (typeof v === 'string') {
-      if (v.startsWith(mediaPrefix) && v.length > mediaPrefix.length) found.add(v);
-    } else if (Array.isArray(v)) {
-      for (const x of v) walk(x, depth + 1);
-    } else if (v !== null && typeof v === 'object') {
-      for (const x of Object.values(v)) walk(x, depth + 1);
-    }
-  };
-  walk(data, 0);
-  return [...found];
-}
-
-/**
- * The entries a release must confirm, one per entry among its linked requests (in request order).
- * The release's content decides what is checked, so it agrees with the module's checks:
- *
- * - in the release: the module's checks for it (given this release and the previous one), its new
- *   content hash, its own path and its media URLs;
- * - not in the release, with a publish as its last request: left out of the build (omitted), so
- *   `delivery_failed` (§7.1: never live);
- * - not in the release after an unpublish: the checks for the record the previous release had
- *   (no hash, no media). With no such record, nothing to check when no site ever had it (§7.4;
- *   api.worker_entry_was_delivered); otherwise `withdrawal_unchecked`: a site may still hold it
- *   (from an older release, or a failed release whose pointer was written), so the withdrawal is
- *   never confirmed with nothing checked (M5-01);
- * - in the release, with an unpublish as its last request: `still_published`. The withdrawal is not
- *   what the release delivered (an older publish committed after it, say), so it is never confirmed:
- *   the entry's own present checks would pass and show it removed (§7.1: withdrawal always wins).
- */
-export function liveTargets(
-  module: ModuleManifest,
-  release: Pick<DeliveredRelease, 'bundle' | 'previousBundle' | 'requests'>,
-  mediaPrefix: string,
-): LiveTarget[] {
-  const byEntry = new Map<string, LinkedRequest[]>();
-  for (const r of release.requests) byEntry.set(r.entryId, [...(byEntry.get(r.entryId) ?? []), r]);
-  const current = releaseView(release.bundle);
-  const previous = release.previousBundle ? releaseView(release.previousBundle) : null;
-
-  return [...byEntry].map(([entryId, requests]): LiveTarget => {
-    const base = { entryId, requestIds: requests.map((r) => r.id), failure: null, checks: [], ownPath: '', contentHash: null, mediaUrls: [] };
-    const inRelease = find(release.bundle, entryId);
-    const last = requests[requests.length - 1]!;
-    if (!inRelease && last.action === 'publish') return { ...base, failure: 'delivery_failed' };
-    if (inRelease && last.action === 'unpublish') return { ...base, failure: 'still_published' };
-    const record = inRelease ?? find(release.previousBundle, entryId);
-    const withdrawal = !inRelease && last.action === 'unpublish' ? ({ withdrawal: true } as const) : {};
-    if (!record) return last.wasDelivered === false ? { ...base, ...withdrawal } : { ...base, ...withdrawal, failure: 'withdrawal_unchecked' };
-    const own = inRelease ? { contentHash: inRelease.entry.contentHash, mediaUrls: mediaUrlsIn(inRelease.entry.data, mediaPrefix) } : {};
-    const integration = Object.hasOwn(module.site, record.type) ? module.site[record.type] : undefined;
-    if (!integration) return { ...base, ...own, ...withdrawal };
-    try {
-      const e = siteEntry(record.type, record.entry);
-      return { ...base, ...own, ...withdrawal, checks: integration.checks(e, current, previous), ownPath: integration.path(e) };
-    } catch {
-      return { ...base, ...own, failure: 'checks_failed' };
-    }
-  });
 }
 
 // Runs `fn` at most once per run: `done` is set before the call, so a resend that throws is not
@@ -315,7 +211,7 @@ export async function confirmSite(
   await Promise.all(
     targets.map(async (t) => {
       if (t.failure !== null) {
-        failures.push({ entryId: t.entryId, path: t.ownPath, reason: t.failure });
+        failures.push({ entryId: t.entryId, path: t.ownPath ?? '', reason: t.failure });
         return;
       }
       const result = await runLiveChecks({
@@ -458,7 +354,7 @@ export async function confirmWithdrawals(
     state.pending.map(async (w) => {
       if (w.unchecked) {
         missed.add(w.entryId);
-        failures.push({ entryId: w.entryId, path: w.ownPath, reason: 'withdrawal_unchecked' });
+        failures.push({ entryId: w.entryId, path: w.ownPath ?? '', reason: 'withdrawal_unchecked' });
         return;
       }
       const result = await runLiveChecks({

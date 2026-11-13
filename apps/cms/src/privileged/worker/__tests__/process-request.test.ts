@@ -490,6 +490,8 @@ describe('processRequestById: private originals', () => {
     focal_y: null,
     default_alt: null,
     public_path: null,
+    caption: null,
+    credit: null,
     ...o,
   });
   // A1, A2: not public yet (checked); A3: public already; A4: archived; A5: not in the tenant
@@ -499,7 +501,7 @@ describe('processRequestById: private originals', () => {
     assetRef(A2, { filename: 'b.png' }),
     assetRef(A3, { published: true, public_path: `prufa/${A3}/a.jpg` }),
     assetRef(A4, { archived: true }),
-    { path: '$."x5"', kind: 'asset', id: A5, published: false, archived: false, filename: null, mime: null, width: null, height: null, focal_x: null, focal_y: null, default_alt: null, public_path: null },
+    { path: '$."x5"', kind: 'asset', id: A5, published: false, archived: false, filename: null, mime: null, width: null, height: null, focal_x: null, focal_y: null, default_alt: null, public_path: null, caption: null, credit: null },
   ];
   const readWithRefs = () => {
     const r = read();

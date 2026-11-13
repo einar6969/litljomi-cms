@@ -61,6 +61,18 @@ describe('dld module', () => {
     expect(field('project', 'categories').max).toBe(7);
   });
 
+  it('select values and labels are as approved, verbatim', () => {
+    expect(CATEGORIES.map((c) => c.label)).toEqual(['Fræðsluefni', 'Hönnun', 'Samkeppnir', 'Skipulag / útivist', 'Vöruhönnun', 'Þátttökuhönnun', 'Þróunarverkefni, sýningar og innsetningar']);
+    expect(field('project', 'categories').of).toMatchObject({ kind: 'select', options: CATEGORIES });
+    expect(field('news', 'kind')).toMatchObject({
+      kind: 'select',
+      options: [
+        { value: 'frett', label: 'Frétt eða verkefnapistill' },
+        { value: 'jolakvedja', label: 'Jólakveðja' },
+      ],
+    });
+  });
+
   it('videos: video kind with a required still, at most six, on project and news', () => {
     for (const t of ['project', 'news']) {
       expect(field(t, 'videos')).toMatchObject({ kind: 'list', required: false, max: 6 });
@@ -101,9 +113,11 @@ describe('dld module', () => {
     expect(ok('news', { ...news, title: 'x'.repeat(201) })).toBe(false);
   });
 
-  it('only news is ordered by a date', () => {
+  it('project and person are ordered by hand; only news is ordered by a date', () => {
     expect(type('news').orderBy).toBe('date');
-    for (const t of ['project', 'person', 'home', 'contact']) {
+    expect(type('project').orderBy).toBe('manual');
+    expect(type('person').orderBy).toBe('manual');
+    for (const t of ['home', 'contact']) {
       const o = field(t, type(t).orderBy);
       expect(['date', 'datetime']).not.toContain(o.kind);
     }
@@ -148,16 +162,34 @@ describe('dld module', () => {
     expect(ok('contact', { email: 'a@example.is', socials: nine })).toBe(false);
   });
 
-  it('has site entries for project and news only, until A7 is built', () => {
-    expect(Object.keys(dld.site).sort()).toEqual(['news', 'project']);
+  it('has a site entry for every type; only project and news have a path of their own', () => {
+    expect(Object.keys(dld.site).sort()).toEqual(['contact', 'home', 'news', 'person', 'project']);
+    for (const t of ['person', 'home', 'contact']) expect(dld.site[t]!.path).toBeUndefined();
+    for (const t of ['project', 'news']) expect(dld.site[t]!.path).toBeTypeOf('function');
+  });
+
+  describe('site checks for content with no page of its own', () => {
+    const entry = (type: string, n: number): SiteEntry => ({ id: id(n), type, slug: null, sortAt: null });
+    const cases: [string, string[]][] = [
+      ['person', ['/um-okkur']],
+      ['home', ['/']],
+      ['contact', ['/', '/hafdu-samband']],
+    ];
+    for (const [t, paths] of cases) {
+      it(`${t} is checked on ${paths.join(' and ')}, present or absent`, () => {
+        const e = entry(t, 9);
+        expect(dld.site[t]!.checks(e, releaseOf([e], t), null)).toEqual(paths.map((path) => ({ path, expect: 'present' })));
+        expect(dld.site[t]!.checks(e, releaseOf([], t), null)).toEqual(paths.map((path) => ({ path, expect: 'absent' })));
+      });
+    }
   });
 
   describe('project site checks', () => {
     const site = dld.site.project!;
     const p: SiteEntry = { id: id(1), type: 'project', slug: 'braggi', sortAt: null };
     it('has the path /verk/{slug} and refuses an entry without a slug', () => {
-      expect(site.path(p)).toBe('/verk/braggi');
-      expect(() => site.path({ ...p, slug: null })).toThrow();
+      expect(site.path!(p)).toBe('/verk/braggi');
+      expect(() => site.path!({ ...p, slug: null })).toThrow();
     });
     it('checks its own page and /verk, present or absent', () => {
       expect(site.checks(p, releaseOf([p], 'project'), null)).toEqual([
@@ -176,8 +208,8 @@ describe('dld module', () => {
     const range = (n: number) => Array.from({ length: n }, (_, i) => post(i + 1));
     it('has the path /frettir/{slug} and refuses an entry without a slug', () => {
       expect(HOME_LATEST_COUNT).toBe(3);
-      expect(site.path(post(1))).toBe('/frettir/frett-1');
-      expect(() => site.path(post(1, '2026-01-01', null as unknown as string))).toThrow();
+      expect(site.path!(post(1))).toBe('/frettir/frett-1');
+      expect(() => site.path!(post(1, '2026-01-01', null as unknown as string))).toThrow();
     });
     it('checks own page, /frettir and / for the third-newest', () => {
       expect(site.checks(post(3), releaseOf(range(4)), null)).toEqual([

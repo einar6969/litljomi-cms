@@ -27,9 +27,9 @@ vi.mock('@/lib/supabase/server', () => ({
 }));
 const TENANT = { id: '00000000-0000-4000-8000-0000000000f1', slug: 'acme', name: 'Acme', status: 'active' as const };
 vi.mock('@/lib/tenant', async (importOriginal) => ({ ...(await importOriginal<typeof import('@/lib/tenant')>()), currentTenant: vi.fn(async () => TENANT) }));
-const structure = vi.hoisted(() => ({ singleton: false }));
+const structure = vi.hoisted(() => ({ singleton: false, orderBy: 'date' }));
 vi.mock('@/modules/registry', () => ({
-  getType: () => ({ name: 'news', label: 'Fréttir' }),
+  getType: () => ({ name: 'news', label: 'Fréttir', orderBy: structure.orderBy }),
   getModule: () => ({ structure: [{ type: 'news', label: 'Fréttir', singleton: structure.singleton }] }),
 }));
 
@@ -40,6 +40,7 @@ const render = async (searchParams: Record<string, string | string[]> = {}) =>
 
 beforeEach(() => {
   structure.singleton = false;
+  structure.orderBy = 'date';
   rows.calls = [];
   rows.data = [{ id: '00000000-0000-4000-8000-0000000000e1', slug: null, title: 'Frétt', status: 'draft', updated_at: '2026-11-03T12:00:00Z' }];
 });
@@ -129,5 +130,57 @@ describe('the entry list search and status filter (M2-10)', () => {
     await render({ status: 'deleted' });
     expect(rows.calls).toContainEqual(['is', 'archived_at', null]);
     expect(rows.calls.some(([m, c]) => m === 'eq' && c === 'status')).toBe(false);
+  });
+});
+
+describe('a manually ordered type (A12; spec §5.1)', () => {
+  beforeEach(() => {
+    structure.orderBy = 'manual';
+    rows.data = [
+      { id: '00000000-0000-4000-8000-0000000000e1', slug: null, title: 'Fyrst', status: 'published', updated_at: '2026-11-03T12:00:00Z' },
+      { id: '00000000-0000-4000-8000-0000000000e2', slug: null, title: 'Næst', status: 'draft', updated_at: '2026-11-04T12:00:00Z' },
+    ];
+  });
+
+  it("lists the entries in the editors' order, not by last change", async () => {
+    await render();
+    const orders = rows.calls.filter(([m]) => m === 'order');
+    expect(orders).toEqual([
+      ['order', 'order_position', { ascending: true }],
+      ['order', 'id', { ascending: true }],
+    ]);
+  });
+
+  it('shows the order column with a handle and move buttons on each row, and the help text', async () => {
+    const html = await render();
+    expect(html).toContain('entry-table ordered');
+    expect(html).toContain('Færa „Fyrst“: dragðu, eða notaðu örvalyklana upp og niður');
+    expect(html).toContain('Færa „Fyrst“ niður');
+    expect(html).toContain('Færa „Næst“ upp');
+    expect(html).toContain('Færslurnar birtast á vefnum í þessari röð.');
+    expect(html.match(/<th[^>]*role="columnheader"/g)).toHaveLength(4);
+    expect(html.indexOf('Fyrst')).toBeLessThan(html.indexOf('Næst'));
+  });
+
+  it('keeps the search and the status filter, and says the moves are among the rows shown', async () => {
+    const html = await render({ q: 'fyr', status: 'published' });
+    expect(rows.calls).toContainEqual(['ilike', 'title', '%fyr%']);
+    expect(rows.calls).toContainEqual(['eq', 'status', 'published']);
+    expect(rows.calls.filter(([m]) => m === 'order')[0]).toEqual(['order', 'order_position', { ascending: true }]);
+    expect(html).toContain('Aðeins færslur sem passa við leitina eru sýndar.');
+  });
+
+  it('lists archived entries in the same order, with nothing to move: an archived entry has no place on the site', async () => {
+    const html = await render({ status: 'archived' });
+    expect(rows.calls.filter(([m]) => m === 'order')[0]).toEqual(['order', 'order_position', { ascending: true }]);
+    expect(html).not.toContain('data-handle');
+    expect(html).not.toContain('entry-table ordered');
+  });
+
+  it('a type ordered by a field keeps its list by last change', async () => {
+    structure.orderBy = 'date';
+    const html = await render();
+    expect(rows.calls.filter(([m]) => m === 'order')).toEqual([['order', 'updated_at', { ascending: false }]]);
+    expect(html).not.toContain('data-handle');
   });
 });

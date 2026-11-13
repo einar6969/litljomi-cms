@@ -3,8 +3,10 @@
 // the worker runs as service_role with the secret key, as in production. Release tests run on
 // labak; every build includes whatever labak content earlier tests published, so assertions are
 // about the entries each test creates. Media publication is proven at the storage level (decision
-// 34.3): the object is in media-public and public_path is set. Local media URLs are http, so the
-// bundle's image fields are null here; https URLs are covered by build-release.test.ts.
+// 34.3): the object is in media-public and public_path is set. The local stack's media URLs are http
+// on its own loopback address, which the projection delivers on a local stack only (enhancement A4),
+// so the bundle's image fields hold them here; https URLs are covered by build-release.test.ts, and
+// by the caption test below, which gives its builds https media URLs.
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -33,6 +35,8 @@ let editor: SupabaseClient;
 let secret: SupabaseClient;
 
 const JPEG = TEST_JPEG;
+/** The delivered size and type of TEST_JPEG, as an image value carries them. */
+const TEST_JPEG_METADATA_DELIVERED = { width: TEST_JPEG_METADATA.p_width, height: TEST_JPEG_METADATA.p_height, mime: TEST_JPEG_METADATA.p_mime };
 
 beforeAll(async () => {
   vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', env.apiUrl);
@@ -182,11 +186,59 @@ describe('buildRelease (labak)', () => {
     expect(await inMediaPublic(image)).toBe(true);
     expect(await publicPath(image)).toBe(`labak/${image}/mynd.jpg`);
     expect(await releaseOf(entry.requestId)).toBe(result.releaseId);
+    // Enhancement A4: the bundle delivers the image at the local stack's http address, which a site
+    // can load.
+    const bundled = entriesOf(result.bundle).find((e) => e.id === entry.id)!.data.image as { url: string } | null;
+    expect(bundled).toEqual({
+      id: image,
+      url: publicUrl('media-public', `labak/${image}/mynd.jpg`),
+      width: TEST_JPEG_METADATA.p_width,
+      height: TEST_JPEG_METADATA.p_height,
+      mime: 'image/jpeg',
+      alt: 'Brauð',
+      focal: null,
+      // Media library L3: delivered with every image, null when the file has none.
+      caption: null,
+      credit: null,
+    });
+    expect((await fetch(bundled!.url, { cache: 'no-store' })).status).toBe(200);
     // Task 20 quality r1, Minor 9: what the database stored. Other files' partial commits may be
     // omitted from every labak build (see above), so error is null or omits none of this test's.
     const row = await releaseRow(result.releaseId);
     expect(row.status).toBe('delivered');
     if (row.error !== null) expect(JSON.stringify(row.error)).not.toContain(entry.id);
+  });
+
+  // Media library L3 (plan section 3.3): the file's caption and credit, set by the editor, are in
+  // the public bundle with the image; a change reaches the site with the tenant's next release.
+  // This build is given https media URLs, as a hosted project's are.
+  it("delivers the file's caption and credit with the image, and a changed caption with the next release", async () => {
+    const mediaUrl = (path: string) => `https://media.l3.test/${path}`;
+    const image = await labakAsset();
+    await rpc('update_asset_text', { p_asset_id: image, p_default_alt: 'Sjálfgefið', p_caption: 'Kanilsnúðar á bakka', p_credit: 'Anna Önnudóttir' });
+    const entry = await published(news(image));
+
+    const first = await buildRelease(TENANT.labak, { mediaUrl });
+    expect(first.status).toBe('delivered');
+    const stored = JSON.parse((await fetchPublic('delivery', `labak/releases/${first.number}.json`)).body!) as Bundle;
+    const record = entriesOf(stored).find((e) => e.id === entry.id)!;
+    expect(record.data['image']).toEqual({
+      id: image,
+      url: `https://media.l3.test/labak/${image}/mynd.jpg`,
+      ...TEST_JPEG_METADATA_DELIVERED,
+      alt: 'Brauð',
+      focal: null,
+      caption: 'Kanilsnúðar á bakka',
+      credit: 'Anna Önnudóttir',
+    });
+
+    await rpc('update_asset_text', { p_asset_id: image, p_default_alt: 'Sjálfgefið', p_caption: 'Kleinur', p_credit: null });
+    const second = await buildRelease(TENANT.labak, { mediaUrl });
+    expect(second.status).toBe('delivered');
+    const again = entriesOf(second.bundle!).find((e) => e.id === entry.id)!;
+    expect(again.data['image']).toMatchObject({ caption: 'Kleinur', credit: null, alt: 'Brauð' });
+    expect(again.revisionId).toBe(record.revisionId);
+    expect(again.contentHash).not.toBe(record.contentHash);
   });
 
   it('withdrawal wins: after unpublishing X the next bundle has no X, though the previous one had it', async () => {

@@ -95,6 +95,46 @@ describe('the conflict view (M2-11)', () => {
     expect(button(r.keepMine)).toBeDefined();
   });
 
+  // A10 (probe §14, 7): the notice appears at the top of the form, often far above where the editor
+  // is typing; it is brought into view and takes the focus once, when it appears.
+  it('brings the notice into view and focuses it when it appears', async () => {
+    const scrolled: Element[] = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this);
+    };
+    try {
+      await renderInConflict();
+      const notice = alert()!;
+      expect(notice.textContent).toContain(t.editor.conflict);
+      expect(scrolled).toEqual([notice]);
+      expect(document.activeElement).toBe(notice);
+      // Edits during the conflict do not move the page again.
+      await type($<HTMLTextAreaElement>('#field-excerpt')!, 'Nýr inngangur');
+      await pause();
+      expect(scrolled).toHaveLength(1);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it('shows a list field\'s values in the comparison, not its item keys', async () => {
+    const LIST_FIELDS = [...FIELDS, { key: 'tags', kind: 'list', label: 'Merki', required: false, of: { key: 'tags', kind: 'text', label: 'Merki', required: true } }];
+    actions.saveDraftAction.mockResolvedValueOnce({ ok: false, code: 'version_conflict' });
+    actions.loadDraftAction.mockResolvedValue({ ok: true, version: 5, data: { title: 'Upphaf', tags: [{ _key: 'key-theirs-1', value: 'Brauð' }] } });
+    await act(async () =>
+      root.render(
+        <EntryForm tenant={TENANT} userId={USER} entryId={ENTRY} fields={LIST_FIELDS} titleKey="title" initialData={{ title: 'Upphaf', tags: [{ _key: 'key-mine-1', value: 'Kaka' }] }} initialVersion={3} />,
+      ),
+    );
+    await type($<HTMLInputElement>('#field-title')!, 'Upphaf!');
+    await pause();
+    const row = [...container.querySelectorAll('[data-testid="conflict-field"]')].find((el) => el.textContent?.includes('Merki'))!;
+    expect(row.querySelector('[data-side="theirs"] dd')?.textContent).toBe('1. Brauð');
+    expect(row.querySelector('[data-side="mine"] dd')?.textContent).toBe('1. Kaka');
+    expect(row.textContent).not.toContain('key-');
+  });
+
   it('the comparison follows edits made during the conflict, which are not saved yet', async () => {
     await renderInConflict();
     await type($<HTMLTextAreaElement>('#field-excerpt')!, 'Nýr inngangur');

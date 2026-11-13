@@ -21,7 +21,7 @@ export const EVENT_ENTRY_URL = new RegExp(`^${CMS_URL}/t/demo/event/(${UUID})$`)
 /** Opens the demo event list from demo's start page, creates an event and returns its id. */
 export async function createEvent(page: Page): Promise<string> {
   await page.goto('/t/demo');
-  await page.getByRole('main').getByRole('link', { name: 'Events' }).click();
+  await page.getByRole('main').getByRole('link', { name: 'Events', exact: true }).click();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Events');
   await page.getByRole('button', { name: t.entries.new }).click();
   await page.waitForURL(EVENT_ENTRY_URL);

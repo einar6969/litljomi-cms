@@ -236,9 +236,9 @@ select is((select details from cms.audit_log where action = 'entry.created' and 
 select is((select details from cms.audit_log where action = 'asset.registered'),
   '{"filename": "a.jpg", "mime": "image/jpeg", "bytes": 1000}'::jsonb, 'asset registration details');
 select results_eq($$ select details from cms.audit_log where action = 'asset.updated' order by id $$,
-  $$ values ('{"focal_x": null, "focal_y": null, "default_alt": "Brauð"}'::jsonb),
-            ('{"focal_x": 0.5, "focal_y": 0.25, "default_alt": "Brauð"}') $$,
-  'asset metadata change details: the new focal point and default alt');
+  $$ values ('{"focal_x": null, "focal_y": null, "default_alt": "Brauð", "caption": null, "credit": null}'::jsonb),
+            ('{"focal_x": 0.5, "focal_y": 0.25, "default_alt": "Brauð", "caption": null, "credit": null}') $$,
+  'asset metadata change details: the new focal point, default alt, caption and credit (media library L1)');
 select is((select details from cms.audit_log where action = 'publish_request.created'),
   pg_catalog.jsonb_build_object('entry_id', tests.entry('c701'), 'action', 'publish', 'draft_version', 1),
   'publish request details: entry, action, draft version');

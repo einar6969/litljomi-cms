@@ -7,34 +7,44 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { t } from '@/i18n/is';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { RequiredMarker } from '@/ui/Field';
 import { Notice } from '@/ui/Notice';
 import type { FieldProps } from '../field-registry';
+import { droppedNotice, normalizePastedHtml, type Dropped } from '../paste';
 
 /**
  * A rich-text field (§5.4): Tiptap with the v1 configuration from `@litljomi/rich-text/editor`,
  * which only the CMS app loads (decision 23). Its parser drops anything outside the v1 node set,
- * so pasted Word or web content is cleaned on the way in (review focus 2). The value is saved only
+ * so pasted Word or web content is cleaned on the way in (review focus 2); before that, pasted HTML
+ * is tidied (`normalizePastedHtml`: Word lists become lists, a level-1 heading level 2, table cells
+ * paragraphs) and a paste that left images or tables out says so in one line (A10). The value is saved only
  * while it validates against `richTextDocSchema`; an empty editor clears the field. Inserting an
  * image inside rich text is M2 (decision 37.7); images already in the document are kept.
  */
-export function RichTextField({ id, label, value, onChange }: FieldProps) {
+export function RichTextField({ id, label, required, value, onChange }: FieldProps) {
   const initial = value == null ? { success: true as const, data: undefined } : richTextDocSchema.safeParse(value);
   if (!initial.success) {
     // A stored document this editor cannot load is shown as a notice and saved back unchanged.
     return (
       <div className="fld">
-        <span className="lab">{label}</span>
+        <span className="lab">
+          {label}
+          {required ? <RequiredMarker /> : null}
+        </span>
         <Notice role="note">{t.editor.richText.unreadable}</Notice>
       </div>
     );
   }
-  return <RichTextEditor id={id} label={label} initial={initial.data} onChange={onChange} />;
+  return <RichTextEditor id={id} label={label} required={required} initial={initial.data} onChange={onChange} />;
 }
 
-type EditorProps = { id: string; label: string; initial: unknown; onChange: (value: unknown) => void };
+type EditorProps = { id: string; label: string; required: boolean; initial: unknown; onChange: (value: unknown) => void };
 
-function RichTextEditor({ id, label, initial, onChange }: EditorProps) {
+function RichTextEditor({ id, label, required, initial, onChange }: EditorProps) {
   const [invalid, setInvalid] = useState(false);
+  // What the last paste left out, said in one line until the next paste (A10).
+  const [pasteNote, setPasteNote] = useState<string | null>(null);
+  const dropped = useRef<Dropped>({ images: false, tables: false });
   const latest = useRef(onChange);
   useEffect(() => {
     latest.current = onChange;
@@ -47,7 +57,26 @@ function RichTextEditor({ id, label, initial, onChange }: EditorProps) {
     immediatelyRender: false,
     // The field label is the accessible name (decision 39.3): aria-labelledby for browsers, and the
     // same text as aria-label for tools that read only the element's own attributes.
-    editorProps: { attributes: { id, role: 'textbox', 'aria-multiline': 'true', 'aria-labelledby': labelId, 'aria-label': label } },
+    editorProps: {
+      attributes: { id, role: 'textbox', 'aria-multiline': 'true', 'aria-labelledby': labelId, 'aria-label': label, ...(required ? { 'aria-required': 'true' } : {}) },
+      // ProseMirror calls this while it parses a paste, before `handlePaste`.
+      transformPastedHTML: (html) => {
+        const result = normalizePastedHtml(html);
+        dropped.current = result.dropped;
+        return result.html;
+      },
+      handlePaste: (_view, event) => {
+        const data = event.clipboardData;
+        // An image alone on the clipboard (a screenshot) is left out too. Word and Excel put a
+        // picture of the copied text beside the text, so a file next to text does not count.
+        const types = data ? [...data.types] : [];
+        const imageOnly = !types.includes('text/html') && !types.includes('text/plain') && [...(data?.files ?? [])].some((file) => file.type.startsWith('image/'));
+        const lost = dropped.current;
+        dropped.current = { images: false, tables: false };
+        setPasteNote(droppedNotice({ images: lost.images || imageOnly, tables: lost.tables }));
+        return false;
+      },
+    },
     onUpdate: ({ editor: current }) => {
       if (current.isEmpty) {
         setInvalid(false);
@@ -64,10 +93,19 @@ function RichTextEditor({ id, label, initial, onChange }: EditorProps) {
     <div className="fld">
       <span id={labelId} className="lab">
         {label}
+        {required ? <RequiredMarker /> : null}
       </span>
       <div className="rt-box">
         {editor ? <Toolbar editor={editor} /> : null}
         <EditorContent editor={editor} className="rt-content" />
+      </div>
+      {/* Not role="status": the form's save status is the page's one status region. */}
+      <div aria-live="polite">
+        {pasteNote ? (
+          <Notice tone="warning" role="note" data-testid={`${id}-paste-note`}>
+            {pasteNote}
+          </Notice>
+        ) : null}
       </div>
       {invalid ? (
         <Notice tone="error" role="alert">

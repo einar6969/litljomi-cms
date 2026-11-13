@@ -11,10 +11,13 @@
     "@litljomi/cms-schema": "workspace:*",
     "@litljomi/module-demo": "workspace:*",
     "@litljomi/module-dld": "workspace:*",
+    "@litljomi/module-labak": "workspace:*",
     "@litljomi/module-m4-probe": "workspace:*",
-    "@litljomi/module-labak": "workspace:*"
+    "@litljomi/rich-text": "workspace:*",
+    "sharp": "0.35.5"
   },
   "devDependencies": {
-    "vite-node": "^3.2.4"
+    "vite-node": "^3.2.4",
+    "zod": "4.6.7"
   }
 }

@@ -56,9 +56,8 @@ const projectType = defineType({
     videos: list(video({ label: 'Myndband', still: 'required' }), { label: 'Myndbönd', max: 6 }),
   },
   preview: { title: 'title' },
-  // No sort date: the order is set by dragging (A12, not built). `orderBy` names a text field,
-  // which fills no sort column.
-  orderBy: 'title',
+  // No sort date: editors set the order by dragging in the list; a new project lands first (A12).
+  orderBy: 'manual',
 });
 
 /**
@@ -113,8 +112,8 @@ const personType = defineType({
     ),
   },
   preview: { title: 'name' },
-  // Order is set by dragging (A12, not built).
-  orderBy: 'name',
+  // Editors set the order by dragging in the list (A12).
+  orderBy: 'manual',
 });
 
 /** A singleton. `preview` and `orderBy` name a field only because a type needs them. */
@@ -230,11 +229,27 @@ export default defineModule({
         ];
       },
     },
-    // TODO(A7): person, home and contact have no page of their own, so they have no site entry until
-    // enhancement A7 (live confirmation for content with no page of its own) is built. Intended pages:
-    //   person  -> /um-okkur
-    //   home    -> /
-    //   contact -> / and /hafdu-samband
-    // Manual ordering (A12) is not built either; nothing here depends on it.
+    // No `path` on the next three: they have no page of their own and are checked where they show (A7).
+    person: {
+      checks(e, release) {
+        const expect: LiveCheck['expect'] = has(release.entries('person'), e) ? 'present' : 'absent';
+        return [{ path: '/um-okkur', expect }];
+      },
+    },
+    home: {
+      checks(e, release) {
+        const expect: LiveCheck['expect'] = has(release.entries('home'), e) ? 'present' : 'absent';
+        return [{ path: '/', expect }];
+      },
+    },
+    contact: {
+      checks(e, release) {
+        const expect: LiveCheck['expect'] = has(release.entries('contact'), e) ? 'present' : 'absent';
+        return [
+          { path: '/', expect },
+          { path: '/hafdu-samband', expect },
+        ];
+      },
+    },
   },
 });

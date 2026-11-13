@@ -65,7 +65,7 @@ describe('demo module', () => {
   });
   it('builds paths and checks', () => {
     const s = demo.site.event!;
-    expect(s.path(e)).toBe('/events/opid-hus');
+    expect(s.path!(e)).toBe('/events/opid-hus');
     expect(s.checks(e, release(true), null)).toEqual([
       { path: '/events/opid-hus', expect: 'present' },
       { path: '/events', expect: 'present' },
@@ -75,7 +75,7 @@ describe('demo module', () => {
   it('refuses to build a path for an entry without a slug', () => {
     const s = demo.site.event!;
     const noSlug: SiteEntry = { ...e, slug: null };
-    expect(() => s.path(noSlug)).toThrow(/has no slug/);
+    expect(() => s.path!(noSlug)).toThrow(/has no slug/);
     expect(() => s.checks(noSlug, release(true), null)).toThrow(/has no slug/);
   });
 });

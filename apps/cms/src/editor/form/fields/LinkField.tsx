@@ -46,7 +46,7 @@ export function LinkField({ id, label, required, value, onChange }: FieldProps) 
     if (parsed.success) onChange(parsed.data);
   };
   return (
-    <Field label={label} htmlFor={id} error={valid ? null : t.editor.invalidUrl}>
+    <Field label={label} htmlFor={id} required={required} error={valid ? null : t.editor.invalidUrl}>
       <input type="text" inputMode="url" id={id} name={id} required={required} value={text} aria-invalid={!valid} aria-describedby={valid ? undefined : fieldErrorId(id)} onChange={(e) => change(e.target.value)} />
     </Field>
   );
