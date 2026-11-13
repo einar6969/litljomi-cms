@@ -5,7 +5,8 @@
 | Written | 2026-11-12 |
 | State | Design for Einar's approval. No code yet |
 | Builds on | `recon/platform-offer.md` §5, `probes/editor.md` §7 and §11, `plans/media-library.md` §3–5 |
-| Depends on | L1 on the target (`update_asset_text`, `set_asset_thumbnail`); L2's thumbnail maker; A7 for a singleton type with a page of its own; A12 only for `order` |
+| Depends on | L1 on the target (`update_asset_text`, `set_asset_thumbnail`); L2's thumbnail maker; A7 for a singleton type with a page of its own; A12 (`api.move_entry`, `entry_list.order_position`) for step 5 |
+| Built since | Step 5, the manual order, and the thumbnails of step 1, after A12 (#77) and L2 (#78) landed: see 2.3, 2.7 and decisions 2 and 9 |
 
 **What it is.** `import` in `tools/cli` takes a tenant-neutral manifest and a media folder and writes them into one tenant through the same `api` functions an editor calls, signed in as an editor. It validates everything offline first, can be run again without duplicates, publishes in batches the sweep can drain, and ends with a report that compares the public bundle with the manifest word for word and file by hash. Turning a client's old site into a manifest is the client's own script, outside core (platform-offer §5, §6).
 
@@ -18,7 +19,7 @@ One JSON file, `format: 1`. It names no tenant, no id and no host, so the same f
 | `files[]` | `path` (relative to the media folder), `sha256`, `bytes`, `alt` (the file's default alt), `caption`, `credit` | Path: no leading `/`, no `.` or `..` segment, no backslash, no symlink on disk. JPEG, PNG or WebP, at most 20 MB. Limits: alt and caption 1,000, credit 300. Two paths with the same `sha256` are refused (they would be one library file) |
 | `entries.<type>[]` | `key`, optional `slug`, `data` | `key` is stable and unique across the whole manifest. `slug` must match `^[a-z0-9]+(?:-[a-z0-9]+)*$`, at most 200. `data` is the type's stored shape at its current schema version |
 | `singletons.<type>` | `key`, `data` | Only for types the module's structure marks `singleton` |
-| `order.<type>` | Keys in the wanted order | Optional. Applied only once manual ordering (A12) exists |
+| `order.<type>` | Keys in the wanted order | Optional, and only for a type the module orders by hand (`orderBy: 'manual'`); any other type is a dry-run problem. The keys it names come first, then the type's other entries in the order `entries.<type>` lists them. A type ordered by hand without an `order` entry is put in the order `entries.<type>` lists it. Applied in step 5 (2.3) |
 
 **References inside `data`.** Everything is the module's stored shape except that a reference names a manifest key, never an id. The importer replaces them before validating:
 
@@ -132,7 +133,7 @@ No network, no env file, no password. It checks, and lists every problem rather 
 | Every type | Is in the module; singletons only in `singletons`, other types only in `entries` |
 | Every `data` | After replacing references with placeholder ids: `draftValidator`, then `publishValidator`. **Anything the validators would strip is an error**, not a silent loss: the parsed value must equal the input |
 | Rich text | `richTextDocSchema`; hrefs already canonical |
-| Order | Waves derive; no cycle of required references; `order` names only keys of its type |
+| Order | Waves derive; no cycle of required references; `order` names only keys of its type, and only a type ordered by hand. It prints each such type's wanted order and the moves step 5 makes on a tenant that has none of the entries yet (listed newest first, the reverse of the order they are created in); a real run reads the list first and moves only what is out of place |
 | Slugs | Each entry's slug (explicit, else `slugBase(title)` as the editor makes it, else the key slugified). Duplicates per type are errors. **An explicit slug that `slugFits` does not accept for the title is listed as at risk** (2.4) |
 | Size | Each draft under 1 MiB and 1,000 references |
 
@@ -151,11 +152,11 @@ The server is the truth; a **ledger** file is the memory. It sits beside the man
 
 | Step | Calls | Recognised on a re-run by |
 |---|---|---|
-| 1. Files | Upload to `media-private/{tenant id}/{asset id}/{safeFilename}` (`x-upsert: false`), `register_asset` with the metadata `inspectImage` derives, `update_asset_text`, then the L2 thumbnail at `…/thumb/480.webp` and `set_asset_thumbnail` | **The asset id is derived, not random:** UUID v5 of `tenant id + "/" + sha256`. `register_asset` lets the client choose the id (§4.3), so `asset_list` by id answers "already there", with no ledger and no schema change. An upload answered "exists" is downloaded and hashed before it is registered |
+| 1. Files | Upload to `media-private/{tenant id}/{asset id}/{safeFilename}` (`x-upsert: false`), `register_asset` with the metadata `inspectImage` derives, `update_asset_text`, then the L2 thumbnail as an editor's upload makes it: L2's own maker (`apps/cms/src/editor/server/thumbnail-maker.ts`, imported by `tools/cli/src/main.ts`, no copy), uploaded to `…/thumb/480.webp` without overwriting, then `set_asset_thumbnail`. A file the maker makes none for stays registered without one, and the CMS makes it when an editor first views the file, where it can | **The asset id is derived, not random:** UUID v5 of `tenant id + "/" + sha256`. `register_asset` lets the client choose the id (§4.3), so `asset_list` by id answers "already there", with no ledger and no schema change. An upload answered "exists" is downloaded and hashed before it is registered |
 | 2. Entries | `create_entry(tenant, type, slug)`; singletons `create_singleton_entry(tenant, type, version)`, **never `create_entry`** | The ledger's `key → entry id`. Without it: singletons by type (the function returns the live one); others by `(type, slug)` in `entry_list`. A `slug_taken` is adopted only if that entry is in the ledger or its draft is still empty; otherwise the command stops |
 | 3. Drafts | `save_draft` with every reference resolved (a draft may point at unpublished entries) and `title`/`sort_at` from `queryColumns`, as autosave does | The ledger's saved draft version and a hash of the data. Equal data: skipped. **A draft whose version moved past the importer's own is someone else's edit: not touched, reported** |
 | 4. Publish | `request_publish(entry, version)` in waves (2.5) | `publication_status`. An entry already published with this data is not requested again |
-| 5. Order | A12's function, once it exists | Compared before writing |
+| 5. Order (built) | **Runs straight after step 2, before step 3.** For each type the module orders by hand: the type's live entries read from `entry_list` by `order_position`, then id; the fewest `move_entry(entry, target, 'before' \| 'after')` calls that put the manifest's entries in the wanted order (the longest run already in order stays; each other entry moves just after the one before it), each relative to another manifest entry, so the type's other entries are never moved; then the list is read again and must be in order. Signed in as the editor, as the editor's list moves an entry. A release lists the type by the order as it stands when the release is built, so every release of the run, its first included, is in the manifest's order. If the run then delivers no release (everything was already published, by an earlier run) and the public bundle still lists the type in another order, it files one `request_publish` of an entry of that type already published with the importer's own data, unchanged, and waits for that release; with no such entry it says the tenant's next release carries the order | The list is read first: a list already in order is moved nowhere, so a re-run makes no move and files no publish |
 | 6. Report | Reads the public bundle (2.6) | Always runs |
 
 **Where the key is remembered, honestly.** Files need no memory: the id is the key. Entries cannot choose their id (`create_entry` generates it), so the key lives in the ledger, with the slug as the fallback. The fallback fails in one case: the ledger is lost **and** an editor's save changed a slug before that entry was published. Then the run stops for that type rather than create a duplicate. Once every entry is published, slugs are locked and the fallback is exact. If that is not enough, the smallest change is additive: a nullable `cms.entries.import_key text`, a partial unique index on `(tenant_id, type, import_key)`, and a new `api.create_entry_keyed(tenant, type, slug, key, version)` that returns the existing id for a known key. No existing signature changes. Not recommended now (decision 1).
@@ -193,6 +194,7 @@ After the last batch it waits until the public pointer (`{tenant}/current.json`,
 | Every text | Each string in `data` exactly, no normalising. Rich text: the sequence of blocks, heading levels, list nesting, text nodes, marks and hrefs. A difference shows the first differing word with five words either side |
 | Every reference | Resolves to the expected key's id (an `EntrySummary`, or the rich-text link's id) |
 | Every file | Each delivered image's public `url` is downloaded: sha256 and bytes must equal the manifest's; `alt`, and `caption` and `credit` once L3 delivers them |
+| Order | For each type ordered by hand: the order the bundle lists the manifest's delivered entries in must be the wanted order (2.3, step 5). A difference names the first place it differs. The type's other entries are not judged |
 | Nothing extra | Entries in the bundle for the imported types that the manifest does not name are listed, not judged |
 
 Output: a JSON report (`--report`, default beside the ledger) and a short summary on screen. Any difference is exit 1. **Anything that could not be checked is counted as unchecked, never as passed.** If B3's web-sized copies ever replace originals on the public side, the file comparison must move to the stored original's hash.
@@ -229,11 +231,11 @@ Output: a JSON report (`--report`, default beside the ledger) and a short summar
 | # | Decision | Recommendation |
 |---|---|---|
 | 1 | Where an entry's manifest key is remembered | **The ledger, with `(type, slug)` as fallback; no schema change.** Add `import_key` only if a lost ledger mid-run turns out to matter |
-| 2 | Where `inspectImage`, `safeFilename` and L2's thumbnail maker live, so the CLI derives exactly what the worker re-checks (`asset_mismatch`) | **One small workspace package both `apps/cms` and `tools/cli` import**, created in L2, rather than a copy that can drift |
+| 2 | Where `inspectImage`, `safeFilename` and L2's thumbnail maker live, so the CLI derives exactly what the worker re-checks (`asset_mismatch`) | **One small workspace package both `apps/cms` and `tools/cli` import**, created in L2, rather than a copy that can drift. L2 made no such package. The thumbnail maker is now shared without one: `thumbnail-maker.ts` imports nothing from the app and is not server-only, and the CLI imports it as `tests/integration` imports the app's pure files. `inspectImage`, `safeFilename`, `slugBase` and `slugFits` are still copies, held by the parity test |
 | 3 | The local target before A4 lands | **A `--local` flag in A2 that accepts only the local stack's fixed URL**, which A4 then reuses |
 | 4 | Which account imports | **Einar's own editor membership of the tenant; DLD's editors provisioned after the last publish**, so no editor save can move a slug |
 | 5 | Mutual references | **Two passes automatically when a cycle has an optional reference**; refuse a cycle of required ones |
 | 6 | A re-run whose manifest changed for an already published entry | **Report it, do not republish**; a later `--update-published` only if asked |
 | 7 | Batch size | **Default 9, cap 9**: one batch in the queue at a time; raise only after production's first batch is measured |
 | 8 | Two files with the same bytes | **Refused in the dry run**: one library file has one caption and credit |
-| 9 | `order` before A12 exists | **Validated, then reported as "not applied"**; the run otherwise succeeds |
+| 9 | `order` before A12 exists | Superseded: A12 exists, and step 5 applies the order before anything is published (2.3). The report checks it |

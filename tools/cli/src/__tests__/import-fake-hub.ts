@@ -1,9 +1,12 @@
 // An in-memory stand-in for the Hub's editor API, as the import sees it over HTTP: Auth's password
 // and refresh grants, the `api` views and functions an editor calls, Storage, and a sweep that
 // commits requests (three per run, as the real sweep claims per tenant) and delivers a bundle. It
-// is a test double, not a model of every rule: it keeps the ones the importer relies on.
+// is a test double, not a model of every rule: it keeps the ones the importer relies on. Manual
+// order (A12) as the migration has it: an unmoved entry's position is minus its creation, so the
+// newest comes first; api.move_entry writes a key between the new neighbours; the bundle lists a
+// manually ordered type by position.
 import { createHash, randomUUID } from 'node:crypto';
-import { projectEntry, type ModuleManifest, type ProjectionContext } from '@litljomi/cms-schema';
+import { isManuallyOrdered, projectEntry, type ModuleManifest, type ProjectionContext } from '@litljomi/cms-schema';
 
 export const REF = 'acmetestref000000000';
 export const ORIGIN = `https://${REF}.supabase.co`;
@@ -29,6 +32,9 @@ interface Entry {
   published: { data: Record<string, unknown>; title: string | null; sortAt: string | null } | null;
   title: string | null;
   sort_at: string | null;
+  /** Creation, in sequence; an unmoved entry's position is minus it. */
+  created: number;
+  order_key: number | null;
 }
 
 interface Request {
@@ -67,6 +73,9 @@ export class FakeHub {
   before: (n: number, method: string, path: string) => void = () => {};
   /** Replaces a delivered object's bytes (a changed byte on the public side). */
   tamperPublic: ((path: string, bytes: Uint8Array) => Uint8Array) | null = null;
+  /** Lists manually ordered types in reverse in every bundle: a delivery that loses the order. */
+  reverseDelivered = false;
+  private created = 0;
   /** Rewrites entry_detail_by_id's answer: an entry the server places in another tenant, or another type. */
   rewriteDetail: ((detail: ReturnType<FakeHub['detailOf']>) => Record<string, unknown>) | null = null;
   private tokens = new Map<string, number>();
@@ -157,6 +166,11 @@ export class FakeHub {
       return json(200, row === undefined ? [] : [{ ...row }]);
     }
     if (name === 'entry_list') {
+      if (q.get('order') !== null) {
+        // The importer's read of a type's order: live entries by position, then id.
+        if (eq('tenant_id') !== TENANT_ID || q.get('archived_at') !== 'is.null' || q.get('order') !== 'order_position.asc,id.asc') return json(400, { message: 'unexpected order query' });
+        return json(200, this.listed(decodeURIComponent(eq('type') ?? '')).map((e) => ({ id: e.id })));
+      }
       const rows = [...this.entries.values()].filter((e) => !e.archived && e.type === eq('type') && e.slug === decodeURIComponent(eq('slug') ?? ''));
       return json(200, rows.map((e) => ({ id: e.id })));
     }
@@ -167,6 +181,25 @@ export class FakeHub {
       return json(200, [...latest.values()].map((r) => ({ request_id: r.id, entry_id: r.entry_id, status: r.status, error: r.error, release_number: r.release_number, release_status: r.release_status, retries_exhausted: false, omitted: false })));
     }
     return json(404, { code: 'PGRST205', message: 'no such view' });
+  }
+
+  position(e: Entry): number {
+    return e.order_key ?? -e.created;
+  }
+
+  /** A type's live entries in list order (api.entry_list's order_position, then id). */
+  listed(type: string): Entry[] {
+    return [...this.entries.values()].filter((e) => e.type === type && !e.archived).sort((a, b) => this.position(a) - this.position(b) || (a.id < b.id ? -1 : 1));
+  }
+
+  /** Entry ids of a type in list order. */
+  order(type: string): string[] {
+    return this.listed(type).map((e) => e.id);
+  }
+
+  /** As an earlier import that set no order: every key cleared, so the list is newest first again. */
+  clearOrder(type: string): void {
+    for (const e of this.entries.values()) if (e.type === type) e.order_key = null;
   }
 
   private status(e: Entry): string {
@@ -205,6 +238,8 @@ export class FakeHub {
       published: null,
       title: null,
       sort_at: null,
+      created: ++this.created,
+      order_key: null,
     };
     this.entries.set(e.id, e);
     return e;
@@ -243,6 +278,8 @@ export class FakeHub {
       case 'set_asset_thumbnail': {
         const row = this.assets.get(a.p_asset_id as string);
         if (row === undefined || !this.objects.has(`media-private/${String(a.p_thumb_path)}`)) return pgError('not_found');
+        // Only the file's own thumbnail path, as the database's check has it.
+        if (a.p_thumb_path !== `${TENANT_ID}/${String(a.p_asset_id)}/thumb/480.webp`) return pgError('new row violates check constraint "assets_thumb_path_check"', '23514');
         row.thumb_path = a.p_thumb_path;
         return json(200, null);
       }
@@ -277,6 +314,22 @@ export class FakeHub {
         if (e === undefined) return pgError('not_found');
         if (e.first_published_at !== null) return pgError('slug_locked');
         e.slug = a.p_slug as string;
+        return json(200, null);
+      }
+      case 'move_entry': {
+        const e = this.entries.get(a.p_entry_id as string);
+        const t = this.entries.get(a.p_target_id as string);
+        if (a.p_place !== 'before' && a.p_place !== 'after') return pgError('p_place must be before or after', '22023');
+        if (e === undefined || t === undefined) return pgError('not_found');
+        if (e.type !== t.type || e.id === t.id || e.archived || t.archived) return pgError('forbidden');
+        const others = this.listed(e.type).filter((x) => x.id !== e.id);
+        const i = others.findIndex((x) => x.id === t.id);
+        const before = a.p_place === 'before';
+        const lo = before ? (i > 0 ? this.position(others[i - 1] as Entry) : Math.min(-this.created - 1, this.position(t)) - 1) : this.position(t);
+        const hi = before ? this.position(t) : i < others.length - 1 ? this.position(others[i + 1] as Entry) : this.position(t) + 1;
+        const at = this.position(e);
+        if (at > lo && at < hi) return json(200, null);
+        e.order_key = (lo + hi) / 2;
         return json(200, null);
       }
       case 'request_publish': {
@@ -382,12 +435,32 @@ export class FakeHub {
       if (type === undefined) continue;
       (entries[e.type] ??= []).push({ id: e.id, slug: e.slug, title: e.published?.title, sortAt: e.published?.sortAt, data: projectEntry(type, e.published?.data, ctx) });
     }
+    // A manually ordered type in list order (the snapshot's order_rank); reversed when asked.
+    for (const t of this.module.types) {
+      const list = entries[t.name];
+      if (!isManuallyOrdered(t) || list === undefined) continue;
+      const rank = new Map(this.order(t.name).map((id, i) => [id, i]));
+      list.sort((a, b) => (rank.get((a as { id: string }).id) ?? 0) - (rank.get((b as { id: string }).id) ?? 0));
+      if (this.reverseDelivered) list.reverse();
+    }
     const bundle = { format: 1, tenant: SLUG, release: this.release, generatedAt: new Date(this.clock).toISOString(), entries };
     this.objects.set(`public/delivery/${SLUG}/releases/${this.release}.json`, new TextEncoder().encode(JSON.stringify(bundle)));
     this.objects.set(
       `public/delivery/${SLUG}/current.json`,
       new TextEncoder().encode(JSON.stringify({ format: 1, tenant: SLUG, release: this.release, bundle: `releases/${this.release}.json`, generatedAt: bundle.generatedAt })),
     );
+  }
+
+  /** A new release of what is published, with no request: as another publish of the tenant would build. */
+  redeliver(): void {
+    this.release += 1;
+    this.deliver();
+  }
+
+  /** The ids of a type in the order release `n` lists them. */
+  deliveredOrder(n: number, type: string): string[] {
+    const bundle = JSON.parse(new TextDecoder().decode(this.objects.get(`public/delivery/${SLUG}/releases/${n}.json`))) as { entries: Record<string, { id: string }[]> };
+    return (bundle.entries[type] ?? []).map((e) => e.id);
   }
 
   /** Replaces a string in the delivered bundle (a changed word on the public side). */

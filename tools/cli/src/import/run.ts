@@ -1,30 +1,50 @@
-// The writing half of `import` (import plan sections 2.3 to 2.6): files, entries, drafts, publication
-// in waves and batches, then order. Every step asks the server first, so a run killed between any two
-// calls continues without duplicates when it is run again with the same arguments; nothing is ever
-// undone. Output is keys, ids, statuses and counts, never data, tokens or signed URLs.
+// The writing half of `import` (import plan sections 2.3 to 2.6): files with their thumbnails,
+// entries, the manual order of the types the module orders by hand, drafts, then publication in
+// waves and batches. Every step asks the server first, so a run killed between any two calls
+// continues without duplicates when it is run again with the same arguments; nothing is ever undone.
+// Output is keys, ids, statuses and counts, never data, tokens or signed URLs.
+//
+// The order is applied as soon as the entries exist, before any draft is saved or any publish is
+// requested: a release lists a manually ordered type by the entries' order as it stands when the
+// release is built (spec §5.1, §7.2), so the run's first release, and every one after it, already
+// has the manifest's order. Only when this run delivers no release (every entry was already
+// published, by an earlier run) while the public bundle still lists a type in another order does
+// the order wait for the tenant's next release: the run then files one publish of an entry of its
+// own, its data unchanged, so that release is built now (`releaseOrder`).
 import { contentHash } from '@litljomi/cms-schema';
 import { Failure, UUID_RE, clean } from '../hosted.ts';
 import type { LedgerFile, Pass } from './ledger.ts';
 import { assetIdFor, sha256Hex } from './media.ts';
+import { orderDifference, planMoves, relativeOrder } from './order.ts';
 import { itemData, sameJson, type Plan, type PlanFile, type PlanItem } from './plan.ts';
 import type { Lookup } from './refs.ts';
+import { readBundle } from './report.ts';
 import type { ApiResult, EditorSession } from './session.ts';
 
 export const MEDIA_BUCKET = 'media-private';
-export const THUMB_WIDTH = 480;
 export const POLL_MS = 10_000;
+/** PostgREST's row cap on a hosted project: a type's list must fit in one read to be ordered. */
+export const MAX_ORDERED_ENTRIES = 1000;
 export const STALL_MS = 10 * 60_000;
 
 export interface RunDeps {
   /** A media file's bytes, refusing a symlink (main.ts opens with O_NOFOLLOW). */
   readBytes(path: string): Promise<Uint8Array>;
-  /** L2's thumbnail maker; absent until L2 exists, and then files arrive without a thumbnail. */
-  makeThumbnail?: (bytes: Uint8Array) => Promise<Uint8Array>;
+  /**
+   * L2's thumbnail maker, the one an editor's upload calls (apps/cms/src/editor/server/
+   * thumbnail-maker.ts, wired in main.ts): the thumbnail of a file's bytes and the one path it may
+   * have, or null when it makes none (an image it does not decode, or one over its limits). Absent
+   * in tests that need none: files then arrive without a thumbnail, which the CMS makes when an
+   * editor first views the file.
+   */
+  thumbnail?: (bytes: Uint8Array, tenantId: string, assetId: string) => Promise<{ bytes: Uint8Array; path: string } | null>;
   now(): number;
   sleep(ms: number): Promise<void>;
 }
 
 export interface RunOptions {
+  /** The tenant's slug, which names its public delivery folder. */
+  tenant: string;
   media: string;
   batchSize: number;
   firstBatchOnly: boolean;
@@ -39,7 +59,11 @@ export interface RunOutcome {
   lastRelease: number | null;
   /** Things reported rather than touched. */
   notices: string[];
+  /** Files given a thumbnail by this run, and files left without one. */
+  thumbnailsMade: number;
   thumbnailsMissing: number;
+  /** Moves made through api.move_entry in this run. */
+  moves: number;
   /** Keys whose entry the importer knows, by key. */
   ids: Map<string, string>;
 }
@@ -105,7 +129,9 @@ export class Importer {
   private readonly blocked = new Set<string>();
   private readonly notices: string[] = [];
   private lastRelease: number | null = null;
+  private thumbnailsMade = 0;
   private thumbnailsMissing = 0;
+  private moves = 0;
   /** Files already published by an earlier wave or run: a batch's new images are the others. */
   private readonly publishedFiles = new Set<string>();
   private firstBatchMeasured = false;
@@ -247,19 +273,33 @@ export class Importer {
         }
       }
 
-      if (row.thumb_path === null || row.thumb_path === undefined) {
-        if (this.deps.makeThumbnail === undefined) {
-          this.thumbnailsMissing += 1;
-        } else {
-          const thumb = new Uint8Array(await this.deps.makeThumbnail(bytes ?? (await this.readFile(f))));
-          const thumbPath = `${this.tenantId}/${id}/thumb/${THUMB_WIDTH}.webp`;
-          const up = await this.s.upload(MEDIA_BUCKET, thumbPath, thumb, 'image/webp');
-          if (up !== 'created' && up !== 'exists') throw new Failure(`FAILED: file ${f.path}: uploading its thumbnail: ${up.detail}`);
-          need(await this.s.rpc('set_asset_thumbnail', { p_asset_id: id, p_thumb_path: thumbPath }), `file ${f.path}: recording its thumbnail`);
-        }
-      }
+      if (row.thumb_path === null || row.thumb_path === undefined) state += await this.thumbnailFor(f, id, bytes);
       this.log(`file ${f.path}: ${id} ${state}`);
     }
+  }
+
+  /**
+   * The file's thumbnail, made and stored as an editor's upload makes it (`ensureThumbnail`,
+   * apps/cms/src/editor/server/thumbnail.ts): the maker's bytes uploaded to the one path it names,
+   * never overwriting, then recorded through `set_asset_thumbnail`, which takes only this file's own
+   * path and only once the object exists. A failed upload is still followed by the recording, as
+   * there: an earlier run may have left the object in place. The file stays registered whatever
+   * happens here; one left without a thumbnail gets it when an editor first views it.
+   */
+  private async thumbnailFor(f: PlanFile, id: string, read: Uint8Array<ArrayBuffer> | null): Promise<string> {
+    const made = this.deps.thumbnail === undefined ? null : await this.deps.thumbnail(read ?? (await this.readFile(f)), this.tenantId, id);
+    if (made === null) {
+      this.thumbnailsMissing += 1;
+      return ', no thumbnail';
+    }
+    await this.s.upload(MEDIA_BUCKET, made.path, new Uint8Array(made.bytes), 'image/webp');
+    const recorded = await this.s.rpc('set_asset_thumbnail', { p_asset_id: id, p_thumb_path: made.path });
+    if (!recorded.ok) {
+      this.thumbnailsMissing += 1;
+      return `, its thumbnail not recorded (${recorded.detail})`;
+    }
+    this.thumbnailsMade += 1;
+    return ', thumbnail made';
   }
 
   // -------------------------------------------------------------------------------------------
@@ -332,6 +372,107 @@ export class Importer {
       await this.ledger.set(item.key, { id, type: item.type });
       this.log(`entry ${item.key}: ${id} found${item.singleton ? ' (singleton)' : ` (${item.type}/${item.slug})`}`);
     }
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // 5. Order (applied here, before the drafts and the publishing: see the head of this file)
+
+  /** The type's live entries as its list orders them: by position, then id (api.entry_list, A12). */
+  private async listOrder(type: string): Promise<string[]> {
+    const query = `tenant_id=eq.${this.tenantId}&type=eq.${encodeURIComponent(type)}&archived_at=is.null&select=id&order=order_position.asc,id.asc&limit=${MAX_ORDERED_ENTRIES}`;
+    const body = need(await this.s.view('entry_list', query), `reading the order of ${type}`);
+    if (!Array.isArray(body)) throw new Failure(`FAILED: unexpected entry_list response for the order of ${type}`);
+    if (body.length >= MAX_ORDERED_ENTRIES) throw new Failure(`FAILED: type ${type} has ${MAX_ORDERED_ENTRIES} or more live entries; the import orders a type only when its whole list fits in one read`);
+    return body.map((row) => {
+      const id = (row as { id?: unknown }).id;
+      if (typeof id !== 'string' || !UUID_RE.test(id)) throw new Failure(`FAILED: unexpected entry_list response for the order of ${type}`);
+      return id;
+    });
+  }
+
+  /**
+   * Every type the module orders by hand, in the manifest's order, through api.move_entry as the
+   * editor's list moves an entry. Only the manifest's own entries are moved, each relative to
+   * another of them; the type's other entries keep their places. A list already in order is left
+   * as it is, so a re-run moves nothing. The list is read again afterwards and must be in order.
+   */
+  async order(): Promise<void> {
+    for (const [type, keys] of Object.entries(this.plan.manualOrder)) {
+      const wanted = keys.map((k) => this.ids.get(k) as string);
+      const keyOf = new Map(keys.map((k) => [this.ids.get(k) as string, k]));
+      const name = (id: string) => keyOf.get(id) as string;
+      const current = await this.listOrder(type);
+      let moves;
+      try {
+        moves = planMoves(current, wanted);
+      } catch {
+        throw new Failure(`FAILED: the list of ${type} does not hold every entry of the manifest's ${type}; nothing more was written`);
+      }
+      if (moves.length === 0) {
+        this.log(`order ${type}: already in the manifest's order; nothing moved`);
+        continue;
+      }
+      for (const m of moves) {
+        need(await this.s.rpc('move_entry', { p_entry_id: m.entry, p_target_id: m.target, p_place: m.place }), `order ${type}: moving ${name(m.entry)} ${m.place} ${name(m.target)}`);
+        this.moves += 1;
+        this.log(`order ${type}: ${name(m.entry)} moved ${m.place} ${name(m.target)}`);
+      }
+      const after = relativeOrder(await this.listOrder(type), wanted);
+      if (after.length !== wanted.length || orderDifference(wanted, after) !== null) {
+        throw new Failure(`FAILED: order ${type}: after ${moves.length} move(s) the list is still not in the manifest's order (someone else moving entries meanwhile?); run again`);
+      }
+      this.log(`order ${type}: ${moves.length} move(s), before anything of this run is published`);
+    }
+  }
+
+  /**
+   * After the waves: when this run delivered no release, the public bundle may still list a
+   * manually ordered type in an older order (moves made by this run, or by an earlier one that
+   * stopped, while every entry was already published). A new order reaches the site only with the
+   * tenant's next release (§5.1), so the run files one publish of an entry of that type that is
+   * already published with the importer's own data, unchanged, and waits for its release. Nothing is
+   * filed when the delivered order is already the manifest's, or when no such entry exists (the
+   * report then shows the difference).
+   */
+  async releaseOrder(): Promise<boolean> {
+    if (Object.keys(this.plan.manualOrder).length === 0 || this.lastRelease !== null) return true;
+    const bundle = await readBundle(this.s, this.options.tenant);
+    if (typeof bundle !== 'object') return true;
+    for (const [type, keys] of Object.entries(this.plan.manualOrder)) {
+      const listed: unknown[] = Object.hasOwn(bundle.entries, type) && Array.isArray(bundle.entries[type]) ? bundle.entries[type] : [];
+      const delivered = listed.map((e) => (isObject(e) && typeof e.id === 'string' ? e.id : '')).filter((id) => id !== '');
+      const wanted = keys.map((k) => this.ids.get(k) as string);
+      if (orderDifference(wanted, delivered) === null) continue;
+      for (const key of keys) {
+        if (this.blocked.has(key)) continue;
+        const rec = this.ledger.entry(key);
+        const id = this.ids.get(key) as string;
+        if (rec?.savedVersion === undefined || !delivered.includes(id)) continue;
+        const detail = await this.detail(key, id);
+        if (detail === null || detail.draft_version !== rec.savedVersion || detail.published_draft_version !== rec.savedVersion) continue;
+        this.log(
+          `order ${type}: release ${bundle.release} lists it in another order than the manifest's, and this run published nothing; ` +
+            `publishing ${key} again, its data unchanged, so the next release carries the order`,
+        );
+        const result = await this.s.rpc('request_publish', { p_entry_id: id, p_expected_draft_version: rec.savedVersion });
+        if (!result.ok && result.message === 'version_conflict') {
+          this.notice(key, "its draft changed after the importer's save; not published");
+          return false;
+        }
+        const filed = need(result, `${key}: requesting publication`);
+        if (typeof filed !== 'string' || !UUID_RE.test(filed)) throw new Failure(`FAILED: ${key}: unexpected request_publish response`);
+        await this.ledger.update(key, { requestId: filed, requestedVersion: rec.savedVersion });
+        this.log(`publish ${key}: requested (${filed})`);
+        const pass = rec.publishedPass ?? 'full';
+        // One release carries every type's order: one request is enough.
+        return this.waitBatch([{ item: this.plan.byKey.get(key) as PlanItem, id, requestId: filed, filedAt: this.deps.now() }], () => pass, false);
+      }
+      this.log(
+        `order ${type}: release ${bundle.release} lists it in another order than the manifest's, and no entry of it is published with the importer's data; ` +
+          'the next release the tenant publishes carries the order',
+      );
+    }
+    return true;
   }
 
   // -------------------------------------------------------------------------------------------
@@ -547,19 +688,22 @@ export class Importer {
     return [...done.values()].every((v) => v);
   }
 
-  /** Steps 1 to 5; stops at the first failure, which the caller reports. */
+  /** Steps 1 to 5, the order straight after the entries; stops at the first failure, which the caller reports. */
   async run(): Promise<RunOutcome> {
     const outcome = (stopped: string | null, firstBatchStop = false): RunOutcome => ({
       stopped,
       firstBatchStop,
       lastRelease: this.lastRelease,
       notices: this.notices,
+      thumbnailsMade: this.thumbnailsMade,
       thumbnailsMissing: this.thumbnailsMissing,
+      moves: this.moves,
       ids: this.ids,
     });
     await this.checkLedger();
     await this.files();
     await this.entries();
+    await this.order();
     await this.drafts();
     const firstPass = (item: PlanItem) => this.pass(item);
     for (const [i, wave] of this.plan.waves.entries()) {
@@ -572,6 +716,7 @@ export class Importer {
       if (result === 'first-batch') return outcome(null, true);
       if (!result) return outcome('the second pass was not fully published');
     }
+    if (!(await this.releaseOrder())) return outcome('the release that carries the order was not delivered');
     return outcome(null);
   }
 }

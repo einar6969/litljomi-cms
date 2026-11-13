@@ -1,5 +1,5 @@
-// A test module and manifest for the import tests: no real tenant. `acme` has projects, news (with a
-// video field of a kind the importer does not know) and a singleton home page.
+// A test module and manifest for the import tests: no real tenant. `acme` has projects (ordered by
+// hand), news (with a video field of a kind the importer does not know) and a singleton home page.
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { defineModule, defineType, group, image, link, list, reference, richText, text, date, type FieldKind, type SiteEntry } from '@litljomi/cms-schema';
@@ -35,7 +35,8 @@ export const projectType = defineType({
     meta: group({ label: 'Meta', fields: { client: text({ label: 'Client' }), partner: reference({ label: 'Partner', to: ['project'] }) } }),
   },
   preview: { title: 'title' },
-  orderBy: 'title',
+  // Editors put projects in order (A12): the import applies the manifest's order to them.
+  orderBy: 'manual',
 });
 
 export const newsType = defineType({
