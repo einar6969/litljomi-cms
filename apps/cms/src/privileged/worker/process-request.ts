@@ -24,7 +24,7 @@ import { supabaseUrl } from '../../lib/supabase/env';
 import type { SupabaseClient } from '../../lib/supabase/types';
 import { createAdminClient } from '../admin-client';
 import { alert } from './alerts';
-import { contextFromRead, publicMediaUrl, type ReadRef } from './projection-context';
+import { contextFromRead, localStackOrigin, publicMediaUrl, type ReadRef } from './projection-context';
 import { callRpc, isApiError } from './rpc';
 import { MEDIA_PRIVATE, privateMediaPath } from './storage-paths';
 
@@ -312,7 +312,7 @@ async function publish(db: SupabaseClient, read: WorkerRead, originals: Original
 
   // Project exactly as the release build would (§6.2), so committed content is deliverable.
   const base = supabaseUrl();
-  const ctx = contextFromRead(read.refs, module, (path) => publicMediaUrl(base, path));
+  const ctx = contextFromRead(read.refs, module, (path) => publicMediaUrl(base, path), localStackOrigin(base));
   const unprojectable = project(type, draft.data, ctx);
   if (unprojectable) return reject(unprojectable);
 

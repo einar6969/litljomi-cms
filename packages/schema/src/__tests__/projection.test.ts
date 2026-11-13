@@ -142,6 +142,37 @@ describe('projectEntry', () => {
     }
   });
 
+  // Enhancement A4: on a local stack the context names the stack's own loopback http origin.
+  describe('a local stack', () => {
+    const LOCAL = 'http://127.0.0.1:54331';
+    const localUrl = `${LOCAL}/storage/v1/object/public/media-public/demo/a/a.jpg`;
+    const localCtx = (url: string, localMediaOrigin: string | null) => ({ ...fakeCtx({ assets: { [A]: asset(url) } }), localMediaOrigin });
+
+    it('delivers an http asset url on the stack\'s own origin, in an image field and in rich text', () => {
+      const body = { type: 'doc', content: [{ type: 'image', attrs: { asset: { _ref: A, _kind: 'asset' }, alt: 'y' } }] };
+      const out = projectEntry(t, { ...data, body }, localCtx(localUrl, LOCAL));
+      expect(out.pic).toEqual({ ...asset(localUrl), alt: 'per-use alt' });
+      expect(out.body).toEqual({ type: 'doc', content: [{ type: 'image', attrs: { src: localUrl, width: 800, height: 600, alt: 'y', caption: undefined } }] });
+    });
+
+    it('still refuses http without a local origin, on another origin, and every non-loopback http address', () => {
+      const cases: [string, string | null][] = [
+        [localUrl, null],
+        ['http://127.0.0.1:54321/a.jpg', LOCAL],
+        ['http://m.test/a.jpg', LOCAL],
+        ['http://m.test/a.jpg', 'http://m.test'],
+        ['http://abcdefghijklmnopqrst.supabase.co/a.jpg', 'http://abcdefghijklmnopqrst.supabase.co'],
+        ['http://10.0.0.1:54331/a.jpg', 'http://10.0.0.1:54331'],
+      ];
+      for (const [url, origin] of cases) {
+        const body = { type: 'doc', content: [{ type: 'image', attrs: { asset: { _ref: A, _kind: 'asset' }, alt: 'y' } }] };
+        const out = projectEntry(t, { ...data, body }, localCtx(url, origin));
+        expect(out.pic, `${url} with ${origin}`).toBeNull();
+        expect(out.body, `${url} with ${origin}`).toEqual({ type: 'doc', content: [] });
+      }
+    });
+  });
+
   it('delivers asset urls in canonical form and refuses credentials (Task 15 security r1)', () => {
     expect(projectEntry(t, data, fakeCtx({ assets: { [A]: asset('https:m.test/a.jpg') } })).pic).toMatchObject({
       url: 'https://m.test/a.jpg',

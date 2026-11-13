@@ -9,13 +9,14 @@
 //
 // Needs L1 on the local stack (api.asset_summary, update_asset_text, asset_list's caption, credit and
 // thumb_path): without it every run stops at the probe, which the first test asserts instead.
-// A local bundle delivers every image as null (A4), so the report's file half is unchecked here and
-// the test asserts that count rather than a pass.
+// A local bundle delivers its images at the stack's own http address (enhancement A4), so the
+// report's file half is checked here as on a hosted project: the delivered bytes are the manifest's.
 import { randomUUID } from 'node:crypto';
 import sharp from 'sharp';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { runImport, type ImportDeps } from '../../../../../../tools/cli/src/import.ts';
+import { LOCAL_ORIGINS } from '../../../../../../tools/cli/src/local.ts';
 import { imageInspector } from '../../../../../../tools/cli/src/import/media.ts';
 import { getModule } from '@/modules/registry';
 import { editorClient } from '../../../../../../tests/integration/src/clients.ts';
@@ -24,7 +25,8 @@ import { PERSONAS, PERSONA_PASSWORD, TENANT } from '../../../../../../tests/inte
 import { closeAll } from '../../../../../../tests/integration/src/sql.ts';
 import { sweep } from '../pipeline';
 
-const LOCAL = 'http://127.0.0.1:54321';
+/** This slot's stack: --local accepts either slot's own address (tools/cli/src/local.ts). */
+const LOCAL = env.apiUrl.replace(/\/+$/, '');
 const ENV_FILE = '/import-test/.env.local-import';
 const MEDIA = '/import-test/media';
 /** The live checks' poll and timeout in the sweep (as the pipeline tests); the demo site is not running here. */
@@ -37,7 +39,7 @@ let jpeg: Uint8Array;
 let png: Uint8Array;
 
 beforeAll(async () => {
-  expect(env.apiUrl.replace(/\/+$/, '')).toBe(LOCAL);
+  expect(LOCAL_ORIGINS).toContain(LOCAL);
   vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', env.apiUrl);
   vi.stubEnv('SUPABASE_SECRET_KEY', env.secretKey);
   editor = await editorClient('editor_demo');
@@ -216,8 +218,9 @@ describe('import against the local stack (demo tenant)', () => {
     const report = reportOf(f);
     expect(report.differences).toEqual([]);
     expect(report.checked.entries).toBe(3);
-    // Local images are delivered as null until A4: one rich-text image use, counted as unchecked.
-    expect(report.unchecked).toContainEqual({ what: 'image uses not compared on the local stack (local images are delivered as null until A4)', count: 1 });
+    // The one rich-text image use is delivered at the local stack's address and its bytes compared.
+    expect(report.checked.files).toBe(1);
+    expect(JSON.stringify(report.unchecked)).not.toContain('image');
     expect(first.calls.some((c) => c.includes('/rpc/admin_') || c.includes('/rpc/worker_'))).toBe(false);
 
     const second = await run(f);

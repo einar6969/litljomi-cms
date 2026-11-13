@@ -29,28 +29,27 @@ const SITES = {
 } as const;
 type Tenant = keyof typeof SITES;
 
-// Local Storage URLs are http, and a projection keeps only https media URLs; the signed URLs are
-// given an https origin here and mapped back to fetch them.
-const HTTPS_ORIGIN = 'https://storage.preview.test';
-const toHttps = (url: string) => url.replace(env.apiUrl.replace(/\/+$/, ''), HTTPS_ORIGIN);
-const toLocal = (url: string) => url.replace(HTTPS_ORIGIN, env.apiUrl.replace(/\/+$/, ''));
+// Local Storage URLs are http on the stack's own loopback address, which the projection delivers on
+// a local stack only (enhancement A4): the endpoint is given the stack's URL, as the route gives it
+// NEXT_PUBLIC_SUPABASE_URL, and the signed URLs are delivered and fetched as Storage made them.
 
 const asApp = (c: unknown) => c as AppClient;
 // As createAdminClient: the api schema by default, which the worker's rpc calls rely on.
 const admin = () =>
   asApp(createClient(env.apiUrl, env.secretKey, { db: { schema: 'api' }, auth: { persistSession: false, autoRefreshToken: false } }));
 
-/** The endpoint's dependencies, with the real signer whose URLs are made https. */
+/** The endpoint's dependencies, with the real signer and the local stack's URL. */
 function deps(o: { now?: number; mediaTtlSeconds?: number } = {}): PreviewDeps {
   const db = admin();
   return {
     admin: db,
     nowSeconds: () => o.now ?? Date.now() / 1000,
+    stackUrl: env.apiUrl,
     ...(o.mediaTtlSeconds === undefined ? {} : { mediaTtlSeconds: o.mediaTtlSeconds }),
     signMedia: async (paths, expiresIn) => {
       const { data, error } = await db.storage.from('media-private').createSignedUrls(paths, expiresIn);
       if (error) throw error;
-      return new Map((data ?? []).flatMap((s) => (!s.error && s.path && s.signedUrl ? [[s.path, toHttps(s.signedUrl)] as const] : [])));
+      return new Map((data ?? []).flatMap((s) => (!s.error && s.path && s.signedUrl ? [[s.path, s.signedUrl] as const] : [])));
     },
   };
 }
@@ -244,7 +243,8 @@ describe('preview endpoint: the overlay (§7.5)', () => {
     const res = await get('labak', await token(editor, 'labak', b), deps({ mediaTtlSeconds: 2 }));
     expect(res.status).toBe(200);
     const body = (await res.json()) as PreviewBundle;
-    const url = toLocal((entriesOf(body).find((e) => e.id === b)!.data.image as { url: string }).url);
+    const url = (entriesOf(body).find((e) => e.id === b)!.data.image as { url: string }).url;
+    expect(url.startsWith(`${env.apiUrl.replace(/\/+$/, '')}/storage/v1/object/sign/media-private/`)).toBe(true);
     // The token Storage signed says when it expires: exactly the TTL after it was signed.
     const claims = JSON.parse(Buffer.from(new URL(url).searchParams.get('token')!.split('.')[1]!, 'base64url').toString()) as { iat: number; exp: number };
     expect(claims.exp - claims.iat).toBe(2);

@@ -10,6 +10,7 @@
 6. Platform admin
 7. Whole-project restore
 8. Advance `production`
+9. Rehearsing a tenant locally
 
 ## 1. Rules and limits
 
@@ -25,7 +26,7 @@
 - `.env.production.local` is never sourced.
 - The production runbook's rules on the SQL editor apply: run only the queries given here, one statement at a time, and never select `vault.decrypted_secrets` or a secret column.
 
-**`provision` is hosted only.** It accepts only `https://<project-ref>.supabase.co` and refuses loopback, so no `provision` command runs on the local stack. Exit codes: `0` done, `1` refused or failed, `2` wrong arguments. A run succeeded only if it printed its result line. Never trust the exit code alone.
+**`provision` is hosted, unless given `--local`.** With `--expect-ref` it accepts only `https://<project-ref>.supabase.co` and refuses loopback. With `--local` it accepts only a local stack's own address and never a hosted one (section 9). Exit codes: `0` done, `1` refused or failed, `2` wrong arguments. A run succeeded only if it printed its result line. Never trust the exit code alone.
 
 **Plain limits.**
 
@@ -923,3 +924,84 @@ The CMS project's logs show `/api/cron/sweep` answering `200` each minute. A fai
 Then publish on `demo` and run the check in section 1.
 
 `labak-hub` isn't affected: it builds `hub-integration`, and stays at its commit until M6.
+
+## 9. Rehearsing a tenant locally
+
+**Purpose.** Section 2's steps 7 to 11 for a new tenant, on a local stack, before anything reaches production: provision, the first publish with images, and a site reading the local bundle (enhancement A4). Nothing here is HOSTED. Owner: Einar or a session that holds the slot.
+
+**Either stack slot.** Slot 1 is the stack with `CMS_STACK_SLOT` unset, at `http://127.0.0.1:54321`. Slot 2 is `CMS_STACK_SLOT=2`, at `http://127.0.0.1:54331`. Use only a slot nobody else is using. Every terminal below starts with the same `export`, and runs from the repository root:
+
+```sh
+export CMS_STACK_SLOT=2   # slot 2; for slot 1: unset CMS_STACK_SLOT
+pnpm db:slot
+```
+
+`pnpm db:slot` prints the slot's `api_url`, `cms_port`, `cms_url` and `mailpit_url`. They stand for `<api-url>`, `<cms-port>`, `<cms-url>` and `<mailpit-url>` below. `<site-port>` is a free port of your choice for the site.
+
+**What differs from production.** `provision --local` runs the same commands with the same checks, except that:
+
+- the target is a local stack's own address and nothing else: slot 1's or slot 2's, never another port, `localhost` by name or a hosted project;
+- the env file must be named, because the default is the production env file;
+- a site's base URL may also be `http://localhost:<port>` or `http://127.0.0.1:<port>`.
+
+A local bundle delivers images at the stack's own `http` address. A hosted project only ever delivers `https` addresses (§5.6).
+
+**L1. The module.** Section 2, steps 1 to 4, on a branch, without the PR: the CMS started in L4 runs from this checkout, so the module only has to be registered here. Any registered module can be rehearsed. `m4-probe`, for one, has no local tenant.
+
+**L2. The stack and its env file.**
+
+```sh
+pnpm db:start
+LOCAL_ENV="$(mktemp -d)/local.env"
+node tools/stack/supabase.ts status -o env | sed -n 's/^API_URL=/NEXT_PUBLIC_SUPABASE_URL=/p; s/^SECRET_KEY=/SUPABASE_SECRET_KEY=/p' | tr -d '"' > "$LOCAL_ENV"
+```
+
+The file holds the local stack's URL and its local secret key, which reaches nothing but this stack. It is outside the repository, in a folder only you can read. `pnpm db:reset` instead of `db:start` gives an empty stack. It removes the tenants of earlier rehearsals on this slot.
+
+**L3. Provision the tenant and invite the editor.**
+
+```sh
+pnpm --silent --filter @litljomi/cli cli provision tenant '<tenant>' --name '<Tenant name>' --local --env-file="$LOCAL_ENV"
+pnpm --silent --filter @litljomi/cli cli provision editor --email '<address>' --tenant-id '<tenant-id>' --local --env-file="$LOCAL_ENV"
+```
+
+**Verify:** the first prints `target: 127.0.0.1:<port> (local stack)`, then `tenant <tenant>: <tenant-id>`. The second prints `invited <address>: user <user-id>` and `membership <tenant-id>: ok`. The invitation is in Mailpit, at `<mailpit-url>`.
+
+**L4. The CMS.** In a second terminal, after the same `export`. The build takes a few minutes. The script refuses to run while an `apps/cms/.env*` file exists.
+
+```sh
+export CMS_PUBLIC_URL='<cms-url>' CMS_INTERNAL_SECRET="$(openssl rand -hex 24)" CRON_SECRET="$(openssl rand -hex 24)"
+sh tests/integration/scripts/cms-next.sh build && sh tests/integration/scripts/cms-next.sh start -p '<cms-port>' -H 127.0.0.1
+```
+
+**L5. Publish once.** Open the invitation in Mailpit, choose a password, and publish an entry as in section 2, step 9, with an image. With no site yet, the editor ends at "Enginn vefur tengdur", as on production. Then, in the first terminal:
+
+```sh
+curl -s '<api-url>/storage/v1/object/public/delivery/<tenant>/current.json'
+curl -s '<api-url>/storage/v1/object/public/delivery/<tenant>/releases/1.json' | grep -oE '"(url|src)":"[^"]*"'
+```
+
+**Verify:** the pointer names `releases/1.json`. Each image address, `url` in an image field and `src` in rich text, starts with `<api-url>/storage/v1/object/public/media-public/<tenant>/`, and `curl -s -o /dev/null -w '%{http_code}\n' '<address>'` prints `200` for it. A `url` without `/media-public/` is a link or a video's address, not an image. An image delivered as `null` means the CMS is not running against this stack's own address: stop and report.
+
+**L6. The site.** In the first terminal, with both secrets kept in this terminal for the site:
+
+```sh
+WEBHOOK_SECRET="$(openssl rand -base64 32)"
+printf '%s' "$WEBHOOK_SECRET" | pnpm --silent --filter @litljomi/cli cli provision site --tenant-id '<tenant-id>' --base-url 'http://localhost:<site-port>' --revalidate-path '/api/cms/revalidate' --preview-url 'http://localhost:<site-port>/api/cms/preview' --local --env-file="$LOCAL_ENV"
+PREVIEW_SECRET="$(openssl rand -base64 32)"
+printf '%s' "$PREVIEW_SECRET" | pnpm --silent --filter @litljomi/cli cli provision preview-secret --site-id '<site-id>' --local --env-file="$LOCAL_ENV"
+```
+
+Then build and start the site against the local bundle: `apps/demo-site` from `apps/demo-site`, or a site in its own repository from its folder, with `npm run build` and `npm start -- -p '<site-port>'` in place of the two `next` commands.
+
+```sh
+export CMS_TENANT='<tenant>' CMS_DELIVERY_BASE_URL='<api-url>/storage/v1/object/public/delivery' CMS_MEDIA_HOST='127.0.0.1'
+export CMS_WEBHOOK_SECRETS="$WEBHOOK_SECRET" CMS_PREVIEW_SECRETS="$PREVIEW_SECRET" CMS_PREVIEW_BASE_URL='<cms-url>'
+rm -rf .next && pnpm exec next build && pnpm exec next start -p '<site-port>' -H 127.0.0.1
+```
+
+`rm -rf .next` drops a pointer an earlier build cached. Images inside rich text are plain `<img>` tags and load from the stack as they are. A site that shows images through `next/image` needs, for the rehearsal only, a remote pattern for `protocol: 'http'`, `hostname: '127.0.0.1'` and the stack's port, and either `images.unoptimized: true` or `images.dangerouslyAllowLocalIP: true`: Next.js 16 refuses to optimise an image from a local address. Neither belongs in the configuration that goes to production.
+
+**Verify:** a page that renders an entry holds `data-cms-entry` and its images load. Edit the entry and publish again: the editor reaches "Birt á vef ✓". Preview a draft from the editor. Unpublish, and it reaches "Tekið af vef".
+
+**Clean up.** `unset WEBHOOK_SECRET PREVIEW_SECRET`, `rm -r "$(dirname "$LOCAL_ENV")"`, stop the CMS and the site, and delete the `.next` folders the builds wrote. The tenant stays on the slot until its next `pnpm db:reset`.

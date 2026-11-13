@@ -1,9 +1,15 @@
-import { canonicalHttpsUrl, isRootRelativePath } from './safe-url.ts';
+import { canonicalMediaUrl, isRootRelativePath } from './safe-url.ts';
 import type { RichTextBlock, RichTextDoc, RichTextInline, RichTextListItem } from './doc-schema.ts';
 
 export interface RichTextResolver {
   asset(id: string): { url: string; width: number; height: number } | null;
   entryPath(id: string): string | null;
+  /**
+   * The local stack's own loopback http origin, given only when the media are served by a local
+   * stack (enhancement A4): asset URLs on exactly that origin are then kept too. Absent or null:
+   * `https:` only.
+   */
+  localMediaOrigin?: string | null;
 }
 
 export type ProjectedMark =
@@ -79,7 +85,7 @@ function projectBlock(b: RichTextBlock, r: RichTextResolver): ProjectedBlock | n
     }
     case 'image': {
       const asset = r.asset(b.attrs.asset._ref);
-      const src = asset === null ? null : canonicalHttpsUrl(asset.url);
+      const src = asset === null ? null : canonicalMediaUrl(asset.url, r.localMediaOrigin ?? null);
       if (asset === null || src === null) return null;
       return {
         type: 'image',
@@ -102,8 +108,9 @@ const projectItems = (items: RichTextListItem[], r: RichTextResolver): Projected
  * Resolves references: images get their delivery URL and size; entry links become path links.
  *
  * Resolver output is checked, not trusted: an entry path must be root-relative (`/x`, not `//x`
- * or `/\x`) and an asset URL must be `https:`. Anything else counts as unresolved: the image is
- * dropped, the link mark is removed.
+ * or `/\x`) and an asset URL must be `https:`, or `http:` on exactly the resolver's
+ * `localMediaOrigin` (a local stack, `canonicalMediaUrl`). Anything else counts as unresolved: the
+ * image is dropped, the link mark is removed.
  *
  * Pruning rule: a container left with no content after that (a list item, a list, a blockquote,
  * including ones emptied by a dropped child) is removed too, so the output never holds an empty

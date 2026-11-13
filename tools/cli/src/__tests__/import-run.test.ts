@@ -537,6 +537,46 @@ describe('import: signing in and refusals', () => {
     expect(await usage(['--tenant', 'acme', '--manifest', 'relative.json', '--media', MEDIA, '--dry-run'])).toMatchObject({ code: 2, text: expect.stringContaining('absolute') });
   });
 
+  // Enhancement A4: --local is the same rule as provision's: exactly one of the two local stacks.
+  it('--local targets either local stack slot and nothing else', async () => {
+    const target = async (url: string) => {
+      const err: string[] = [];
+      const origins: string[] = [];
+      const media = exampleMedia();
+      const deps = {
+        fetch: async (u: string) => {
+          origins.push(new URL(u).origin);
+          return new Response('{}', { status: 500 });
+        },
+        readTextFile: async (p: string) => {
+          if (p === MANIFEST) return JSON.stringify(exampleManifest());
+          if (p === ENV_FILE) return `NEXT_PUBLIC_SUPABASE_URL=${url}\nNEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${PUBLISHABLE}\n`;
+          throw new Error('ENOENT');
+        },
+        lstat: (p: string) => media.lstat(p),
+        readBytes: (p: string) => media.readBytes(p),
+        read: async () => null,
+        write: async () => {},
+        readPassword: async () => PASSWORD,
+        inspectImage: (await import('./import-fixture.ts')).fakeInspect,
+        loadModule: async () => testModule,
+        now: () => 0,
+        sleep: async () => {},
+      } as unknown as ImportDeps;
+      const args = ['--tenant', 'acme', '--manifest', MANIFEST, '--media', MEDIA, '--email', EMAIL, '--local', `--env-file=${ENV_FILE}`];
+      const code = await runImport(args, { log: () => {}, error: (l) => err.push(l) }, deps);
+      return { code, text: err.join('\n'), origins: [...new Set(origins)] };
+    };
+    for (const url of ['http://127.0.0.1:54321', 'http://127.0.0.1:54331']) {
+      expect((await target(url)).origins, url).toEqual([url]);
+    }
+    for (const url of [ORIGIN, 'http://127.0.0.1:54322', 'http://localhost:54321', 'http://10.0.0.1:54321']) {
+      const r = await target(url);
+      expect(r, url).toMatchObject({ code: 1, origins: [] });
+      expect(r.text).toContain('FAILED: NEXT_PUBLIC_SUPABASE_URL');
+    }
+  });
+
   it('is routed by the CLI', async () => {
     const err: string[] = [];
     expect(await runCli(['import', '--tenant', 'acme'], { log: () => {}, error: (l) => err.push(l) })).toBe(1);

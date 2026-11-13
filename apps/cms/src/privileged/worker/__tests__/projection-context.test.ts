@@ -11,7 +11,7 @@ import {
   text,
   type SiteEntry,
 } from '@litljomi/cms-schema';
-import { buildProjectionContext, contextFromRead, publicMediaUrl, type ReadRef } from '../projection-context';
+import { buildProjectionContext, contextFromRead, localStackOrigin, publicMediaUrl, type ReadRef } from '../projection-context';
 
 const site = defineModule({
   tenant: 'prufa',
@@ -46,6 +46,7 @@ describe('buildProjectionContext', () => {
       { id: 'a3', filename: 'c.jpg', mime: 'image/jpeg', width: 10, height: 10, focal_x: null, focal_y: null, default_alt: null, public_path: null, caption: null, credit: null },
     ],
     mediaUrl,
+    localMediaOrigin: null,
   });
 
   it('resolves an entry to its summary, with the path from the module\'s site integration', () => {
@@ -103,6 +104,7 @@ describe('contextFromRead', () => {
       ],
       site,
       mediaUrl,
+      null,
     );
     expect(resolveEntry(ctx, 'e1')?.path).toBe('/frettir/braud');
     expect(resolveEntry(ctx, 'e2')).toBeNull();
@@ -128,6 +130,7 @@ describe('contextFromRead', () => {
       [ref({ id: E1 }), ref({ id: E2, published: false, type: null, slug: null, title: null }), ref({ id: E3, type: 'event', slug: 'x' })],
       site,
       mediaUrl,
+      null,
     );
     const related = (id: string) => projectEntry(page, { related: { _ref: id, _kind: 'entry' } }, ctx).related;
     expect(related(E1)).toEqual({ id: E1, type: 'news', slug: 'braud', title: 'Brauð', path: '/frettir/braud' });
@@ -142,5 +145,47 @@ describe('publicMediaUrl', () => {
       'https://x.supabase.co/storage/v1/object/public/media-public/prufa/a1/mynd%20me%C3%B0%20bili.jpg',
     );
     expect(publicMediaUrl('https://x.supabase.co/', 'p/a/b.jpg')).toBe('https://x.supabase.co/storage/v1/object/public/media-public/p/a/b.jpg');
+  });
+});
+
+// Enhancement A4: the stack's own address decides whether http media are delivered.
+describe('localStackOrigin', () => {
+  it('is the origin of a local stack: an http Supabase URL on a loopback host', () => {
+    expect(localStackOrigin('http://127.0.0.1:54321')).toBe('http://127.0.0.1:54321');
+    expect(localStackOrigin('http://127.0.0.1:54331/')).toBe('http://127.0.0.1:54331');
+    expect(localStackOrigin('http://localhost:54321')).toBe('http://localhost:54321');
+  });
+  it('is null for a hosted project and for any address that is not loopback', () => {
+    for (const url of ['https://abcdefghijklmnopqrst.supabase.co', 'http://abcdefghijklmnopqrst.supabase.co', 'https://127.0.0.1:54321', 'http://10.0.0.1:54321', 'http://0.0.0.0:54321', ''])
+      expect(localStackOrigin(url), url).toBeNull();
+  });
+});
+
+describe("a local stack's media", () => {
+  const LOCAL = 'http://127.0.0.1:54331';
+  const asset = { id: 'a1', filename: 'a.jpg', mime: 'image/jpeg', width: 8, height: 6, focal_x: null, focal_y: null, default_alt: null, public_path: 'prufa/a1/a.jpg' };
+  const context = (base: string) =>
+    buildProjectionContext({ module: site, entries: [], assets: [asset], mediaUrl: (p) => publicMediaUrl(base, p), localMediaOrigin: localStackOrigin(base) });
+
+  it("resolves to the stack's own http address when the stack is local", () => {
+    expect(resolveAsset(context(LOCAL), 'a1')?.url).toBe(`${LOCAL}/storage/v1/object/public/media-public/prufa/a1/a.jpg`);
+  });
+  it('resolves to null for an http address on a host that is not loopback', () => {
+    expect(resolveAsset(context('http://abcdefghijklmnopqrst.supabase.co'), 'a1')).toBeNull();
+    expect(resolveAsset(context('http://10.0.0.1:54331'), 'a1')).toBeNull();
+  });
+  it('resolves to the https address of a hosted project, as before', () => {
+    expect(resolveAsset(context('https://abcdefghijklmnopqrst.supabase.co'), 'a1')?.url).toBe(
+      'https://abcdefghijklmnopqrst.supabase.co/storage/v1/object/public/media-public/prufa/a1/a.jpg',
+    );
+  });
+  it('contextFromRead carries the local origin too', () => {
+    const ctx = contextFromRead(
+      [{ path: '$."i"', kind: 'asset', published: true, archived: false, ...asset }],
+      site,
+      (p) => publicMediaUrl(LOCAL, p),
+      localStackOrigin(LOCAL),
+    );
+    expect(resolveAsset(ctx, 'a1')?.url).toBe(`${LOCAL}/storage/v1/object/public/media-public/prufa/a1/a.jpg`);
   });
 });

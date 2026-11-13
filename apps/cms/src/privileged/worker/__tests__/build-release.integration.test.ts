@@ -3,9 +3,10 @@
 // the worker runs as service_role with the secret key, as in production. Release tests run on
 // labak; every build includes whatever labak content earlier tests published, so assertions are
 // about the entries each test creates. Media publication is proven at the storage level (decision
-// 34.3): the object is in media-public and public_path is set. Local media URLs are http, so the
-// bundle's image fields are null here; https URLs are covered by build-release.test.ts, and by
-// the caption test below, which gives its builds https media URLs.
+// 34.3): the object is in media-public and public_path is set. The local stack's media URLs are http
+// on its own loopback address, which the projection delivers on a local stack only (enhancement A4),
+// so the bundle's image fields hold them here; https URLs are covered by build-release.test.ts, and
+// by the caption test below, which gives its builds https media URLs.
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -185,6 +186,19 @@ describe('buildRelease (labak)', () => {
     expect(await inMediaPublic(image)).toBe(true);
     expect(await publicPath(image)).toBe(`labak/${image}/mynd.jpg`);
     expect(await releaseOf(entry.requestId)).toBe(result.releaseId);
+    // Enhancement A4: the bundle delivers the image at the local stack's http address, which a site
+    // can load.
+    const bundled = entriesOf(result.bundle).find((e) => e.id === entry.id)!.data.image as { url: string } | null;
+    expect(bundled).toEqual({
+      id: image,
+      url: publicUrl('media-public', `labak/${image}/mynd.jpg`),
+      width: TEST_JPEG_METADATA.p_width,
+      height: TEST_JPEG_METADATA.p_height,
+      mime: 'image/jpeg',
+      alt: 'Brauð',
+      focal: null,
+    });
+    expect((await fetch(bundled!.url, { cache: 'no-store' })).status).toBe(200);
     // Task 20 quality r1, Minor 9: what the database stored. Other files' partial commits may be
     // omitted from every labak build (see above), so error is null or omits none of this test's.
     const row = await releaseRow(result.releaseId);
@@ -194,7 +208,7 @@ describe('buildRelease (labak)', () => {
 
   // Media library L3 (plan section 3.3): the file's caption and credit, set by the editor, are in
   // the public bundle with the image; a change reaches the site with the tenant's next release.
-  // Local media URLs are http, which a projection drops, so this build is given https ones.
+  // This build is given https media URLs, as a hosted project's are.
   it("delivers the file's caption and credit with the image, and a changed caption with the next release", async () => {
     const mediaUrl = (path: string) => `https://media.l3.test/${path}`;
     const image = await labakAsset();

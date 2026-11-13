@@ -1,4 +1,5 @@
 import 'server-only';
+import { supabaseUrl } from '@/lib/supabase/env';
 import { createAdminClient } from '../admin-client';
 import { handlePreviewRequest } from './endpoint';
 
@@ -10,5 +11,6 @@ export function previewGet(req: Request, tenant: string): Promise<Response> {
   return handlePreviewRequest(req, tenant, async () => ({
     admin: createAdminClient(),
     nowSeconds: () => Date.now() / 1000,
+    stackUrl: supabaseUrl(),
   }));
 }

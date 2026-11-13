@@ -7,6 +7,9 @@
 //   needed name exactly once on a plain NAME=value line, its value matching a fixed pattern. A
 //   refusal names the variable, never its value.
 // - The URL must be https://<--expect-ref>.supabase.co; any other host (loopback included) is refused.
+//   With --local (enhancement A4) it must instead be exactly a local stack's own address
+//   (./local.ts), to rehearse a tenant before production; the env file must then be named, and a
+//   site's base URL may also be http on localhost or 127.0.0.1. Every other check is the same.
 // - Requests go only to that origin, with the key in headers only, and never follow a redirect.
 // - The webhook secret and the preview secret are read from standard input only. A preview URL is
 //   not a secret and is an argument; it is checked against the token route's rule before anything
@@ -32,6 +35,7 @@ import {
   type ParsedArgs as Parsed,
   type Target,
 } from './hosted.ts';
+import { hostOf } from './local.ts';
 
 export { DEFAULT_ENV_FILE, envValue } from './hosted.ts';
 const FINISH_PREFIX = 'pnpm --silent --filter @litljomi/cli cli provision';
@@ -62,6 +66,9 @@ export const PROVISION_USAGE = [
   '       provision editor (--email <address> | --user-id <uuid>) --tenant-id <uuid> [--tenant-id <uuid> ...] --expect-ref <ref> [--env-file=<absolute path>]',
   '       provision remove-editor --user-id <uuid> --tenant-id <uuid> [--tenant-id <uuid> ...] --expect-ref <ref> [--env-file=<absolute path>]',
   '       provision tenant-status --tenant-id <uuid> --status (active | suspended) --expect-ref <ref> [--env-file=<absolute path>]',
+  '  on a local stack, any of these with --local --env-file=<absolute path> in place of --expect-ref <ref>',
+  '         (the env file names a local stack: http://127.0.0.1:54321 or http://127.0.0.1:54331;',
+  '          a site --base-url may then also be http://localhost:<port> or http://127.0.0.1:<port>)',
 ].join('\n');
 
 // cms.tenants' slug constraint.
@@ -69,6 +76,8 @@ const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 // An https origin with a lowercase DNS host: no port, path, query or trailing slash.
 const LABEL = '[a-z0-9](?:[a-z0-9-]*[a-z0-9])?';
 const BASE_URL_RE = new RegExp(`^https://${LABEL}(?:\\.${LABEL})+$`);
+// With --local only: a local site, http on localhost or 127.0.0.1 with an optional port; no path.
+const LOCAL_BASE_URL_RE = /^http:\/\/(?:localhost|127\.0\.0\.1)(?::[0-9]{1,5})?$/;
 // One or more path segments: no trailing slash, query or fragment.
 const PATH_RE = /^(?:\/[A-Za-z0-9._~-]+)+$/;
 const EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
@@ -100,15 +109,16 @@ const MAX_USER_PAGES = 100;
 // ---------------------------------------------------------------------------------------------
 // Arguments
 
+// Every command may target a local stack with --local (enhancement A4).
 const COMMANDS: Record<string, ArgSpec> = {
-  tenant: { positionals: 1, flags: ['--name'] },
-  site: { positionals: 0, flags: ['--tenant-id', '--base-url', '--revalidate-path', '--preview-url'] },
-  'preview-secret': { positionals: 0, flags: ['--site-id'] },
-  'preview-url': { positionals: 0, flags: ['--site-id', '--preview-url'] },
-  'webhook-secret': { positionals: 0, flags: ['--site-id'] },
-  'tenant-status': { positionals: 0, flags: ['--tenant-id', '--status'] },
-  editor: { positionals: 0, flags: ['--email', '--user-id', '--tenant-id'], repeatable: ['--tenant-id'] },
-  'remove-editor': { positionals: 0, flags: ['--user-id', '--tenant-id'], repeatable: ['--tenant-id'] },
+  tenant: { positionals: 1, flags: ['--name'], local: true },
+  site: { positionals: 0, flags: ['--tenant-id', '--base-url', '--revalidate-path', '--preview-url'], local: true },
+  'preview-secret': { positionals: 0, flags: ['--site-id'], local: true },
+  'preview-url': { positionals: 0, flags: ['--site-id', '--preview-url'], local: true },
+  'webhook-secret': { positionals: 0, flags: ['--site-id'], local: true },
+  'tenant-status': { positionals: 0, flags: ['--tenant-id', '--status'], local: true },
+  editor: { positionals: 0, flags: ['--email', '--user-id', '--tenant-id'], repeatable: ['--tenant-id'], local: true },
+  'remove-editor': { positionals: 0, flags: ['--user-id', '--tenant-id'], repeatable: ['--tenant-id'], local: true },
 };
 
 function parse(command: string, args: string[]): Parsed {
@@ -310,7 +320,8 @@ async function findUserId(api: Api, email: string): Promise<string> {
 /** The command that finishes `command` for the tenants left over, printed after a partial failure. */
 function finishCommand(ctx: Context, command: string, userId: string, tenantIds: string[]): string {
   const envFile = ctx.target.envFile === DEFAULT_ENV_FILE ? '' : ` --env-file=${ctx.target.envFile}`;
-  return `${FINISH_PREFIX} ${command} --user-id ${userId} ${tenantIds.map((t) => `--tenant-id ${t}`).join(' ')} --expect-ref ${ctx.target.ref}${envFile}`;
+  const target = ctx.target.local ? '--local' : `--expect-ref ${ctx.target.ref}`;
+  return `${FINISH_PREFIX} ${command} --user-id ${userId} ${tenantIds.map((t) => `--tenant-id ${t}`).join(' ')} ${target}${envFile}`;
 }
 
 async function editor(p: Parsed, ctx: Context): Promise<number> {
@@ -384,7 +395,9 @@ function validate(command: string, p: Parsed): void {
     if (name === undefined || name.trim() === '') throw new UsageError('--name is required');
   } else if (command === 'site') {
     required(p, '--tenant-id', UUID_RE);
-    required(p, '--base-url', BASE_URL_RE);
+    const baseUrl = one(p, '--base-url');
+    if (baseUrl === undefined) throw new UsageError('--base-url is required');
+    if (!BASE_URL_RE.test(baseUrl) && !(p.local && LOCAL_BASE_URL_RE.test(baseUrl))) throw new UsageError('--base-url has an unexpected form');
     required(p, '--revalidate-path', PATH_RE);
     const preview = one(p, '--preview-url');
     if (preview !== undefined && !isAllowedPreviewUrl(preview)) throw new UsageError(PREVIEW_URL_FORM);
@@ -438,7 +451,7 @@ export async function runProvision(args: string[], io: ProvisionIo, deps: Provis
   try {
     const target = await readTarget(parsed, deps.readTextFile);
     secrets.push(target.key);
-    log(`target: ${target.origin.slice('https://'.length)}`);
+    log(target.local ? `target: ${hostOf(target.origin)} (local stack)` : `target: ${hostOf(target.origin)}`);
     const ctx: Context = { api: new Api(target, deps.fetch, secrets), target, secrets, log, error };
     if (command === 'tenant') return await tenant(parsed, ctx);
     if (command === 'site') {
