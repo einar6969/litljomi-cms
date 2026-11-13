@@ -41,7 +41,7 @@ Einar approved the fast lane on 2026-11-13 ("your recommendation of '2. Fast lan
 | | Work package | Starts | Needs | Einar |
 |---|---|---|---|---|
 | ☑ | **WP1** Land Track A as one integration PR | Now | Both stacks | none |
-| ☐ | **WP2** Deploy to production | WP1 merged | none | none |
+| ☑ | **WP2** Deploy to production | WP1 merged | none | none |
 | ☐ | **WP3** Finish DLD's module | Now, from WP1's branch | CI only | none |
 | ☐ | **WP4** The site reads from the CMS | Now, from WP1's branch | A stack, once WP5 has data | none |
 | ☐ | **WP5** Rehearse the import locally | WP1's branch builds, WP3 has a head | Slot 2 | none |
