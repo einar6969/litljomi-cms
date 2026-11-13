@@ -8,6 +8,7 @@ import {
   entryPill,
   formatOverviewTime,
   needsPublishedCount,
+  OVERVIEW_STATUS_FIELDS,
   overviewTypes,
   parseChangesParam,
   summarizeStatus,
@@ -32,6 +33,7 @@ const row = (overrides: Partial<OverviewStatusRow> = {}): OverviewStatusRow => (
   retries_exhausted: false,
   live_retrying: false,
   latest_action: 'publish',
+  nothing_checked: false,
   ...overrides,
 });
 
@@ -136,6 +138,17 @@ describe('the status summary', () => {
       removed('e'),
     ]);
     expect(summary.lastPublished).toBe('2026-11-03T10:00:00+00:00');
+  });
+
+  // A7: delivered, but nothing on the site was checked for it.
+  it('never counts an entry with nothing to check as proven; its pill says why, and it neither waits nor fails', () => {
+    const summary = summarizeStatus([row({ entry_id: 'a', nothing_checked: true }), row({ entry_id: 'b', action: 'unpublish', nothing_checked: true })]);
+    expect(summary.proven.size).toBe(0);
+    expect(summary.lastPublished).toBeNull();
+    expect(summary.failed).toBe(false);
+    expect(waitingIds([], summary)).toEqual([]);
+    expect(entryPill({ id: 'a', status: 'published' }, ok(summary))).toEqual({ label: t.publish.liveNothingChecked, tone: 'warning' });
+    expect(OVERVIEW_STATUS_FIELDS).toContain('nothing_checked');
   });
 
   it('never treats a proven unpublish as proof of publishing', () => {

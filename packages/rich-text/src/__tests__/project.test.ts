@@ -129,4 +129,24 @@ describe('resolver output is checked', () => {
     const out = projectRichText(linked, resolver({ asset: () => ({ url: 'https:m.test/a.jpg', width: 1, height: 1 }) }));
     expect((out.content[1] as { attrs: { src: string } }).attrs.src).toBe('https://m.test/a.jpg');
   });
+  // Enhancement A4: a local stack's own media address is http.
+  const LOCAL = 'http://127.0.0.1:54331';
+  const local = `${LOCAL}/storage/v1/object/public/media-public/demo/a/a.jpg`;
+  it('keeps an http asset url on the local stack\'s own origin when the resolver names it', () => {
+    const out = projectRichText(linked, resolver({ localMediaOrigin: LOCAL, asset: () => ({ url: local, width: 1, height: 1 }) }));
+    expect((out.content[1] as { attrs: { src: string } }).attrs.src).toBe(local);
+  });
+  it('drops an http asset url without a local origin, on another origin, or on a host that is not loopback', () => {
+    const cases: [string | null | undefined, string][] = [
+      [undefined, local],
+      [null, local],
+      [LOCAL, 'http://127.0.0.1:54321/a.jpg'],
+      [LOCAL, 'http://m.test/a.jpg'],
+      ['http://m.test', 'http://m.test/a.jpg'],
+    ];
+    for (const [origin, url] of cases) {
+      const out = projectRichText(linked, resolver({ ...(origin === undefined ? {} : { localMediaOrigin: origin }), asset: () => ({ url, width: 1, height: 1 }) }));
+      expect(out.content.map((b) => b.type), `${url} with ${origin}`).toEqual(['paragraph']);
+    }
+  });
 });

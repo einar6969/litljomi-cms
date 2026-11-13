@@ -8,6 +8,8 @@ export type EntryDetail = {
   data: unknown;
   schema_version: number;
   draft_version: number;
+  /** The draft version that is published now; null when the entry is not published. */
+  published_draft_version: number | null;
   first_published_at: string | null;
   status: 'draft' | 'published' | 'changed' | 'archived';
 };

@@ -1,4 +1,5 @@
 import { slugify } from '@litljomi/cms-schema/src/slugify.ts';
+import { supabasePublicEnv } from '@/lib/supabase/env';
 import type { SupabaseClient } from '@/lib/supabase/types';
 
 // Image upload rules shared by the browser (checked before upload) and the server (checked again on
@@ -9,7 +10,7 @@ import type { SupabaseClient } from '@/lib/supabase/types';
 
 export const MEDIA_PRIVATE_BUCKET = 'media-private';
 export const MAX_UPLOAD_BYTES = 20_971_520;
-/** Editor previews of originals are signed for 10 minutes (spec §5.6). */
+/** Editor previews (thumbnails, and an original only where a file has none) are signed for 10 minutes (spec §5.6). */
 export const PREVIEW_SECONDS = 600;
 
 export const EXTENSION_BY_MIME = {
@@ -69,7 +70,58 @@ export async function uploadOriginal(client: SupabaseClient, path: string, file:
   return !error;
 }
 
-/** A short-lived signed URL of an original in `media-private` (§5.6), or null. */
+/** The request `uploadWithProgress` sends: the part of `XMLHttpRequest` it uses. */
+export type UploadRequest = Pick<XMLHttpRequest, 'open' | 'setRequestHeader' | 'send' | 'status' | 'responseText' | 'upload' | 'onload' | 'onerror' | 'onabort' | 'ontimeout'>;
+
+/** The only paths `uploadWithProgress` sends to: an original's, as `prepareUpload` makes it. */
+const UPLOAD_PATH = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[a-z0-9]+(?:-[a-z0-9]+)*\.(?:jpg|png|webp)$/;
+
+/** Storage's refusal of the token itself (expired, malformed), as against a refusal by its policies. */
+const TOKEN_REFUSED = /jwt|token|\bexp\b/i;
+
+/**
+ * Uploads an original as `uploadOriginal` does, with the editor's own session, and reports how much
+ * has been sent (docs/plans/media-library.md section 6.2): Storage's client reports no progress, so
+ * this is the same request, `POST /storage/v1/object/media-private/{path}` without upsert, sent with
+ * `XMLHttpRequest`. It carries the editor's access token from the browser client's session (which
+ * refreshes an expired one first), only to the project's own Storage URL (`connect-src` allows no
+ * other), and only for a path of the upload form; Storage RLS decides as for any upload. 'auth' when
+ * there is no session or Storage refuses the token, so the queue can stop; 'error' for anything
+ * else, a policy refusal included.
+ */
+export async function uploadWithProgress(
+  client: SupabaseClient,
+  path: string,
+  file: File,
+  onProgress: (fraction: number) => void,
+  env: { url: string; publishableKey: string } = supabasePublicEnv(),
+  createRequest: () => UploadRequest = () => new XMLHttpRequest(),
+): Promise<'ok' | 'auth' | 'error'> {
+  if (!UPLOAD_PATH.test(path)) return 'error';
+  const { data, error } = await client.auth.getSession();
+  const token = error ? null : data.session?.access_token;
+  if (!token) return 'auth';
+  return new Promise((resolve) => {
+    const request = createRequest();
+    request.open('POST', `${env.url.replace(/\/+$/, '')}/storage/v1/object/${MEDIA_PRIVATE_BUCKET}/${path}`);
+    request.setRequestHeader('authorization', `Bearer ${token}`);
+    request.setRequestHeader('apikey', env.publishableKey);
+    request.setRequestHeader('x-upsert', 'false');
+    request.setRequestHeader('content-type', file.type);
+    request.setRequestHeader('cache-control', 'max-age=3600');
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable && event.total > 0) onProgress(event.loaded / event.total);
+    };
+    request.onload = () => {
+      if (request.status >= 200 && request.status < 300) resolve('ok');
+      else resolve(request.status === 401 || ((request.status === 400 || request.status === 403) && TOKEN_REFUSED.test(request.responseText)) ? 'auth' : 'error');
+    };
+    request.onerror = request.onabort = request.ontimeout = () => resolve('error');
+    request.send(file);
+  });
+}
+
+/** A short-lived signed URL of an object in `media-private` (§5.6), a thumbnail or an original, or null. */
 export async function previewUrl(client: SupabaseClient, path: string): Promise<string | null> {
   const { data, error } = await client.storage.from(MEDIA_PRIVATE_BUCKET).createSignedUrl(path, PREVIEW_SECONDS);
   return error || !data ? null : data.signedUrl;

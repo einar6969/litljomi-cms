@@ -14,7 +14,7 @@ export function TextField({ id, label, required, value, onChange, max, multiline
     onChange: (e: { target: { value: string } }) => onChange(e.target.value === '' ? undefined : e.target.value),
   };
   return (
-    <Field label={label} htmlFor={id}>
+    <Field label={label} htmlFor={id} required={required}>
       {multiline ? <textarea {...common} rows={4} /> : <input type="text" {...common} />}
     </Field>
   );

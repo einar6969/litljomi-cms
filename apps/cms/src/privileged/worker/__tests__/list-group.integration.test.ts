@@ -169,6 +169,7 @@ describe('list and group fields (demo event.program.highlights)', () => {
       ],
       // A group delivers every nested field, an absent one as null (group.ts projection).
       videos: null,
+      gallery: null,
     });
   });
 });

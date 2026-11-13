@@ -26,6 +26,8 @@ const asset = (url: string): PublicAsset => ({
   mime: 'image/jpeg',
   alt: 'default alt',
   focal: { x: 0.5, y: 0.25 },
+  caption: 'Kanilsnúðar á bakka',
+  credit: 'Anna Önnudóttir',
 });
 const summary = (o: Partial<EntrySummary> = {}): EntrySummary => ({
   id: E,
@@ -93,6 +95,39 @@ describe('projectEntry', () => {
     expect(projectEntry(t, data, fakeCtx({ assets: { [A]: extra } })).pic).toEqual({ ...asset('https://m.test/a.jpg'), focal: { x: 0.1, y: 0.9 }, alt: 'per-use alt' });
   });
 
+  // Media library L3: the file's caption and credit are delivered with every use of the image,
+  // additive to bundle format 1 (plan section 3.3); the alt text stays the use's own.
+  it("projects the file's caption and credit with every use of the image, the alt per use", () => {
+    const two = defineType({
+      name: 'gallery',
+      version: 1,
+      label: 'G',
+      fields: { a: image({ label: 'A' }), b: image({ label: 'B' }) },
+      preview: { title: 'a' },
+      orderBy: 'a',
+    });
+    const uses = { a: { _ref: A, _kind: 'asset', alt: 'Fyrri' }, b: { _ref: A, _kind: 'asset', alt: '' } };
+    const out = projectEntry(two, uses, fakeCtx({ assets: { [A]: asset('https://m.test/a.jpg') } }));
+    expect(out.a).toMatchObject({ alt: 'Fyrri', caption: 'Kanilsnúðar á bakka', credit: 'Anna Önnudóttir' });
+    expect(out.b).toMatchObject({ alt: '', caption: 'Kanilsnúðar á bakka', credit: 'Anna Önnudóttir' });
+  });
+
+  it('delivers null for a file without a caption or credit', () => {
+    const none = { ...asset('https://m.test/a.jpg'), caption: null, credit: null };
+    const pic = projectEntry(t, data, fakeCtx({ assets: { [A]: none } })).pic;
+    expect(pic).toHaveProperty('caption', null);
+    expect(pic).toHaveProperty('credit', null);
+  });
+
+  it('delivers null, never undefined or another type, when the context gives no string', () => {
+    for (const bad of [undefined, 3, { text: 'x' }]) {
+      const odd = { ...asset('https://m.test/a.jpg'), caption: bad, credit: bad } as unknown as PublicAsset;
+      const pic = projectEntry(t, data, fakeCtx({ assets: { [A]: odd } })).pic as Record<string, unknown>;
+      expect(pic['caption']).toBeNull();
+      expect(pic['credit']).toBeNull();
+    }
+  });
+
   it('an image with a missing asset projects as null', () => {
     expect(projectEntry(t, data, fakeCtx({})).pic).toBeNull();
   });
@@ -105,6 +140,37 @@ describe('projectEntry', () => {
       const out = projectEntry(t, data, fakeCtx({ entries: { [E]: summary({ path }) } }));
       expect(out.related).toEqual({ entry: summary({ path: null }) });
     }
+  });
+
+  // Enhancement A4: on a local stack the context names the stack's own loopback http origin.
+  describe('a local stack', () => {
+    const LOCAL = 'http://127.0.0.1:54331';
+    const localUrl = `${LOCAL}/storage/v1/object/public/media-public/demo/a/a.jpg`;
+    const localCtx = (url: string, localMediaOrigin: string | null) => ({ ...fakeCtx({ assets: { [A]: asset(url) } }), localMediaOrigin });
+
+    it('delivers an http asset url on the stack\'s own origin, in an image field and in rich text', () => {
+      const body = { type: 'doc', content: [{ type: 'image', attrs: { asset: { _ref: A, _kind: 'asset' }, alt: 'y' } }] };
+      const out = projectEntry(t, { ...data, body }, localCtx(localUrl, LOCAL));
+      expect(out.pic).toEqual({ ...asset(localUrl), alt: 'per-use alt' });
+      expect(out.body).toEqual({ type: 'doc', content: [{ type: 'image', attrs: { src: localUrl, width: 800, height: 600, alt: 'y', caption: undefined } }] });
+    });
+
+    it('still refuses http without a local origin, on another origin, and every non-loopback http address', () => {
+      const cases: [string, string | null][] = [
+        [localUrl, null],
+        ['http://127.0.0.1:54321/a.jpg', LOCAL],
+        ['http://m.test/a.jpg', LOCAL],
+        ['http://m.test/a.jpg', 'http://m.test'],
+        ['http://abcdefghijklmnopqrst.supabase.co/a.jpg', 'http://abcdefghijklmnopqrst.supabase.co'],
+        ['http://10.0.0.1:54331/a.jpg', 'http://10.0.0.1:54331'],
+      ];
+      for (const [url, origin] of cases) {
+        const body = { type: 'doc', content: [{ type: 'image', attrs: { asset: { _ref: A, _kind: 'asset' }, alt: 'y' } }] };
+        const out = projectEntry(t, { ...data, body }, localCtx(url, origin));
+        expect(out.pic, `${url} with ${origin}`).toBeNull();
+        expect(out.body, `${url} with ${origin}`).toEqual({ type: 'doc', content: [] });
+      }
+    });
   });
 
   it('delivers asset urls in canonical form and refuses credentials (Task 15 security r1)', () => {

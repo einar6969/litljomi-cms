@@ -28,6 +28,8 @@ export type LoadDraftResult =
   | { ok: true; version: number; data: Record<string, unknown> }
   | { ok: false; code: 'auth' | 'invalid' | 'error' };
 
+export type ArchiveEntryResult = { ok: true; listPath: string } | { ok: false; code: 'published' | 'auth' | 'invalid' | 'error' };
+
 export type { RestoreRevisionResult, UpdateDraftSchemaResult };
 
 /**
@@ -169,6 +171,31 @@ export async function restoreRevisionAction(id: string, revisionId: string, expe
     const client = await createEditorClient();
     if (!(await hasSession(client))) return { ok: false, code: 'auth' };
     return await restoreRevision(client, args.data.id, args.data.revisionId, args.data.expectedVersion);
+  } catch {
+    return { ok: false, code: 'error' };
+  }
+}
+
+/**
+ * Archives an entry that is not published (§4.6, `api.archive_entry`; enhancement A6): it leaves the
+ * entry list, whose default leaves archived entries out. The database refuses a published entry
+ * (`published`): it is taken off the site first. A singleton is never archived: its type's page
+ * would open it again. Answers with the entry's list, where the editor goes next.
+ */
+export async function archiveEntryAction(id: string): Promise<ArchiveEntryResult> {
+  const args = entryId.safeParse(id);
+  if (!args.success) return { ok: false, code: 'invalid' };
+  try {
+    const client = await createEditorClient();
+    if (!(await hasSession(client))) return { ok: false, code: 'auth' };
+    const context = await loadEntryContext(client, args.data);
+    if (!context || isSingleton(getModule(context.tenantSlug)!, context.type.name)) return { ok: false, code: 'error' };
+    const result = await client.rpc('archive_entry', { p_entry_id: context.entryId });
+    if (result.error) {
+      if (result.error.code === 'P0001' && result.error.message === 'forbidden') return { ok: false, code: 'published' };
+      return { ok: false, code: authOrError({ error: result.error, status: result.status }) };
+    }
+    return { ok: true, listPath: `/t/${encodeURIComponent(context.tenantSlug)}/${encodeURIComponent(context.type.name)}` };
   } catch {
     return { ok: false, code: 'error' };
   }

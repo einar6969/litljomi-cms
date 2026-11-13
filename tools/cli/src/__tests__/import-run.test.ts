@@ -125,14 +125,12 @@ describe('import: a full run', () => {
     const requests = hub.calls.filter((c) => c.path === '/rest/v1/rpc/request_publish').map((c) => (c.body as { p_entry_id: string }).p_entry_id);
     expect(requests[0]).toBe(bySlug('harbour-path')?.id);
     expect(requests).toHaveLength(3);
-    // The report: everything compared, nothing different; captions and order counted as unchecked.
+    // The report: everything compared, captions and credits too (delivered since L3), nothing
+    // different; order counted as unchecked.
     const rep = report(w);
     expect(rep.differences).toEqual([]);
     expect(rep.checked).toEqual({ entries: 3, files: 3 });
-    expect(rep.unchecked).toEqual([
-      { what: 'file captions and credits (not delivered until L3)', count: 1 },
-      { what: 'order: validated, not applied (manual ordering, A12, does not exist yet)', count: 1 },
-    ]);
+    expect(rep.unchecked).toEqual([{ what: 'order: validated, not applied (manual ordering, A12, does not exist yet)', count: 1 }]);
     expect(r.text).toContain('first batch: 1 request(s), 2 new image(s), 136 bytes');
     // The ledger names ids only.
     expect(Object.keys(ledger(w).entries).sort()).toEqual(['home', 'news/opening', 'project/harbour']);
@@ -237,6 +235,10 @@ describe('import: someone else\'s edits are reported, not overwritten', () => {
     expect(r.text).toContain('NOT TOUCHED file projects/harbour/01.jpg');
     // Two of the three files have texts; the third has none to write.
     expect(w.hub.count('POST', '/rest/v1/rpc/update_asset_text')).toBe(2);
+    // The site shows the library's caption (L3), so the report names the difference at each use.
+    const differences = report(w).differences.filter((d) => d.at.endsWith('/caption'));
+    expect(differences.length).toBeGreaterThan(0);
+    expect(differences[0]).toMatchObject({ what: 'text differs', expected: 'Another caption', actual: 'The new path' });
   });
 });
 
@@ -533,6 +535,46 @@ describe('import: signing in and refusals', () => {
     expect(await usage([...base, '--expect-ref', REF, '--batch-size', '10'])).toMatchObject({ code: 2, text: expect.stringContaining('--batch-size must be 1 to 9') });
     expect(await usage([...base, '--expect-ref', REF, '--manifest', 'x'])).toMatchObject({ code: 2 });
     expect(await usage(['--tenant', 'acme', '--manifest', 'relative.json', '--media', MEDIA, '--dry-run'])).toMatchObject({ code: 2, text: expect.stringContaining('absolute') });
+  });
+
+  // Enhancement A4: --local is the same rule as provision's: exactly one of the two local stacks.
+  it('--local targets either local stack slot and nothing else', async () => {
+    const target = async (url: string) => {
+      const err: string[] = [];
+      const origins: string[] = [];
+      const media = exampleMedia();
+      const deps = {
+        fetch: async (u: string) => {
+          origins.push(new URL(u).origin);
+          return new Response('{}', { status: 500 });
+        },
+        readTextFile: async (p: string) => {
+          if (p === MANIFEST) return JSON.stringify(exampleManifest());
+          if (p === ENV_FILE) return `NEXT_PUBLIC_SUPABASE_URL=${url}\nNEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${PUBLISHABLE}\n`;
+          throw new Error('ENOENT');
+        },
+        lstat: (p: string) => media.lstat(p),
+        readBytes: (p: string) => media.readBytes(p),
+        read: async () => null,
+        write: async () => {},
+        readPassword: async () => PASSWORD,
+        inspectImage: (await import('./import-fixture.ts')).fakeInspect,
+        loadModule: async () => testModule,
+        now: () => 0,
+        sleep: async () => {},
+      } as unknown as ImportDeps;
+      const args = ['--tenant', 'acme', '--manifest', MANIFEST, '--media', MEDIA, '--email', EMAIL, '--local', `--env-file=${ENV_FILE}`];
+      const code = await runImport(args, { log: () => {}, error: (l) => err.push(l) }, deps);
+      return { code, text: err.join('\n'), origins: [...new Set(origins)] };
+    };
+    for (const url of ['http://127.0.0.1:54321', 'http://127.0.0.1:54331']) {
+      expect((await target(url)).origins, url).toEqual([url]);
+    }
+    for (const url of [ORIGIN, 'http://127.0.0.1:54322', 'http://localhost:54321', 'http://10.0.0.1:54321']) {
+      const r = await target(url);
+      expect(r, url).toMatchObject({ code: 1, origins: [] });
+      expect(r.text).toContain('FAILED: NEXT_PUBLIC_SUPABASE_URL');
+    }
   });
 
   it('is routed by the CLI', async () => {

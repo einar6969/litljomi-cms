@@ -1,4 +1,4 @@
-import { boolean, date, datetime, defineModule, defineType, group, link, list, number, reference, richText, select, text, video, type SiteEntry } from '@litljomi/cms-schema';
+import { boolean, date, datetime, defineModule, defineType, group, image, link, list, number, reference, richText, select, text, video, type SiteEntry } from '@litljomi/cms-schema';
 
 const eventType = defineType({
   name: 'event',
@@ -24,14 +24,15 @@ const eventType = defineType({
     }),
     doorsOpen: datetime({ label: 'Doors open' }),
     related: reference({ label: 'Related event', to: ['event'] }),
-    // A group holding a list of references (M2-06) and a list of videos (A11); optional, so existing
-    // events stay valid.
+    // A group holding a list of references (M2-06), a list of videos (A11) and a list of images
+    // (media library L6); optional, so existing events stay valid.
     program: group({
       label: 'Program',
       fields: {
         intro: text({ label: 'Introduction', multiline: true }),
         highlights: list(reference({ label: 'Event', to: ['event'] }), { label: 'Highlights', max: 10 }),
         videos: list(video({ label: 'Video' }), { label: 'Videos', max: 3 }),
+        gallery: list(image({ label: 'Photo' }), { label: 'Gallery', max: 12 }),
       },
     }),
   },
@@ -81,6 +82,39 @@ const siteInfoType = defineType({
   orderBy: 'title',
 });
 
+/**
+ * A singleton with no page of its own (A7; spec §3.2, §7.4): the events page's introduction and
+ * featured events, shown on the shared `/events` page only, as a portfolio's home-page settings
+ * are. Its title field is a list, never text, so it never gets a slug, and it needs none.
+ */
+const eventsPageType = defineType({
+  name: 'events-page',
+  version: 1,
+  label: 'Events page',
+  fields: {
+    intro: text({ label: 'Introduction', multiline: true, required: true }),
+    featured: list(reference({ label: 'Event', to: ['event'] }), { label: 'Featured events', max: 3 }),
+  },
+  preview: { title: 'featured' },
+  orderBy: 'intro',
+});
+
+/**
+ * A manually ordered test type (A12; spec §5.1): editors put the partners in order in the entry
+ * list, and the bundle lists them in that order. It has no site pages.
+ */
+const partnerType = defineType({
+  name: 'partner',
+  version: 1,
+  label: 'Partner',
+  fields: {
+    title: text({ label: 'Name', required: true }),
+    website: link({ label: 'Website' }),
+  },
+  preview: { title: 'title' },
+  orderBy: 'manual',
+});
+
 const eventPath = (e: SiteEntry): string => {
   if (e.slug === null) throw new Error(`event entry ${e.id} has no slug`);
   return '/events/' + e.slug;
@@ -90,10 +124,17 @@ export default defineModule({
   tenant: 'demo',
   locale: 'is',
   branding: { name: 'Demo' },
-  types: [eventType, noticeType, siteInfoType],
+  types: [eventType, noticeType, siteInfoType, eventsPageType, partnerType],
   structure: [
-    { group: 'Content', items: [{ type: 'event', label: 'Events' }] },
+    {
+      group: 'Content',
+      items: [
+        { type: 'event', label: 'Events' },
+        { type: 'partner', label: 'Partners' },
+      ],
+    },
     { type: 'site-info', label: 'Site info', singleton: true },
+    { type: 'events-page', label: 'Events page', singleton: true },
   ],
   site: {
     event: {
@@ -104,6 +145,13 @@ export default defineModule({
           { path: eventPath(e), expect },
           { path: '/events', expect },
         ];
+      },
+    },
+    // No `path`: the entry is checked where it is shown, on the shared events page (A7).
+    'events-page': {
+      checks(e, release) {
+        const expect = release.entries('events-page').some((x) => x.id === e.id) ? 'present' : 'absent';
+        return [{ path: '/events', expect }];
       },
     },
   },

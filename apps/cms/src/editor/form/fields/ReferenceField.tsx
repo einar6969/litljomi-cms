@@ -70,7 +70,7 @@ export function ReferenceField({ id, label, required, value, onChange, to = [] }
 
   return (
     <div className="flex flex-col gap-2">
-      <Field label={label} htmlFor={id} help={help} error={failure ? (failure === 'auth' ? t.editor.signedOut : t.editor.reference.loadError) : null}>
+      <Field label={label} htmlFor={id} required={required} help={help} error={failure ? (failure === 'auth' ? t.editor.signedOut : t.editor.reference.loadError) : null}>
         <select id={id} name={id} required={required} value={ref ?? ''} disabled={loaded === null} aria-describedby={describedBy} onChange={(e) => change(e.target.value)}>
           <option value="">{t.editor.reference.none}</option>
           {ref !== null && chosen === null ? <option value={ref}>{loaded === null ? t.editor.reference.loading : loaded.truncated ? t.editor.reference.notListed : t.editor.reference.missing}</option> : null}

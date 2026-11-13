@@ -366,14 +366,14 @@ export class FakeHub {
         const e = published.find((x) => x.id === id);
         if (e === undefined) return null;
         const integration = this.module.site[e.type];
-        return { id: e.id, type: e.type, slug: e.slug, title: e.published?.title ?? null, path: integration ? integration.path({ id: e.id, type: e.type, slug: e.slug, sortAt: e.published?.sortAt ?? null }) : null };
+        return { id: e.id, type: e.type, slug: e.slug, title: e.published?.title ?? null, path: integration?.path ? integration.path({ id: e.id, type: e.type, slug: e.slug, sortAt: e.published?.sortAt ?? null }) : null };
       },
       asset: (id) => {
         const a = this.assets.get(id);
         if (a === undefined) return null;
         const publicPath = `media-public/${String(a.original_path)}`;
         this.objects.set(`public/${publicPath}`, this.objects.get(`media-private/${String(a.original_path)}`) as Uint8Array);
-        return { id, url: `${ORIGIN}/storage/v1/object/public/${publicPath}`, width: a.width as number, height: a.height as number, mime: a.mime as string, alt: (a.default_alt as string | null) ?? '', focal: null };
+        return { id, url: `${ORIGIN}/storage/v1/object/public/${publicPath}`, width: a.width as number, height: a.height as number, mime: a.mime as string, alt: (a.default_alt as string | null) ?? '', focal: null, caption: (a.caption as string | null) ?? null, credit: (a.credit as string | null) ?? null };
       },
     };
     const entries: Record<string, unknown[]> = {};

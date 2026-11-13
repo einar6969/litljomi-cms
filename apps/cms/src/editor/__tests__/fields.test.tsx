@@ -8,6 +8,8 @@ const actions = vi.hoisted(() => ({
   registerAssetAction: vi.fn(),
   assetPreviewAction: vi.fn(),
   updateAssetAction: vi.fn(),
+  pickerFilesAction: vi.fn(),
+  ensureThumbnailAction: vi.fn(),
 }));
 vi.mock('@/app/(editor)/t/[tenant]/asset-actions', () => actions);
 // The browser client is only passed to uploadOriginal, which is replaced below.
@@ -30,6 +32,11 @@ const { getType } = await import('@/modules/registry');
 const { richTextDocSchema } = await import('@litljomi/rich-text');
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+// jsdom has the element but not its modal behaviour (the library picker, media library L6).
+HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+  this.setAttribute('open', '');
+};
 
 const TENANT = { id: '00000000-0000-4000-8000-0000000000f1', slug: 'acme' };
 const ASSET = '00000000-0000-4000-8000-0000000000a1';
@@ -271,6 +278,99 @@ describe('ImageField', () => {
     expect(link.rel).toBe('noopener');
   });
 
+  it('names its upload button apart from the library button: "Hlaða upp mynd" when empty, "Skipta um mynd" when set', async () => {
+    actions.assetPreviewAction.mockResolvedValue({ ok: false, code: 'error' });
+    await render(<ImageField {...field} value={undefined} onChange={vi.fn()} />);
+    expect($('label[for="field-x"]')?.textContent).toBe(t.editor.image.choose);
+    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).toContain(t.editor.image.fromLibrary);
+    await render(<ImageField {...field} value={{ _ref: ASSET, _kind: 'asset', alt: '' }} onChange={vi.fn()} />);
+    expect($('label[for="field-x"]')?.textContent).toBe(t.editor.image.replace);
+    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).toContain(t.editor.image.fromLibrary);
+  });
+
+  it('takes no focus when it renders, only when a picker it opened has closed', async () => {
+    actions.assetPreviewAction.mockResolvedValue({ ok: false, code: 'error' });
+    (document.activeElement as HTMLElement | null)?.blur();
+    await render(<ImageField {...field} value={undefined} onChange={vi.fn()} />);
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('keeps the alt text of this use when the image is replaced by an upload (probe section 14, item 5)', async () => {
+    actions.assetPreviewAction.mockResolvedValue({ ok: true, url: 'http://127.0.0.1:54321/x', defaultAlt: null, focalX: null, focalY: null });
+    uploadOriginal.mockResolvedValue(true);
+    actions.registerAssetAction.mockImplementation(async (_slug: string, assetId: string) => ({ ok: true, assetId }));
+    const onChange = vi.fn();
+    await render(<ImageField {...field} value={{ _ref: ASSET, _kind: 'asset', alt: 'Brauð á borði' }} onChange={onChange} />);
+    await chooseFile($<HTMLInputElement>('#field-x')!, png());
+    const assetId = (uploadOriginal.mock.calls[0]![1] as string).split('/')[1];
+    expect(onChange).toHaveBeenCalledWith({ _ref: assetId, _kind: 'asset', alt: 'Brauð á borði' });
+  });
+
+  it("chooses from the library: an empty field takes the file with its default alt text, a replaced one keeps its own", async () => {
+    const OTHER = '00000000-0000-4000-8000-0000000000a2';
+    actions.pickerFilesAction.mockResolvedValue({
+      ok: true,
+      hasMore: false,
+      files: [{ id: OTHER, filename: 'kaka.jpg', defaultAlt: 'Kaka á diski', width: 10, height: 10, bytes: 10, thumbUrl: null }],
+    });
+    actions.ensureThumbnailAction.mockResolvedValue({ ok: false, code: 'error' });
+    actions.assetPreviewAction.mockResolvedValue({ ok: false, code: 'error' });
+    const choose = async () => {
+      const opener = [...container.querySelectorAll('button')].find((b) => b.textContent === t.editor.image.fromLibrary)!;
+      await act(async () => opener.click());
+      const dialog = document.querySelector('dialog')!;
+      expect(document.getElementById(dialog.getAttribute('aria-labelledby')!.split(' ')[1]!)!.textContent).toBe('Reitur');
+      await until(() => expect(dialog.querySelector('[role="option"]')).not.toBeNull());
+      await act(async () => dialog.querySelector<HTMLElement>('[role="option"]')!.click());
+      await act(async () => dialog.querySelector<HTMLButtonElement>('[data-testid="picker-confirm"]')!.click());
+      expect(document.querySelector('dialog')).toBeNull();
+    };
+    const onChange = vi.fn();
+    await render(<ImageField {...field} value={undefined} onChange={onChange} />);
+    await choose();
+    expect(actions.pickerFilesAction).toHaveBeenCalledWith(TENANT.slug, '', 1);
+    expect(onChange).toHaveBeenLastCalledWith({ _ref: OTHER, _kind: 'asset', alt: 'Kaka á diski' });
+    await render(<ImageField {...field} value={{ _ref: ASSET, _kind: 'asset', alt: 'Minn texti' }} onChange={onChange} />);
+    await choose();
+    expect(onChange).toHaveBeenLastCalledWith({ _ref: OTHER, _kind: 'asset', alt: 'Minn texti' });
+  });
+
+  it('takes a file dropped on the dashed box, and leaves a drag without files alone (probe section 14, item 12)', async () => {
+    uploadOriginal.mockResolvedValue(true);
+    actions.registerAssetAction.mockImplementation(async (_slug: string, assetId: string) => ({ ok: true, assetId }));
+    const onChange = vi.fn();
+    await render(<ImageField {...field} value={undefined} onChange={onChange} />);
+    const box = $('.drop')!;
+    const drag = (type: string, types: string[], files: File[] = []) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'dataTransfer', { value: { types, files, dropEffect: 'none' } });
+      return event;
+    };
+    const text = drag('dragover', ['text/plain']);
+    await act(async () => void box.dispatchEvent(text));
+    expect(text.defaultPrevented).toBe(false);
+    const over = drag('dragover', ['Files']);
+    await act(async () => void box.dispatchEvent(over));
+    expect(over.defaultPrevented).toBe(true);
+    expect(box.hasAttribute('data-over')).toBe(true);
+    const drop = drag('drop', ['Files'], [png()]);
+    await act(async () => void box.dispatchEvent(drop));
+    expect(drop.defaultPrevented).toBe(true);
+    await until(() => expect(onChange).toHaveBeenCalled());
+    const [, path] = uploadOriginal.mock.calls[0]!;
+    expect(path).toMatch(new RegExp(`^${TENANT.id}/[0-9a-f-]{36}/braud\\.png$`));
+    expect(onChange).toHaveBeenCalledWith({ _ref: (path as string).split('/')[1], _kind: 'asset', alt: '' });
+  });
+
+  it('refuses a dropped file of the wrong type with its message', async () => {
+    await render(<ImageField {...field} value={undefined} onChange={vi.fn()} />);
+    const drop = new Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(drop, 'dataTransfer', { value: { types: ['Files'], files: [new File([new Uint8Array(10)], 'a.pdf', { type: 'application/pdf' })] } });
+    await act(async () => void $('.drop')!.dispatchEvent(drop));
+    expect($('[data-testid="field-x-notice"]')?.textContent).toBe(t.editor.image.type);
+    expect(uploadOriginal).not.toHaveBeenCalled();
+  });
+
   it('removes the image', async () => {
     actions.assetPreviewAction.mockResolvedValue({ ok: false, code: 'error' });
     const onChange = vi.fn();
@@ -326,6 +426,25 @@ describe('RichTextField', () => {
     for (const bad of ['table', 'strike', 'style', 'color']) expect(text).not.toContain(bad);
     expect(text).toContain('"x"');
     expect(text).toContain('"y"');
+  });
+
+  // A10: a pasted Word list arrives as a list, and a paste that left a table out says so in one line.
+  it('keeps a pasted Word list as a list, and says in one line that a table was left out', async () => {
+    const onChange = vi.fn();
+    await render(<RichTextField {...field} value={undefined} onChange={onChange} />);
+    await until(() => expect(container.querySelector('.ProseMirror')).not.toBeNull());
+    const item = (text: string) => `<p class=MsoListParagraph style='mso-list:l0 level1 lfo1'><span style='mso-list:Ignore'>·<span> </span></span>${text}</p>`;
+    await act(async () => paste(container.querySelector('.ProseMirror')!, `${item('Brauð')}${item('Kaka')}`));
+    const saved = JSON.stringify(onChange.mock.lastCall?.[0]);
+    expect(saved).toContain('"bulletList"');
+    expect(saved).not.toContain('·');
+    expect(container.querySelector('[data-testid="field-x-paste-note"]')).toBeNull();
+
+    await act(async () => paste(container.querySelector('.ProseMirror')!, WORD_LIKE));
+    expect(container.querySelector('[data-testid="field-x-paste-note"]')?.textContent).toBe(t.editor.richText.droppedTables);
+    // The next paste that leaves nothing out clears the line.
+    await act(async () => paste(container.querySelector('.ProseMirror')!, '<p>z</p>'));
+    expect(container.querySelector('[data-testid="field-x-paste-note"]')).toBeNull();
   });
 
   it('keeps the stored value unchanged while the document does not validate, and says so (Task 24 quality r1)', async () => {

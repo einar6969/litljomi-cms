@@ -1,7 +1,10 @@
 name: ci
 
 on:
+  # A branch with an open PR is tested once, by pull_request; push covers the two long-lived
+  # branches only.
   push:
+    branches: [main, production]
   pull_request:
 
 permissions:

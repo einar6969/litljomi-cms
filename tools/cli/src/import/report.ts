@@ -50,8 +50,6 @@ export interface ReportInput {
   module: ModuleManifest;
   tenant: { id: string; slug: string };
   ids: Map<string, string>;
-  /** The local stack delivers every image as null until A4: the file half is unchecked there. */
-  local: boolean;
   lastRelease: number | null;
   notices: string[];
   session: EditorSession;
@@ -170,7 +168,7 @@ export async function buildReport(input: ReportInput): Promise<Report> {
       const integration = module.site[item.type];
       let path: string | null = null;
       try {
-        path = integration ? integration.path({ id, type: item.type, slug, sortAt: delivered?.sortAt ?? sortAt }) : null;
+        path = integration?.path ? integration.path({ id, type: item.type, slug, sortAt: delivered?.sortAt ?? sortAt }) : null;
       } catch {
         path = null;
       }
@@ -178,8 +176,9 @@ export async function buildReport(input: ReportInput): Promise<Report> {
     },
     asset(id) {
       const f = fileById.get(id);
-      if (f === undefined || input.local) return null;
-      return { id, url: `${SENTINEL}${id}`, width: f.meta.width, height: f.meta.height, mime: f.meta.mime, alt: f.alt, focal: null };
+      if (f === undefined) return null;
+      // The caption and credit the manifest gives the file (L3 delivers them with every use).
+      return { id, url: `${SENTINEL}${id}`, width: f.meta.width, height: f.meta.height, mime: f.meta.mime, alt: f.alt, focal: null, caption: f.caption, credit: f.credit };
     },
   };
 
@@ -209,7 +208,6 @@ export async function buildReport(input: ReportInput): Promise<Report> {
       diff('(data)', `the manifest's data could not be projected (${e instanceof Error ? e.name : 'error'})`);
       continue;
     }
-    if (input.local) unchecked('image uses not compared on the local stack (local images are delivered as null until A4)', item.files.length);
     compare(expected, delivered.data, [], {
       diff,
       file: (url, at) => {
@@ -248,8 +246,6 @@ export async function buildReport(input: ReportInput): Promise<Report> {
       });
     }
   }
-  const captioned = [...plan.files.values()].filter((f) => f.caption !== null || f.credit !== null).length;
-  unchecked('file captions and credits (not delivered until L3)', captioned);
 
   const imported = new Set(plan.items.map((i) => i.type));
   const known = new Set(ids.values());

@@ -36,6 +36,7 @@ const row = (patch: Partial<PublicationStatusRow>): PublicationStatusRow => ({
   sites_not_confirmed: 0,
   retries_exhausted: false,
   live_retrying: false,
+  nothing_checked: false,
   ...patch,
 });
 const live = (patch: Partial<PublicationStatusRow> = {}) =>
@@ -63,8 +64,21 @@ type PanelProps = Parameters<typeof PublishPanel>[0];
 async function renderPanel(props: Partial<PanelProps> & Pick<PanelProps, 'loadStatus'>) {
   const publish = vi.fn<NonNullable<PanelProps['publish']>>(async () => ({ requestId: REQUEST }));
   const unpublish = vi.fn<NonNullable<PanelProps['unpublish']>>(async () => ({ requestId: REQUEST }));
+  // By default the published version the panel re-reads is the one the page was rendered with.
+  const loadPublishedVersion = async () => props.publishedVersion ?? null;
   await act(async () =>
-    root.render(<PublishPanel entryId={ENTRY} version={4} initiallyPublished={false} fieldLabels={{ title: 'Titill' }} publish={publish} unpublish={unpublish} {...props} />),
+    root.render(
+      <PublishPanel
+        entryId={ENTRY}
+        version={4}
+        initiallyPublished={false}
+        fieldLabels={{ title: 'Titill' }}
+        publish={publish}
+        unpublish={unpublish}
+        loadPublishedVersion={loadPublishedVersion}
+        {...props}
+      />,
+    ),
   );
   await advance(0);
   return { publish, unpublish };
@@ -205,6 +219,115 @@ describe('PublishPanel', () => {
     await act(async () => button(t.publish.publish)!.click());
     await advance(0);
     expect(container.querySelector('[role="alert"]')?.textContent).toBe(t.publish.requestFailed);
+  });
+
+  // A10 (probe §14, 10): before the first status read answers, a published entry must not read "Ekki birt".
+  it('says it is reading the status, not "Ekki birt", until the first read answers', async () => {
+    let answer: (row: PublicationStatusRow | null) => void = () => {};
+    const loadStatus = vi.fn(() => new Promise<PublicationStatusRow | null>((resolve) => (answer = resolve)));
+    await renderPanel({ loadStatus, initiallyPublished: true, publishedVersion: 4 });
+    expect(stateText()).toBe(t.publish.loading);
+    expect(stateText()).not.toBe(t.publish.none);
+    await act(async () => answer(live()));
+    expect(stateText()).toBe('Birt á vef ✓');
+  });
+
+  // A10 (probe §14, 11): live, but the draft has moved on since.
+  it('does not show "Birt á vef ✓" while the draft has changes that are not published', async () => {
+    const loadStatus = vi.fn(async () => live());
+    await renderPanel({ loadStatus, initiallyPublished: true, publishedVersion: 3, version: 5 });
+    expect(stateText()).toBe(t.publish.changed);
+    expect(stateText()).not.toContain('✓');
+    expect(container.querySelector('[data-testid="publish-state"]')?.getAttribute('data-tone')).toBe('warning');
+    expect(container.querySelector('[data-testid="publish-detail"]')?.textContent).toBe(t.publish.changedDetail);
+  });
+
+  it('turns to "Óbirtar breytingar" when an edit is saved after publishing, and back to live once that is published', async () => {
+    let shown = live();
+    const loadStatus = vi.fn(async () => shown);
+    const { publish } = await renderPanel({ loadStatus, initiallyPublished: true, publishedVersion: 4, version: 4 });
+    expect(stateText()).toBe('Birt á vef ✓');
+    // The autosave saved an edit: version 5.
+    await act(async () => root.render(<PublishPanel entryId={ENTRY} version={5} initiallyPublished publishedVersion={4} fieldLabels={{}} publish={publish} loadStatus={loadStatus} />));
+    expect(stateText()).toBe(t.publish.changed);
+    // Publishing version 5 makes it the published one once its request is live.
+    shown = live({ request_id: REQUEST });
+    publish.mockResolvedValueOnce({ requestId: REQUEST });
+    await act(async () => button(t.publish.publish)!.click());
+    await advance(0);
+    expect(publish).toHaveBeenLastCalledWith(ENTRY, 5);
+    expect(stateText()).toBe('Birt á vef ✓');
+  });
+
+  // A publish this panel did not send (the page was opened while it was on its way) settles: the
+  // published version is read again, never taken from the page as it was rendered (§7.4).
+  it('a first publish that settles after the page opened mid-flight shows "Óbirtar breytingar" over later edits', async () => {
+    const answers = [row({}), live()];
+    const loadStatus = vi.fn(async () => answers.shift() ?? live());
+    // The publish carried version 4; the editor has saved version 5 since.
+    const loadPublishedVersion = vi.fn(async () => 4);
+    await renderPanel({ loadStatus, initiallyPublished: false, publishedVersion: null, version: 5, loadPublishedVersion });
+    expect(stateText()).toBe(t.publish.inProgress);
+    await advance(POLL_MS);
+    expect(loadPublishedVersion).toHaveBeenCalledWith(ENTRY);
+    expect(stateText()).toBe(t.publish.changed);
+    expect(stateText()).not.toContain('✓');
+  });
+
+  it('a re-publish that settles after the page opened mid-flight shows "Birt á vef ✓" once everything is published', async () => {
+    const answers = [row({}), live()];
+    const loadStatus = vi.fn(async () => answers.shift() ?? live());
+    // Rendered while version 3 was the published one; the request on its way carried version 5.
+    await renderPanel({ loadStatus, initiallyPublished: true, publishedVersion: 3, version: 5, loadPublishedVersion: async () => 5 });
+    expect(stateText()).toBe(t.publish.inProgress);
+    await advance(POLL_MS);
+    expect(stateText()).toBe('Birt á vef ✓');
+  });
+
+  it('claims nothing while the published version cannot be read, and reads it again', async () => {
+    const loadStatus = vi.fn(async () => live());
+    const loadPublishedVersion = vi.fn<(id: string) => Promise<number | null>>(async () => {
+      throw new Error('network');
+    });
+    await renderPanel({ loadStatus, initiallyPublished: true, publishedVersion: null, version: 5, loadPublishedVersion });
+    expect(stateText()).toBe(t.publish.loading);
+    expect(container.querySelector('[role="note"]')?.textContent).toBe(t.publish.statusUnavailable);
+    loadPublishedVersion.mockImplementation(async () => 4);
+    await advance(POLL_MS);
+    expect(stateText()).toBe(t.publish.changed);
+    expect(container.querySelector('[role="note"]')).toBeNull();
+    const calls = loadStatus.mock.calls.length;
+    await advance(POLL_MS * 3);
+    expect(loadStatus).toHaveBeenCalledTimes(calls);
+  });
+
+  // A10: a publish refused for an unpublished reference names it by its title.
+  it('names a refused reference by the title of the entry it points to', async () => {
+    const TARGET = '00000000-0000-4000-8000-0000000000a9';
+    const refused = row({
+      status: 'failed_validation',
+      error: { code: 'invalid_reference', refs: [{ path: '$."related"[1]', kind: 'entry', id: TARGET, reason: 'unpublished' }] },
+    });
+    const loadTitles = vi.fn(async () => ({ [TARGET]: 'Vorhátíð' }));
+    await renderPanel({ loadStatus: async () => refused, loadTitles, fieldLabels: { related: 'Tengd verk' } });
+    expect(stateText()).toBe('Ekki hægt að birta: Tengd verk');
+    expect(loadTitles).toHaveBeenCalledExactlyOnceWith([TARGET]);
+    expect(container.querySelector('[data-testid="publish-lines"]')?.textContent).toBe(`Tengd verk 2: „Vorhátíð“ ${t.publish.reference.unpublished}`);
+    expect(container.querySelector('[data-testid="publish-detail"]')?.textContent).toBe(t.publish.reference.detail);
+  });
+
+  // A6: the archive control is offered only for an entry that is not published, with nothing on its way.
+  it('tells the form when the entry can be archived', async () => {
+    const onArchivableChange = vi.fn();
+    const answers: (PublicationStatusRow | null)[] = [null, row({}), live()];
+    const loadStatus = vi.fn(async () => (answers.length > 0 ? answers.shift()! : live()));
+    await renderPanel({ loadStatus, onArchivableChange });
+    expect(onArchivableChange).toHaveBeenLastCalledWith(true);
+    await act(async () => button(t.publish.publish)!.click());
+    expect(onArchivableChange).toHaveBeenLastCalledWith(false);
+    await advance(POLL_MS);
+    expect(stateText()).toBe('Birt á vef ✓');
+    expect(onArchivableChange).toHaveBeenLastCalledWith(false);
   });
 
   it('cannot publish while the form is in conflict or signed out', async () => {

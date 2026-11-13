@@ -32,7 +32,7 @@ type Props = {
 export function TopBar({ title, crumbs = [], home = false, saves = false, menuLabel = t.app.menu }: Props) {
   const { open } = useShell();
   return (
-    <header className={home ? 'top-home' : 'top'}>
+    <header className={home ? 'top-home' : saves ? 'top top-saves' : 'top'}>
       <button type="button" className="icbtn top-menu" aria-label={menuLabel} onClick={open}>
         <Icon name="menu" size={20} />
       </button>

@@ -2,9 +2,12 @@
 
 import { newItemKey, type ListItem } from '@litljomi/cms-schema/src/fields/list.ts';
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
+import { LibraryPicker } from '@/editor/media/LibraryPicker';
+import { appendImages, noRoomLine, type PickedFile } from '@/editor/media/picker-selection';
 import { t } from '@/i18n/is';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { Notice } from '@/ui/Notice';
 import { describedByOf, FieldGroup } from '@/ui/Field';
 import type { FieldProps } from '../field-registry';
 import { FieldInput } from '../FieldInput';
@@ -57,6 +60,11 @@ const FOCUSABLE = 'input:not([disabled]), select:not([disabled]), textarea:not([
  * error text when its item moves. Each item's controls derive their ids from the list's id and the
  * item's key. An empty list is cleared. Adding stops at `max`. A stored value that is not a valid
  * list is named in an error and replaced only when the editor adds an item.
+ *
+ * A list of images (media library L6, docs/plans/media-library.md section 6.3) also offers "Bæta
+ * við úr safni": the library in pick mode for several files, appended in the order chosen, each
+ * with its default alt text, as many as `max` leaves room for; the rest are counted out in words.
+ * Removing an item's image removes the item, so no empty item is left to block publishing.
  */
 export function ListField({ id, label, required, value, onChange, of, min, max }: FieldProps) {
   const l = t.editor.list;
@@ -70,6 +78,8 @@ export function ListField({ id, label, required, value, onChange, of, min, max }
   }, [value]);
   const [announcement, setAnnouncement] = useState('');
   const [focus, setFocus] = useState<Focus | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [noRoom, setNoRoom] = useState<string | null>(null);
   // Dragging starts from the handle only, so text in an item's inputs stays selectable.
   const [armed, setArmed] = useState<string | null>(null);
   const [dragged, setDragged] = useState<string | null>(null);
@@ -94,6 +104,7 @@ export function ListField({ id, label, required, value, onChange, of, min, max }
 
   const commit = (next: ListItem[]) => {
     latest.current = next;
+    setNoRoom(null);
     setStoredInvalid(false);
     onChange(next.length === 0 ? undefined : next);
   };
@@ -125,7 +136,26 @@ export function ListField({ id, label, required, value, onChange, of, min, max }
   };
 
   const setItem = (key: string, next: unknown) => {
+    // An image item whose image is removed has nothing left: the item goes with it.
+    if (of?.kind === 'image' && next === undefined) {
+      const index = latest.current.findIndex((item) => item._key === key);
+      if (index !== -1) remove(index);
+      return;
+    }
     commit(latest.current.map((item) => (item._key === key ? { _key: key, value: next === undefined ? null : next } : item)));
+  };
+
+  const addPicked = (files: PickedFile[]) => {
+    const result = appendImages(latest.current, files, max);
+    if (result.added.length > 0) commit(result.items);
+    if (result.left > 0) {
+      const said = noRoomLine(result.added.length);
+      setNoRoom(said);
+      setAnnouncement(said);
+    }
+    // The picker gives focus back to its button; a list it filled has disabled that button.
+    const firstAdded = result.added[0];
+    if (firstAdded !== undefined && max !== undefined && result.items.length >= max) setFocus({ key: firstAdded, target: 'handle' });
   };
 
   const onHandleKey = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -146,6 +176,8 @@ export function ListField({ id, label, required, value, onChange, of, min, max }
   const help = listHelp({ min, max });
   const error = storedInvalid ? t.editor.invalidStored : null;
   const itemField = of ?? null;
+  // Bulk add is offered when the items are images (and files, from L11); a list of groups adds one at a time.
+  const bulk = of?.kind === 'image';
 
   return (
     <FieldGroup id={id} label={label} required={required} help={help} error={error} describedBy={describedByOf(id, { help, error })}>
@@ -215,13 +247,25 @@ export function ListField({ id, label, required, value, onChange, of, min, max }
           );
         })}
       </ol>
-      <div data-add="">
+      {noRoom ? (
+        <Notice tone="warning" data-testid="list-no-room">
+          {noRoom}
+        </Notice>
+      ) : null}
+      <div data-add="" className="acts">
         <Button size="sm" onClick={add} disabled={full}>
           <Icon name="plus" />
           {l.add}
         </Button>
+        {bulk ? (
+          <Button size="sm" onClick={() => setPicking(true)} disabled={full}>
+            <Icon name="image" />
+            {l.addFromLibrary}
+          </Button>
+        ) : null}
       </div>
       </div>
+      {picking ? <LibraryPicker mode="many" fieldLabel={label} onPick={addPicked} onClose={() => setPicking(false)} /> : null}
       {/* Not role="status": the form's save status is the page's one status region. */}
       <p aria-live="polite" data-testid="list-announcement" className="sr-only">
         {announcement}

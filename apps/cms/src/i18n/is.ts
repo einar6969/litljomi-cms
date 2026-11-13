@@ -139,6 +139,18 @@ export const is = {
       clear: 'Hreinsa síu',
       none: 'Engar færslur passa við leitina.',
     },
+    // A12: the list of a manually ordered type, in the order the site shows it. DRAFT, for Einar's batch.
+    order: {
+      column: 'Röð',
+      help: 'Færslurnar birtast á vefnum í þessari röð. Dragðu færslu á nýjan stað eða notaðu örvarnar. Ný röð birtist á vefnum næst þegar færsla er birt.',
+      filtered: 'Aðeins færslur sem passa við leitina eru sýndar. Hinar halda sínum stað.',
+      handle: 'Færa „{title}“: dragðu, eða notaðu örvalyklana upp og niður',
+      moveUp: 'Færa „{title}“ upp',
+      moveDown: 'Færa „{title}“ niður',
+      saving: 'Vistar röðina…',
+      moved: '„{title}“ er nú í sæti {n} af {total}.',
+      failed: 'Ekki tókst að færa færsluna. Röðin er óbreytt. Reyndu aftur.',
+    },
   },
   editor: {
     saving: 'Vistar…',
@@ -215,6 +227,9 @@ export const is = {
       range: 'Minnst {min} og mest {max} atriði.',
       atLeast: 'Minnst {min} atriði.',
       atMost: 'Mest {max} atriði.',
+      // Media library L6, DRAFT: a list of images takes several files from the library at once.
+      addFromLibrary: 'Bæta við úr safni',
+      noRoom: 'Aðeins var pláss fyrir {n} í viðbót. Hinum var sleppt.',
     },
     outdated: {
       title: 'Uppkastið er á eldri útgáfu efnisflokksins',
@@ -243,7 +258,10 @@ export const is = {
       cannot: 'Ekki er hægt að endurheimta þessa birtingu sjálfkrafa. Hafðu samband við kerfisstjóra.',
     },
     image: {
-      choose: 'Velja mynd',
+      // Media library L6, DRAFT: changes the approved "Velja mynd", so the two buttons read apart.
+      choose: 'Hlaða upp mynd',
+      // Media library L6, DRAFT.
+      fromLibrary: 'Velja úr safni',
       replace: 'Skipta um mynd',
       remove: 'Fjarlægja mynd',
       uploading: 'Hleð upp mynd…',
@@ -302,6 +320,22 @@ export const is = {
       removeLink: 'Fjarlægja tengil',
       invalid: 'Textinn inniheldur eitthvað sem ekki er hægt að vista. Síðasta gilda útgáfan er vistuð.',
       unreadable: 'Ekki er hægt að opna þennan texta hér. Gildi hans helst óbreytt.',
+      // A10 (draft): one line after a paste that left something out.
+      droppedImages: 'Myndum var sleppt úr textanum sem var límdur inn.',
+      droppedTables: 'Töflum var sleppt úr textanum sem var límdur inn; texti þeirra kom inn sem málsgreinar.',
+      droppedBoth: 'Myndum og töflum var sleppt úr textanum sem var límdur inn; texti taflnanna kom inn sem málsgreinar.',
+    },
+    // A6 (draft): archiving an entry that is not published. Nothing in the editor brings it back.
+    archive: {
+      title: 'Skjalasafn',
+      hint: 'Færsla sem er ekki birt má setja í skjalasafn. Hún hverfur þá úr listanum.',
+      button: 'Setja í skjalasafn',
+      confirm: 'Viltu setja færsluna í skjalasafn? Hún hverfur úr listanum og ekki er hægt að sækja hana aftur hér.',
+      confirmButton: 'Já, setja í skjalasafn',
+      cancel: 'Hætta við',
+      archiving: 'Set í skjalasafn…',
+      published: 'Færslan er birt. Taktu hana af vef áður en hún er sett í skjalasafn.',
+      failed: 'Ekki tókst að setja færsluna í skjalasafn. Reyndu aftur.',
     },
     // Named when a publish finds no slug; nobody sets one by hand.
     slug: {
@@ -320,6 +354,11 @@ export const is = {
     live: 'Birt á vef ✓',
     removed: 'Tekið af vef',
     removedDetail: 'Færslan sést ekki lengur á þeim síðum vefsins sem voru athugaðar. Eldri afrit geta enn verið til um tíma í skyndiminni vafra, leitarvéla og annarra.',
+    // A7 (draft): delivered, but no page of the site is checked for this kind of content, so it is never shown as confirmed.
+    liveNothingChecked: 'Birt, ekki staðfest á vef',
+    liveNothingCheckedDetail: 'Vefurinn tók við breytingunni, en engin síða vefsins er athuguð fyrir þessa tegund efnis. Því er ekki hægt að staðfesta að færslan sjáist þar.',
+    removedNothingChecked: 'Tekið úr birtingu, ekki staðfest á vef',
+    removedNothingCheckedDetail: 'Vefurinn tók við breytingunni, en engin síða vefsins er athuguð fyrir þessa tegund efnis. Því er ekki hægt að staðfesta að færslan sé horfin þaðan.',
     invalid: 'Ekki hægt að birta:',
     invalidGeneric: 'efnið stenst ekki kröfur efnisflokksins',
     invalidDetail: 'Lagaðu reitina og birtu aftur.',
@@ -348,6 +387,22 @@ export const is = {
     // M5-01 (draft): a publish that a newer unpublish cancelled. It says nothing about what the site shows.
     cancelled: 'Hætt var við birtinguna vegna beiðni um að taka færsluna af vef.',
     statusUnavailable: 'Ekki tókst að sækja stöðu birtingar.',
+    // A10 (draft): shown until the panel's first status read answers, instead of "Ekki birt".
+    loading: 'Sæki stöðu…',
+    // A10 (draft): the entry is live, but its draft has saved changes that are not published.
+    changed: 'Óbirtar breytingar',
+    changedDetail: 'Á vefnum er síðasta birta útgáfan. Birtu til að setja breytingarnar þangað.',
+    // A10 (draft): a publish refused for a reference, one line per reference:
+    // "{field}: {target} {reason}", e.g. "Tengd verk 2: „Vorhátíð“ er ekki birt."
+    reference: {
+      line: '{field}: {target} {reason}',
+      unpublished: 'er ekki birt.',
+      archived: 'er í skjalasafni.',
+      notFound: 'finnst ekki.',
+      unknownEntry: 'færslan sem vísað er í',
+      image: 'myndin sem vísað er í',
+      detail: 'Birtu fyrst færslurnar sem vísað er í, eða veldu aðrar, og birtu síðan aftur.',
+    },
   },
   // M3-12: the editor's preview button and its failures.
   preview: {
@@ -359,14 +414,105 @@ export const is = {
   },
   asset: {
     title: 'Mynd',
-    back: 'Á forsíðu vefsins',
     filename: 'Skráarheiti',
-    size: 'Stærð',
-    defaultAlt: 'Sjálfgefinn alt-texti',
-    defaultAltHelp: 'Lýsing sem á við myndina almennt. Á vefnum gildir alt-texti hvers staðar sem myndin er notuð.',
-    saveDefaultAlt: 'Vista sjálfgefinn alt-texta',
     // M2-19: `{width}` and `{height}` are the image's size in pixels.
     dimensions: '{width} × {height} px',
+  },
+  // Media library L4 (docs/plans/media-library.md section 10), DRAFT. `{n}`, `{u}`, `{width}`,
+  // `{height}` and `{size}` are filled in by the code; which of a pair of words applies is decided
+  // in editor/media/library-format.ts (singular when n ends in 1 but not in 11).
+  library: {
+    title: 'Myndasafn',
+    filesOne: '{n} skrá',
+    filesMany: '{n} skrár',
+    unusedOne: '{u} ónotuð',
+    unusedMany: '{u} ónotaðar',
+    upload: 'Hlaða upp',
+    search: 'Leita eftir heiti, alt-texta, myndatexta eða ljósmyndara…',
+    sort: {
+      // The sort menu's name, read by screen readers only. Not in the plan's list.
+      label: 'Röðun',
+      newest: 'Nýjast fyrst',
+      oldest: 'Elst fyrst',
+      name: 'Heiti A–Ö',
+      largest: 'Stærst fyrst',
+    },
+    view: {
+      grid: 'Sýna sem reiti',
+      list: 'Sýna sem lista',
+    },
+    filter: {
+      missingAlt: 'Vantar alt-texta',
+      unused: 'Ónotaðar',
+    },
+    meta: '{width}×{height} · {size}',
+    col: {
+      file: 'Skrá',
+      type: 'Tegund',
+      size: 'Stærð',
+      dimensions: 'Mál',
+      uploaded: 'Hlaðið upp',
+      usage: 'Notkun',
+    },
+    more: 'Sýna fleiri',
+    // The list's last page reached PostgREST's row limit. Not in the plan's list.
+    capped: 'Aðeins fyrstu {n} skrárnar eru sýndar. Leitaðu til að finna aðrar.',
+    empty: 'Engar skrár enn.',
+    emptyBody: 'Hladdu upp myndum til að nota þær í efni vefsins.',
+    none: 'Engar skrár passa við leitina.',
+    detail: {
+      title: 'Upplýsingar um skrá',
+      close: 'Loka',
+      back: 'Til baka í safnið',
+      alt: 'Alt-texti',
+      altHelp: 'Lýsing á myndinni fyrir þá sem sjá hana ekki. Hún fylgir myndinni þegar hún er valin í efni. Þar sem myndin er þegar í notkun gildir textinn sem þar er skráður.',
+      caption: 'Myndatexti',
+      captionHelp: 'Birtist með myndinni þar sem vefurinn sýnir myndatexta.',
+      credit: 'Ljósmyndari / heimild',
+      creditHelp: 'Til dæmis nafn ljósmyndara. Birtist með myndinni þar sem vefurinn sýnir það.',
+      save: 'Vista breytingar',
+      saved: 'Breytingar vistaðar',
+      // Only for a file used on the site, until a changed file goes live by itself (L8).
+      nextPublish: 'Breytingar á myndatexta, ljósmyndara og þungamiðju birtast á vefnum næst þegar eitthvað er birt.',
+      original: 'Opna upprunalegu skrána (í nýjum flipa)',
+    },
+    usage: {
+      title: 'Notkun',
+      none: 'Þessi skrá er hvergi í notkun.',
+      live: 'Á vefnum',
+      draft: 'Í uppkasti',
+    },
+  },
+  // Media library L5: several files per upload, DRAFT. `{p}`, `{done}`, `{total}`, `{n}`, `{f}` and
+  // `{max}` are filled in by the code.
+  upload: {
+    title: 'Hlaða upp skrám',
+    drop: 'eða dragðu skrár hingað',
+    waiting: 'Í bið',
+    uploading: 'Hleð upp… {p} %',
+    processing: 'Vinn úr skránni…',
+    done: 'Lokið',
+    failed: 'Ekki tókst að hlaða skránni upp.',
+    remove: 'Fjarlægja af lista',
+    progress: 'Búið að hlaða upp {done} af {total} skrám.',
+    resultOne: '{n} skrá er komin í safnið.',
+    resultMany: '{n} skrár eru komnar í safnið.',
+    failedOne: 'Ekki tókst að hlaða upp {f} skrá.',
+    failedMany: 'Ekki tókst að hlaða upp {f} skrám.',
+    tooMany: 'Mest er hægt að hlaða upp {max} skrám í einu. Þeim sem voru umfram var sleppt.',
+  },
+  // Media library L6: the library picker in forms, DRAFT. `{n}` is filled in by the code; which of
+  // a pair of words applies is decided in editor/media/picker-selection.ts.
+  picker: {
+    titleOne: 'Velja mynd úr safni',
+    titleMany: 'Velja myndir úr safni',
+    confirmOne: 'Velja mynd',
+    confirmMany: 'Velja {n} myndir',
+    selectedOne: '{n} mynd valin',
+    selectedMany: '{n} myndir valdar',
+    empty: 'Engar myndir í safninu enn. Hladdu upp mynd til að byrja.',
+    // The picker's files failed to load. Not in the plan's list.
+    loadError: 'Ekki tókst að sækja myndirnar. Reyndu aftur.',
   },
   notFound: {
     title: 'Síðan fannst ekki',

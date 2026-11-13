@@ -344,15 +344,16 @@ select is(api.worker_read_request(tests.pub('e906')) -> 'draft',
   'draft is exactly {data, version, schema_version}');
 -- Each reference carries its target's metadata (decision 34.2): an entry's
 -- type, slug and published revision's title (null when unpublished); an
--- asset's filename, mime, size, focal point, default alt and public path.
+-- asset's filename, mime, size, focal point, default alt and public path, and
+-- (media library L3, 118_media_library_delivery) its caption and credit.
 select is(api.worker_read_request(tests.pub('e906')) -> 'refs',
   jsonb_build_array(
     jsonb_build_object('path', '$."img"', 'kind', 'asset', 'id', tests.asset('f901'), 'published', false, 'archived', false,
                        'filename', 'a.jpg', 'mime', 'image/jpeg', 'width', 800, 'height', 600, 'focal_x', null,
-                       'focal_y', null, 'default_alt', null, 'public_path', null),
+                       'focal_y', null, 'default_alt', null, 'public_path', null, 'caption', null, 'credit', null),
     jsonb_build_object('path', '$."old"', 'kind', 'asset', 'id', tests.asset('f902'), 'published', false, 'archived', true,
                        'filename', 'b.jpg', 'mime', 'image/jpeg', 'width', 800, 'height', 600, 'focal_x', null,
-                       'focal_y', null, 'default_alt', null, 'public_path', null),
+                       'focal_y', null, 'default_alt', null, 'public_path', null, 'caption', null, 'credit', null),
     jsonb_build_object('path', '$."pub"', 'kind', 'entry', 'id', tests.entry('c907'), 'published', true, 'archived', false,
                        'type', 'news', 'slug', 'tilvisun', 'title', 'Birt'),
     jsonb_build_object('path', '$."unpub"', 'kind', 'entry', 'id', tests.entry('c908'), 'published', false, 'archived', false,
@@ -391,12 +392,13 @@ select is(api.worker_read_request(tests.pub('e930')) -> 'refs',
     jsonb_build_object('path', '$."img"', 'kind', 'asset', 'id', tests.asset('f906'), 'published', true, 'archived', false,
                        'filename', 'f.png', 'mime', 'image/png', 'width', 1200, 'height', 900, 'focal_x', 0.25,
                        'focal_y', 0.75, 'default_alt', 'Sjálfgefið',
-                       'public_path', 'labak/' || tests.asset('f906')::text || '/f.png'),
+                       'public_path', 'labak/' || tests.asset('f906')::text || '/f.png', 'caption', null, 'credit', null),
     jsonb_build_object('path', '$."other_entry"', 'kind', 'entry', 'id', tests.entry('c905'), 'published', false,
                        'archived', false, 'type', null, 'slug', null, 'title', null),
     jsonb_build_object('path', '$."other"', 'kind', 'asset', 'id', tests.asset('f904'), 'published', false,
                        'archived', false, 'filename', null, 'mime', null, 'width', null, 'height', null,
-                       'focal_x', null, 'focal_y', null, 'default_alt', null, 'public_path', null)),
+                       'focal_x', null, 'focal_y', null, 'default_alt', null, 'public_path', null,
+                       'caption', null, 'credit', null)),
   'asset metadata is the row''s; another tenant''s targets read as missing, without their metadata');
 -- f906's public path is cleared again so the release tests below start with
 -- no public asset.
@@ -664,7 +666,8 @@ select is((select j -> 'tenant' from snap), jsonb_build_object('id', tests.tenan
 select is(array(select (x ->> 'entry_id')::uuid from snap, jsonb_array_elements(j -> 'entries') as x order by 1),
   array[tests.entry('c910'), tests.entry('c911'), tests.entry('c913'), tests.entry('c920'), tests.entry('c926')],
   'entries: exactly the published, not archived labak entries (not unpublished c907, archived c925, demo or drafts)');
-select is((select x from snap, jsonb_array_elements(j -> 'entries') as x where x ->> 'entry_id' = tests.entry('c910')::text),
+-- A12 added order_rank to each entry (118_manual_order checks it); the rest of the object is as before.
+select is((select x - 'order_rank' from snap, jsonb_array_elements(j -> 'entries') as x where x ->> 'entry_id' = tests.entry('c910')::text),
   (select jsonb_build_object('entry_id', e.id, 'type', 'news', 'slug', 'nakvaem', 'revision_id', r.id,
             'schema_version', 1, 'data', d.data, 'title', 'T', 'sort_at', '2025-06-01 00:00:00+00'::timestamptz,
             'first_published_at', now(), 'last_published_at', now(),
@@ -678,7 +681,8 @@ select is((select x from snap, jsonb_array_elements(j -> 'entries') as x where x
 select is((select j -> 'assets' from snap),
   (select jsonb_agg(jsonb_build_object('id', a.id, 'original_path', a.original_path, 'filename', a.filename,
             'mime', a.mime, 'width', a.width, 'height', a.height, 'focal_x', a.focal_x, 'focal_y', a.focal_y,
-            'default_alt', a.default_alt, 'public_path', a.public_path, 'archived', a.archived_at is not null)
+            'default_alt', a.default_alt, 'public_path', a.public_path, 'archived', a.archived_at is not null,
+            'caption', a.caption, 'credit', a.credit)
           order by a.id)
    from cms.assets a where a.id in (tests.asset('f901'), tests.asset('f903'))),
   'assets: every asset the included revisions reference, with archived status');

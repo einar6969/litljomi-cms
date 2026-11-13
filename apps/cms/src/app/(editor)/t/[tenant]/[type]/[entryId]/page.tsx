@@ -85,6 +85,8 @@ export default async function EntryPage({ params, searchParams }: Props) {
             initialData={stored}
             initialVersion={entry.draft_version}
             published={published}
+            publishedVersion={entry.published_draft_version ?? null}
+            archivable={!singleton}
             revisions={revisions}
             restored={restored}
           />

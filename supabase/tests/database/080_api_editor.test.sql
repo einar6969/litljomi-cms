@@ -116,7 +116,7 @@ create temporary table editor_views (name text primary key, cols text[]) on comm
 insert into editor_views values
   ('my_tenants', array['id', 'slug', 'name', 'status']),
   ('entry_list', array['id', 'tenant_id', 'type', 'slug', 'title', 'sort_at', 'draft_version', 'published_draft_version',
-                       'status', 'archived_at', 'updated_at', 'first_published_at']), -- M2-10 appended first_published_at
+                       'status', 'archived_at', 'updated_at', 'first_published_at', 'order_position']), -- M2-10 appended first_published_at, A12 order_position
   -- M5-02 removed data (20261105140100_view_data_removal.sql; 116_editor_limits).
   ('entry_detail', array['id', 'tenant_id', 'type', 'slug', 'schema_version', 'draft_version',
                          'published_draft_version', 'first_published_at', 'status']),
@@ -129,7 +129,7 @@ insert into editor_views values
   ('publication_status', array['request_id', 'tenant_id', 'entry_id', 'action', 'status', 'error', 'requested_at',
                                'release_number', 'release_status', 'omitted', 'missing_assets', 'site_count',
                                'sites_notified', 'sites_live_ok', 'sites_not_confirmed', 'retries_exhausted',
-                               'live_retrying', 'latest_request_id', 'latest_action']), -- M3-03 appended live_retrying, M5-01 the last two
+                               'live_retrying', 'latest_request_id', 'latest_action', 'nothing_checked']), -- M3-03 appended live_retrying, M5-01 latest_*, A7 nothing_checked
   ('tenant_sites', array['id', 'tenant_id', 'base_url', 'preview_url', 'active']),
   -- M2-16 added revision_list (20261103210500_revision_list.sql; 107_revision_list).
   ('revision_list', array['id', 'tenant_id', 'entry_id', 'draft_version', 'schema_version', 'title',
