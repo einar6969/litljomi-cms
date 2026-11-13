@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { date, datetime, defineType, extendType, image, link, text } from '../index.ts';
+import { date, datetime, defineType, extendType, image, isManuallyOrdered, link, MANUAL_ORDER, text } from '../index.ts';
 
 const t = defineType({
   name: 't',
@@ -55,6 +55,50 @@ describe('defineType', () => {
     expect(byTitle.queryColumns({ title: 'Lokað á morgun' })).toEqual({ title: 'Lokað á morgun', sortAt: null });
     const byDateTime = defineType({ name: 'n', version: 1, label: 'N', fields: { title: text({ label: 'T' }), at: datetime({ label: 'D' }) }, preview: { title: 'title' }, orderBy: 'at' });
     expect(byDateTime.queryColumns({ at: '2025-01-02T10:00:00Z' }).sortAt).toBe('2025-01-02T10:00:00Z');
+  });
+});
+
+// A12: a type whose entries editors put in order (spec §5.1). The order is not in the document, so
+// sort_at stays null and nothing else about the type changes.
+describe("defineType with orderBy: 'manual'", () => {
+  const manual = defineType({
+    name: 'partner',
+    version: 1,
+    label: 'Partner',
+    fields: { title: text({ label: 'T' }), since: date({ label: 'D' }) },
+    preview: { title: 'title' },
+    orderBy: 'manual',
+  });
+
+  it('is manually ordered; a type ordered by a field is not', () => {
+    expect(manual.orderBy).toBe(MANUAL_ORDER);
+    expect(isManuallyOrdered(manual)).toBe(true);
+    expect(isManuallyOrdered(t)).toBe(false);
+  });
+
+  it('promotes the title and no sort_at, even with a date field in the document', () => {
+    expect(manual.queryColumns({ title: 'Samstarf', since: '2025-01-02' })).toEqual({ title: 'Samstarf', sortAt: null });
+  });
+
+  it('keeps its validators: the order is not a field', () => {
+    expect(manual.draftValidator().parse({ title: 'a', manual: 1 })).toEqual({ title: 'a' });
+    expect(manual.publishValidator().safeParse({ title: 'a' }).success).toBe(true);
+  });
+
+  it("refuses a field named 'manual' when the type is ordered manually, so orderBy can mean only one thing", () => {
+    expect(() =>
+      defineType({ name: 'x', version: 1, label: 'X', fields: { title: text({ label: 'T' }), manual: text({ label: 'M' }) }, preview: { title: 'title' }, orderBy: 'manual' }),
+    ).toThrow(/manual/);
+    // A field called manual is still fine on a type ordered by another field.
+    expect(() =>
+      defineType({ name: 'x', version: 1, label: 'X', fields: { title: text({ label: 'T' }), manual: text({ label: 'M' }) }, preview: { title: 'title' }, orderBy: 'title' }),
+    ).not.toThrow();
+  });
+
+  it('extendType keeps the manual order', () => {
+    const extended = extendType(manual, { label: 'Samstarfsaðili' });
+    expect(isManuallyOrdered(extended)).toBe(true);
+    expect(() => extendType(manual, { extraFields: { manual: text({ label: 'M' }) } })).toThrow(/manual/);
   });
 });
 

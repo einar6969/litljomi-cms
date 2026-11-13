@@ -11,10 +11,6 @@ export interface PublicAsset {
   alt: string;
   /** Null when none is set; absent in a bundle written before focal points were delivered. */
   focal?: { x: number; y: number } | null;
-  /** The file's caption, the same with every use; null when it has none, absent in an older bundle. */
-  caption?: string | null;
-  /** The file's credit (photographer or source); null when it has none, absent in an older bundle. */
-  credit?: string | null;
 }
 
 export interface EntrySummary {
@@ -46,7 +42,7 @@ export interface EventEntry {
   category: "concert" | "workshop" | "talk" | null;
   doorsOpen: string | null;
   related: EntrySummary | null;
-  program: { intro: string | null; highlights: Array<{ _key: string; value: EntrySummary | null }> | null; videos: Array<{ _key: string; value: PublicVideo | null }> | null; gallery: Array<{ _key: string; value: PublicAsset | null }> | null; } | null;
+  program: { intro: string | null; highlights: Array<{ _key: string; value: EntrySummary | null }> | null; videos: Array<{ _key: string; value: PublicVideo | null }> | null; } | null;
 }
 
 export interface NoticeEntry {
@@ -60,7 +56,7 @@ export interface SiteInfoEntry {
   tagline: string | null;
 }
 
-export interface EventsPageEntry {
-  intro: string | null;
-  featured: Array<{ _key: string; value: EntrySummary | null }> | null;
+export interface PartnerEntry {
+  title: string | null;
+  website: { href: string } | { entry: EntrySummary | null } | null;
 }

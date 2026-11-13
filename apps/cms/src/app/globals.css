@@ -1391,6 +1391,40 @@
     width: 190px;
   }
 
+  /* A12: the order column of a manually ordered type's list: a handle and two move buttons. */
+  .tbl .w-order {
+    width: 164px;
+  }
+
+  .entry-table.ordered td.c-order {
+    padding: 4px 8px;
+  }
+
+  .order-tools {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .order-tools .icbtn {
+    color: var(--ink-muted);
+  }
+
+  /* Pointer drags start on the handle; touch-action keeps a finger's drag from scrolling instead. */
+  .drag-handle {
+    cursor: grab;
+    touch-action: none;
+  }
+
+  /* Where a dragged row will land: a line above or below the row under the pointer. */
+  .entry-table.ordered tr[data-drop='before'] td {
+    box-shadow: inset 0 3px 0 var(--ink);
+  }
+
+  .entry-table.ordered tr[data-drop='after'] td {
+    box-shadow: inset 0 -3px 0 var(--ink);
+  }
+
   .tbl a.t {
     display: flex;
     align-items: center;
@@ -2709,6 +2743,35 @@
 
     .lib-panel {
       padding: 12px;
+    }
+
+    /* The ordered list at phone width: title and the move controls on the first line, status and
+       time on the second. */
+    .entry-table.ordered tr {
+      grid-template-columns: 1fr auto;
+      grid-template-areas:
+        'title order'
+        'status time';
+    }
+
+    .entry-table.ordered td.c-order {
+      grid-area: order;
+      padding: 0;
+      text-align: right;
+    }
+
+    .entry-table.ordered td.c-title {
+      grid-area: title;
+      min-width: 0;
+    }
+
+    .entry-table.ordered td.c-status {
+      grid-area: status;
+    }
+
+    .entry-table.ordered td.c-time {
+      grid-area: time;
+      text-align: right;
     }
 
     .sheet {

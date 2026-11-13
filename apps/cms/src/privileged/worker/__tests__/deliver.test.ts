@@ -42,6 +42,7 @@ const bundle = (release: number, entries: BundleEntry[]): Bundle => ({ format: 1
 const seen: Array<{ e: SiteEntry; release: string[]; previous: string[] | null }> = [];
 const module = {
   tenant: 'prufa',
+  types: [{ name: 'news', orderBy: 'date' }],
   site: {
     news: {
       path: (e: SiteEntry) => `/n/${e.slug}`,
@@ -64,6 +65,21 @@ describe('releaseView', () => {
     expect(view.entries('news').map((e) => e.id)).toEqual([E3, E1, E2]);
     expect(view.entries('other')).toEqual([]);
     expect(view.entries('news')[0]).toEqual({ id: E3, type: 'news', slug: 'c', sortAt: '2026-02-01T00:00:00.000Z' });
+  });
+
+  it('lists a manually ordered type (A12) in the bundle\'s order, which is the editors\' order', () => {
+    const view = releaseView(bundle(2, [entry(E1, 'a', '2026-01-01T00:00:00.000Z'), entry(E2, 'b', null), entry(E3, 'c', '2026-02-01T00:00:00.000Z')]), new Set(['news']));
+    expect(view.entries('news').map((e) => e.id)).toEqual([E1, E2, E3]);
+    expect(view.entries('other')).toEqual([]);
+  });
+
+  it('the module\'s checks see a manually ordered type in the bundle\'s order', () => {
+    seen.length = 0;
+    const manual = { ...module, types: [{ name: 'news', orderBy: 'manual' }] } as unknown as ModuleManifest;
+    const current = bundle(3, [entry(E2, 'b', null), entry(E1, 'a', '2026-03-01T00:00:00.000Z')]);
+    const previous = bundle(2, [entry(E3, 'c', null), entry(E2, 'b', '2026-02-01T00:00:00.000Z')]);
+    liveTargets(manual, { bundle: current, previousBundle: previous, requests: [{ id: 'q1', entryId: E1, action: 'publish', wasDelivered: true }] }, MEDIA);
+    expect(seen[0]).toMatchObject({ release: [E2, E1], previous: [E3, E2] });
   });
 });
 
@@ -271,7 +287,7 @@ describe('liveTargets', () => {
   });
 
   it('a module whose checks throw gives a failure, not an exception', () => {
-    const broken = { site: { news: { path: () => '/x', checks: () => { throw new Error('boom'); } } } } as unknown as ModuleManifest;
+    const broken = { types: [], site: { news: { path: () => '/x', checks: () => { throw new Error('boom'); } } } } as unknown as ModuleManifest;
     const [t] = liveTargets(broken, { bundle: current, previousBundle: null, requests: [{ id: 'q9', entryId: E1, action: 'publish', wasDelivered: true }] }, MEDIA);
     expect(t).toMatchObject({ failure: 'checks_failed', checks: [] });
   });

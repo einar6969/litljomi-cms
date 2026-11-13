@@ -36,7 +36,7 @@ import { waitForPublicPointer, type PointerSeams, type PointerWaitResult } from 
 import { publicMediaUrl } from './projection-context';
 import { callRpc } from './rpc';
 
-export { liveTargets, releaseView, type LiveTarget } from './live-targets';
+export { liveTargets, manualTypes, releaseView, type LiveTarget } from './live-targets';
 
 /** At most this many live-check failures are stored in last_error. */
 const MAX_STORED_FAILURES = 50;

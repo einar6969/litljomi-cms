@@ -99,6 +99,22 @@ const eventsPageType = defineType({
   orderBy: 'intro',
 });
 
+/**
+ * A manually ordered test type (A12; spec §5.1): editors put the partners in order in the entry
+ * list, and the bundle lists them in that order. It has no site pages.
+ */
+const partnerType = defineType({
+  name: 'partner',
+  version: 1,
+  label: 'Partner',
+  fields: {
+    title: text({ label: 'Name', required: true }),
+    website: link({ label: 'Website' }),
+  },
+  preview: { title: 'title' },
+  orderBy: 'manual',
+});
+
 const eventPath = (e: SiteEntry): string => {
   if (e.slug === null) throw new Error(`event entry ${e.id} has no slug`);
   return '/events/' + e.slug;
@@ -108,9 +124,15 @@ export default defineModule({
   tenant: 'demo',
   locale: 'is',
   branding: { name: 'Demo' },
-  types: [eventType, noticeType, siteInfoType, eventsPageType],
+  types: [eventType, noticeType, siteInfoType, eventsPageType, partnerType],
   structure: [
-    { group: 'Content', items: [{ type: 'event', label: 'Events' }] },
+    {
+      group: 'Content',
+      items: [
+        { type: 'event', label: 'Events' },
+        { type: 'partner', label: 'Partners' },
+      ],
+    },
     { type: 'site-info', label: 'Site info', singleton: true },
     { type: 'events-page', label: 'Events page', singleton: true },
   ],

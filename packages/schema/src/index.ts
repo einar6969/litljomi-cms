@@ -12,7 +12,7 @@ export {
 } from './projection.ts';
 export { canonicalJson, contentHash, entryContentHash } from './content-hash.ts';
 export { generateDeliveryTypes } from './codegen.ts';
-export { defineType, type ContentType, type TypeDefinition, type AnyFieldKind } from './define-type.ts';
+export { defineType, isManuallyOrdered, MANUAL_ORDER, type ContentType, type TypeDefinition, type AnyFieldKind } from './define-type.ts';
 export {
   DRAFT_OUTDATED,
   DRAFT_SCHEMA_AHEAD,

@@ -11,7 +11,12 @@ export interface TypeDefinition<F extends Record<string, AnyFieldKind>> {
   label: string;
   fields: F;
   preview: { title: keyof F & string; media?: keyof F & string };
-  orderBy: keyof F & string;
+  /**
+   * How the type's entries are listed: by a field (a date or datetime field also fills `sort_at`,
+   * §4.3), or `'manual'`, in the order editors give them in the entry list (§5.1; A12). A manually
+   * ordered type may not have a field named `manual`.
+   */
+  orderBy: (keyof F & string) | typeof MANUAL_ORDER;
   /** Keyed n: turns data written at version n into data at version n+1 (§5.3). */
   transforms?: Record<number, Transform>;
 }
@@ -38,6 +43,12 @@ export interface ContentType<F extends Record<string, AnyFieldKind> = any> exten
   upcast(data: unknown, fromVersion: number): unknown;
 }
 
+/** `orderBy` of a type whose entries editors put in order (§5.1). */
+export const MANUAL_ORDER = 'manual';
+
+/** True when editors put the type's entries in order (`orderBy: 'manual'`, §5.1). */
+export const isManuallyOrdered = (type: Pick<TypeDefinition<any>, 'orderBy'>): boolean => type.orderBy === MANUAL_ORDER;
+
 // The limit of drafts.title and revisions.title (§4.3), in characters as the database counts them:
 // a list label, so a longer heading is cut here rather than refused on every save and at publish.
 const MAX_TITLE_LENGTH = 500;
@@ -48,6 +59,9 @@ const cutTitle = (title: string | null): string | null =>
 export function defineType<F extends Record<string, AnyFieldKind>>(d: TypeDefinition<F>): ContentType<F> {
   assertFields('defineType', d.fields);
   assertVersioning(d);
+  if (d.orderBy === MANUAL_ORDER && Object.hasOwn(d.fields, MANUAL_ORDER)) {
+    throw new Error(`defineType: type "${d.name}" is ordered manually and has a field named "${MANUAL_ORDER}"`);
+  }
   const shapes = fieldShapes(d.fields);
   const column = (data: unknown, key: string): string | null => {
     if (typeof data !== 'object' || data === null) return null;
@@ -61,8 +75,8 @@ export function defineType<F extends Record<string, AnyFieldKind>>(d: TypeDefini
     draftValidator: () => z.object(shapes.draft),
     publishValidator: () => z.object(shapes.publish),
     // `sort_at` is a timestamp column (§4.3): only a date or datetime field can fill it. A type
-    // ordered by another kind (the demo `notice`, by title) saves none, rather than a text value
-    // the database refuses.
+    // ordered by another kind (the demo `site-info`, by title) saves none, rather than a text value
+    // the database refuses, and so does a manually ordered type, whose order is not in the document.
     queryColumns: (data) => ({ title: cutTitle(column(data, d.preview.title)), sortAt: datedOrderBy ? column(data, d.orderBy) : null }),
     upcast: (data, fromVersion) => upcast(d, data, fromVersion),
   };

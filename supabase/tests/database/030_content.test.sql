@@ -47,8 +47,8 @@ select table_privs_are('cms', 'revisions', 'anon', array[]::text[], 'anon: nothi
 -- Column privileges, per tests.column_privs() (_helpers.sql).
 select set_eq($$ select * from tests.column_privs('authenticated', 'cms.entries') $$,
   $$ values ('tenant_id', 'INSERT'), ('type', 'INSERT'), ('slug', 'INSERT'), ('created_by', 'INSERT'), ('singleton', 'INSERT'),
-            ('slug', 'UPDATE'), ('archived_at', 'UPDATE') $$,
-  'authenticated: insert (tenant_id, type, slug, created_by, singleton: M2-09), update (slug, archived_at) on entries');
+            ('slug', 'UPDATE'), ('archived_at', 'UPDATE'), ('order_key', 'UPDATE') $$,
+  'authenticated: insert (tenant_id, type, slug, created_by, singleton: M2-09), update (slug, archived_at, order_key: A12) on entries');
 select set_eq($$ select * from tests.column_privs('authenticated', 'cms.drafts') $$,
   $$ values ('entry_id', 'INSERT'), ('tenant_id', 'INSERT'), ('schema_version', 'INSERT'), ('data', 'INSERT'),
             ('title', 'INSERT'), ('sort_at', 'INSERT'), ('updated_by', 'INSERT'),

@@ -139,6 +139,18 @@ export const is = {
       clear: 'Hreinsa síu',
       none: 'Engar færslur passa við leitina.',
     },
+    // A12: the list of a manually ordered type, in the order the site shows it. DRAFT, for Einar's batch.
+    order: {
+      column: 'Röð',
+      help: 'Færslurnar birtast á vefnum í þessari röð. Dragðu færslu á nýjan stað eða notaðu örvarnar. Ný röð birtist á vefnum næst þegar færsla er birt.',
+      filtered: 'Aðeins færslur sem passa við leitina eru sýndar. Hinar halda sínum stað.',
+      handle: 'Færa „{title}“: dragðu, eða notaðu örvalyklana upp og niður',
+      moveUp: 'Færa „{title}“ upp',
+      moveDown: 'Færa „{title}“ niður',
+      saving: 'Vistar röðina…',
+      moved: '„{title}“ er nú í sæti {n} af {total}.',
+      failed: 'Ekki tókst að færa færsluna. Röðin er óbreytt. Reyndu aftur.',
+    },
   },
   editor: {
     saving: 'Vistar…',

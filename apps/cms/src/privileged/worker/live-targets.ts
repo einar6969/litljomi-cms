@@ -1,7 +1,7 @@
 // What a delivered release must confirm on the sites, entry by entry (spec §7.1, §7.4; plan Task 21,
 // decision 35; A7). Pure: the release build records the entries that have nothing to check
 // (build-release.ts), and the delivery checks the rest (deliver.ts), from the same targets.
-import type { LiveCheck, ModuleManifest, ReleaseView, SiteEntry } from '@litljomi/cms-schema';
+import { isManuallyOrdered, type LiveCheck, type ModuleManifest, type ReleaseView, type SiteEntry } from '@litljomi/cms-schema';
 import type { Bundle, BundleEntry } from '@litljomi/cms-sdk';
 import type { LinkedRequest } from './build-release';
 
@@ -38,17 +38,25 @@ export type LiveTarget = {
 /** The releases a target is computed from. */
 export type TargetRelease = { bundle: Bundle; previousBundle: Bundle | null; requests: LinkedRequest[] };
 
-/** A bundle as the module's `checks` see it: each type's entries by sortAt descending. */
-export function releaseView(bundle: Bundle | null): ReleaseView {
+/**
+ * A bundle as the module's `checks` see it: each type's entries by sortAt descending, except a
+ * manually ordered type's (`manual`, A12), which keep the bundle's order: the editors' order, as
+ * the build wrote it (§7.2).
+ */
+export function releaseView(bundle: Bundle | null, manual: ReadonlySet<string> = new Set()): ReleaseView {
   return {
     entries(type: string): SiteEntry[] {
       const list = bundle && Object.hasOwn(bundle.entries, type) ? (bundle.entries[type] ?? []) : [];
-      return list
-        .map((e) => siteEntry(type, e))
-        .sort((a, b) => (a.sortAt === b.sortAt ? 0 : a.sortAt === null ? 1 : b.sortAt === null ? -1 : a.sortAt < b.sortAt ? 1 : -1));
+      const entries = list.map((e) => siteEntry(type, e));
+      if (manual.has(type)) return entries;
+      return entries.sort((a, b) => (a.sortAt === b.sortAt ? 0 : a.sortAt === null ? 1 : b.sortAt === null ? -1 : a.sortAt < b.sortAt ? 1 : -1));
     },
   };
 }
+
+/** The names of the module's manually ordered types (A12). */
+export const manualTypes = (module: Pick<ModuleManifest, 'types'>): ReadonlySet<string> =>
+  new Set(module.types.filter((t) => isManuallyOrdered(t)).map((t) => t.name));
 
 const siteEntry = (type: string, e: BundleEntry): SiteEntry => ({ id: e.id, type, slug: e.slug, sortAt: e.sortAt });
 
@@ -100,8 +108,9 @@ function mediaUrlsIn(data: unknown, mediaPrefix: string): string[] {
 export function liveTargets(module: ModuleManifest, release: TargetRelease, mediaPrefix: string): LiveTarget[] {
   const byEntry = new Map<string, LinkedRequest[]>();
   for (const r of release.requests) byEntry.set(r.entryId, [...(byEntry.get(r.entryId) ?? []), r]);
-  const current = releaseView(release.bundle);
-  const previous = release.previousBundle ? releaseView(release.previousBundle) : null;
+  const manual = manualTypes(module);
+  const current = releaseView(release.bundle, manual);
+  const previous = release.previousBundle ? releaseView(release.previousBundle, manual) : null;
 
   return [...byEntry].map(([entryId, requests]): LiveTarget => {
     const base = { entryId, requestIds: requests.map((r) => r.id), failure: null, checks: [], ownPath: null, contentHash: null, mediaUrls: [] };
