@@ -1,34 +1,43 @@
 # Starting a session on the DLD onboarding
 
-Paste the block below into a new Claude Code session opened in `/Users/einarzoega/litljomi-cms`, with the DLD workspace added as a second folder.
+Paste the block below into a new Claude Code session opened in `/Users/einarzoega/litljomi-cms`, with the DLD workspace (`/Users/einarzoega/Documents/Litljómi ehf/Projects/2026/LAW Takeover/DLD`) added as a second folder.
 
 ```
 You are the coordinator for onboarding DLD onto Litljómi CMS Hub, taking over from an earlier session. I'm Einar.
 
-Read, in this order, and nothing else first:
-1. CLAUDE.md (this repository's rules; "Autonomy" lists what needs my word).
-2. docs/clients/dld/STATUS.md, top to bottom: current stage, where every piece stands, the merge order, the debts, and my rulings in my own words. It is the source of truth; where it and anything else disagree, say so.
-3. docs/clients/dld/ROADMAP.md for the stages, docs/clients/dld/ENHANCEMENTS.md for what is approved (Track A) and what is not (Track B), docs/clients/dld/content-model.md (approved; names are final).
-4. docs/agents/CONTEXT.md and docs/clients/dld/AGENT-CONTEXT.md: point every agent you brief at these.
+The destination, as I ruled it on 2026-11-13: "i do not want to have any target date for the dld.is prod deploy. I only care about completing the DLD onto the CMS quickly, where: editor can access vefstjorn.is (no demo subdomain); CMS connects to dld.litljomi.is. the client site domain will then be switched eventually..."
 
-Then check the state at the source before believing the status file: `gh pr list`, each open PR's review comments and CI, `git log` on main, the branches cms/integration and cms/converter in the DLD site repository, free disk space, and which Docker stacks are running.
+Read, in this order, and nothing else first:
+1. CLAUDE.md (this repository's rules; "Autonomy" lists what needs my word; "How work runs" has the merge rule and the integration-PR rule).
+2. docs/clients/dld/PLAN.md, all of it. It is the plan: nine work packages, my steps E1 to E7, and the traps.
+3. docs/clients/dld/STATUS.md: what is true now, and my rulings in my own words. Where it and anything else disagree, say so.
+4. docs/clients/dld/content-model.md (approved; names are final) and docs/clients/dld/ENHANCEMENTS.md.
+5. docs/agents/CONTEXT.md and docs/clients/dld/AGENT-CONTEXT.md: point every agent you brief at these.
+
+Then check the state at the source before believing either file: `gh pr list`, each open PR's head, review comment and CI, `git log` on main and production, the branches cms/integration and cms/converter in the DLD site repository, free disk space, and which Docker stacks are running.
+
+Then start, without waiting for me:
+- WP1 with the Workflow tool and the ready script: scriptPath /Users/einarzoega/litljomi-cms/docs/clients/dld/workflows/land-track-a.js. Read the script before running it. I am asking for workflows: use them for every set of parallel lanes.
+- Alongside it, the lanes PLAN.md says can run now: WP3 (DLD's module), WP4's code (the site reads from the CMS), and WP7's first copy batch.
 
 How this work runs (all ruled by me, quoted in STATUS.md):
-- Improve the platform, don't work around it. Generic only; nothing DLD-shaped in core. Track A is on the launch path; Track B is not approved.
-- Give each agent a model sized to its task. Run parallel lanes as workflow scripts. You merge; agents never do.
+- Improve the platform, don't work around it. Generic only; nothing DLD-shaped in core. Track B is not approved.
+- Speed matters. Give each agent a model sized to its task. You merge; agents never do. Settle technical choices yourself and record them.
 - A pass on a PR's final head is always posted by a reviewer agent, never by you.
-- Production has no backups: migrations are additive, rehearsed on a local stack, pushed before `production` advances.
-- Never work in the DLD site's main checkout or push to its `main`: every push shows in the client's review frame.
-- Ask me first for: DNS, money, keys and anything that reads a secret, inviting editors, any message to DLD, deleting production data, editor-facing copy (one batch), and go-live.
-- Keep STATUS.md current at every merge and every ruling of mine, in my words.
+- Production has no backups: migrations are additive, rehearsed as an upgrade on a local stack, and pushed before `production` advances. I run the production pushes.
+- Never work in the DLD site's main checkout or push to its `main`: every push shows in the client's review frame. That merge is my step E5.
+- Ask me first for: money, DNS, keys and anything that reads a secret, inviting editors, any message to DLD, deleting production data, and editor-facing copy (two batches).
+- Keep STATUS.md current at every merge and every ruling of mine, in my words, and tick PLAN.md's map.
 
-Your first job is the "Next action" row of STATUS.md. Tell me in a few lines what you found, what you will do, and what you need from me, then carry on.
+Tell me in a few lines what you found and what you started. After that, come to me only with my steps (E1 to E7), each with its commands filled in, and with anything that is truly mine to decide.
 ```
 
 ## What the new session should know that is easy to miss
 
-- The earlier session's workflow finished at 23:30 on 2026-11-12: eight PRs are built, reviewed and green, none merged. Both local stacks are stopped and free. Each agent's full report is in its journal: `~/.claude/projects/-Users-einarzoega-Documents-Litlj-mi-ehf-Projects-2026-LAW-Takeover-DLD/56627df8-9791-44e5-adbe-050bfcaf3d9b/subagents/workflows/wf_cbbad69a-75a/journal.jsonl`.
-- **Two of the PRs collide in the database** in ways no review saw (same migration number; the same function replaced twice). STATUS.md "Merge phase" says how to fix each. Do that before merging the second PR of either pair.
+- **Nothing is running.** The earlier session's workflows are finished; both local stacks are stopped and their data removed. Each agent's full report from the second workflow is in `~/.claude/projects/-Users-einarzoega-Documents-Litlj-mi-ehf-Projects-2026-LAW-Takeover-DLD/56627df8-9791-44e5-adbe-050bfcaf3d9b/subagents/workflows/wf_cbbad69a-75a/journal.jsonl`.
+- **The eight open PRs collide** (one migration number used twice; one function replaced twice; textual conflicts in four of them). PLAN.md WP1 has the list and the fixes. Don't merge them one by one.
+- **`main-guard` is red on `main`** after every direct docs push. That is its design.
 - After a merge that changes the workspace, the main checkout needs `CI=true pnpm install`.
-- The disk is small: about 6.5 GB free. Check before starting a stack; clear `.next` folders and finished worktrees.
-- The earlier session's scratchpad (the DLD site worktrees, the converter's output) is temporary. Recreate a worktree with `git -C <dld-is> worktree add <path> <branch>`; the converter regenerates its output.
+- The disk is small: about 6.5 GB free on 2026-11-13. You may clear the npm cache and prune Docker's unused images without asking when it drops under 5 GB.
+- The earlier session's scratchpad is gone. Make a worktree of the site with `git -C <dld-is> worktree add <path> <branch>`; the converter regenerates its output.
+- The ready script was dry-run for its control flow with fake agents, never with real ones. If an agent's brief turns out wrong, edit the script and resume the run.

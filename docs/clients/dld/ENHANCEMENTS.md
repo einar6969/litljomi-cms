@@ -7,6 +7,8 @@
 | Rule | "Improve the platform, don't work around it." Every row is generic, for all tenants. Nothing DLD-shaped in core |
 | Evidence | [recon/](recon/), [probes/](probes/), `docs/plans/media-library.md` |
 
+**2026-11-13.** A5 (move or retire a site) is off the path: the CMS connects to `dld.litljomi.is`, and the switch to `dld.is` has no date. A8 is verified on the demo site, not on DLD's. The order of work is in [PLAN.md](PLAN.md).
+
 **Two tracks.** Track A is what DLD needs before the Christmas card; since the launch waits for the CMS, Track A is also the launch path. Track B makes the platform better and never delays Track A.
 
 **Sizes.** S is one PR of app logic. M is two or three PRs, or one PR at the security boundary. L is a migration plus API plus editor plus SDK.

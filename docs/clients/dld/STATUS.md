@@ -4,9 +4,9 @@ The living record of onboarding DLD (Dagný Land Design) as a tenant. A later se
 
 | | |
 |---|---|
-| Last updated | 2026-11-12, 23:45, after the second workflow reported |
-| **Current stage** | **3, platform work, and 4, tenant and site, side by side.** Five PRs are merged. Eight more are built, reviewed and green, and none is merged |
-| Next action | **The merge phase**, section "Merge phase" below: fix the two migration collisions first, then merge the eight PRs in order, then advance `production` once (migrations first). Then finish `modules/dld` and connect the site |
+| Last updated | 2026-11-13, after Einar chose the fast lane and restated the destination |
+| **Current stage** | **Platform work and site work, side by side** (PLAN.md has replaced the roadmap's stages 3–8). Five PRs are merged. Eight more are built, reviewed and green, and none is merged |
+| Next action | **[PLAN.md](PLAN.md), work package WP1**, with WP3, WP4 and the first copy batch alongside. PLAN.md says what to do; this file says what is true |
 | How agents run | Models sized to the task. Briefs point at `docs/agents/CONTEXT.md` and `AGENT-CONTEXT.md` here. Parallel lanes run as workflow scripts. **Every pass on a final head is posted by a reviewer agent, never by the coordinator**; the coordinator merges |
 
 ## Where every piece stands (2026-11-12, 23:45)
@@ -36,22 +36,17 @@ The living record of onboarding DLD (Dagný Land Design) as a tenant. A later se
 
 **Waiting on those:** `modules/dld` (PR #71, draft, review passed at `33ed9aa`, now conflicting with `main`) needs the site entries for person, home and contact (A7) and the ordering opt-in (A12), then a merge of `main`.
 
-## Merge phase
+## What the second workflow left
 
-**Two collisions the reviews could not see, because each PR was reviewed against `main` alone. Fix both before the second PR of each pair merges.**
+**The plan for landing these eight PRs is [PLAN.md](PLAN.md), WP1.** It lands them as one integration PR. Facts it rests on, checked on 2026-11-13:
 
-1. **Same migration version.** #76 and #79 both add a migration numbered `20261112210000`. Supabase keys migrations by that number. Rename A7's to `20261112220000_nothing_checked.sql` on its branch (it then sorts between L3's and A12's).
-2. **Same function replaced twice.** #76 and #77 both `create or replace function api.worker_release_snapshot`, each starting from `main`'s body. A12's migration runs last and would silently remove L3's `caption` and `credit` from every release. After #76 merges, A12's migration must be rewritten on top of L3's body. L3's database test `118_media_library_delivery.test.sql` pins both keys, so CI should fail on A12 until this is done; don't rely on that alone. This is boundary work: spec and security review again.
+- **Same migration number:** #76 and #79 both add `20261112210000`.
+- **Same function replaced twice:** #76 and #77 both replace `api.worker_release_snapshot` from `main`'s body; A12's would remove L3's `caption` and `credit`.
+- **The branches conflict textually** when merged together (an earlier "no conflicts" here came from a check that never ran). The files are listed in PLAN.md.
+- **Four migrations** are waiting for production, not three: L1's is on `main` and not on production.
+- #77 and #79 change no file under `packages/sdk`.
 
-**Order:** #73 → #78 → #81 → #82 → #76 → #79 (migration renamed) → #77 (migration rebuilt on L3's) → #80.
-
-**For each PR:** merge `main` into the branch, let CI run, have a reviewer agent pass the new head (a small model is enough where the delta is the merge alone; the full boundary reviewers for the A12 migration), then merge. **The branches do conflict textually** (corrected 2026-11-13; the earlier "no conflicts" here came from a check that never ran). Merging all eight in memory in the order above: L3 conflicts in `docs/architecture.md`; A7 in `packages/schema/src/__tests__/module.test.ts`; A12 in `globals.css`, `deliver.ts`, `build-release.test.ts` and the demo module and its types; A4 in `build-release.ts`, `projection-context.ts`, `build-release.integration.test.ts` and `tools/cli/src/import/report.ts`. The worker files are boundary code and their combined behaviour was never reviewed, so those resolutions need the spec and security reviewers, not a small model. These files are touched by three or more branches: `is.ts`, `docs/architecture.md`, `modules/demo/` (source, tests, `schema.snapshot.json`), `apps/demo-site/src/types/cms.ts`, `packages/schema/src/module.ts`, `build-release.ts`, `projection-context.ts`, `tools/cli/src/import/report.ts`. Regenerate the snapshot and the demo site's types after each merge, never hand-merge them.
-
-**Versions.** #76 raises the SDK to 0.2.2 and #80 raises rich-text to 0.2.1. #79 and #77 change `packages/schema` and what the bundle carries (an entry reference's `path` may be `null`; a new demo type) without raising the SDK: once #76 is in, check whether their shipped SDK files changed and raise to 0.2.3 if so (runbook §2, step 11).
-
-**After the eight:** run the full browser suite once on a stack (CI has none); `supabase db push` the four migrations (L1's `20261112200000_media_library.sql` is on `main` and not on production, then L3's, A7's and A12's), rehearsed first as an upgrade of a database with rows, then advance `production`; set A4, A6, A7, A10, A12 and L1–L6 to done in ENHANCEMENTS.md.
-
-**Owed on a stack, never run:**
+**Owed on a stack, never run** (WP1 runs the first two; WP5 runs the trials):
 - A12's browser spec `manual-order.spec.ts` (built without a stack; only parsed).
 - `design.spec.ts:383` fails on `main` since A11 (#70): its "Bæta við" locator now matches two lists. Test-only fix.
 - The plan's local trials: L2 with a 20 MB image (time, memory, the sweep), L5 with twelve real 5–10 MB photographs on a slow connection, L6 at phone and desktop width.
@@ -67,11 +62,11 @@ The living record of onboarding DLD (Dagný Land Design) as a tenant. A later se
 - **A4:** `--local` accepts only the two slots' `127.0.0.1` addresses. Images on `http` are delivered only when the worker's own Supabase address is a loopback address.
 - **#73:** a paragraph pasted from Word into a list item merges into that item.
 
-**The copy batch.** Every new editor string is DRAFT. Don't collect them from agent reports: after the merges, take them from `git diff origin/production..main -- apps/cms/src/i18n/is.ts`, plus the labels in `modules/dld`.
+**The copy batches** (two, by Einar's ruling of 2026-11-13; PLAN.md WP7). Every new editor string is DRAFT. Don't collect them from agent reports: take them from the diff of `apps/cms/src/i18n/is.ts` against `origin/production`, and the labels from `modules/dld`.
 
 **Done in DLD's repository, not merged anywhere:** `cms/integration` at `d604687` (the site without the static export, and one async data layer; all 64 pages unchanged) and `cms/converter` at `aef0cd1` (the content converter; fidelity check passed).
 
-**Not started:** A5 (move or retire a site, needed by go-live), A8 (verify the outage finding on Vercel), the site's switch from its own content to the CMS bundle, provisioning the tenant, the import rehearsal, the copy batch and handbook.
+**Not started:** the site's switch from its own content to the CMS bundle (WP4), the import rehearsal (WP5), provisioning the tenant (WP6), the copy batches and handbook (WP7), A8 (verify the outage finding, on the demo site). **Off the path:** A5 (move or retire a site) waits for the switch to `dld.is`.
 
 **Debts**
 - #69 and #75 carry a final-head pass posted by the coordinator after changes that were docs-only (#69) or one test-only commit (#75). Einar was told; a reviewer can re-read #75's test commit if he wants.
@@ -80,7 +75,7 @@ The living record of onboarding DLD (Dagný Land Design) as a tenant. A later se
 
 ## Disk and stacks
 
-The Mac's disk filled at 19:25 and stopped Docker. Einar allowed the npm cache to be cleared ("Yes, clear it") and Docker's unused images to be pruned ("Yes, prune them"). Agents stop and report if less than 3 GB is free.
+The Mac's disk filled at 19:25 on 2026-11-12 and stopped Docker. Einar allowed the npm cache to be cleared ("Yes, clear it") and Docker's unused images to be pruned ("Yes, prune them"). Since 2026-11-13 the coordinator may repeat both without asking when less than 5 GB is free (part of the fast lane). Agents stop and report if less than 3 GB is free.
 
 **At 23:45:** about 6.5 GB free. Both stacks are stopped and their data removed (`pnpm db:stop --no-backup`, both slots); start with `pnpm db:start` and `pnpm db:reset`. Every finished agent worktree is removed (all were clean and pushed); one locked worktree remains (`agent-a49e502da79bcd0cd`, the merged A3 branch).
 
@@ -101,10 +96,10 @@ Each probe's blockers became a row in ENHANCEMENTS.md (A6, A7, A10, B9, B10).
 
 A new session starts from [START.md](START.md): it holds a paste-ready prompt and the things that are easy to miss. Einar asked for a handover to a fresh session once the second workflow reports ("Yes, hand over", 2026-11-12).
 
-1. Read `CLAUDE.md`, then this file from the top, then [ROADMAP.md](ROADMAP.md), [ENHANCEMENTS.md](ENHANCEMENTS.md) and [content-model.md](content-model.md).
+1. Read `CLAUDE.md`, then this file from the top, then [PLAN.md](PLAN.md), then [ENHANCEMENTS.md](ENHANCEMENTS.md) and [content-model.md](content-model.md). [ROADMAP.md](ROADMAP.md) is the record of how the plan was reached; its stages 3–8 are replaced.
 2. Check the state at the source (`gh pr list`, CI, `git log`, the DLD site's branches) before relying on the tables below.
 3. The client's workspace is `/Users/einarzoega/Documents/Litljómi ehf/Projects/2026/LAW Takeover/DLD`. Its `CLAUDE.md` holds DLD's current state and the site's invariants. The site repository is `dld-is/` inside it (remote `einar6969/dld`). The task texts for work in it are in its `metaprompts/active/`.
-4. Do nothing past the current stage without the approval the roadmap names for it.
+4. Do nothing that PLAN.md marks as Einar's step without his word.
 
 ## Standing instructions
 
@@ -195,12 +190,32 @@ Asked how to make the workflow more efficient, the coordinator proposed seven ch
 - **Tighter briefs:** agents read `docs/agents/CONTEXT.md` and `AGENT-CONTEXT.md` here, with exact files, and leave full suites to CI.
 - **Workflow scripts** run build, review and fix for each slice. The coordinator merges.
 
+### 2026-11-13: the destination, and no date
+
+Asked for a target date, Einar: "**i do not want to have any target date for the dld.is prod deploy. I only care about completing the DLD onto the CMS quickly, where: editor can access vefstjorn.is (no demo subdomain); CMS connects to dld.litljomi.is. the client site domain will then be switched eventually...**"
+
+- Done is: DLD's content in tenant `dld` on production, `dld.litljomi.is` rendering from the CMS with publishes confirmed live, DLD's editors able to sign in at vefstjorn.is. The switch to `dld.is` is outside this work.
+- No separate preview host and no DNS record. The site branch therefore has to merge into `dld-is` `main`, which the client's review frame shows; the pages are the same. The coordinator reads his words as covering that merge and still asks for his yes at the moment (PLAN.md, E5).
+- A5 (move or retire a site) leaves the path. D2 ("lets aim for cms completion before launch...") is untouched; the launch simply has no date.
+
+### 2026-11-13: the fast lane
+
+After an adversarial review of how the work runs (by the coordinator and by an independent reviewer), offered three packages, Einar: "**your recommendation of '2. Fast lane' looks sound.**"
+
+What that package said, and so what now holds:
+
+- **One integration PR** lands the eight open PRs: all merged into one branch, collisions and conflicts fixed once, then one CI run, one browser run, one upgrade rehearsal, a boundary review of the overlapping files, one merge. Now also in `CLAUDE.md`, "How work runs".
+- **Parallel lanes start from that branch at once:** DLD's module, the site's switch to the CMS, the import rehearsal.
+- **Copy in two batches:** the platform's strings now, DLD's labels and the handbook later. This replaces "one batch" for this onboarding.
+- **Standing permission** to clear the npm cache and prune Docker's unused images when disk runs low.
+
+Not ruled on, and settled by the coordinator: the library's "Á vefnum" label follows spec §7.4 (shown only once a publish is confirmed live), as a small PR after the integration PR.
+
 ### Gates still ahead, each needing Einar
 
 - Track B rows, whenever he wants them ([ENHANCEMENTS.md](ENHANCEMENTS.md)).
-- The content model (stage 2).
-- The copy batch (stage 6).
-- Go-live (stage 7).
+- The steps E1 to E7 in [PLAN.md](PLAN.md): copy batch 1, the production deploys, the tenant, the import, connecting the site, copy batch 2 and the handbook, inviting editors.
+- The switch to `dld.is`, whenever he wants it.
 
 ## Open questions
 
@@ -208,7 +223,7 @@ Asked how to make the workflow more efficient, the coordinator proposed seven ch
 
 1. Who edits, and in which language should the admin and handbook be?
 2. How large is the backlog, and who enters the first batch?
-3. May the site open before the vefstjórn, if the vefstjórn is ready before the Christmas card?
+3. (Withdrawn 2026-11-13: no date is attached to the site's opening on `dld.is`.)
 4. Where does a new project appear in the list?
 5. Captions and photographer credits: shown, and where?
 
@@ -224,7 +239,7 @@ Asked how to make the workflow more efficient, the coordinator proposed seven ch
 - How fast hosted storage copies images at publish. Measured only locally.
 - Whether a site on Vercel really answers 500 when storage is unreachable right after a publish (ENHANCEMENTS.md A8). Seen on a local server only.
 - Answered by A4 (#80, not merged): a local stack delivers images; a full rehearsal ran on slot 2.
-- Which preview host the integration branch gets. Vercel's protection on `dld` covers everything but custom domains, and the worker follows no redirects and cannot pass protection, so it needs a custom domain (one DNS record, Einar's).
+- Settled on 2026-11-13: the CMS connects to `dld.litljomi.is` itself, a custom domain, which Vercel's protection does not cover. No extra host and no DNS record are needed.
 
 ## Verified by the coordinator
 
@@ -249,7 +264,9 @@ Not verified, carried as open: the Free plan's 1 GB storage figure; Vercel's ima
 
 | Thing | Place |
 |---|---|
-| Roadmap | [ROADMAP.md](ROADMAP.md) |
+| **The plan: work packages, Einar's steps, traps** | [PLAN.md](PLAN.md) |
+| The ready script for WP1 | [workflows/land-track-a.js](workflows/land-track-a.js) |
+| Roadmap (the record; stages 3–8 replaced by the plan) | [ROADMAP.md](ROADMAP.md) |
 | Recon: what DLD needs, argued for the client only | [recon/client-needs.md](recon/client-needs.md) |
 | Recon: the site's code, content model and data seam | [recon/site-map.md](recon/site-map.md) |
 | Recon: what the Hub offers, argued for the platform only | [recon/platform-offer.md](recon/platform-offer.md) |
