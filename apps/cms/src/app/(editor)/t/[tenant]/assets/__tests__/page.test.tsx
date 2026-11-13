@@ -20,12 +20,14 @@ const TENANT = { id: '00000000-0000-4000-8000-0000000000f1', slug: 'acme', name:
 const FILE = '00000000-0000-4000-8000-0000000000a1';
 const ENTRY = '00000000-0000-4000-8000-0000000000e1';
 
-type Answer = { data: unknown; error: { code: string } | null };
+type Answer = { data: unknown; count?: number | null; error: { code: string } | null };
 const db = vi.hoisted(() => ({
   summary: { data: { files: 2, bytes: 61_952, unused: 1 } as unknown, error: null as { code: string } | null },
   list: { data: [] as unknown[], error: null as { code: string } | null },
   file: { data: null as unknown, error: null },
   usage: { data: [] as unknown[], error: null },
+  status: { data: [] as unknown[], count: 0 as number | null, error: null as { code: string } | null },
+  abandoned: { data: [] as unknown[], count: 0 as number | null, error: null },
   /** Every query: its table and the calls made on it. */
   queries: [] as { table: string; calls: unknown[][] }[],
   signed: [] as string[][],
@@ -37,11 +39,16 @@ vi.mock('@/lib/supabase/server', () => ({
     from(table: string) {
       const query = { table, calls: [] as unknown[][] };
       db.queries.push(query);
-      const answer = (): Answer => (table === 'asset_usage' ? db.usage : query.calls.some((c) => c[0] === 'eq' && c[1] === 'id') ? db.file : db.list);
+      const answer = (): Answer => {
+        if (table === 'asset_usage') return db.usage;
+        if (table === 'publication_status') return db.status;
+        if (table === 'entry_list') return db.abandoned;
+        return query.calls.some((c) => c[0] === 'eq' && c[1] === 'id') ? db.file : db.list;
+      };
       const chain: Record<string, unknown> = {
         then: (resolve: (a: Answer) => unknown, reject: (e: unknown) => unknown) => Promise.resolve(answer()).then(resolve, reject),
       };
-      for (const method of ['select', 'eq', 'is', 'ilike', 'order', 'in', 'range']) {
+      for (const method of ['select', 'eq', 'is', 'not', 'limit', 'ilike', 'order', 'in', 'range']) {
         chain[method] = (...args: unknown[]) => (query.calls.push([method, ...args]), chain);
       }
       chain.maybeSingle = async () => (query.calls.push(['maybeSingle']), answer());
@@ -84,6 +91,8 @@ beforeEach(() => {
   db.list = { data: [row(1), row(2, { default_alt: 'Brauð', thumb_path: null })], error: null };
   db.file = { data: null, error: null };
   db.usage = { data: [], error: null };
+  db.status = { data: [], count: 0, error: null };
+  db.abandoned = { data: [], count: 0, error: null };
   db.queries = [];
   db.signed = [];
 });
@@ -180,6 +189,46 @@ describe('the library page', () => {
     expect(html).toContain(`href="/t/acme/news/${ENTRY}"`);
     expect(html).toContain(t.library.detail.nextPublish);
     expect(html).toContain(`href="/t/acme/assets/${FILE}/original"`);
+    // The entry has no publish request on record: nothing proves it live, so the pill never says so (§7.4).
+    expect(html).not.toContain(t.library.usage.live);
+  });
+
+  it('labels a file\'s use "on the site" only for an entry whose publish is confirmed live, and reads the proof as the overview does', async () => {
+    db.file = { data: { ...row(1), id: FILE, focal_x: null, focal_y: null, caption: null, credit: null }, error: null };
+    db.usage = { data: [{ entry_id: ENTRY, type: 'news', title: 'Ný frétt', in_draft: false, in_published: true }], error: null };
+    const publish = {
+      entry_id: ENTRY,
+      action: 'publish',
+      status: 'committed',
+      requested_at: '2026-11-01T10:00:00Z',
+      release_status: 'delivered',
+      omitted: false,
+      site_count: 1,
+      sites_notified: 1,
+      sites_live_ok: 0,
+      sites_not_confirmed: 0,
+      retries_exhausted: false,
+      live_retrying: false,
+      latest_action: 'publish',
+      nothing_checked: false,
+    };
+    // Committed and delivered, the live check still running.
+    db.status = { data: [publish], count: 1, error: null };
+    let html = await render({ file: FILE });
+    expect(html).toContain(t.publish.revalidated);
+    expect(html).not.toContain(t.library.usage.live);
+    expect(db.queries.some((q) => q.table === 'publication_status' && q.calls.some((c) => c[0] === 'eq' && c[1] === 'tenant_id' && c[2] === TENANT.id))).toBe(true);
+
+    // The status read failed: never "on the site".
+    db.status = { data: null as unknown as unknown[], count: null, error: { code: '57014' } };
+    html = await render({ file: FILE });
+    expect(html).not.toContain(t.library.usage.live);
+    expect(html).toContain(t.library.detail.nextPublish);
+
+    // Every site confirmed.
+    db.status = { data: [{ ...publish, sites_live_ok: 1 }], count: 1, error: null };
+    html = await render({ file: FILE });
+    expect(html).toContain(t.library.usage.live);
   });
 
   it('shows no panel for a file it cannot find, and throws a database error with its code only', async () => {

@@ -53,10 +53,3 @@ const KIND_LABELS: Record<string, string> = { 'image/jpeg': 'JPEG', 'image/png':
 
 /** A file's type as editors know it ("JPEG"); an unknown type as itself. */
 export const kindLabel = (mime: string): string => KIND_LABELS[mime] ?? mime;
-
-/**
- * An entry's use of a file, as one pill: "Á vefnum" when its published revision uses the file
- * (whatever the draft does), else "Í uppkasti".
- */
-export const usageState = ({ in_published }: { in_draft: boolean; in_published: boolean }): { label: string; tone: BadgeTone } =>
-  in_published ? { label: t.library.usage.live, tone: 'ok' } : { label: t.library.usage.draft, tone: 'neutral' };

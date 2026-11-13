@@ -68,6 +68,35 @@ const count = (query: Query): Promise<Read<number>> =>
 const mapRead = <T, U>(read: Read<T>, fn: (value: T) => U): Read<U> => (read.ok ? { ok: true, value: fn(read.value) } : read);
 
 /**
+ * No status filter, ever: the view has already picked each entry's latest request, so a filter
+ * here does not fall back to an older one. It loses the entry, and with it the failure (§7.4).
+ */
+const readStatusRows = (client: SupabaseClient, tenantId: string): Promise<Read<OverviewStatusRow[]>> =>
+  allRows<OverviewStatusRow>(client.from('publication_status').select(OVERVIEW_STATUS_COLUMNS, { count: 'exact' }).eq('tenant_id', tenantId).limit(MAX_ROWS));
+
+/** The entries archived without ever being published (`summarizeStatus`'s `abandoned`). */
+const readAbandoned = (client: SupabaseClient, tenantId: string): Promise<Read<{ id: string }[]>> =>
+  allRows<{ id: string }>(
+    client.from('entry_list').select('id', { count: 'exact' }).eq('tenant_id', tenantId).not('archived_at', 'is', null).is('first_published_at', null).limit(MAX_ROWS),
+  );
+
+/** The rows mean what they say only with both reads, so either one failing closes the status. */
+function summarizeReads(status: Read<OverviewStatusRow[]>, abandoned: Read<{ id: string }[]>): Read<StatusSummary> {
+  const abandonedIds = mapRead(abandoned, (found) => new Set(found.map((row) => row.id)));
+  return abandonedIds.ok ? mapRead(status, (found) => summarizeStatus(found, abandonedIds.value)) : abandonedIds;
+}
+
+/**
+ * What proves an entry live (§7.4), as the overview reads it: `proven` holds the entries whose
+ * latest publish every active site confirmed. A failed or capped read is a failure the caller
+ * treats as "nothing proven", never as a smaller set.
+ */
+export async function loadPublishProof(client: SupabaseClient, tenantId: string): Promise<Read<StatusSummary>> {
+  const [status, abandoned] = await Promise.all([readStatusRows(client, tenantId), readAbandoned(client, tenantId)]);
+  return summarizeReads(status, abandoned);
+}
+
+/**
  * Everything the tenant home's overview shows, read in parallel under the editor's own session
  * (§4.5): RLS decides the rows, and every read is also scoped to the tenant. Each read fails on its
  * own into a result the page can show. No read selects `slug`, `data` or a column it does not use.
@@ -115,10 +144,8 @@ export async function loadTenantOverview(
     allRows<{ id: string }>(
       entries().select('id', { count: 'exact' }).eq('tenant_id', tenantId).eq('status', 'changed').order('updated_at', { ascending: false }).limit(MAX_ROWS),
     ),
-    // No status filter, ever: the view has already picked each entry's latest request, so a filter
-    // here does not fall back to an older one. It loses the entry, and with it the failure (§7.4).
-    allRows<OverviewStatusRow>(client.from('publication_status').select(OVERVIEW_STATUS_COLUMNS, { count: 'exact' }).eq('tenant_id', tenantId).limit(MAX_ROWS)),
-    allRows<{ id: string }>(entries().select('id', { count: 'exact' }).eq('tenant_id', tenantId).not('archived_at', 'is', null).is('first_published_at', null).limit(MAX_ROWS)),
+    readStatusRows(client, tenantId),
+    readAbandoned(client, tenantId),
     Promise.all(list.map(readCount)),
     singletons.length === 0
       ? ({ ok: true, value: [] } satisfies Read<OverviewEntry[]>)
@@ -135,9 +162,7 @@ export async function loadTenantOverview(
     showWaiting ? null : readRecent(),
   ]);
 
-  // The rows mean what they say only with both reads, so either one failing closes the status.
-  const abandonedIds = mapRead(abandoned, (found) => new Set(found.map((row) => row.id)));
-  const summary = abandonedIds.ok ? mapRead(status, (found) => summarizeStatus(found, abandonedIds.value)) : abandonedIds;
+  const summary = summarizeReads(status, abandoned);
   const changedIds = mapRead(changed, (found) => found.map((row) => row.id));
   const bandReads = { site, changed: changedIds, status: summary };
   const waiting = changedIds.ok && summary.ok ? waitingIds(changedIds.value, summary.value) : [];

@@ -15,10 +15,23 @@ State checked at the source before starting: the eight PRs' heads, passes and CI
 
 | Lane | How | State |
 |---|---|---|
-| WP1 | workflow `wf_82725fc6-418` (`workflows/land-track-a.js`) | integrating; holds both stacks |
+| WP1 | workflow `wf_82725fc6-418` | **Merged:** PR #83 at `3047987`, merge commit `702899f`. `Review: PASS` on that head by the quality reviewer; spec and security passes on `dc6d338` (the one later commit changes three browser specs only). CI green; browser suite 104 passed, 0 failed, `manual-order.spec.ts` included; upgrade rehearsal passed (four migrations in about 49 ms, no lock wait, old worker delivered on the new database, old rows intact). #73 and #76–#82 show as merged |
+| WP2 | the coordinator, by the plan's steps | **Deployed 2026-11-13.** Dry-run listed exactly the four files, no drops; `db push` applied them; `migration list` shows 50 of 50 matched; `production` fast-forwarded `b8c702c..702899f`. Checked: `vefstjorn` and `vefstjorn-demo` Ready on `702899f`; production still holds 2 tenants, 54 entries, 9 assets, 56 releases, new columns all null; LABAK's site answers 200; security advisors show one warning (leaked-password protection off), nothing from these migrations. A publish on `demo` reached Live: Einar, 2026-11-13, "It reached Live". WP2 is done; it runs once more, with no migration, for the module |
+| After landing | workflow `wf_19fbdc34-1ec` | Done. **#84 merged** (`5abd99a`): the library shows „Á vefnum" only once a publish is confirmed live; no new strings; reviewer pass and CI on `6e48aab`. Not yet on production. **PR #71** was brought onto `main` (`4c05f73`), reviewed PASS and CI green, but the reviewer's comment was refused by a permission check, so it is not merged; the next workflow has a reviewer post it. **WP5, first rehearsal:** see below |
+| Import fix | workflow `wf_b5edaa02-e89` | Running: the import applies manual order and makes thumbnails (branch `feat/import-order-and-thumbnails`; combined review, security review, CI); PR #71 onto `main` again and its pass posted; the rehearsal repeated on slot 2 with the fix; then WP4 part 2 and its parity review |
 | WP4, part 1 | workflow `wf_d9981869-aa7`; brief in the DLD workspace, `metaprompts/active/2026-11-13-cms-source-tier2.md` | **Built and passed** a quality review at `4a8ade6` on `cms/integration` (checked: pushed, `dld-is` `main` untouched at `13f1df0`). The default build is still today's 64 pages. Part 2 waits for WP1, WP3 and WP5 |
 | WP7, batch 1 | the same workflow | **Approved by Einar (E1), 2026-11-13:** [copy-batch-1.md](copy-batch-1.md), 114 new strings, 1 changed, 3 that need a decision. Its strings file is identical to `integration/track-a`'s at `dc6d338` (checked by the coordinator) |
 | WP3 | workflow `wf_f9bf27b4-089` | **Built and passed** at `a05625d` (PR #71, still a draft; `Review: PASS` posted by the reviewer). It carries `integration/track-a` by merge; it is merged after WP1 lands, once brought up to date. The model needed no core change |
+
+**WP5, first rehearsal (slot 2, 2026-11-13).** Everything held but the order.
+
+- Tenant `dld` locally: 40 projects, 18 news posts, 2 people, `home`, `contact`, all 62 published; the comparison report shows 0 differences; a second run wrote nothing; with no site connected every entry ends at „Enginn vefur tengdur".
+- **227 library files, not 228** (106 MB). 235 image uses; three groups of seven byte-identical Braggi photographs become three files; plus the hero JPEG and two portraits. PLAN.md's "228 images" is the count of project and news image uses.
+- **Time:** 21 min 40 s in all, 22 sweeps (three publish requests per sweep, one sweep a minute, as on production). Uploading and registering 227 files took about 6 s locally; hosted storage is still unmeasured.
+- **Defect, platform:** the import applied no manual order, so projects and people were delivered reversed, and it made no thumbnails (63 appeared on first view). Both predate A12 and L2 landing. Being fixed in the import command, generically; the rehearsal is repeated with the fix before E4.
+- **Runbook §9 gaps** (fixed in the same PR): the local env file needs the publishable key for `import`; locally nothing calls the sweep.
+- **The converter moved** to `bb5650f` on `cms/converter` (videos in the Hub's video shape; caption and credit carried). Not reviewed.
+- Minor, module: the `home` singleton shows „Án titils" on the dashboard (its preview title is a list).
 
 **Coordinator's choices, 2026-11-13:**
 - WP4 runs in two parts. Part 1 adds the CMS source beside the site's own content source, chosen by the SDK's environment variables, so the default build stays today's 64 pages. Part 2 (after WP3 and WP5) re-vendors from merged `main`, proves parity against the local tenant and removes the old content files.
@@ -30,7 +43,7 @@ State checked at the source before starting: the eight PRs' heads, passes and CI
 
 ## Where every piece stands (2026-11-12, 23:45)
 
-**Merged to `main`** (none of it is on production yet; `production` is at `b8c702c`):
+**Merged to `main`** (on production since 2026-11-13; `production` = `main` = `702899f`):
 
 | PR | What |
 |---|---|
@@ -40,7 +53,7 @@ State checked at the source before starting: the eight PRs' heads, passes and CI
 | #75 | A2: the generic `import` command, with its plan `docs/plans/import.md` |
 | #70 | A11: the `video` field kind; SDK 0.2.1 |
 
-**Built, reviewed and green, not merged** (workflow `wf_cbbad69a-75a`, finished 23:30). Checked at the source by the coordinator: each has `Review: PASS` on its exact head from a reviewer agent, CI green, and GitHub reports it mergeable.
+**Landed together as PR #83 on 2026-11-13** (built by workflow `wf_cbbad69a-75a`, finished 23:30). Checked at the source by the coordinator: each has `Review: PASS` on its exact head from a reviewer agent, CI green, and GitHub reports it mergeable.
 
 | PR | What | Head | Migration |
 |---|---|---|---|
@@ -49,7 +62,7 @@ State checked at the source before starting: the eight PRs' heads, passes and CI
 | #81 | Library L4 + L5: the library page, several files per upload (stacked on #78) | `8c38170` | none |
 | #82 | Library L6: choose from the library, pick many into a list (stacked on #81) | `922ef79` | none |
 | #76 | Library L3: caption and credit reach the site; SDK 0.2.2 | `4ff5d03` | `20261112210000_media_library_delivery.sql` |
-| #79 | A7: live confirmation for content with no page of its own | `474dc48` | `20261112210000_nothing_checked.sql` |
+| #79 | A7: live confirmation for content with no page of its own | `474dc48` | `20261112220000_nothing_checked.sql` (renumbered on the integration branch) |
 | #77 | A12: manual ordering of entries | `78b7ccb` | `20261112230000_manual_order.sql` |
 | #80 | A4: rehearse a tenant on a local stack, images included; rich-text 0.2.1 | `411ef5d` | none |
 
