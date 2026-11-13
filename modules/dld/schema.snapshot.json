@@ -1,0 +1,340 @@
+{
+  "tenant": "dld",
+  "types": {
+    "contact": {
+      "version": 1,
+      "transforms": [],
+      "fields": {
+        "email": {
+          "kind": "text",
+          "required": true,
+          "max": 200,
+          "multiline": false
+        },
+        "phone": {
+          "kind": "text",
+          "required": false,
+          "max": 40,
+          "multiline": false
+        },
+        "address": {
+          "kind": "group",
+          "required": false,
+          "fields": {
+            "line1": {
+              "kind": "text",
+              "required": true,
+              "max": 120,
+              "multiline": false
+            },
+            "line2": {
+              "kind": "text",
+              "required": false,
+              "max": 120,
+              "multiline": false
+            }
+          }
+        },
+        "mapUrl": {
+          "kind": "link",
+          "required": false,
+          "entryTypes": null
+        },
+        "socials": {
+          "kind": "list",
+          "required": false,
+          "max": 8,
+          "of": {
+            "kind": "group",
+            "required": false,
+            "fields": {
+              "label": {
+                "kind": "text",
+                "required": true,
+                "max": 40,
+                "multiline": false
+              },
+              "url": {
+                "kind": "link",
+                "required": true,
+                "entryTypes": null
+              }
+            }
+          }
+        },
+        "footerText": {
+          "kind": "text",
+          "required": false,
+          "max": 200,
+          "multiline": false
+        }
+      },
+      "retired": {}
+    },
+    "home": {
+      "version": 1,
+      "transforms": [],
+      "fields": {
+        "slides": {
+          "kind": "list",
+          "required": false,
+          "min": 1,
+          "max": 8,
+          "of": {
+            "kind": "image",
+            "required": false
+          }
+        },
+        "featured": {
+          "kind": "list",
+          "required": false,
+          "max": 6,
+          "of": {
+            "kind": "reference",
+            "required": false,
+            "to": [
+              "project"
+            ]
+          }
+        },
+        "slogans": {
+          "kind": "list",
+          "required": false,
+          "max": 12,
+          "of": {
+            "kind": "text",
+            "required": false,
+            "max": 120,
+            "multiline": false
+          }
+        }
+      },
+      "retired": {}
+    },
+    "news": {
+      "version": 1,
+      "transforms": [],
+      "fields": {
+        "title": {
+          "kind": "text",
+          "required": true,
+          "max": 200,
+          "multiline": false
+        },
+        "date": {
+          "kind": "date",
+          "required": true
+        },
+        "kind": {
+          "kind": "select",
+          "required": true,
+          "values": [
+            "frett",
+            "jolakvedja"
+          ]
+        },
+        "image": {
+          "kind": "image",
+          "required": true
+        },
+        "gallery": {
+          "kind": "list",
+          "required": false,
+          "max": 20,
+          "of": {
+            "kind": "image",
+            "required": false
+          }
+        },
+        "body": {
+          "kind": "richText",
+          "required": false
+        },
+        "relatedProject": {
+          "kind": "reference",
+          "required": false,
+          "to": [
+            "project"
+          ]
+        },
+        "videos": {
+          "kind": "list",
+          "required": false,
+          "max": 6,
+          "of": {
+            "kind": "video",
+            "required": false,
+            "still": "required"
+          }
+        }
+      },
+      "retired": {}
+    },
+    "person": {
+      "version": 1,
+      "transforms": [],
+      "fields": {
+        "name": {
+          "kind": "text",
+          "required": true,
+          "max": 120,
+          "multiline": false
+        },
+        "jobTitle": {
+          "kind": "text",
+          "required": true,
+          "max": 120,
+          "multiline": false
+        },
+        "role": {
+          "kind": "text",
+          "required": false,
+          "max": 200,
+          "multiline": false
+        },
+        "email": {
+          "kind": "text",
+          "required": false,
+          "max": 200,
+          "multiline": false
+        },
+        "portrait": {
+          "kind": "image",
+          "required": true
+        },
+        "bio": {
+          "kind": "list",
+          "required": false,
+          "max": 6,
+          "of": {
+            "kind": "group",
+            "required": false,
+            "fields": {
+              "heading": {
+                "kind": "text",
+                "required": true,
+                "max": 80,
+                "multiline": false
+              },
+              "items": {
+                "kind": "list",
+                "required": false,
+                "max": 20,
+                "of": {
+                  "kind": "text",
+                  "required": false,
+                  "max": 300,
+                  "multiline": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "retired": {}
+    },
+    "project": {
+      "version": 1,
+      "transforms": [],
+      "fields": {
+        "title": {
+          "kind": "text",
+          "required": true,
+          "max": 120,
+          "multiline": false
+        },
+        "categories": {
+          "kind": "list",
+          "required": false,
+          "max": 7,
+          "of": {
+            "kind": "select",
+            "required": false,
+            "values": [
+              "fraedsluefni",
+              "honnun",
+              "samkeppnir",
+              "skipulag-utivist",
+              "voruhonnun",
+              "thatttokuhonnun",
+              "throunarverkefni"
+            ]
+          }
+        },
+        "images": {
+          "kind": "list",
+          "required": true,
+          "min": 1,
+          "max": 40,
+          "of": {
+            "kind": "image",
+            "required": false
+          }
+        },
+        "body": {
+          "kind": "richText",
+          "required": false
+        },
+        "facts": {
+          "kind": "group",
+          "required": false,
+          "fields": {
+            "client": {
+              "kind": "text",
+              "required": false,
+              "max": 300,
+              "multiline": false
+            },
+            "year": {
+              "kind": "text",
+              "required": false,
+              "max": 300,
+              "multiline": false
+            },
+            "contractors": {
+              "kind": "text",
+              "required": false,
+              "max": 300,
+              "multiline": false
+            },
+            "collaborators": {
+              "kind": "text",
+              "required": false,
+              "max": 300,
+              "multiline": false
+            },
+            "location": {
+              "kind": "text",
+              "required": false,
+              "max": 300,
+              "multiline": false
+            },
+            "role": {
+              "kind": "text",
+              "required": false,
+              "max": 300,
+              "multiline": false
+            },
+            "award": {
+              "kind": "text",
+              "required": false,
+              "max": 300,
+              "multiline": false
+            }
+          }
+        },
+        "videos": {
+          "kind": "list",
+          "required": false,
+          "max": 6,
+          "of": {
+            "kind": "video",
+            "required": false,
+            "still": "required"
+          }
+        }
+      },
+      "retired": {}
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "email": "daemi@example.is",
+  "phone": "000 0000",
+  "address": { "line1": "Dæmigata 1", "line2": "100 Dæmabær" },
+  "mapUrl": { "href": "https://maps.example.is/daemi" },
+  "socials": [{ "_key": "k1", "value": { "label": "Dæmi", "url": { "href": "https://example.is/daemi" } } }],
+  "footerText": "Dæmi um fótatexta"
+}
