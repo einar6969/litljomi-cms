@@ -9,6 +9,25 @@ The living record of onboarding DLD (Dagný Land Design) as a tenant. A later se
 | Next action | **[PLAN.md](PLAN.md), work package WP1**, with WP3, WP4 and the first copy batch alongside. PLAN.md says what to do; this file says what is true |
 | How agents run | Models sized to the task. Briefs point at `docs/agents/CONTEXT.md` and `AGENT-CONTEXT.md` here. Parallel lanes run as workflow scripts. **Every pass on a final head is posted by a reviewer agent, never by the coordinator**; the coordinator merges |
 
+## Running now (2026-11-13, new coordinator session)
+
+State checked at the source before starting: the eight PRs' heads, passes and CI match the table below; `main` = `8676235`, `production` = `b8c702c`; `cms/integration` = `d604687`, `cms/converter` = `aef0cd1`; 7.3 GB free; Docker up, no stack running.
+
+| Lane | How | State |
+|---|---|---|
+| WP1 | workflow `wf_82725fc6-418` (`workflows/land-track-a.js`) | integrating; holds both stacks |
+| WP4, part 1 | workflow `wf_d9981869-aa7`; brief in the DLD workspace, `metaprompts/active/2026-11-13-cms-source-tier2.md` | **Built and passed** a quality review at `4a8ade6` on `cms/integration` (checked: pushed, `dld-is` `main` untouched at `13f1df0`). The default build is still today's 64 pages. Part 2 waits for WP1, WP3 and WP5 |
+| WP7, batch 1 | the same workflow | **Approved by Einar (E1), 2026-11-13:** [copy-batch-1.md](copy-batch-1.md), 114 new strings, 1 changed, 3 that need a decision. Its strings file is identical to `integration/track-a`'s at `dc6d338` (checked by the coordinator) |
+| WP3 | workflow `wf_f9bf27b4-089` | **Built and passed** at `a05625d` (PR #71, still a draft; `Review: PASS` posted by the reviewer). It carries `integration/track-a` by merge; it is merged after WP1 lands, once brought up to date. The model needed no core change |
+
+**Coordinator's choices, 2026-11-13:**
+- WP4 runs in two parts. Part 1 adds the CMS source beside the site's own content source, chosen by the SDK's environment variables, so the default build stays today's 64 pages. Part 2 (after WP3 and WP5) re-vendors from merged `main`, proves parity against the local tenant and removes the old content files.
+- WP3 waits for the pushed integration branch rather than building on a private merge of A7 and A12.
+- The site, part 1 (`4a8ade6`): new entries appear without a rebuild and an unknown address keeps the real 404 through a proxy on `/verk/:slug` and `/frettir/:slug` that reads a cached list of published slugs. It costs one subrequest per project or post view. Kept for now; measured on Vercel in part 2 before it is relied on.
+- Owed to Einar from part 1: where a video sits on a page (the builder put it after the text; the content model says "fixed position" and names none). The reviewer's nine minors go into part 2's brief.
+- `modules/dld`: a video's still image is required (`video({ still: 'required' })`). The content model is silent; it says to set limits on the tight side, loosening later is free, and the site's video block needs a poster.
+- Labels the content model does not give (item labels such as „Mynd", „Myndband", „Hluti"; group members such as „Lína 1", „Heiti", „Fyrirsögn") were written by the module's builder and go to Einar in copy batch 2 with the rest.
+
 ## Where every piece stands (2026-11-12, 23:45)
 
 **Merged to `main`** (none of it is on production yet; `production` is at `b8c702c`):
@@ -219,10 +238,17 @@ Asked "Do production deploys stay with you, as the plan has it?", Einar: "**Coor
 - Checked the same day: `supabase db push --dry-run` runs from the Hub checkout without a typed password, and lists one pending migration (L1's, on `main` since #74).
 - Unchanged: the three destructive Supabase commands, and every key and secret, stay Einar's.
 
+### 2026-11-13: copy batch 1 (E1)
+
+Asked "Do you approve copy batch 1, with your corrections?", Einar: "**Approve as written**".
+
+- Every string in [copy-batch-1.md](copy-batch-1.md) is approved as it stands in `is.ts` on `integration/track-a` (`dc6d338`), "Hlaða upp mynd" included. No corrections PR.
+- The coordinator's reading: the three strings listed under "need a decision" (`picker.confirmMany`, `upload.progress`, `editor.list.noRoom`) are approved as written too; the suggested forms are not applied. They stay recorded there should he want them later.
+
 ### Gates still ahead, each needing Einar
 
 - Track B rows, whenever he wants them ([ENHANCEMENTS.md](ENHANCEMENTS.md)).
-- His steps in [PLAN.md](PLAN.md): copy batch 1 (E1), the tenant (E3), the import (E4), connecting the site (E5), copy batch 2 and the handbook (E6), inviting editors (E7).
+- His steps in [PLAN.md](PLAN.md): the tenant (E3), the import (E4), connecting the site (E5), copy batch 2 and the handbook (E6), inviting editors (E7).
 - The switch to `dld.is`, whenever he wants it.
 
 ## Open questions
