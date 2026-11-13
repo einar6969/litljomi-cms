@@ -52,6 +52,10 @@ State checked at the source before starting: the eight PRs' heads, passes and CI
 - Not verified: anything on Vercel; the pages by eye with images from the media host (Einar's look). The vendored SDK's recorded source commit is a local merge; it is re-packed from `main` `810d4ba` before E5.
 - A post with no project gets no warning: the bundle delivers "no project" and "project unpublished" alike as null.
 
+**E3 done by Einar, 2026-11-13.** Tenant `dld` is on production: `a98c9da1-8c8e-45cc-ac96-03c016af94ef`. Its one editor is Einar's existing account. A first invitation went to a mistyped address; its membership was removed the same minute and checked on production (no membership, invitation never accepted). That unused Auth account still exists; deleting it is Einar's call. The import's dry run on production's manifest: no problems.
+
+**WP7, batch 2, ready for E6:** [copy-batch-2.md](copy-batch-2.md), 73 strings (56 from the content model, 17 builder-written), 12 points that need a decision. The handbook draft is in the DLD workspace, `drafts/2026-11-13-handbok-vefstjorn-DRAFT.md`, with 13 open questions and 12 items marked unconfirmed. The site's vendored packages now record Hub `main` (`cms/integration` = `2007fd7`; contents byte-identical).
+
 **Coordinator's choices, 2026-11-13:**
 - WP4 runs in two parts. Part 1 adds the CMS source beside the site's own content source, chosen by the SDK's environment variables, so the default build stays today's 64 pages. Part 2 (after WP3 and WP5) re-vendors from merged `main`, proves parity against the local tenant and removes the old content files.
 - WP3 waits for the pushed integration branch rather than building on a private merge of A7 and A12.
