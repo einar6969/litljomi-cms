@@ -119,6 +119,8 @@ test('a manually ordered list: newest first, moved by button, key and drag at 14
     await page.mouse.move(to.x + to.width / 4, to.y + to.height / 4, { steps: 8 });
     await page.mouse.up();
     await expect.poll(() => titles(page)).toEqual([a, b, c]);
+    // Wait for the save before reloading, as every other move does: a reload races the request.
+    await expect(page.getByTestId('order-status')).toHaveText(label(o.moved, a).replace('{n}', '1').replace('{total}', '3'), SAVED);
     await reload(page, a);
     await expect.poll(() => titles(page)).toEqual([a, b, c]);
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -131,7 +133,8 @@ test('a manually ordered list: newest first, moved by button, key and drag at 14
     const listPage = (url: URL) => url.pathname === '/t/demo/partner';
     await page.route(listPage, (route) => (route.request().method() === 'POST' ? route.abort('failed') : route.continue()));
     await page.getByRole('button', { name: label(o.moveDown, a), exact: true }).click();
-    await expect(page.getByRole('alert')).toHaveText(o.failed, SAVED);
+    // Within main: Next's route announcer is a role=alert too.
+    await expect(page.getByRole('main').getByRole('alert')).toHaveText(o.failed, SAVED);
     await expect.poll(() => titles(page)).toEqual([a, b, c]);
     await page.unroute(listPage);
     await reload(page, a);

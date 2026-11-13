@@ -87,8 +87,9 @@ test('a singleton shown on a shared page: publish and withdrawal confirmed there
   expect((await sitePage('/events')).html).not.toContain(draft);
 
   // Unpublish: confirmed once /events answers 200 without the entry (no 404 is asked of a shared page).
+  // The draft change above is saved but not published, so the panel says so (A10), not the tick.
   await page.goto(`/t/demo/events-page/${entryId}`);
-  await expect(state(page)).toHaveText(t.publish.live, CONFIRMED);
+  await expect(state(page)).toHaveText(t.publish.changed, CONFIRMED);
   await page.getByRole('button', { name: t.publish.unpublish }).click();
   await expect(state(page)).toHaveText(t.publish.removed, CONFIRMED);
   await expect(detail(page)).toHaveText(t.publish.removedDetail);

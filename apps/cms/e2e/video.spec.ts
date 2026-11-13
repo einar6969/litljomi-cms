@@ -104,7 +104,7 @@ test('a video in a list in a group: address recognised, title and still, autosav
       id: YT,
       url: `https://youtu.be/${YT}`,
       title: 'Opnunin',
-      still: { id: assetId, url: stillUrl, width: expect.any(Number), height: expect.any(Number), mime: 'image/jpeg', alt: '', focal: null },
+      still: { id: assetId, url: stillUrl, width: expect.any(Number), height: expect.any(Number), mime: 'image/jpeg', alt: '', focal: null, caption: null, credit: null },
     });
     // The copy exists only because extraction found the reference at program.videos[0].value.still,
     // and the delivered address is the one a site loads.
