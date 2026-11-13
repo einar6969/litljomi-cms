@@ -23,6 +23,33 @@ const records: Array<{ id: string; slug: string; sortAt: string; data: Record<st
       location: 'Reykjavík',
       description: paragraph('Allir velkomnir.'),
       registration: { href: 'https://example.is/skraning' },
+      // Media library L3: a video whose still carries its file's caption and credit.
+      program: {
+        intro: null,
+        highlights: null,
+        videos: [
+          {
+            _key: 'k1',
+            value: {
+              provider: 'youtube',
+              id: 'dQw4w9WgXcQ',
+              url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+              title: 'Upptaka frá opnun',
+              still: {
+                id: '33333333-3333-4333-8333-333333333333',
+                url: 'https://media.example.test/storage/v1/object/public/media-public/demo/33333333-3333-4333-8333-333333333333/opnun.jpg',
+                width: 1600,
+                height: 900,
+                mime: 'image/jpeg',
+                alt: 'Kyrrmynd úr upptökunni',
+                focal: null,
+                caption: 'Gestir við opnun',
+                credit: 'Anna Önnudóttir',
+              },
+            },
+          },
+        ],
+      },
     },
   },
   {

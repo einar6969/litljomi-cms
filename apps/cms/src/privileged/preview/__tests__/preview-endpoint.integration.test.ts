@@ -208,6 +208,18 @@ describe('preview endpoint: the overlay (§7.5)', () => {
     expect(url).toContain(`/storage/v1/object/sign/media-private/${TENANT.labak}/${image}/mynd.jpg?token=`);
   });
 
+  // Media library L3: preview projects like a release (§7.5), so a draft's image carries its file's
+  // caption and credit as the editor set them, before anything is published.
+  it("the draft's image carries its file's caption and credit", async () => {
+    const image = await labakAsset();
+    await rpc(editor, 'update_asset_text', { p_asset_id: image, p_default_alt: null, p_caption: 'Kanilsnúðar á bakka', p_credit: 'Anna Önnudóttir' });
+    const c = await newEntry(editor, 'labak', news(image, 'D myndatexti'));
+    const res = await get('labak', await token(editor, 'labak', c));
+    expect(res.status).toBe(200);
+    const previewed = entriesOf((await res.json()) as PreviewBundle).find((e) => e.id === c)!;
+    expect(previewed.data.image).toMatchObject({ id: image, alt: 'Brauð', caption: 'Kanilsnúðar á bakka', credit: 'Anna Önnudóttir' });
+  });
+
   it('a draft that was never published is added to its type', async () => {
     const c = await newEntry(editor, 'labak', news(await labakAsset(), 'C nýtt'));
     const res = await get('labak', await token(editor, 'labak', c));

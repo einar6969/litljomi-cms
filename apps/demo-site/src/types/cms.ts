@@ -11,6 +11,10 @@ export interface PublicAsset {
   alt: string;
   /** Null when none is set; absent in a bundle written before focal points were delivered. */
   focal?: { x: number; y: number } | null;
+  /** The file's caption, the same with every use; null when it has none, absent in an older bundle. */
+  caption?: string | null;
+  /** The file's credit (photographer or source); null when it has none, absent in an older bundle. */
+  credit?: string | null;
 }
 
 export interface EntrySummary {

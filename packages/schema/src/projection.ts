@@ -2,7 +2,11 @@ import type { z } from 'zod';
 import { canonicalHttpsUrl, isRootRelativePath } from '@litljomi/rich-text';
 import type { AnyFieldKind, ContentType } from './define-type.ts';
 
-/** An asset as delivered to sites (spec §7.1). */
+/**
+ * An asset as delivered to sites (spec §7.1). `caption` and `credit` are the file's own (the media
+ * library, plan L3): the same with every use of the file, null when it has none. The site types
+ * (codegen, the SDK) mark them and `focal` optional, because an older bundle lacks them.
+ */
 export interface PublicAsset {
   id: string;
   url: string;
@@ -11,6 +15,8 @@ export interface PublicAsset {
   mime: string;
   alt: string;
   focal: { x: number; y: number } | null;
+  caption: string | null;
+  credit: string | null;
 }
 
 /** A referenced entry as delivered to sites (spec §4.3, §7.1). */
@@ -38,10 +44,13 @@ export interface ProjectionContext {
   entry(id: string): EntrySummary | null;
 }
 
+const textOrNull = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+
 /**
  * Asset lookup with the result checked: only `https:` URLs without credentials are accepted,
  * anything else counts as unresolved (null). Returns a copy with exactly the `PublicAsset` fields,
- * the URL in its canonical form (`new URL(url).href`).
+ * the URL in its canonical form (`new URL(url).href`), and a caption or credit that is not a
+ * string delivered as null, so every image carries both keys.
  */
 export function resolveAsset(ctx: ProjectionContext, id: string): PublicAsset | null {
   const a = ctx.asset(id);
@@ -55,6 +64,8 @@ export function resolveAsset(ctx: ProjectionContext, id: string): PublicAsset | 
     mime: a.mime,
     alt: a.alt,
     focal: a.focal === null ? null : { x: a.focal.x, y: a.focal.y },
+    caption: textOrNull(a.caption),
+    credit: textOrNull(a.credit),
   };
 }
 

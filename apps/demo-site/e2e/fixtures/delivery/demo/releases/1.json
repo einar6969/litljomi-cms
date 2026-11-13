@@ -8,7 +8,7 @@
       {
         "id": "11111111-1111-4111-8111-111111111111",
         "revisionId": "00000000-0000-4000-8000-000000000001",
-        "contentHash": "a3e4c568714f565da0ffbeaa85f57717ff826784015ba91e0ab03a4896e3e5be",
+        "contentHash": "4aade94a0e9f2e8d35a161929ba40143130ad8a74d5e42e1f5422cbea51a6957",
         "slug": "x",
         "title": "Opið hús",
         "sortAt": "2026-12-01",
@@ -36,6 +36,32 @@
           },
           "registration": {
             "href": "https://example.is/skraning"
+          },
+          "program": {
+            "intro": null,
+            "highlights": null,
+            "videos": [
+              {
+                "_key": "k1",
+                "value": {
+                  "provider": "youtube",
+                  "id": "dQw4w9WgXcQ",
+                  "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                  "title": "Upptaka frá opnun",
+                  "still": {
+                    "id": "33333333-3333-4333-8333-333333333333",
+                    "url": "https://media.example.test/storage/v1/object/public/media-public/demo/33333333-3333-4333-8333-333333333333/opnun.jpg",
+                    "width": 1600,
+                    "height": 900,
+                    "mime": "image/jpeg",
+                    "alt": "Kyrrmynd úr upptökunni",
+                    "focal": null,
+                    "caption": "Gestir við opnun",
+                    "credit": "Anna Önnudóttir"
+                  }
+                }
+              }
+            ]
           }
         }
       },

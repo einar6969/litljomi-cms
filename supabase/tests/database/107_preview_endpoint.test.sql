@@ -88,8 +88,9 @@ select is((select array_agg(a ->> 'id' order by a ->> 'id')
 select is((select a from jsonb_array_elements(api.worker_preview_draft(tests.tenant('labak'), tests.entry('c301')) -> 'assets') a
            where a ->> 'id' = '00000000-0000-4000-8000-00000000f302') - array['id', 'focal_x', 'focal_y', 'default_alt']::text[],
   jsonb_build_object('filename', 'b.jpg', 'mime', 'image/jpeg', 'width', 800, 'height', 600,
-                     'original_path', tests.tenant('labak') || '/00000000-0000-4000-8000-00000000f302/b.jpg', 'archived', true),
-  'an asset row: its metadata, its original''s path and whether it is archived');
+                     'original_path', tests.tenant('labak') || '/00000000-0000-4000-8000-00000000f302/b.jpg', 'archived', true,
+                     'caption', null, 'credit', null),
+  'an asset row: its metadata, its original''s path, whether it is archived, and (L3) its caption and credit');
 select is((api.worker_preview_draft(tests.tenant('labak'), tests.entry('c302')) #>> '{entry,archived}')::boolean, true,
   'an archived entry says so (the endpoint refuses it)');
 select is(api.worker_preview_draft(tests.tenant('demo'), tests.entry('c301')), null::jsonb,

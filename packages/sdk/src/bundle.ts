@@ -37,8 +37,10 @@ export interface FocalPoint {
 
 /**
  * An image field's value in `data` (spec §5.6, §7.1): the public copy with this use's alt text.
- * `focal` is an additive field of format 1 (spec §7.2): null when the editor set none, and
- * absent in a bundle written before it was delivered, so read it as optional.
+ * `focal`, `caption` and `credit` are additive fields of format 1 (spec §7.2): null when the file
+ * has none, and absent in a bundle written before each was delivered, so read them as optional.
+ * The caption and the credit (photographer or source) are the file's own, the same with every
+ * use; the alt text is the use's.
  */
 export interface PublicAsset {
   id: string;
@@ -48,6 +50,8 @@ export interface PublicAsset {
   mime: string;
   alt: string;
   focal?: FocalPoint | null;
+  caption?: string | null;
+  credit?: string | null;
 }
 
 /** A referenced entry in `data` (spec §4.3, §7.1); null in place of one that is not published. */
