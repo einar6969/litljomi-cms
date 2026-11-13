@@ -119,6 +119,13 @@ const importDeps: Omit<ImportDeps, 'loadModule'> = {
     const { default: sharp } = await import('sharp');
     return sharp(bytes).metadata();
   }),
+  // L2's thumbnail maker, the very code an editor's upload runs (no copy), loaded with sharp only
+  // when `import` makes a thumbnail.
+  thumbnail: async (bytes, tenantId, assetId) => {
+    const maker = await import('../../../apps/cms/src/editor/server/thumbnail-maker.ts');
+    const made = await maker.makeThumbnail(bytes);
+    return made === null ? null : { bytes: made, path: maker.thumbnailPath(tenantId, assetId) };
+  },
   now: () => Date.now(),
   sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
 };

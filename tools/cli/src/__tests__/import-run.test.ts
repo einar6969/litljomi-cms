@@ -1,7 +1,7 @@
 // The writing run and the report (docs/plans/import.md sections 2.2 to 2.7 and 3), against an
 // in-memory Hub over HTTP: a full run, a second run that creates nothing, a run killed after every
-// call and resumed, an editor's save before publish, batch waits on a fake clock, and report
-// differences. Every run checks the section 3 rules: no secret key, no admin or worker call, no
+// call and resumed, an editor's save before publish, batch waits on a fake clock, manual order and
+// thumbnails, and report differences. Every run checks the section 3 rules: no secret key, no admin or worker call, no
 // request outside the target, no password or token in any output.
 import { afterEach, describe, expect, it } from 'vitest';
 import { runCli } from '../cli.ts';
@@ -27,6 +27,8 @@ interface World {
   writes: string[];
   password: string | null;
   sweep: boolean;
+  /** The thumbnail maker the run gets (main.ts passes L2's); none by default. */
+  thumbnail?: ImportDeps['thumbnail'];
 }
 
 interface Run {
@@ -65,6 +67,7 @@ async function run(w: World, extra: string[] = []): Promise<Run> {
     readPassword: async () => w.password,
     inspectImage: (await import('./import-fixture.ts')).fakeInspect,
     loadModule: async () => testModule,
+    ...(w.thumbnail === undefined ? {} : { thumbnail: w.thumbnail }),
     now: () => w.hub.clock,
     sleep: async (ms) => {
       w.hub.clock += ms;
@@ -78,7 +81,7 @@ async function run(w: World, extra: string[] = []): Promise<Run> {
 }
 
 const ledger = (w: World) => JSON.parse(w.files.get(LEDGER) as string) as { entries: Record<string, { id: string; savedVersion?: number }> };
-const report = (w: World) => JSON.parse(w.files.get(REPORT) as string) as { differences: { key: string; at: string; what: string; expected?: string; actual?: string }[]; unchecked: { what: string; count: number }[]; checked: { entries: number; files: number }; release: number };
+const report = (w: World) => JSON.parse(w.files.get(REPORT) as string) as { differences: { key: string; at: string; what: string; expected?: string; actual?: string }[]; unchecked: { what: string; count: number }[]; checked: { entries: number; files: number; orders: number }; release: number };
 const creates = (w: World) => w.hub.count('POST', '/rest/v1/rpc/create_entry') + w.hub.count('POST', '/rest/v1/rpc/create_singleton_entry');
 
 // Section 3, after every test: an editor only, one origin, nothing secret printed.
@@ -110,11 +113,12 @@ describe('import: a full run', () => {
     expect(r.err).toEqual([]);
     expect(r.code).toBe(0);
     const hub = w.hub;
-    // Files: derived ids, texts set, no thumbnail yet (L2).
+    // Files: derived ids, texts set; no thumbnail maker in this run (see 'import: thumbnails').
     const coverId = assetIdFor(TENANT_ID, sha(exampleMedia().files.get(`${MEDIA}/projects/harbour/01.jpg`) as Uint8Array));
     expect(hub.assets.get(coverId)).toMatchObject({ default_alt: 'The harbour path at dusk', caption: 'The new path', credit: 'Photo: A. Person', thumb_path: null });
     expect(hub.assets.size).toBe(3);
-    expect(r.text).toContain('thumbnails: 3 file(s) without one');
+    expect(r.text).toContain('thumbnails: 3 file(s) without one; the CMS makes each when an editor first views the file, where it can');
+    expect(r.text).not.toContain('comes with L2');
     // Entries: the slug as given, the derived one, and the singleton through its own function.
     const bySlug = (slug: string) => [...hub.entries.values()].find((e) => e.slug === slug);
     expect(bySlug('harbour-path')?.published_draft_version).toBe(2);
@@ -126,11 +130,12 @@ describe('import: a full run', () => {
     expect(requests[0]).toBe(bySlug('harbour-path')?.id);
     expect(requests).toHaveLength(3);
     // The report: everything compared, captions and credits too (delivered since L3), nothing
-    // different; order counted as unchecked.
+    // different; the order of the one type ordered by hand checked, nothing unchecked.
     const rep = report(w);
     expect(rep.differences).toEqual([]);
-    expect(rep.checked).toEqual({ entries: 3, files: 3 });
-    expect(rep.unchecked).toEqual([{ what: 'order: validated, not applied (manual ordering, A12, does not exist yet)', count: 1 }]);
+    expect(rep.checked).toEqual({ entries: 3, files: 3, orders: 1 });
+    expect(rep.unchecked).toEqual([]);
+    expect(r.text).not.toContain('A12');
     expect(r.text).toContain('first batch: 1 request(s), 2 new image(s), 136 bytes');
     // The ledger names ids only.
     expect(Object.keys(ledger(w).entries).sort()).toEqual(['home', 'news/opening', 'project/harbour']);
@@ -181,6 +186,25 @@ describe('import: killed after every call, then resumed', () => {
       expect(report(w).differences).toEqual([]);
     }
   }, 60_000);
+
+  it('with entries to order: in the manifest order, without duplicates, wherever the process died', async () => {
+    const reference = world((x) => threeProjects(x));
+    expect((await run(reference)).code).toBe(0);
+    const total = reference.hub.calls.length;
+    for (let n = 1; n <= total; n++) {
+      const w = world((x) => threeProjects(x));
+      w.hub.killAfter = n;
+      expect((await run(w)).code, `killed after call ${n}`).toBe(1);
+      w.hub.killAfter = null;
+      w.hub.killed = false;
+      const resumed = await run(w);
+      expect(resumed.code, `resumed after a kill at call ${n}:\n${resumed.text}`).toBe(0);
+      expect(w.hub.entries.size).toBe(5);
+      const wanted = projectIds(w, ['project/harbour', 'project/bay', 'project/cliff']);
+      expect(w.hub.deliveredOrder(w.hub.release, 'project'), `after a kill at call ${n}`).toEqual(wanted);
+      expect(report(w).differences).toEqual([]);
+    }
+  }, 120_000);
 });
 
 describe('import: someone else\'s edits are reported, not overwritten', () => {
@@ -375,6 +399,175 @@ describe('import: batches and waits', () => {
     const again = await run(w);
     expect(again.text).toContain('not retried until the manifest changes');
     expect(w.hub.count('POST', '/rest/v1/rpc/request_publish')).toBe(filed);
+  });
+});
+
+// Step 5 (import plan 2.3; A12): the types the module orders by hand are put in the manifest's order
+// through api.move_entry once the entries exist, before any publish is requested, so every release
+// lists them in that order; the report checks it.
+function threeProjects(w: World, order?: string[]): void {
+  const project = (key: string, title: string) => ({ key, slug: key.replace('project/', ''), data: { title } });
+  w.manifest.entries.project.push(project('project/bay', 'Bay'), project('project/cliff', 'Cliff'));
+  w.manifest.order = order === undefined ? {} : { project: order };
+}
+const projectIds = (w: World, keys: string[]) => keys.map((k) => ledger(w).entries[k]?.id);
+const callIndex = (w: World, path: string) => w.hub.calls.findIndex((c) => c.path === path);
+const lastCallIndex = (w: World, path: string) => w.hub.calls.map((c) => c.path).lastIndexOf(path);
+
+describe('import: manual order', () => {
+  it('puts the entries in the manifest order before anything is published, so every release lists them so', async () => {
+    const w = world((x) => threeProjects(x));
+    const r = await run(w);
+    expect(r.err).toEqual([]);
+    expect(r.code).toBe(0);
+    const wanted = projectIds(w, ['project/harbour', 'project/bay', 'project/cliff']);
+    // A new entry comes first, so the three were listed cliff, bay, harbour: two moves put them in order.
+    expect(w.hub.count('POST', '/rest/v1/rpc/move_entry')).toBe(2);
+    expect(lastCallIndex(w, '/rest/v1/rpc/move_entry')).toBeLessThan(callIndex(w, '/rest/v1/rpc/save_draft'));
+    expect(lastCallIndex(w, '/rest/v1/rpc/move_entry')).toBeLessThan(callIndex(w, '/rest/v1/rpc/request_publish'));
+    expect(w.hub.order('project')).toEqual(wanted);
+    // Every release the run built, the first included, lists the projects it holds in that order.
+    for (let n = 1; n <= w.hub.release; n++) {
+      const delivered = w.hub.deliveredOrder(n, 'project');
+      expect(delivered, `release ${n}`).toEqual(wanted.filter((id) => delivered.includes(id as string)));
+    }
+    expect(w.hub.deliveredOrder(w.hub.release, 'project')).toEqual(wanted);
+    expect(r.text).toContain('order project: 2 move(s), before anything of this run is published');
+    const rep = report(w);
+    expect(rep.differences).toEqual([]);
+    expect(rep.checked.orders).toBe(1);
+    // The moves are the editor's own function, under the editor's token.
+    for (const c of w.hub.calls.filter((x) => x.path === '/rest/v1/rpc/move_entry')) expect(c.headers.apikey).toBe(PUBLISHABLE);
+  });
+
+  it('a second run moves nothing, publishes nothing, and the report still checks the order', async () => {
+    const w = world((x) => threeProjects(x));
+    expect((await run(w)).code).toBe(0);
+    const moves = w.hub.count('POST', '/rest/v1/rpc/move_entry');
+    const requests = w.hub.count('POST', '/rest/v1/rpc/request_publish');
+    const second = await run(w);
+    expect(second.code).toBe(0);
+    expect(w.hub.count('POST', '/rest/v1/rpc/move_entry')).toBe(moves);
+    expect(w.hub.count('POST', '/rest/v1/rpc/request_publish')).toBe(requests);
+    expect(second.text).toContain("order project: already in the manifest's order; nothing moved");
+    expect(report(w).differences).toEqual([]);
+    expect(report(w).checked.orders).toBe(1);
+  });
+
+  it('follows the manifest order section: the keys it names first, then the type\'s other entries as listed', async () => {
+    const w = world((x) => threeProjects(x, ['project/cliff']));
+    expect((await run(w)).code).toBe(0);
+    expect(w.hub.order('project')).toEqual(projectIds(w, ['project/cliff', 'project/harbour', 'project/bay']));
+    expect(report(w).differences).toEqual([]);
+  });
+
+  it('never moves an entry the manifest does not name', async () => {
+    const w = world((x) => threeProjects(x));
+    const extra = w.hub.publishedExtra('project', 'extra', { title: 'Extra' });
+    expect((await run(w)).code).toBe(0);
+    const moved = w.hub.calls.filter((c) => c.path === '/rest/v1/rpc/move_entry').flatMap((c) => [(c.body as { p_entry_id: string }).p_entry_id, (c.body as { p_target_id: string }).p_target_id]);
+    expect(moved).not.toContain(extra);
+    const wanted = projectIds(w, ['project/harbour', 'project/bay', 'project/cliff']);
+    expect(w.hub.order('project').filter((id) => id !== extra)).toEqual(wanted);
+    expect(report(w).differences).toEqual([]);
+  });
+
+  it('an order already published in another way: moved, then one unchanged publish so the next release carries it', async () => {
+    const w = world((x) => threeProjects(x));
+    expect((await run(w)).code).toBe(0);
+    // As a tenant an earlier import left without an order: newest first, and so delivered.
+    w.hub.clearOrder('project');
+    w.hub.redeliver();
+    const stale = w.hub.release;
+    const wanted = projectIds(w, ['project/harbour', 'project/bay', 'project/cliff']);
+    expect(w.hub.deliveredOrder(stale, 'project')).toEqual([...wanted].reverse());
+    const requests = w.hub.count('POST', '/rest/v1/rpc/request_publish');
+    const saves = w.hub.count('POST', '/rest/v1/rpc/save_draft');
+    const r = await run(w);
+    expect(r.err).toEqual([]);
+    expect(r.code).toBe(0);
+    expect(w.hub.count('POST', '/rest/v1/rpc/move_entry')).toBeGreaterThan(2);
+    // One request, for an entry already published with the importer's data; no draft is saved.
+    expect(w.hub.count('POST', '/rest/v1/rpc/request_publish')).toBe(requests + 1);
+    expect(w.hub.count('POST', '/rest/v1/rpc/save_draft')).toBe(saves);
+    expect(r.text).toMatch(/order project: release \d+ lists it in another order than the manifest's, and this run published nothing; publishing project\/harbour again, its data unchanged/);
+    expect(w.hub.release).toBe(stale + 1);
+    expect(w.hub.deliveredOrder(w.hub.release, 'project')).toEqual(wanted);
+    expect(report(w).differences).toEqual([]);
+    // And once delivered, a further run files nothing.
+    const third = await run(w);
+    expect(third.code).toBe(0);
+    expect(w.hub.count('POST', '/rest/v1/rpc/request_publish')).toBe(requests + 1);
+  });
+
+  it('the report: a delivered order that is not the manifest\'s is a difference and exit 1', async () => {
+    const w = world((x) => {
+      threeProjects(x);
+      x.hub.reverseDelivered = true;
+    });
+    const r = await run(w);
+    expect(r.code).toBe(1);
+    const diff = report(w).differences.find((d) => d.at === '(order)');
+    expect(diff).toMatchObject({ key: 'project/harbour', what: "delivered in another order than the manifest's, from place 1 of 3", expected: 'project/harbour, project/bay, project/cliff', actual: 'project/cliff, project/bay, project/harbour' });
+    expect(r.text).toContain('project/harbour (order): delivered in another order than the manifest\'s, from place 1 of 3');
+  });
+});
+
+// Step 1 with L2's maker (main.ts passes it): each file's thumbnail made from its bytes, uploaded
+// beside it without overwriting and recorded through set_asset_thumbnail, as an editor's upload does.
+describe('import: thumbnails', () => {
+  const thumbPath = (tenantId: string, assetId: string) => `${tenantId}/${assetId}/thumb/480.webp`;
+  const maker = (made: string[]): ImportDeps['thumbnail'] => async (bytes, tenantId, assetId) => {
+    made.push(assetId);
+    return { bytes: new Uint8Array([...new TextEncoder().encode('WEBP'), bytes.byteLength % 256]), path: thumbPath(tenantId, assetId) };
+  };
+
+  it('makes, stores and records a thumbnail for every file, and none again on a second run', async () => {
+    const made: string[] = [];
+    const w = world((x) => (x.thumbnail = maker(made)));
+    const r = await run(w);
+    expect(r.code).toBe(0);
+    expect(made).toHaveLength(3);
+    for (const id of made) {
+      expect(w.hub.assets.get(id)?.thumb_path).toBe(thumbPath(TENANT_ID, id));
+      expect(w.hub.objects.has(`media-private/${thumbPath(TENANT_ID, id)}`)).toBe(true);
+    }
+    expect(r.text).toContain('thumbnails: 3 made');
+    expect(r.text).not.toContain('without one');
+    const records = w.hub.count('POST', '/rest/v1/rpc/set_asset_thumbnail');
+    expect(records).toBe(3);
+    const second = await run(w);
+    expect(second.code).toBe(0);
+    expect(made).toHaveLength(3);
+    expect(w.hub.count('POST', '/rest/v1/rpc/set_asset_thumbnail')).toBe(records);
+  });
+
+  it('a file registered by an earlier run without a thumbnail gets one from its bytes on disk', async () => {
+    const w = world();
+    expect((await run(w)).code).toBe(0);
+    const made: string[] = [];
+    w.thumbnail = maker(made);
+    expect((await run(w)).code).toBe(0);
+    expect(made).toHaveLength(3);
+    expect(w.hub.count('POST', '/rest/v1/rpc/register_asset')).toBe(3);
+    for (const id of made) expect(w.hub.assets.get(id)?.thumb_path).toBe(thumbPath(TENANT_ID, id));
+  });
+
+  it('a file the maker makes none for stays registered without one, and says the CMS makes it on first view', async () => {
+    const w = world((x) => (x.thumbnail = async () => null));
+    const r = await run(w);
+    expect(r.code).toBe(0);
+    expect([...w.hub.assets.values()].every((a) => a.thumb_path === null)).toBe(true);
+    expect(w.hub.count('POST', '/rest/v1/rpc/set_asset_thumbnail')).toBe(0);
+    expect(r.text).toContain('thumbnails: 3 file(s) without one; the CMS makes each when an editor first views the file, where it can');
+  });
+
+  it('a thumbnail the database refuses (not the file\'s own path) leaves the file registered and the run going', async () => {
+    const w = world((x) => (x.thumbnail = async (_b, tenantId, assetId) => ({ bytes: new Uint8Array([1]), path: `${tenantId}/${assetId}/thumb/other.webp` })));
+    const r = await run(w);
+    expect(r.code).toBe(0);
+    expect(r.text).toContain('thumbnails: 3 file(s) without one');
+    expect(report(w).differences).toEqual([]);
   });
 });
 

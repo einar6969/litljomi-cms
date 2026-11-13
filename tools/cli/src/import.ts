@@ -22,6 +22,7 @@ import { DEFAULT_ENV_FILE, Failure, KEY_RE, REF_RE, URL_RE, UsageError, envValue
 import { LOCAL_ORIGINS, LOCAL_REF, LOCAL_URL_RE, hostOf } from './local.ts';
 import { LedgerFile, ledgerPath, parseLedger, reportPath, type Ledger, type LedgerStore } from './import/ledger.ts';
 import type { InspectImage } from './import/media.ts';
+import { planMoves } from './import/order.ts';
 import { comparisonText, dryRun, type MediaFs, type Plan } from './import/plan.ts';
 import { buildReport, type Report } from './import/report.ts';
 import { Importer, type RunDeps } from './import/run.ts';
@@ -168,11 +169,32 @@ function printPlan(plan: Plan, log: (l: string) => void): void {
   log(`waves: ${plan.waves.length}${plan.waves.map((w, i) => `\n  wave ${i + 1}: ${w.join(', ')}`).join('')}`);
   if (plan.secondPass.length > 0) log(`second pass (cycles broken at an optional reference): ${plan.secondPass.join(', ')}`);
   log(`slugs at risk: ${plan.slugsAtRisk.length}${plan.slugsAtRisk.map((r) => `\n  ${r.key}: ${r.slug} (the title gives ${r.fromTitle})`).join('')}`);
-  if (Object.keys(plan.order).length > 0) log('order: validated; it is not applied until manual ordering (A12) exists');
+  printOrder(plan, log);
+}
+
+/**
+ * Step 5 as the dry run can know it, offline: each type the module orders by hand, the order it will
+ * be put in, and the moves that takes on a tenant that has none of these entries yet, whose list
+ * then holds them newest first, the reverse of the order the run creates them in. A real run reads
+ * the type's list first and moves only what is out of place.
+ */
+function printOrder(plan: Plan, log: (l: string) => void): void {
+  const types = Object.entries(plan.manualOrder);
+  if (types.length === 0) return;
+  log(`order: ${types.length} type(s) ordered by hand, put in the manifest's order through api.move_entry once the entries exist, before anything is published`);
+  for (const [type, keys] of types) {
+    const created = plan.items.filter((i) => i.type === type && !i.singleton).map((i) => i.key);
+    const moves = planMoves([...created].reverse(), keys);
+    log(`  ${type}: ${keys.join(', ')}`);
+    log(`  ${type} on a tenant without these entries: ${moves.length} move(s)${moves.map((m) => `\n    ${m.entry} ${m.place} ${m.target}`).join('')}`);
+  }
 }
 
 function summarise(report: Report, log: (l: string) => void): void {
-  log(`report: release ${report.release ?? 'none'}; ${report.checked.entries} entr${report.checked.entries === 1 ? 'y' : 'ies'} and ${report.checked.files} file(s) compared`);
+  log(
+    `report: release ${report.release ?? 'none'}; ${report.checked.entries} entr${report.checked.entries === 1 ? 'y' : 'ies'}, ${report.checked.files} file(s) ` +
+      `and the order of ${report.checked.orders} type(s) ordered by hand compared`,
+  );
   log(`  differences: ${report.differences.length}`);
   for (const d of report.differences.slice(0, 20)) log(`    ${d.key} ${d.at}: ${d.what.split(':')[0] as string}`);
   if (report.differences.length > 20) log(`    … ${report.differences.length - 20} more in the report file`);
@@ -265,7 +287,7 @@ export async function runImport(args: string[], io: ImportIo, deps: ImportDeps):
     await ledgerFile.save();
     log(`ledger: ${lPath}`);
 
-    const importer = new Importer(plan, session, ledgerFile, tenantId, deps, { media: a.media, batchSize: a.batchSize, firstBatchOnly: a.firstBatchOnly }, log);
+    const importer = new Importer(plan, session, ledgerFile, tenantId, deps, { tenant: a.tenant, media: a.media, batchSize: a.batchSize, firstBatchOnly: a.firstBatchOnly }, log);
     let stopped: string | null = null;
     let outcome: Awaited<ReturnType<Importer['run']>> | null = null;
     try {
@@ -277,8 +299,11 @@ export async function runImport(args: string[], io: ImportIo, deps: ImportDeps):
       stopped = 'a step failed';
     }
     const notices = outcome?.notices ?? [];
-    if (outcome?.thumbnailsMissing) log(`thumbnails: ${outcome.thumbnailsMissing} file(s) without one (the thumbnail maker comes with L2)`);
-    if (Object.keys(plan.order).length > 0) log('order: validated, not applied (manual ordering, A12, does not exist yet)');
+    if (outcome !== null) {
+      if (outcome.thumbnailsMade > 0) log(`thumbnails: ${outcome.thumbnailsMade} made`);
+      if (outcome.thumbnailsMissing > 0) log(`thumbnails: ${outcome.thumbnailsMissing} file(s) without one; the CMS makes each when an editor first views the file, where it can`);
+      if (Object.keys(plan.manualOrder).length > 0) log(`order: ${outcome.moves} move(s) in this run`);
+    }
     if (outcome?.firstBatchStop) {
       log('stopped after the first batch (--first-batch-only); run again without it to continue');
       return notices.length > 0 ? 1 : 0;

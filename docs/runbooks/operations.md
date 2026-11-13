@@ -953,10 +953,10 @@ A local bundle delivers images at the stack's own `http` address. A hosted proje
 ```sh
 pnpm db:start
 LOCAL_ENV="$(mktemp -d)/local.env"
-node tools/stack/supabase.ts status -o env | sed -n 's/^API_URL=/NEXT_PUBLIC_SUPABASE_URL=/p; s/^SECRET_KEY=/SUPABASE_SECRET_KEY=/p' | tr -d '"' > "$LOCAL_ENV"
+node tools/stack/supabase.ts status -o env | sed -n 's/^API_URL=/NEXT_PUBLIC_SUPABASE_URL=/p; s/^PUBLISHABLE_KEY=/NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=/p; s/^SECRET_KEY=/SUPABASE_SECRET_KEY=/p' | tr -d '"' > "$LOCAL_ENV"
 ```
 
-The file holds the local stack's URL and its local secret key, which reaches nothing but this stack. It is outside the repository, in a folder only you can read. `pnpm db:reset` instead of `db:start` gives an empty stack. It removes the tenants of earlier rehearsals on this slot.
+The file holds the local stack's URL, its publishable key and its local secret key, all three from the `API_URL`, `PUBLISHABLE_KEY` and `SECRET_KEY` lines of `supabase status -o env`; they reach nothing but this stack. `provision` reads the URL and the secret key. `import` (L5b) reads the URL and the publishable key only, and stops with `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` missing when the file has no such line. It is outside the repository, in a folder only you can read. `pnpm db:reset` instead of `db:start` gives an empty stack. It removes the tenants of earlier rehearsals on this slot.
 
 **L3. Provision the tenant and invite the editor.**
 
@@ -974,6 +974,14 @@ export CMS_PUBLIC_URL='<cms-url>' CMS_INTERNAL_SECRET="$(openssl rand -hex 24)" 
 sh tests/integration/scripts/cms-next.sh build && sh tests/integration/scripts/cms-next.sh start -p '<cms-port>' -H 127.0.0.1
 ```
 
+**Nothing calls the sweep locally.** On production, Vercel Cron calls `/api/cron/sweep` every minute (`apps/cms/vercel.json`). An editor's own publish starts the worker at once, but a request filed from the CLI (`import`, L5b) waits for the sweep. No script in the repository stands in for the cron: the browser suite doesn't run the sweep, and the import's integration test calls the worker's `sweep()` in its own process (`apps/cms/src/privileged/worker/__tests__/import-command.integration.test.ts`). So, for a rehearsal that publishes from the CLI, start this loop in the same terminal, before the command above, so that it uses the same `CRON_SECRET`:
+
+```sh
+(while sleep 60; do curl -s -o /dev/null -w 'sweep %{http_code}\n' -H "Authorization: Bearer $CRON_SECRET" '<cms-url>/api/cron/sweep'; done) &
+```
+
+**Verify:** once the CMS is up, a line `sweep 200` appears each minute (`sweep 000` while it is still building). A `401` means the loop has another `CRON_SECRET` than the CMS. Stop it with `kill %1` when the rehearsal ends.
+
 **L5. Publish once.** Open the invitation in Mailpit, choose a password, and publish an entry as in section 2, step 9, with an image. With no site yet, the editor ends at "Enginn vefur tengdur", as on production. Then, in the first terminal:
 
 ```sh
@@ -982,6 +990,15 @@ curl -s '<api-url>/storage/v1/object/public/delivery/<tenant>/releases/1.json' |
 ```
 
 **Verify:** the pointer names `releases/1.json`. Each image address, `url` in an image field and `src` in rich text, starts with `<api-url>/storage/v1/object/public/media-public/<tenant>/`, and `curl -s -o /dev/null -w '%{http_code}\n' '<address>'` prints `200` for it. A `url` without `/media-public/` is a link or a video's address, not an image. An image delivered as `null` means the CMS is not running against this stack's own address: stop and report.
+
+**L5b. Import (optional).** In the first terminal, the tenant's content from a manifest (`docs/plans/import.md`), as the editor invited in L3, once that editor has chosen a password. It needs the sweep loop from L4. The dry run is offline; the real run reads the password from standard input and never the secret key.
+
+```sh
+pnpm --silent --filter @litljomi/cli cli import --tenant '<tenant>' --manifest '<manifest>' --media '<media-folder>' --dry-run
+pnpm --silent --filter @litljomi/cli cli import --tenant '<tenant>' --manifest '<manifest>' --media '<media-folder>' --email '<address>' --local --env-file="$LOCAL_ENV"
+```
+
+Both paths are absolute. **Verify:** the run ends with `differences: 0`, exit code 0. Each type the module orders by hand prints `order <type>: … move(s), before anything of this run is published` on the first run, and `already in the manifest's order; nothing moved` on a second one. `thumbnails: <n> made` counts the files given a thumbnail. Requests go through the sweep at most three a minute, so expect about one minute per three entries.
 
 **L6. The site.** In the first terminal, with both secrets kept in this terminal for the site:
 

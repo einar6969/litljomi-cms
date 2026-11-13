@@ -4,8 +4,9 @@
 // `safeFilename`, `slugBase` and `slugFits` are copies of the CMS's own (apps/cms/src/editor/upload.ts
 // and editor/server/auto-slug.ts); `inspectImage` is the CMS's (editor/server/image-metadata.ts), with
 // sharp passed in so that unit tests need no image library. A parity test in apps/cms
-// (src/editor/__tests__/import-parity.test.ts) runs both copies on the same input. Import decision 2
-// moves all of them into one workspace package in L2; until then the copies must not drift.
+// (src/editor/__tests__/import-parity.test.ts) runs both copies on the same input, so the copies must
+// not drift. The thumbnail maker is not copied: main.ts imports L2's own
+// (apps/cms/src/editor/server/thumbnail-maker.ts; import decision 2).
 import { createHash } from 'node:crypto';
 import { slugify } from '@litljomi/cms-schema';
 

@@ -1,10 +1,12 @@
 // The comparison report (import plan section 2.7): the public bundle read as a site reads it, compared
 // with the manifest word for word and file by hash. The expected value of each entry is the module's
 // own projection of the manifest's data, so every field kind (and any kind added later) is compared
-// in its delivered shape. Anything that could not be checked is counted as unchecked, never as passed.
+// in its delivered shape, and each type the module orders by hand is delivered in the manifest's
+// order. Anything that could not be checked is counted as unchecked, never as passed.
 import { projectEntry, type ModuleManifest, type ProjectionContext } from '@litljomi/cms-schema';
 import { Failure } from '../hosted.ts';
 import { assetIdFor, sha256Hex } from './media.ts';
+import { orderDifference } from './order.ts';
 import { itemData, type Plan, type PlanItem } from './plan.ts';
 import { pointer, type Lookup, type Path } from './refs.ts';
 import type { EditorSession } from './session.ts';
@@ -29,7 +31,8 @@ export interface Report {
   format: 1;
   tenant: string;
   release: number | null;
-  checked: { entries: number; files: number };
+  /** `orders`: the types ordered by hand whose delivered order was compared with the manifest's. */
+  checked: { entries: number; files: number; orders: number };
   differences: Difference[];
   unchecked: { what: string; count: number }[];
   /** Entries of the imported types that the manifest does not name: listed, not judged. */
@@ -75,7 +78,7 @@ export function wordContext(expected: string, actual: string): { expected: strin
 }
 
 /** Reads the tenant's pointer as the SDK does (packages/sdk/src/client.ts), then the bundle it names. */
-async function readBundle(s: EditorSession, slug: string): Promise<{ release: number; entries: Record<string, BundleEntry[]> } | 'none' | string> {
+export async function readBundle(s: EditorSession, slug: string): Promise<{ release: number; entries: Record<string, BundleEntry[]> } | 'none' | string> {
   const base = `/storage/v1/object/public/delivery/${encodeURIComponent(slug)}`;
   const p = await s.publicGet(`${base}/current.json`);
   if (!p.ok) return p.status === 400 || p.status === 404 ? 'none' : `reading the pointer: ${p.detail}`;
@@ -101,7 +104,7 @@ export async function buildReport(input: ReportInput): Promise<Report> {
     format: 1,
     tenant: tenant.slug,
     release: null,
-    checked: { entries: 0, files: 0 },
+    checked: { entries: 0, files: 0, orders: 0 },
     differences: [],
     unchecked: [],
     extras: [],
@@ -121,16 +124,19 @@ export async function buildReport(input: ReportInput): Promise<Report> {
     if (input.now() - started >= POINTER_WAIT_MS) break;
     await input.sleep(POINTER_POLL_MS);
   }
+  const orders = Object.keys(plan.manualOrder).length;
   if (bundle === 'none') {
     for (const item of plan.items) report.differences.push({ key: item.key, type: item.type, at: '(entry)', what: 'not in the public bundle (the tenant has no published release)' });
     return report;
   }
   if (typeof bundle === 'string') {
     unchecked(`entries not compared: ${bundle}`, plan.items.length);
+    unchecked(`orders of types ordered by hand not compared: ${bundle}`, orders);
     return report;
   }
   if (input.lastRelease !== null && bundle.release < input.lastRelease) {
     unchecked(`entries not compared: the pointer still names release ${bundle.release}, older than the import's ${input.lastRelease}`, plan.items.length);
+    unchecked(`orders of types ordered by hand not compared: the pointer still names release ${bundle.release}`, orders);
     return report;
   }
   report.release = bundle.release;
@@ -254,7 +260,26 @@ export async function buildReport(input: ReportInput): Promise<Report> {
       if (isObject(e) && typeof e.id === 'string' && !known.has(e.id)) report.extras.push({ type, id: e.id, slug: typeof e.slug === 'string' ? e.slug : null });
     }
   }
-  if (Object.keys(plan.order).length > 0) unchecked('order: validated, not applied (manual ordering, A12, does not exist yet)', Object.keys(plan.order).length);
+  // Each type ordered by hand: its delivered order, as the bundle lists it (§7.2), against the
+  // manifest's. Only the manifest's entries that are delivered are compared; a missing one is
+  // already a difference of its own, and the type's other entries are listed above, not judged.
+  for (const [type, keys] of Object.entries(plan.manualOrder)) {
+    const listed: unknown[] = Object.hasOwn(entries, type) && Array.isArray(entries[type]) ? entries[type] : [];
+    const keyOf = new Map(keys.flatMap((k) => (ids.has(k) ? [[ids.get(k) as string, k] as const] : [])));
+    const delivered = listed.flatMap((e) => (isObject(e) && typeof e.id === 'string' && keyOf.has(e.id) ? [keyOf.get(e.id) as string] : []));
+    report.checked.orders += 1;
+    const d = orderDifference(keys, delivered);
+    if (d !== null) {
+      report.differences.push({
+        key: d.expected[0] as string,
+        type,
+        at: '(order)',
+        what: `delivered in another order than the manifest's, from place ${d.place} of ${delivered.length}`,
+        expected: d.expected.join(', '),
+        actual: d.actual.join(', '),
+      });
+    }
+  }
   return report;
 }
 
