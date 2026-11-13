@@ -18,11 +18,13 @@ State checked at the source before starting: the eight PRs' heads, passes and CI
 | WP1 | workflow `wf_82725fc6-418` (`workflows/land-track-a.js`) | integrating; holds both stacks |
 | WP4, part 1 | workflow `wf_d9981869-aa7`; brief in the DLD workspace, `metaprompts/active/2026-11-13-cms-source-tier2.md` | building on `cms/integration`, then a quality review |
 | WP7, batch 1 | the same workflow; writes `copy-batch-1.md` here, built from the six branch heads, to be checked against `integration/track-a` before Einar sees it | compiling |
-| WP3 | starts when `integration/track-a` is pushed | waiting |
+| WP3 | workflow `wf_f9bf27b4-089` | **Built and passed** at `a05625d` (PR #71, still a draft; `Review: PASS` posted by the reviewer). It carries `integration/track-a` by merge; it is merged after WP1 lands, once brought up to date. The model needed no core change |
 
 **Coordinator's choices, 2026-11-13:**
 - WP4 runs in two parts. Part 1 adds the CMS source beside the site's own content source, chosen by the SDK's environment variables, so the default build stays today's 64 pages. Part 2 (after WP3 and WP5) re-vendors from merged `main`, proves parity against the local tenant and removes the old content files.
 - WP3 waits for the pushed integration branch rather than building on a private merge of A7 and A12.
+- `modules/dld`: a video's still image is required (`video({ still: 'required' })`). The content model is silent; it says to set limits on the tight side, loosening later is free, and the site's video block needs a poster.
+- Labels the content model does not give (item labels such as „Mynd", „Myndband", „Hluti"; group members such as „Lína 1", „Heiti", „Fyrirsögn") were written by the module's builder and go to Einar in copy batch 2 with the rest.
 
 ## Where every piece stands (2026-11-12, 23:45)
 
