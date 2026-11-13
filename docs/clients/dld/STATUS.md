@@ -9,6 +9,21 @@ The living record of onboarding DLD (Dagný Land Design) as a tenant. A later se
 | Next action | **[PLAN.md](PLAN.md), work package WP1**, with WP3, WP4 and the first copy batch alongside. PLAN.md says what to do; this file says what is true |
 | How agents run | Models sized to the task. Briefs point at `docs/agents/CONTEXT.md` and `AGENT-CONTEXT.md` here. Parallel lanes run as workflow scripts. **Every pass on a final head is posted by a reviewer agent, never by the coordinator**; the coordinator merges |
 
+## Running now (2026-11-13, new coordinator session)
+
+State checked at the source before starting: the eight PRs' heads, passes and CI match the table below; `main` = `8676235`, `production` = `b8c702c`; `cms/integration` = `d604687`, `cms/converter` = `aef0cd1`; 7.3 GB free; Docker up, no stack running.
+
+| Lane | How | State |
+|---|---|---|
+| WP1 | workflow `wf_82725fc6-418` (`workflows/land-track-a.js`) | integrating; holds both stacks |
+| WP4, part 1 | workflow `wf_d9981869-aa7`; brief in the DLD workspace, `metaprompts/active/2026-11-13-cms-source-tier2.md` | building on `cms/integration`, then a quality review |
+| WP7, batch 1 | the same workflow; writes `copy-batch-1.md` here, built from the six branch heads, to be checked against `integration/track-a` before Einar sees it | compiling |
+| WP3 | starts when `integration/track-a` is pushed | waiting |
+
+**Coordinator's choices, 2026-11-13:**
+- WP4 runs in two parts. Part 1 adds the CMS source beside the site's own content source, chosen by the SDK's environment variables, so the default build stays today's 64 pages. Part 2 (after WP3 and WP5) re-vendors from merged `main`, proves parity against the local tenant and removes the old content files.
+- WP3 waits for the pushed integration branch rather than building on a private merge of A7 and A12.
+
 ## Where every piece stands (2026-11-12, 23:45)
 
 **Merged to `main`** (none of it is on production yet; `production` is at `b8c702c`):
