@@ -14,7 +14,7 @@ Einar, 2026-11-13: "i do not want to have any target date for the dld.is prod de
 
 **Done means all four:**
 
-1. Tenant `dld` exists on production and holds DLD's content, published: 40 projects, 18 news posts, 2 people, the home and contact singletons, 228 images.
+1. Tenant `dld` exists on production and holds DLD's content, published: 40 projects, 18 news posts, 2 people, the home and contact singletons, 227 library files (235 image uses; identical photographs are stored once).
 2. `https://dld.litljomi.is` renders from the CMS. A change published at `https://vefstjorn.is/t/dld` shows there and reaches "Birt á vef ✓".
 3. DLD's editors can sign in at vefstjorn.is and have a handbook. Inviting them is Einar's step.
 4. The next client can be onboarded from the docs and code left behind.
@@ -42,9 +42,9 @@ Einar approved the fast lane on 2026-11-13 ("your recommendation of '2. Fast lan
 |---|---|---|---|---|
 | ☑ | **WP1** Land Track A as one integration PR | Now | Both stacks | none |
 | ☑ | **WP2** Deploy to production | WP1 merged | none | none |
-| ☐ | **WP3** Finish DLD's module | Now, from WP1's branch | CI only | none |
-| ☐ | **WP4** The site reads from the CMS | Now, from WP1's branch | A stack, once WP5 has data | none |
-| ☐ | **WP5** Rehearse the import locally | WP1's branch builds, WP3 has a head | Slot 2 | none |
+| ☑ | **WP3** Finish DLD's module | Now, from WP1's branch | CI only | none |
+| ☑ | **WP4** The site reads from the CMS | Now, from WP1's branch | A stack, once WP5 has data | none |
+| ☑ | **WP5** Rehearse the import locally | WP1's branch builds, WP3 has a head | Slot 2 | none |
 | ☐ | **WP6** Production: tenant, import, connect the site | WP2, WP3 deployed, WP4 and WP5 passed | none | **E3, E4, E5** |
 | ☐ | **WP7** Copy and handbook | Now | none | **E1, E6** approves |
 | ☐ | **WP8** Editors | WP6 done, E6 given | none | **E7** invites |

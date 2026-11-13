@@ -18,10 +18,12 @@ State checked at the source before starting: the eight PRs' heads, passes and CI
 | WP1 | workflow `wf_82725fc6-418` | **Merged:** PR #83 at `3047987`, merge commit `702899f`. `Review: PASS` on that head by the quality reviewer; spec and security passes on `dc6d338` (the one later commit changes three browser specs only). CI green; browser suite 104 passed, 0 failed, `manual-order.spec.ts` included; upgrade rehearsal passed (four migrations in about 49 ms, no lock wait, old worker delivered on the new database, old rows intact). #73 and #76–#82 show as merged |
 | WP2 | the coordinator, by the plan's steps | **Deployed 2026-11-13.** Dry-run listed exactly the four files, no drops; `db push` applied them; `migration list` shows 50 of 50 matched; `production` fast-forwarded `b8c702c..702899f`. Checked: `vefstjorn` and `vefstjorn-demo` Ready on `702899f`; production still holds 2 tenants, 54 entries, 9 assets, 56 releases, new columns all null; LABAK's site answers 200; security advisors show one warning (leaked-password protection off), nothing from these migrations. A publish on `demo` reached Live: Einar, 2026-11-13, "It reached Live". WP2 is done; it runs once more, with no migration, for the module |
 | After landing | workflow `wf_19fbdc34-1ec` | Done. **#84 merged** (`5abd99a`): the library shows „Á vefnum" only once a publish is confirmed live; no new strings; reviewer pass and CI on `6e48aab`. Not yet on production. **PR #71** was brought onto `main` (`4c05f73`), reviewed PASS and CI green, but the reviewer's comment was refused by a permission check, so it is not merged; the next workflow has a reviewer post it. **WP5, first rehearsal:** see below |
-| Import fix | workflow `wf_b5edaa02-e89` | Running: the import applies manual order and makes thumbnails (branch `feat/import-order-and-thumbnails`; combined review, security review, CI); PR #71 onto `main` again and its pass posted; the rehearsal repeated on slot 2 with the fix; then WP4 part 2 and its parity review |
+| Import fix | workflow `wf_b5edaa02-e89` | **Merged:** PR #85 at `07053d6`, merge commit `d3bf513`. `Review: PASS` and `Security review: PASS` on that head, both posted by reviewers; CI green. The import sets the manifest's order before the first publish request (`api.move_entry`, as the editor), makes thumbnails with the editor's own code, and its report compares order. Runbook §9 gained the publishable key and a local sweep loop |
+| Second deploy | the coordinator, by WP2's steps | **Deployed 2026-11-13:** `production` fast-forwarded `702899f..810d4ba` (#84, #85, #71). No migration: the dry run says the database is up to date. `vefstjorn` and `vefstjorn-demo` both Ready on `810d4ba`; `vefstjorn.is/login` and `demo.vefstjorn.is/events` answer 200. Not repeated this time: a publish on `demo` by a signed-in editor (the import's first batch in E4 is the first production publish on this build) |
+| WP4, part 2 | the same workflow; brief `metaprompts/active/2026-11-13-cms-source-part2-tier2.md` in the DLD workspace | **Built and passed** at `9f38e39` on `cms/integration` (pushed; `dld-is` `main` untouched at `13f1df0`). All 64 pages and the 404 equal today's build apart from the expected kinds, before and after the old content files were removed. Review PASS, no blocking finding. The site now builds only with `CMS_DELIVERY_BASE_URL` and `CMS_TENANT` set |
 | WP4, part 1 | workflow `wf_d9981869-aa7`; brief in the DLD workspace, `metaprompts/active/2026-11-13-cms-source-tier2.md` | **Built and passed** a quality review at `4a8ade6` on `cms/integration` (checked: pushed, `dld-is` `main` untouched at `13f1df0`). The default build is still today's 64 pages. Part 2 waits for WP1, WP3 and WP5 |
 | WP7, batch 1 | the same workflow | **Approved by Einar (E1), 2026-11-13:** [copy-batch-1.md](copy-batch-1.md), 114 new strings, 1 changed, 3 that need a decision. Its strings file is identical to `integration/track-a`'s at `dc6d338` (checked by the coordinator) |
-| WP3 | workflow `wf_f9bf27b4-089` | **Built and passed** at `a05625d` (PR #71, still a draft; `Review: PASS` posted by the reviewer). It carries `integration/track-a` by merge; it is merged after WP1 lands, once brought up to date. The model needed no core change |
+| WP3 | workflows `wf_f9bf27b4-089`, `wf_b5edaa02-e89` | **Merged:** PR #71 at `a3044f6`, merge commit `810d4ba`. `Review: PASS` on that head posted by the reviewer; CI green. On production. The model needed no core change |
 
 **WP5, first rehearsal (slot 2, 2026-11-13).** Everything held but the order.
 
@@ -32,6 +34,23 @@ State checked at the source before starting: the eight PRs' heads, passes and CI
 - **Runbook §9 gaps** (fixed in the same PR): the local env file needs the publishable key for `import`; locally nothing calls the sweep.
 - **The converter moved** to `bb5650f` on `cms/converter` (videos in the Hub's video shape; caption and credit carried). Not reviewed.
 - Minor, module: the `home` singleton shows „Án titils" on the dashboard (its preview title is a list).
+
+**WP5, second rehearsal (slot 2, 2026-11-13), with the import fix.** Clean.
+
+- Same counts: 40, 18, 2, `home`, `contact`, all 62 published; 227 files, 227 thumbnails made by the import.
+- The delivered order equals the manifest's for projects and people in every one of the 22 releases (39 project moves and 1 person move, made before the first publish request).
+- Report: 0 differences, nothing unchecked. A second run wrote nothing (4 s).
+- Time: 21 min 50 s; first batch (9 projects) 163 s.
+- The export for E4 (manifest, 227 media files) and the rehearsal's reports are in the DLD workspace, `reports/2026-11-13-dld-import/`.
+
+**WP4, part 2, on that tenant.**
+
+- Differences from today's pages, all expected: 663 image addresses (16 of them another file's name for identical bytes, because the library stores identical photographs once); the home slideshow's first slide is JPEG only; the release and entry markers. The Hlemmur video did not move: it was already the last block of its text. Alt texts: all 24 carried.
+- Publish, new entry, unpublish (real 404 page) and preview were each seen on the stack; publishes reached „Birt á vef ✓" in about 2.6 s. Production order held: content first, then the site connected.
+- The proxy adds about 2.6 ms locally per project or post page. Kept; its cost on Vercel is measured at E5's first preview.
+- Removed from the site: the 58 content files, 230 images, the local source. Tracked size 120 MB → 12 MB. `legacyPath` lives in `src/content/data/legacy-paths.ts` (58 entries, each checked against the removed file).
+- Not verified: anything on Vercel; the pages by eye with images from the media host (Einar's look). The vendored SDK's recorded source commit is a local merge; it is re-packed from `main` `810d4ba` before E5.
+- A post with no project gets no warning: the bundle delivers "no project" and "project unpublished" alike as null.
 
 **Coordinator's choices, 2026-11-13:**
 - WP4 runs in two parts. Part 1 adds the CMS source beside the site's own content source, chosen by the SDK's environment variables, so the default build stays today's 64 pages. Part 2 (after WP3 and WP5) re-vendors from merged `main`, proves parity against the local tenant and removes the old content files.
