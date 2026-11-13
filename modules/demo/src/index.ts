@@ -1,4 +1,4 @@
-import { boolean, date, datetime, defineModule, defineType, group, link, list, number, reference, richText, select, text, video, type SiteEntry } from '@litljomi/cms-schema';
+import { boolean, date, datetime, defineModule, defineType, group, image, link, list, number, reference, richText, select, text, video, type SiteEntry } from '@litljomi/cms-schema';
 
 const eventType = defineType({
   name: 'event',
@@ -24,14 +24,15 @@ const eventType = defineType({
     }),
     doorsOpen: datetime({ label: 'Doors open' }),
     related: reference({ label: 'Related event', to: ['event'] }),
-    // A group holding a list of references (M2-06) and a list of videos (A11); optional, so existing
-    // events stay valid.
+    // A group holding a list of references (M2-06), a list of videos (A11) and a list of images
+    // (media library L6); optional, so existing events stay valid.
     program: group({
       label: 'Program',
       fields: {
         intro: text({ label: 'Introduction', multiline: true }),
         highlights: list(reference({ label: 'Event', to: ['event'] }), { label: 'Highlights', max: 10 }),
         videos: list(video({ label: 'Video' }), { label: 'Videos', max: 3 }),
+        gallery: list(image({ label: 'Photo' }), { label: 'Gallery', max: 12 }),
       },
     }),
   },

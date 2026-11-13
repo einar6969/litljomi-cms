@@ -49,6 +49,33 @@ export function mergeAssetChange(stored: StoredAssetMetadata, change: AssetChang
   };
 }
 
+/** The longest caption and credit, as the columns' checks allow (docs/plans/media-library.md section 3.1). */
+export const MAX_CAPTION_LENGTH = 1000;
+export const MAX_CREDIT_LENGTH = 300;
+
+/** Trimmed, and null for nothing: an empty or blank text clears it. */
+const text = (max: number) =>
+  z
+    .string()
+    .max(max)
+    .nullable()
+    .transform((s) => (s === null || s.trim() === '' ? null : s.trim()));
+
+/**
+ * A file's three texts, saved together by the library's "Vista breytingar" through
+ * `api.update_asset_text`: its default alt text, caption and credit. All three are always given.
+ */
+export const assetTextShape = z.strictObject({ defaultAlt: text(MAX_ALT_LENGTH), caption: text(MAX_CAPTION_LENGTH), credit: text(MAX_CREDIT_LENGTH) });
+
+export type AssetTexts = z.input<typeof assetTextShape>;
+
+/** Calls `api.update_asset_text` (tenant from the row, tenant active) with already parsed texts. */
+export function saveAssetText(client: { rpc: (fn: 'update_asset_text', args: Record<string, unknown>) => PromiseLike<RpcResult> }, id: string, texts: z.output<typeof assetTextShape>) {
+  return client.rpc('update_asset_text', { p_asset_id: id, p_default_alt: texts.defaultAlt, p_caption: texts.caption, p_credit: texts.credit });
+}
+
+type RpcResult = { error: { code?: string; message?: string } | null; status?: number };
+
 /** The one call this needs from an `api` client. */
 type RpcClient = { rpc: (fn: 'update_asset', args: Record<string, unknown>) => PromiseLike<{ error: { code?: string; message?: string } | null; status?: number }> };
 

@@ -15,7 +15,7 @@ type Props = {
   signOut: () => Promise<void>;
 };
 
-/** The sidebar: the wordmark, the tenant, its content types, help and "Skrá út". */
+/** The sidebar: the wordmark, the tenant, its content types and media library, help and "Skrá út". */
 export function Sidebar({ tenant, sections = [], signOut }: Props) {
   const pathname = usePathname();
   const { close } = useShell();
@@ -55,6 +55,15 @@ export function Sidebar({ tenant, sections = [], signOut }: Props) {
                 </ul>
               </div>
             ))}
+            {/* The media library: a fixed link under the content types (docs/plans/media-library.md section 6.1). */}
+            <ul className="nav nav-fixed">
+              <li>
+                <Link href={`${base}/assets`} aria-current={pathname === `${base}/assets` || pathname.startsWith(`${base}/assets/`) ? 'page' : undefined}>
+                  <Icon name="image" />
+                  {t.library.title}
+                </Link>
+              </li>
+            </ul>
           </nav>
         </>
       ) : null}

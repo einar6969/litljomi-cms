@@ -215,6 +215,9 @@ export const is = {
       range: 'Minnst {min} og mest {max} atriði.',
       atLeast: 'Minnst {min} atriði.',
       atMost: 'Mest {max} atriði.',
+      // Media library L6, DRAFT: a list of images takes several files from the library at once.
+      addFromLibrary: 'Bæta við úr safni',
+      noRoom: 'Aðeins var pláss fyrir {n} í viðbót. Hinum var sleppt.',
     },
     outdated: {
       title: 'Uppkastið er á eldri útgáfu efnisflokksins',
@@ -243,7 +246,10 @@ export const is = {
       cannot: 'Ekki er hægt að endurheimta þessa birtingu sjálfkrafa. Hafðu samband við kerfisstjóra.',
     },
     image: {
-      choose: 'Velja mynd',
+      // Media library L6, DRAFT: changes the approved "Velja mynd", so the two buttons read apart.
+      choose: 'Hlaða upp mynd',
+      // Media library L6, DRAFT.
+      fromLibrary: 'Velja úr safni',
       replace: 'Skipta um mynd',
       remove: 'Fjarlægja mynd',
       uploading: 'Hleð upp mynd…',
@@ -391,14 +397,105 @@ export const is = {
   },
   asset: {
     title: 'Mynd',
-    back: 'Á forsíðu vefsins',
     filename: 'Skráarheiti',
-    size: 'Stærð',
-    defaultAlt: 'Sjálfgefinn alt-texti',
-    defaultAltHelp: 'Lýsing sem á við myndina almennt. Á vefnum gildir alt-texti hvers staðar sem myndin er notuð.',
-    saveDefaultAlt: 'Vista sjálfgefinn alt-texta',
     // M2-19: `{width}` and `{height}` are the image's size in pixels.
     dimensions: '{width} × {height} px',
+  },
+  // Media library L4 (docs/plans/media-library.md section 10), DRAFT. `{n}`, `{u}`, `{width}`,
+  // `{height}` and `{size}` are filled in by the code; which of a pair of words applies is decided
+  // in editor/media/library-format.ts (singular when n ends in 1 but not in 11).
+  library: {
+    title: 'Myndasafn',
+    filesOne: '{n} skrá',
+    filesMany: '{n} skrár',
+    unusedOne: '{u} ónotuð',
+    unusedMany: '{u} ónotaðar',
+    upload: 'Hlaða upp',
+    search: 'Leita eftir heiti, alt-texta, myndatexta eða ljósmyndara…',
+    sort: {
+      // The sort menu's name, read by screen readers only. Not in the plan's list.
+      label: 'Röðun',
+      newest: 'Nýjast fyrst',
+      oldest: 'Elst fyrst',
+      name: 'Heiti A–Ö',
+      largest: 'Stærst fyrst',
+    },
+    view: {
+      grid: 'Sýna sem reiti',
+      list: 'Sýna sem lista',
+    },
+    filter: {
+      missingAlt: 'Vantar alt-texta',
+      unused: 'Ónotaðar',
+    },
+    meta: '{width}×{height} · {size}',
+    col: {
+      file: 'Skrá',
+      type: 'Tegund',
+      size: 'Stærð',
+      dimensions: 'Mál',
+      uploaded: 'Hlaðið upp',
+      usage: 'Notkun',
+    },
+    more: 'Sýna fleiri',
+    // The list's last page reached PostgREST's row limit. Not in the plan's list.
+    capped: 'Aðeins fyrstu {n} skrárnar eru sýndar. Leitaðu til að finna aðrar.',
+    empty: 'Engar skrár enn.',
+    emptyBody: 'Hladdu upp myndum til að nota þær í efni vefsins.',
+    none: 'Engar skrár passa við leitina.',
+    detail: {
+      title: 'Upplýsingar um skrá',
+      close: 'Loka',
+      back: 'Til baka í safnið',
+      alt: 'Alt-texti',
+      altHelp: 'Lýsing á myndinni fyrir þá sem sjá hana ekki. Hún fylgir myndinni þegar hún er valin í efni. Þar sem myndin er þegar í notkun gildir textinn sem þar er skráður.',
+      caption: 'Myndatexti',
+      captionHelp: 'Birtist með myndinni þar sem vefurinn sýnir myndatexta.',
+      credit: 'Ljósmyndari / heimild',
+      creditHelp: 'Til dæmis nafn ljósmyndara. Birtist með myndinni þar sem vefurinn sýnir það.',
+      save: 'Vista breytingar',
+      saved: 'Breytingar vistaðar',
+      // Only for a file used on the site, until a changed file goes live by itself (L8).
+      nextPublish: 'Breytingar á myndatexta, ljósmyndara og þungamiðju birtast á vefnum næst þegar eitthvað er birt.',
+      original: 'Opna upprunalegu skrána (í nýjum flipa)',
+    },
+    usage: {
+      title: 'Notkun',
+      none: 'Þessi skrá er hvergi í notkun.',
+      live: 'Á vefnum',
+      draft: 'Í uppkasti',
+    },
+  },
+  // Media library L5: several files per upload, DRAFT. `{p}`, `{done}`, `{total}`, `{n}`, `{f}` and
+  // `{max}` are filled in by the code.
+  upload: {
+    title: 'Hlaða upp skrám',
+    drop: 'eða dragðu skrár hingað',
+    waiting: 'Í bið',
+    uploading: 'Hleð upp… {p} %',
+    processing: 'Vinn úr skránni…',
+    done: 'Lokið',
+    failed: 'Ekki tókst að hlaða skránni upp.',
+    remove: 'Fjarlægja af lista',
+    progress: 'Búið að hlaða upp {done} af {total} skrám.',
+    resultOne: '{n} skrá er komin í safnið.',
+    resultMany: '{n} skrár eru komnar í safnið.',
+    failedOne: 'Ekki tókst að hlaða upp {f} skrá.',
+    failedMany: 'Ekki tókst að hlaða upp {f} skrám.',
+    tooMany: 'Mest er hægt að hlaða upp {max} skrám í einu. Þeim sem voru umfram var sleppt.',
+  },
+  // Media library L6: the library picker in forms, DRAFT. `{n}` is filled in by the code; which of
+  // a pair of words applies is decided in editor/media/picker-selection.ts.
+  picker: {
+    titleOne: 'Velja mynd úr safni',
+    titleMany: 'Velja myndir úr safni',
+    confirmOne: 'Velja mynd',
+    confirmMany: 'Velja {n} myndir',
+    selectedOne: '{n} mynd valin',
+    selectedMany: '{n} myndir valdar',
+    empty: 'Engar myndir í safninu enn. Hladdu upp mynd til að byrja.',
+    // The picker's files failed to load. Not in the plan's list.
+    loadError: 'Ekki tókst að sækja myndirnar. Reyndu aftur.',
   },
   notFound: {
     title: 'Síðan fannst ekki',
