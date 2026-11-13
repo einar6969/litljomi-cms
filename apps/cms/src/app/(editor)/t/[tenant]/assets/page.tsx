@@ -184,7 +184,7 @@ export default async function LibraryPage({ params, searchParams }: Props) {
               key={detail.file.id}
               file={detail.file}
               url={detail.url}
-              usage={detail.usage.map((row) => assetUse(row, tenantPath, (type) => getType(tenant.slug, type)?.label))}
+              usage={detail.usage.map((row) => assetUse(row, tenantPath, (type) => getType(tenant.slug, type)?.label, detail.proof))}
               originalHref={`${base}/${detail.file.id}/original`}
               closeHref={closeHref}
             />

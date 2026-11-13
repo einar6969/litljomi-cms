@@ -4,6 +4,9 @@ import { MEDIA_PRIVATE_BUCKET, PREVIEW_SECONDS, previewUrl } from '../upload';
 import type { AssetFile, AssetUse } from '../media/AssetDetail';
 import { applyLibraryFilter, LIBRARY_PAGE_SIZE, libraryRange, orderLibrary, type LibraryState } from '../media/library-filter';
 import { formatUploadDate } from '../media/library-format';
+import { usageState } from '../media/usage-state';
+import type { Read, StatusSummary } from '../overview';
+import { loadPublishProof } from './tenant-overview';
 
 // The media library's reads (docs/plans/media-library.md sections 4 and 6.1, slice L4), with the
 // editor's own session: api.asset_summary, api.asset_list and api.asset_usage are security_invoker
@@ -105,13 +108,17 @@ export async function loadUsageCounts(client: SupabaseClient, tenantId: string, 
 
 export type UsageRow = { entry_id: string; type: string; title: string | null; in_draft: boolean; in_published: boolean };
 
-/** A usage row as the panel shows it: a link to the entry, its type's label, and whether the site shows it. */
-export const assetUse = (row: UsageRow, tenantPath: string, typeLabel: (type: string) => string | undefined): AssetUse => ({
+/**
+ * A usage row as the panel shows it: a link to the entry, its type's label, whether its published
+ * revision uses the file, and the pill: "Á vefnum" only for a publish proven live (§7.4, `proof`).
+ */
+export const assetUse = (row: UsageRow, tenantPath: string, typeLabel: (type: string) => string | undefined, proof: Read<StatusSummary>): AssetUse => ({
   entryId: row.entry_id,
   href: `${tenantPath}/${encodeURIComponent(row.type)}/${row.entry_id}`,
   title: row.title,
   typeLabel: typeLabel(row.type) ?? row.type,
   live: row.in_published,
+  state: usageState(row, proof),
 });
 
 type FileRow = ListedFile & { focal_x: number | null; focal_y: number | null; caption: string | null; credit: string | null; width: number; height: number };
@@ -125,8 +132,8 @@ export async function loadLibraryFile(
   client: SupabaseClient,
   tenantId: string,
   id: string,
-): Promise<{ file: AssetFile; url: string | null; usage: UsageRow[] } | null> {
-  const [file, usage] = await Promise.all([
+): Promise<{ file: AssetFile; url: string | null; usage: UsageRow[]; proof: Read<StatusSummary> } | null> {
+  const [file, usage, proof] = await Promise.all([
     client
       .from('asset_list')
       .select(`${LIST_COLUMNS}, focal_x, focal_y, caption, credit`)
@@ -135,6 +142,8 @@ export async function loadLibraryFile(
       .is('archived_at', null)
       .maybeSingle(),
     client.from('asset_usage').select('entry_id, type, title, in_draft, in_published').eq('asset_id', id).eq('tenant_id', tenantId).order('title').order('entry_id'),
+    // The same proof the overview uses; a failed read is a result, never an error page (§7.4).
+    loadPublishProof(client, tenantId),
   ]);
   if (file.error) throw new Error(`asset_list: ${file.error.code}`);
   if (usage.error) throw new Error(`asset_usage: ${usage.error.code}`);
@@ -158,5 +167,6 @@ export async function loadLibraryFile(
     },
     url,
     usage: (usage.data ?? []) as UsageRow[],
+    proof,
   };
 }

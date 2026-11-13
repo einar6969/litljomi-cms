@@ -142,7 +142,7 @@ describe('AssetDetail', () => {
   });
 
   it('lists where the file is used, each entry a link with its type and state, and the publish note only for a file on the site', async () => {
-    const draftOnly = [{ entryId: ENTRY, href: `/t/demo/news/${ENTRY}`, title: 'Frétt', typeLabel: 'Fréttir', live: false }];
+    const draftOnly = [{ entryId: ENTRY, href: `/t/demo/news/${ENTRY}`, title: 'Frétt', typeLabel: 'Fréttir', live: false, state: { label: t.library.usage.draft, tone: 'neutral' as const } }];
     await render(detail({ usage: draftOnly }));
     const usage = $('[data-testid="asset-usage"]')!;
     expect(usage.querySelector('h3')?.textContent).toBe(`${t.library.usage.title} 1`);
@@ -153,9 +153,15 @@ describe('AssetDetail', () => {
     expect(usage.textContent).toContain(t.library.usage.draft);
     expect(container.textContent).not.toContain(t.library.detail.nextPublish);
 
-    await render(detail({ usage: [{ ...draftOnly[0]!, title: null, live: true }] }));
+    await render(detail({ usage: [{ ...draftOnly[0]!, title: null, live: true, state: { label: t.library.usage.live, tone: 'ok' as const } }] }));
     expect($('[data-testid="asset-usage"] a')?.textContent).toBe(t.entries.untitled);
     expect($('[data-testid="asset-usage"]')?.textContent).toContain(t.library.usage.live);
+    expect(container.textContent).toContain(t.library.detail.nextPublish);
+
+    // Published but not yet proven live: the panel shows the state it is given, and the note stays.
+    await render(detail({ usage: [{ ...draftOnly[0]!, live: true, state: { label: t.publish.revalidated, tone: 'pending' as const } }] }));
+    expect($('[data-testid="asset-usage"]')?.textContent).toContain(t.publish.revalidated);
+    expect($('[data-testid="asset-usage"]')?.textContent).not.toContain(t.library.usage.live);
     expect(container.textContent).toContain(t.library.detail.nextPublish);
   });
 

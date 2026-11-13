@@ -88,7 +88,7 @@
 | Tags, folder per file | Later, each its own slice | L9, L10 |
 | "Missing alt text" filter | Images whose default alt is empty | L1, L4 |
 | "Unused" filter | Files that no current draft and no published revision refers to (section 4.1) | L1, L4 |
-| "Notkun" | The entries that use the file, each a link, marked "Á vefnum" or "Í uppkasti" | L1, L4 |
+| "Notkun" | The entries that use the file, each a link, marked "Á vefnum" only where the entry's publish is confirmed live (the overview's proof, spec 7.4: success is never shown before its proof), else the state the editor shows for the entry (published and waiting, not confirmed, failed), or "Í uppkasti" when only a draft uses it | L1, L4 |
 | Several sizes per image | Recommended: one web-sized published copy, sites resize from it. A full set of sizes only on evidence (section 7.2) | L12 |
 | Documents (PDF) | A second kind of file, a `file` field kind, links from rich text and link fields | L11 |
 | Replaces "several images in one upload" | Pick or upload many into a list of images in one step | L6 |

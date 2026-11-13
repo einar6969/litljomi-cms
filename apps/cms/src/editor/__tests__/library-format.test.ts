@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { t } from '@/i18n/is';
-import { fileMeta, filesLine, formatBytes, formatUploadDate, kindLabel, unusedLine, uploadResult, usageState } from '../media/library-format';
+import { fileMeta, filesLine, formatBytes, formatUploadDate, kindLabel, unusedLine, uploadResult } from '../media/library-format';
 
 describe('formatBytes', () => {
   it('writes sizes in Icelandic form, with a decimal comma and one decimal at most', () => {
@@ -67,13 +67,5 @@ describe('kindLabel', () => {
     expect(kindLabel('image/webp')).toBe('WebP');
     expect(kindLabel('application/pdf')).toBe('PDF');
     expect(kindLabel('image/gif')).toBe('image/gif');
-  });
-});
-
-describe('usageState', () => {
-  it('is "on the site" when the published revision uses the file, else "in a draft"', () => {
-    expect(usageState({ in_draft: true, in_published: true })).toEqual({ label: t.library.usage.live, tone: 'ok' });
-    expect(usageState({ in_draft: false, in_published: true })).toEqual({ label: t.library.usage.live, tone: 'ok' });
-    expect(usageState({ in_draft: true, in_published: false })).toEqual({ label: t.library.usage.draft, tone: 'neutral' });
   });
 });
