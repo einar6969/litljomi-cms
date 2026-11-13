@@ -225,6 +225,7 @@ describe('liveTargets', () => {
   // A7: content with no page of its own (a staff list, a singleton shown on shared pages).
   describe('a type without its own path', () => {
     const shared = {
+      types: [],
       site: {
         ...module.site,
         person: {

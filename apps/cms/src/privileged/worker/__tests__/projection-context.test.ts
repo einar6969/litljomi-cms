@@ -163,7 +163,7 @@ describe('localStackOrigin', () => {
 
 describe("a local stack's media", () => {
   const LOCAL = 'http://127.0.0.1:54331';
-  const asset = { id: 'a1', filename: 'a.jpg', mime: 'image/jpeg', width: 8, height: 6, focal_x: null, focal_y: null, default_alt: null, public_path: 'prufa/a1/a.jpg' };
+  const asset = { id: 'a1', filename: 'a.jpg', mime: 'image/jpeg', width: 8, height: 6, focal_x: null, focal_y: null, default_alt: null, public_path: 'prufa/a1/a.jpg', caption: null, credit: null };
   const context = (base: string) =>
     buildProjectionContext({ module: site, entries: [], assets: [asset], mediaUrl: (p) => publicMediaUrl(base, p), localMediaOrigin: localStackOrigin(base) });
 
