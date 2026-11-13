@@ -243,9 +243,9 @@ from cms.entries e
 join cms.drafts d on d.tenant_id = e.tenant_id and d.entry_id = e.id;
 
 -- ---------------------------------------------------------------------------
--- 5. api.worker_release_snapshot, as in 20261105130000_withdrawal_safety.sql plus one key on each
--- entry: order_rank, the entry's place (from 1) among the snapshot's entries of its type, by
--- position and then id. The worker lists a manually ordered type's entries in the bundle by it;
+-- 5. api.worker_release_snapshot, as in 20261112210000_media_library_delivery.sql (caption and
+-- credit on each asset, media library L3) plus one key on each entry: order_rank, the entry's
+-- place (from 1) among the snapshot's entries of its type, by position and then id. The worker lists a manually ordered type's entries in the bundle by it;
 -- every other type keeps the order it had (by entry id), so existing sites see no change. The
 -- entries array keeps its order. Same signature, result, owner and grants (CREATE OR REPLACE):
 -- service_role only.
@@ -305,7 +305,8 @@ begin
                       'id', a.id, 'original_path', a.original_path, 'filename', a.filename, 'mime', a.mime,
                       'width', a.width, 'height', a.height, 'focal_x', a.focal_x, 'focal_y', a.focal_y,
                       'default_alt', a.default_alt, 'public_path', a.public_path,
-                      'archived', a.archived_at is not null)
+                      'archived', a.archived_at is not null,
+                      'caption', a.caption, 'credit', a.credit)
                     order by a.id)
              from cms.assets a
              where a.tenant_id = rel.tenant_id
