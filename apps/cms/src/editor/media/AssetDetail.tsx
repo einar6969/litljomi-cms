@@ -8,11 +8,11 @@ import { Button } from '@/ui/Button';
 import { Field, fieldHelpId } from '@/ui/Field';
 import { Icon } from '@/ui/Icon';
 import { Notice as NoticeBox } from '@/ui/Notice';
-import { StatusBadge } from '@/ui/StatusBadge';
+import { StatusBadge, type BadgeTone } from '@/ui/StatusBadge';
 import { MAX_ALT_LENGTH, MAX_CAPTION_LENGTH, MAX_CREDIT_LENGTH, type AssetChange } from './asset-metadata';
 import type { FocalPoint } from './focal-point';
 import { FocalPointPicker } from './FocalPointPicker';
-import { formatBytes, kindLabel, usageState } from './library-format';
+import { formatBytes, kindLabel } from './library-format';
 
 /** The file as the panel shows it, read from `api.asset_list` under the editor's session. */
 export type AssetFile = {
@@ -31,8 +31,11 @@ export type AssetFile = {
   credit: string | null;
 };
 
-/** One entry that uses the file (`api.asset_usage`): `live` when its published revision does. */
-export type AssetUse = { entryId: string; href: string; title: string | null; typeLabel: string; live: boolean };
+/**
+ * One entry that uses the file (`api.asset_usage`): `live` when its published revision does (the
+ * publish note), `state` the pill, which says "Á vefnum" only for a publish proven live (§7.4).
+ */
+export type AssetUse = { entryId: string; href: string; title: string | null; typeLabel: string; live: boolean; state: { label: string; tone: BadgeTone } };
 
 type Props = {
   file: AssetFile;
@@ -252,7 +255,7 @@ export function AssetDetail({ file, url: initialUrl, usage, originalHref, closeH
         ) : (
           <ul>
             {usage.map((use) => {
-              const pill = usageState({ in_draft: !use.live, in_published: use.live });
+              const pill = use.state;
               return (
                 <li key={use.entryId}>
                   <span className="min-w-0">

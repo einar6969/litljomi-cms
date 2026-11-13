@@ -134,6 +134,8 @@ test('the library at 1440, 768 and 375 px: search, filters, both views, details,
       const usage = page.getByTestId('asset-usage');
       await expect(usage.getByRole('link', { name: `Kökufrétt ${token}` })).toBeVisible();
       await expect(usage).toContainText(t.library.usage.draft);
+      // Never published, so nothing proves the file live (spec 7.4): the pill never says "Á vefnum".
+      await expect(usage).not.toContainText(t.library.usage.live);
 
       const caption = `Nýbakað ${token} ${width}`;
       await panel.getByLabel(t.library.detail.caption).fill(caption);

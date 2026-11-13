@@ -43,7 +43,7 @@ export default async function AssetPage({ params }: Props) {
         <AssetDetail
           file={detail.file}
           url={detail.url}
-          usage={detail.usage.map((row) => assetUse(row, tenantPath, (type) => getType(tenant.slug, type)?.label))}
+          usage={detail.usage.map((row) => assetUse(row, tenantPath, (type) => getType(tenant.slug, type)?.label, detail.proof))}
           originalHref={`${libraryPath}/${detail.file.id}/original`}
         />
       </main>
