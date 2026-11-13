@@ -107,6 +107,30 @@
       },
       "retired": {}
     },
+    "events-page": {
+      "version": 1,
+      "transforms": [],
+      "fields": {
+        "intro": {
+          "kind": "text",
+          "required": true,
+          "multiline": true
+        },
+        "featured": {
+          "kind": "list",
+          "required": false,
+          "max": 3,
+          "of": {
+            "kind": "reference",
+            "required": false,
+            "to": [
+              "event"
+            ]
+          }
+        }
+      },
+      "retired": {}
+    },
     "notice": {
       "version": 2,
       "transforms": [

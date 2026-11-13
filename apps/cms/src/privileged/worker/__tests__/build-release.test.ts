@@ -81,13 +81,27 @@ const pair = defineType({
   preview: { title: 'target' },
   orderBy: 'target',
 });
+// A type with no site integration: nothing on the site is checked for it (A7).
+const blurb = defineType({
+  name: 'blurb',
+  version: 1,
+  label: 'Klausa',
+  fields: { title: text({ label: 'Titill', required: true }) },
+  preview: { title: 'title' },
+  orderBy: 'title',
+});
 const testModule = defineModule({
   tenant: 'prufa',
   locale: 'is',
   branding: { name: 'Prufa' },
-  types: [article, pair],
+  types: [article, pair, blurb],
   structure: [],
-  site: { article: { path: (e) => `/greinar/${e.slug}`, checks: () => [] } },
+  site: {
+    article: {
+      path: (e) => `/greinar/${e.slug}`,
+      checks: (e, release) => [{ path: `/greinar/${e.slug}`, expect: release.entries('article').some((x) => x.id === e.id) ? 'present' : 'absent' }],
+    },
+  },
 });
 vi.mock('@/modules/registry', () => ({
   getModule: (slug: string) => (slug === 'prufa' ? testModule : undefined),
@@ -430,6 +444,27 @@ describe('buildRelease: delivery', () => {
     expect(result.status).toBe('delivered');
     expect(result.bundle!.entries).toEqual({});
     expect(finishCalls()[0]!.p_request_ids).toEqual([]);
+  });
+});
+
+// A7, §7.4: an entry whose type has no integration, or whose checks are empty, can be delivered but
+// never proven live; the release records it so the editor sees "published, not confirmed".
+describe('buildRelease: entries with nothing to check (A7)', () => {
+  it('records the linked entries with no page check as nothing checked, beside the release’s other entry errors', async () => {
+    snapshot.entries.push(entry(E3, { title: 'Þrjú' }, { type: 'blurb', slug: null, schema_version: 1 }));
+    snapshot.requests = [
+      { id: 'r1', entry_id: E1, action: 'publish', revision_id: 'x' },
+      { id: 'r3', entry_id: E3, action: 'publish', revision_id: 'z' },
+    ];
+    const result = await build();
+    expect(result.status).toBe('delivered');
+    expect(finishCalls()[0]!.p_error).toEqual({ nothingChecked: [{ entryId: E3 }] });
+    expect(alertMock).not.toHaveBeenCalled();
+  });
+
+  it('records nothing when every linked entry has a page check', async () => {
+    await build();
+    expect(finishCalls()[0]!.p_error).toBeNull();
   });
 });
 

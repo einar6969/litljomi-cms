@@ -42,11 +42,17 @@ export type PublicationStatusRow = {
   /** The entry's newest request, shown or not: the view skips a superseded unpublish (M5-01). */
   latest_request_id: string;
   latest_action: 'publish' | 'unpublish';
+  /**
+   * A7: the request's delivered release recorded that no page is checked for the entry (its type
+   * has no site integration, or the module's checks were empty), so nothing proves it live.
+   */
+  nothing_checked: boolean;
 };
 
 /**
  * `pending` changes on its own; every other tone is final. `ok` is "Birt á vef ✓", `neutral` is
- * "Tekið af vef", `warning` is "Enginn vefur tengdur", `error` every failure (Task 32).
+ * "Tekið af vef", `warning` is "Enginn vefur tengdur" or a delivery with nothing checked (A7),
+ * `error` every failure (Task 32).
  */
 export type DisplayState = {
   label: string;
@@ -69,7 +75,8 @@ export type RefusedReference = { path: string; kind: 'entry' | 'asset'; id: stri
 /** The columns the panel reads, in the view's order. */
 export const PUBLICATION_STATUS_COLUMNS =
   'request_id, tenant_id, entry_id, action, status, error, requested_at, release_number, release_status, omitted, ' +
-  'missing_assets, site_count, sites_notified, sites_live_ok, sites_not_confirmed, retries_exhausted, live_retrying, latest_request_id, latest_action';
+  'missing_assets, site_count, sites_notified, sites_live_ok, sites_not_confirmed, retries_exhausted, live_retrying, latest_request_id, latest_action, ' +
+  'nothing_checked';
 
 /** "Í birtingu…": a request on its way. The panel also shows it while it waits for its own new request's row. */
 export const IN_PROGRESS: Readonly<DisplayState> = Object.freeze({ label: t.publish.inProgress, tone: 'pending' });
@@ -87,7 +94,9 @@ export const isFinal = (state: DisplayState): boolean => state.tone !== 'pending
  *   (a release still building, or one that failed before delivery, links no request, so it is
  *   "committed" here too);
  * - every active site notified, a live check still running → "Bíður eftir vefnum";
- * - every active site's live_status ok → "Birt á vef ✓" (publish) or "Tekið af vef" (unpublish, neutral);
+ * - every active site's live_status ok → "Birt á vef ✓" (publish) or "Tekið af vef" (unpublish, neutral),
+ *   unless no page is checked for the entry (A7): then "published, not confirmed" or "withdrawn, not
+ *   confirmed", a final warning that says why (a row that does not say counts as nothing checked);
  * - left out of the release, or its retries exhausted (24 hours of failed builds, notifications or
  *   live checks, M3-02 and M3-03) → "Birting á vef mistókst";
  * - every site settled, one not confirmed and checked again later (M3-03) → "Ekki enn staðfest á
@@ -134,6 +143,12 @@ function deliveryState(row: PublicationStatusRow): DisplayState {
   // Decision 39.3: nothing will ever confirm it, so the panel stops polling. Never a success.
   if (sites === 0) return { label: t.publish.noSite, tone: 'warning' };
   if (row.sites_live_ok === sites) {
+    // A7, §7.4: the sites accepted the release, but no page was looked at for this entry.
+    if (row.nothing_checked !== false) {
+      return row.action === 'publish'
+        ? { label: t.publish.liveNothingChecked, tone: 'warning', detail: t.publish.liveNothingCheckedDetail }
+        : { label: t.publish.removedNothingChecked, tone: 'warning', detail: t.publish.removedNothingCheckedDetail };
+    }
     return row.action === 'publish' ? { label: t.publish.live, tone: 'ok' } : { label: t.publish.removed, tone: 'neutral', detail: t.publish.removedDetail };
   }
   // §7.4, M3-02: the sweep stops retrying 24 hours after the first failure and alerts.

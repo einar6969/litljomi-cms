@@ -90,6 +90,7 @@ const LIVE = {
   retries_exhausted: false,
   live_retrying: false,
   latest_action: 'publish',
+  nothing_checked: false,
 };
 const UNPROVEN = { ...LIVE, entry_id: 'e2', status: 'pending', release_status: null, sites_notified: 0, sites_live_ok: 0 };
 /** Entry e2's latest request ended before any release, in `status`. */
@@ -152,7 +153,7 @@ describe('the reads', () => {
     const status = calls.find(isStatus)!;
     expect(status.columns).toBe(OVERVIEW_STATUS_COLUMNS);
     expect(status.columns).toBe(
-      'entry_id, action, status, requested_at, release_status, omitted, site_count, sites_notified, sites_live_ok, sites_not_confirmed, retries_exhausted, live_retrying, latest_action',
+      'entry_id, action, status, requested_at, release_status, omitted, site_count, sites_notified, sites_live_ok, sites_not_confirmed, retries_exhausted, live_retrying, latest_action, nothing_checked',
     );
     expect(status.columns.split(', ')).not.toContain('error');
     expect(status.columns.split(', ')).not.toContain('missing_assets');

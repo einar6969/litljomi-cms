@@ -163,7 +163,7 @@ describe('the tenant overview', () => {
     const status = summarizeStatus([
       {
         entry_id: 'e1', action: 'publish', status: 'pending', requested_at: '2026-11-05T12:00:00Z', release_status: null, omitted: false, site_count: 1,
-        sites_notified: 0, sites_live_ok: 0, sites_not_confirmed: 0, retries_exhausted: false, live_retrying: false, latest_action: 'publish',
+        sites_notified: 0, sites_live_ok: 0, sites_not_confirmed: 0, retries_exhausted: false, live_retrying: false, latest_action: 'publish', nothing_checked: false,
       },
     ]);
     const html = render({ status: { ok: true, value: status } });

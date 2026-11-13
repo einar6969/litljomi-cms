@@ -304,10 +304,11 @@ async function publish(db: SupabaseClient, read: WorkerRead, originals: Original
   // code (invalid_data); projection_failed is left for what only the projection can find.
   const invalid = validate(type, draft.data);
   if (invalid) return reject(invalid);
-  // Decision 34.5: an entry of a type with site pages needs a slug for its path. Checked on the
-  // read only, not again at commit: the revision stores no path, and the release build projects
-  // with the slug the entry has then.
-  if (module.site[type.name] && entry.slug === null) return reject({ code: 'slug_required' });
+  // Decision 34.5: an entry of a type with a page of its own needs a slug for its path; a type shown
+  // only on shared pages (no `path`, A7) needs none. Checked on the read only, not again at commit:
+  // the revision stores no path, and the release build projects with the slug the entry has then.
+  const integration = Object.hasOwn(module.site, type.name) ? module.site[type.name] : undefined;
+  if (integration?.path && entry.slug === null) return reject({ code: 'slug_required' });
 
   // Project exactly as the release build would (§6.2), so committed content is deliverable.
   const base = supabaseUrl();

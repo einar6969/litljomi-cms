@@ -1,6 +1,7 @@
 import 'server-only';
 import { z } from 'zod';
 import { canonicalUuid } from '@litljomi/rich-text';
+import type { ReleaseView } from '@litljomi/cms-schema';
 import { PREVIEW_PATH_PARAM, PREVIEW_TOKEN_TTL_SECONDS, isUsablePreviewSecret, safePreviewPath, signPreviewToken } from '@litljomi/cms-sdk';
 import { getModule } from '@/modules/registry';
 // Not '@/lib/tenant': that module loads the editor's cookie-bound client (next/headers).
@@ -49,15 +50,20 @@ type EntryRow = { id: string; tenant_id: string; type: string; slug: string | nu
 
 /**
  * Where the site's preview route sends the editor (spec §7.5): the entry's own path from the
- * module's `site.path` (§3.2), or the site's home page when the type has no page of its own or
- * the entry has no path yet (an event without a slug). The site checks the path again.
+ * module's `site.path` (§3.2); for a type with no page of its own (A7), the first page its checks
+ * show it on, given a release that holds it; the site's home page when the type has no site
+ * integration or the entry has no path yet (an event without a slug). The site checks the path again.
  */
 function entryPath(tenant: string, e: EntryRow): string {
   const site = getModule(tenant)?.site;
   const integration = site && Object.hasOwn(site, e.type) ? site[e.type] : undefined;
   if (!integration) return '/';
+  const entry = { id: e.id, type: e.type, slug: e.slug, sortAt: e.sort_at };
   try {
-    return safePreviewPath(integration.path({ id: e.id, type: e.type, slug: e.slug, sortAt: e.sort_at })) ?? '/';
+    if (integration.path) return safePreviewPath(integration.path(entry)) ?? '/';
+    const shown: ReleaseView = { entries: (type) => (type === e.type ? [entry] : []) };
+    const first = integration.checks(entry, shown, null).find((c) => c.expect === 'present');
+    return (first && safePreviewPath(first.path)) ?? '/';
   } catch {
     return '/';
   }

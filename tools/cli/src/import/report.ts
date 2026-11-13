@@ -170,7 +170,7 @@ export async function buildReport(input: ReportInput): Promise<Report> {
       const integration = module.site[item.type];
       let path: string | null = null;
       try {
-        path = integration ? integration.path({ id, type: item.type, slug, sortAt: delivered?.sortAt ?? sortAt }) : null;
+        path = integration?.path ? integration.path({ id, type: item.type, slug, sortAt: delivered?.sortAt ?? sortAt }) : null;
       } catch {
         path = null;
       }

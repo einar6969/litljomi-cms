@@ -43,6 +43,22 @@ describe('defineModule', () => {
       expect(() => defineModule(m)).toThrow(new RegExp(`type "${name}" is the name of an editor page`));
     }
   });
+
+  // A7: content with no page of its own (a staff list, a singleton's settings) declares its checks
+  // on the shared pages that show it, and no path.
+  it('accepts a site integration without a path of its own', () => {
+    const settings = defineType({ name: 'settings', version: 1, label: 'Stillingar', fields: { title: text({ label: 'Title' }) }, preview: { title: 'title' }, orderBy: 'title' });
+    const m = defineModule({
+      tenant: 't',
+      locale: 'is',
+      branding: { name: 'T' },
+      types: [settings],
+      structure: [{ type: 'settings', label: 'Stillingar', singleton: true }],
+      site: { settings: { checks: () => [{ path: '/', expect: 'present' }] } },
+    });
+    expect(m.site.settings!.path).toBeUndefined();
+    expect(m.site.settings!.checks({ id: 'x', type: 'settings', slug: null, sortAt: null }, { entries: () => [] }, null)).toEqual([{ path: '/', expect: 'present' }]);
+  });
 });
 
 describe('structure (M2-09; spec §3.2)', () => {

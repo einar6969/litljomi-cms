@@ -22,8 +22,11 @@ export type LiveCheckFailure = { path: string; reason: string };
 export type LiveCheckInput = {
   baseUrl: string;
   checks: LiveCheck[];
-  /** The entry's own public path: an `absent` check of it passes only on 404. */
-  ownPath: string;
+  /**
+   * The entry's own public path: an `absent` check of it passes only on 404. Null for an entry with
+   * no page of its own (A7): every check is then of a shared page, and an `absent` one passes on 200.
+   */
+  ownPath: string | null;
   entry: { id: string; contentHash: string | null };
   mediaUrls: string[];
   /** Sends the webhook again; called at most once per run. */
@@ -89,7 +92,7 @@ export function createPageFetcher(maxConcurrent = MAX_CONCURRENT_FETCHES): PageF
  * - `absent`: no entry marker carrying the id at all, whatever its hash (scanEntryMarkers' ids, so
  *   an incomplete marker fails closed), on a page scanned to its end (an incomplete scan fails,
  *   `scan_incomplete`); the own path must answer 404, any other page 200 (an error page proves
- *   nothing about the page).
+ *   nothing about the page). An entry without an own path (`ownPath` null) has only other pages.
  * - media: every URL answers 200.
  *
  * When a page check fails on any poll after the first (the first request triggers regeneration), for
@@ -144,7 +147,7 @@ export async function runLiveChecks(o: LiveCheckInput): Promise<{ live: boolean;
     if (scanned.ids.includes(o.entry.id)) return { pass: false, reason: 'marker_present' };
     // A page the scan could not read to its end proves nothing about the rest (inconclusive).
     if (!scanned.complete) return { pass: false, reason: 'scan_incomplete' };
-    const wanted = check.path === o.ownPath ? 404 : 200;
+    const wanted = o.ownPath !== null && check.path === o.ownPath ? 404 : 200;
     return r.status === wanted ? { pass: true, reason: '' } : { pass: false, reason: `status ${r.status}` };
   }
 
