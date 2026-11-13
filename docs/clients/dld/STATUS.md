@@ -15,7 +15,9 @@ State checked at the source before starting: the eight PRs' heads, passes and CI
 
 | Lane | How | State |
 |---|---|---|
-| WP1 | workflow `wf_82725fc6-418` (`workflows/land-track-a.js`) | integrating; holds both stacks |
+| WP1 | workflow `wf_82725fc6-418` | **Merged:** PR #83 at `3047987`, merge commit `702899f`. `Review: PASS` on that head by the quality reviewer; spec and security passes on `dc6d338` (the one later commit changes three browser specs only). CI green; browser suite 104 passed, 0 failed, `manual-order.spec.ts` included; upgrade rehearsal passed (four migrations in about 49 ms, no lock wait, old worker delivered on the new database, old rows intact). #73 and #76–#82 show as merged |
+| WP2 | the coordinator, by the plan's steps | **Deployed 2026-11-13.** Dry-run listed exactly the four files, no drops; `db push` applied them; `migration list` shows 50 of 50 matched; `production` fast-forwarded `b8c702c..702899f`. Checked: `vefstjorn` and `vefstjorn-demo` Ready on `702899f`; production still holds 2 tenants, 54 entries, 9 assets, 56 releases, new columns all null; LABAK's site answers 200; security advisors show one warning (leaked-password protection off), nothing from these migrations. **Owed:** one publish on `demo` reaching Live, which needs a signed-in editor (Einar) |
+| After landing | workflow `wf_19fbdc34-1ec` | PR #71 onto `main` and re-passed; WP5 on slot 2, then WP4 part 2 (brief `2026-11-13-cms-source-part2-tier2.md`) and a parity review; the „Á vefnum" follow-up PR |
 | WP4, part 1 | workflow `wf_d9981869-aa7`; brief in the DLD workspace, `metaprompts/active/2026-11-13-cms-source-tier2.md` | **Built and passed** a quality review at `4a8ade6` on `cms/integration` (checked: pushed, `dld-is` `main` untouched at `13f1df0`). The default build is still today's 64 pages. Part 2 waits for WP1, WP3 and WP5 |
 | WP7, batch 1 | the same workflow | **Approved by Einar (E1), 2026-11-13:** [copy-batch-1.md](copy-batch-1.md), 114 new strings, 1 changed, 3 that need a decision. Its strings file is identical to `integration/track-a`'s at `dc6d338` (checked by the coordinator) |
 | WP3 | workflow `wf_f9bf27b4-089` | **Built and passed** at `a05625d` (PR #71, still a draft; `Review: PASS` posted by the reviewer). It carries `integration/track-a` by merge; it is merged after WP1 lands, once brought up to date. The model needed no core change |
@@ -30,7 +32,7 @@ State checked at the source before starting: the eight PRs' heads, passes and CI
 
 ## Where every piece stands (2026-11-12, 23:45)
 
-**Merged to `main`** (none of it is on production yet; `production` is at `b8c702c`):
+**Merged to `main`** (on production since 2026-11-13; `production` = `main` = `702899f`):
 
 | PR | What |
 |---|---|
@@ -40,7 +42,7 @@ State checked at the source before starting: the eight PRs' heads, passes and CI
 | #75 | A2: the generic `import` command, with its plan `docs/plans/import.md` |
 | #70 | A11: the `video` field kind; SDK 0.2.1 |
 
-**Built, reviewed and green, not merged** (workflow `wf_cbbad69a-75a`, finished 23:30). Checked at the source by the coordinator: each has `Review: PASS` on its exact head from a reviewer agent, CI green, and GitHub reports it mergeable.
+**Landed together as PR #83 on 2026-11-13** (built by workflow `wf_cbbad69a-75a`, finished 23:30). Checked at the source by the coordinator: each has `Review: PASS` on its exact head from a reviewer agent, CI green, and GitHub reports it mergeable.
 
 | PR | What | Head | Migration |
 |---|---|---|---|
@@ -49,7 +51,7 @@ State checked at the source before starting: the eight PRs' heads, passes and CI
 | #81 | Library L4 + L5: the library page, several files per upload (stacked on #78) | `8c38170` | none |
 | #82 | Library L6: choose from the library, pick many into a list (stacked on #81) | `922ef79` | none |
 | #76 | Library L3: caption and credit reach the site; SDK 0.2.2 | `4ff5d03` | `20261112210000_media_library_delivery.sql` |
-| #79 | A7: live confirmation for content with no page of its own | `474dc48` | `20261112210000_nothing_checked.sql` |
+| #79 | A7: live confirmation for content with no page of its own | `474dc48` | `20261112220000_nothing_checked.sql` (renumbered on the integration branch) |
 | #77 | A12: manual ordering of entries | `78b7ccb` | `20261112230000_manual_order.sql` |
 | #80 | A4: rehearse a tenant on a local stack, images included; rich-text 0.2.1 | `411ef5d` | none |
 
