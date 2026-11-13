@@ -88,8 +88,26 @@ function checkStructure(m: ModuleManifest): void {
   }
 }
 
-/** Declares a module. Throws when its structure does not fit its types (see `checkStructure`). */
+/**
+ * Names no content type may have: the editor's own pages beside the type lists under
+ * `/t/<tenant>/` (apps/cms/src/app/(editor)/t/[tenant]/). A type's list is `/t/<tenant>/<type>`, so
+ * a type named after one of them could never be opened. The CMS app's tests hold this list to the
+ * folders there.
+ */
+export const RESERVED_TYPE_NAMES: readonly string[] = Object.freeze(['assets']);
+
+function checkTypeNames(m: ModuleManifest): void {
+  for (const type of m.types) {
+    if (RESERVED_TYPE_NAMES.includes(type.name)) throw new Error(`types: type "${type.name}" is the name of an editor page; choose another name`);
+  }
+}
+
+/**
+ * Declares a module. Throws when a type has a reserved name (`RESERVED_TYPE_NAMES`) or its
+ * structure does not fit its types (see `checkStructure`).
+ */
 export function defineModule(m: ModuleManifest): ModuleManifest {
+  checkTypeNames(m);
   checkStructure(m);
   return m;
 }

@@ -5,7 +5,7 @@ import type { FieldProps } from '../field-registry';
 
 export function DateField({ id, label, required, value, onChange }: FieldProps) {
   return (
-    <Field label={label} htmlFor={id}>
+    <Field label={label} htmlFor={id} required={required}>
       <input
         type="date"
         id={id}

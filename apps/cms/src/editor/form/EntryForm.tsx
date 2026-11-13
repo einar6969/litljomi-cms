@@ -14,6 +14,7 @@ import { PreviewButton } from '../publish/PreviewButton';
 import { PublishPanel } from '../publish/PublishPanel';
 import type { RevisionSummary } from '../revisions';
 import { onSignOut, unsavedStore } from '../unsaved';
+import { ArchiveEntry } from './ArchiveEntry';
 import { changedFields } from './conflict';
 import type { FieldDescriptor } from './descriptors';
 import { FieldInput } from './FieldInput';
@@ -33,6 +34,10 @@ type Props = {
   initialVersion: number;
   /** The entry has a published revision (Task 25: the publish panel offers to take it down). */
   published?: boolean;
+  /** The draft version that is published now (`published_draft_version`), or null. */
+  publishedVersion?: number | null;
+  /** The entry may be archived while it is not published (A6). False for a singleton. */
+  archivable?: boolean;
   /** The entry's published revisions, newest first (M2-16). */
   revisions?: readonly RevisionSummary[];
   /** The page was opened right after a restore: it says so once. */
@@ -59,7 +64,20 @@ async function sessionIsUser(userId: string): Promise<boolean> {
  * back with a notice, saved only when the editor chooses to. Every save names the user, so another
  * account's session never saves them. Signing out, in this tab or another, drops them.
  */
-export function EntryForm({ tenant, userId, entryId, fields, titleKey, initialData, initialVersion, published = false, revisions = [], restored = false }: Props) {
+export function EntryForm({
+  tenant,
+  userId,
+  entryId,
+  fields,
+  titleKey,
+  initialData,
+  initialVersion,
+  published = false,
+  publishedVersion = null,
+  archivable = false,
+  revisions = [],
+  restored = false,
+}: Props) {
   const [data, setData] = useState<Record<string, unknown>>(initialData);
   const latest = useRef(data);
   // Bumped when "reload theirs" replaces the values, so every field remounts with them (a field may
@@ -100,6 +118,8 @@ export function EntryForm({ tenant, userId, entryId, fields, titleKey, initialDa
     [schedule],
   );
   const fieldLabels = useMemo(() => Object.fromEntries(fields.map((f) => [f.key, f.label])), [fields]);
+  // Whether the publish panel says the entry is not published, with nothing on its way (A6).
+  const [notPublished, setNotPublished] = useState(false);
 
   return (
     <EditorTenantProvider value={tenant}>
@@ -128,12 +148,22 @@ export function EntryForm({ tenant, userId, entryId, fields, titleKey, initialDa
         </form>
         <div className="rail">
           {/* The request carries the version the editor last saw (review focus 3). */}
-          <PublishPanel entryId={entryId} version={autosave.version} disabled={blocked} initiallyPublished={published} fieldLabels={fieldLabels}>
+          <PublishPanel
+            entryId={entryId}
+            version={autosave.version}
+            disabled={blocked}
+            initiallyPublished={published}
+            publishedVersion={publishedVersion}
+            fieldLabels={fieldLabels}
+            onArchivableChange={archivable ? setNotPublished : undefined}
+          >
             {/* Preview shows the saved draft (spec §7.5, M3-12). */}
             <PreviewButton entryId={entryId} disabled={blocked} unsaved={() => autosave.state === 'saving' || autosave.pendingData() !== null} />
           </PublishPanel>
           <div className="slot-hist">
             <RevisionHistory entryId={entryId} revisions={revisions} version={autosave.version} disabled={blocked} hasUnsaved={hasUnsaved} />
+            {/* Archived, the entry's unsaved copy in this tab is dropped (not `close()`, which would show "signed out"). */}
+            {archivable && notPublished ? <ArchiveEntry entryId={entryId} disabled={blocked} beforeLeave={() => store.clear(entryId)} /> : null}
           </div>
         </div>
       </div>
@@ -187,6 +217,8 @@ type ConflictProps = {
   reloadTheirs: () => void;
 };
 
+const CONFLICT_NOTICE_ID = 'conflict-notice';
+
 /**
  * A stale save (spec §5.5, M2-11): the editor's values stay in the form; every field that differs
  * from the newer version is listed with both values, and the editor picks one version. If the newer
@@ -196,8 +228,17 @@ function ConflictNotice({ theirs, fields, mine, retry, keepMine, reloadTheirs }:
   const r = t.editor.resolve;
   const ready = theirs?.status === 'ready' ? theirs : null;
   const changed = useMemo(() => (ready ? changedFields(fields, mine, ready.data) : []), [ready, fields, mine]);
+  // A10 (probe §14, 7): the notice is at the top of the form, often far above the field being
+  // edited. When it appears it is brought into view and takes the focus, once.
+  useEffect(() => {
+    const notice = document.getElementById(CONFLICT_NOTICE_ID);
+    if (!notice) return;
+    notice.focus({ preventScroll: true });
+    const still = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    notice.scrollIntoView?.({ block: 'start', behavior: still ? 'auto' : 'smooth' });
+  }, []);
   return (
-    <Notice as="div" tone="error" role="alert">
+    <Notice as="div" tone="error" role="alert" id={CONFLICT_NOTICE_ID} tabIndex={-1} className="conflict-note">
       <strong>{t.editor.conflict}</strong>
       <p>{t.editor.conflictBody}</p>
       {theirs?.status === 'failed' || theirs === undefined ? (

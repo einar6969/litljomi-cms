@@ -48,12 +48,23 @@ export type PublicationStatusRow = {
  * `pending` changes on its own; every other tone is final. `ok` is "Birt á vef ✓", `neutral` is
  * "Tekið af vef", `warning` is "Enginn vefur tengdur", `error` every failure (Task 32).
  */
-export type DisplayState = { label: string; tone: 'pending' | 'ok' | 'neutral' | 'warning' | 'error'; detail?: string };
+export type DisplayState = {
+  label: string;
+  tone: 'pending' | 'ok' | 'neutral' | 'warning' | 'error';
+  detail?: string;
+  /** One line per thing the refusal is about, when there is more to say than the field (a reference). */
+  lines?: string[];
+};
 
 export type DisplayOptions = {
   /** The content type's field labels by key, to name the fields a validation failure is about. */
   fieldLabels?: Readonly<Record<string, string>>;
+  /** Titles of referenced entries by id, as the panel read them; null for an entry with no title. */
+  entryTitles?: Readonly<Record<string, string | null>>;
 };
+
+/** A refused reference as the worker records it (`error.refs`, §6.2 step 5). */
+export type RefusedReference = { path: string; kind: 'entry' | 'asset'; id: string; reason: 'unpublished' | 'archived' | 'not_found' };
 
 /** The columns the panel reads, in the view's order. */
 export const PUBLICATION_STATUS_COLUMNS =
@@ -98,7 +109,7 @@ export function displayState(row: PublicationStatusRow, options: DisplayOptions 
     case 'committed':
       return deliveryState(row);
     case 'failed_validation':
-      return invalidState(row, options.fieldLabels ?? {});
+      return invalidState(row, options.fieldLabels ?? {}, options.entryTitles ?? {});
     case 'superseded':
       // M5-01: the view skips a superseded repeat, so the publish it cancelled can be what is shown,
       // when no committed unpublish before it applies (then the view shows that unpublish).
@@ -142,8 +153,26 @@ function deliveryState(row: PublicationStatusRow): DisplayState {
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
-// A reference's location as the database records it: jsonpath with quoted keys, `$."field"…`.
-const REF_FIELD = /^\$\."([A-Za-z0-9_-]{1,64})"/;
+// A reference's location as the database records it: jsonpath with quoted keys, `$."field"…`,
+// and a list item's position right after its field's key, `$."field"[2]…`.
+const REF_FIELD = /^\$\."([A-Za-z0-9_-]{1,64})"(?:\[(\d{1,6})\])?/;
+
+const REASONS = new Set(['unpublished', 'archived', 'not_found']);
+
+/** The well-formed references of a recorded `invalid_reference` error, in order. */
+export function refusedReferences(error: unknown): RefusedReference[] {
+  if (!isObject(error) || !Array.isArray(error.refs)) return [];
+  return error.refs.filter(
+    (ref): ref is RefusedReference =>
+      isObject(ref) && typeof ref.path === 'string' && (ref.kind === 'entry' || ref.kind === 'asset') && typeof ref.id === 'string' && REASONS.has(ref.reason as string),
+  );
+}
+
+/** The ids of the entries a refused publish referred to, once each: the panel reads their titles. */
+export function refusedEntryIds(row: PublicationStatusRow | null): string[] {
+  if (!row || row.status !== 'failed_validation') return [];
+  return [...new Set(refusedReferences(row.error).filter((ref) => ref.kind === 'entry').map((ref) => ref.id))];
+}
 
 /** The keys of the top-level fields a recorded validation error is about, in order, once each. */
 function fieldKeysOf(error: Record<string, unknown>): string[] {
@@ -163,12 +192,29 @@ function fieldKeysOf(error: Record<string, unknown>): string[] {
   return [...new Set(keys)];
 }
 
-function invalidState(row: PublicationStatusRow, labels: Readonly<Record<string, string>>): DisplayState {
+/** "Tengd verk 3: „Vorhátíð“ er ekki birt." */
+function referenceLine(ref: RefusedReference, labels: Readonly<Record<string, string>>, titles: Readonly<Record<string, string | null>>): string | null {
+  const match = REF_FIELD.exec(ref.path);
+  if (!match) return null;
+  const key = match[1]!;
+  const label = Object.hasOwn(labels, key) ? labels[key]! : key;
+  const field = match[2] === undefined ? label : t.editor.list.item.replace('{label}', label).replace('{n}', String(Number(match[2]) + 1));
+  const p = t.publish.reference;
+  let target: string;
+  if (ref.kind === 'asset') target = p.image;
+  else if (ref.reason !== 'not_found' && Object.hasOwn(titles, ref.id)) target = `„${titles[ref.id] || t.entries.untitled}“`;
+  else target = p.unknownEntry;
+  const reason = ref.kind === 'asset' || ref.reason === 'not_found' ? p.notFound : ref.reason === 'archived' ? p.archived : p.unpublished;
+  return p.line.replace('{field}', field).replace('{target}', target).replace('{reason}', reason);
+}
+
+function invalidState(row: PublicationStatusRow, labels: Readonly<Record<string, string>>, titles: Readonly<Record<string, string | null>>): DisplayState {
   const error = isObject(row.error) ? row.error : {};
-  const named = (names: string[], detail?: string): DisplayState => ({
+  const named = (names: string[], detail?: string, lines?: string[]): DisplayState => ({
     label: `${t.publish.invalid} ${names.length > 0 ? names.join(', ') : t.publish.invalidGeneric}`,
     tone: 'error',
     ...(detail ? { detail } : {}),
+    ...(lines && lines.length > 0 ? { lines } : {}),
   });
   if (error.code === 'asset_missing') {
     const files = (row.missing_assets ?? []).filter((f) => typeof f === 'string' && f !== '');
@@ -178,8 +224,12 @@ function invalidState(row: PublicationStatusRow, labels: Readonly<Record<string,
   if (error.code === DRAFT_OUTDATED) return { label: `${t.publish.invalid} ${t.publish.outdated}`, tone: 'error', detail: t.publish.outdatedDetail };
   if (error.code === 'slug_required') return named([t.editor.slug.label], t.publish.invalidDetail);
   const keys = fieldKeysOf(error);
-  return named(
-    keys.map((key) => (Object.hasOwn(labels, key) ? labels[key]! : key)),
-    keys.length > 0 ? t.publish.invalidDetail : undefined,
-  );
+  const names = keys.map((key) => (Object.hasOwn(labels, key) ? labels[key]! : key));
+  if (error.code === 'invalid_reference') {
+    const refs = refusedReferences(error);
+    const lines = refs.map((ref) => referenceLine(ref, labels, titles)).filter((line): line is string => line !== null);
+    const detail = refs.some((ref) => ref.kind === 'entry') ? t.publish.reference.detail : keys.length > 0 ? t.publish.invalidDetail : undefined;
+    return named(names, detail, lines);
+  }
+  return named(names, keys.length > 0 ? t.publish.invalidDetail : undefined);
 }

@@ -52,6 +52,7 @@ export { newsType } from './library/news.ts';
 export {
   defineModule,
   isSingleton,
+  RESERVED_TYPE_NAMES,
   structureItems,
   type LiveCheck,
   type ModuleManifest,

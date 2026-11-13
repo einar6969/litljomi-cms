@@ -302,6 +302,22 @@ export const is = {
       removeLink: 'Fjarlægja tengil',
       invalid: 'Textinn inniheldur eitthvað sem ekki er hægt að vista. Síðasta gilda útgáfan er vistuð.',
       unreadable: 'Ekki er hægt að opna þennan texta hér. Gildi hans helst óbreytt.',
+      // A10 (draft): one line after a paste that left something out.
+      droppedImages: 'Myndum var sleppt úr textanum sem var límdur inn.',
+      droppedTables: 'Töflum var sleppt úr textanum sem var límdur inn; texti þeirra kom inn sem málsgreinar.',
+      droppedBoth: 'Myndum og töflum var sleppt úr textanum sem var límdur inn; texti taflnanna kom inn sem málsgreinar.',
+    },
+    // A6 (draft): archiving an entry that is not published. Nothing in the editor brings it back.
+    archive: {
+      title: 'Skjalasafn',
+      hint: 'Færsla sem er ekki birt má setja í skjalasafn. Hún hverfur þá úr listanum.',
+      button: 'Setja í skjalasafn',
+      confirm: 'Viltu setja færsluna í skjalasafn? Hún hverfur úr listanum og ekki er hægt að sækja hana aftur hér.',
+      confirmButton: 'Já, setja í skjalasafn',
+      cancel: 'Hætta við',
+      archiving: 'Set í skjalasafn…',
+      published: 'Færslan er birt. Taktu hana af vef áður en hún er sett í skjalasafn.',
+      failed: 'Ekki tókst að setja færsluna í skjalasafn. Reyndu aftur.',
     },
     // Named when a publish finds no slug; nobody sets one by hand.
     slug: {
@@ -348,6 +364,22 @@ export const is = {
     // M5-01 (draft): a publish that a newer unpublish cancelled. It says nothing about what the site shows.
     cancelled: 'Hætt var við birtinguna vegna beiðni um að taka færsluna af vef.',
     statusUnavailable: 'Ekki tókst að sækja stöðu birtingar.',
+    // A10 (draft): shown until the panel's first status read answers, instead of "Ekki birt".
+    loading: 'Sæki stöðu…',
+    // A10 (draft): the entry is live, but its draft has saved changes that are not published.
+    changed: 'Óbirtar breytingar',
+    changedDetail: 'Á vefnum er síðasta birta útgáfan. Birtu til að setja breytingarnar þangað.',
+    // A10 (draft): a publish refused for a reference, one line per reference:
+    // "{field}: {target} {reason}", e.g. "Tengd verk 2: „Vorhátíð“ er ekki birt."
+    reference: {
+      line: '{field}: {target} {reason}',
+      unpublished: 'er ekki birt.',
+      archived: 'er í skjalasafni.',
+      notFound: 'finnst ekki.',
+      unknownEntry: 'færslan sem vísað er í',
+      image: 'myndin sem vísað er í',
+      detail: 'Birtu fyrst færslurnar sem vísað er í, eða veldu aðrar, og birtu síðan aftur.',
+    },
   },
   // M3-12: the editor's preview button and its failures.
   preview: {
