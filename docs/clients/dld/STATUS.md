@@ -16,13 +16,15 @@ State checked at the source before starting: the eight PRs' heads, passes and CI
 | Lane | How | State |
 |---|---|---|
 | WP1 | workflow `wf_82725fc6-418` (`workflows/land-track-a.js`) | integrating; holds both stacks |
-| WP4, part 1 | workflow `wf_d9981869-aa7`; brief in the DLD workspace, `metaprompts/active/2026-11-13-cms-source-tier2.md` | building on `cms/integration`, then a quality review |
-| WP7, batch 1 | the same workflow; writes `copy-batch-1.md` here, built from the six branch heads, to be checked against `integration/track-a` before Einar sees it | compiling |
+| WP4, part 1 | workflow `wf_d9981869-aa7`; brief in the DLD workspace, `metaprompts/active/2026-11-13-cms-source-tier2.md` | **Built and passed** a quality review at `4a8ade6` on `cms/integration` (checked: pushed, `dld-is` `main` untouched at `13f1df0`). The default build is still today's 64 pages. Part 2 waits for WP1, WP3 and WP5 |
+| WP7, batch 1 | the same workflow | **Ready for Einar (E1):** [copy-batch-1.md](copy-batch-1.md), 114 new strings, 1 changed, 3 that need a decision. Its strings file is identical to `integration/track-a`'s at `dc6d338` (checked by the coordinator) |
 | WP3 | workflow `wf_f9bf27b4-089` | **Built and passed** at `a05625d` (PR #71, still a draft; `Review: PASS` posted by the reviewer). It carries `integration/track-a` by merge; it is merged after WP1 lands, once brought up to date. The model needed no core change |
 
 **Coordinator's choices, 2026-11-13:**
 - WP4 runs in two parts. Part 1 adds the CMS source beside the site's own content source, chosen by the SDK's environment variables, so the default build stays today's 64 pages. Part 2 (after WP3 and WP5) re-vendors from merged `main`, proves parity against the local tenant and removes the old content files.
 - WP3 waits for the pushed integration branch rather than building on a private merge of A7 and A12.
+- The site, part 1 (`4a8ade6`): new entries appear without a rebuild and an unknown address keeps the real 404 through a proxy on `/verk/:slug` and `/frettir/:slug` that reads a cached list of published slugs. It costs one subrequest per project or post view. Kept for now; measured on Vercel in part 2 before it is relied on.
+- Owed to Einar from part 1: where a video sits on a page (the builder put it after the text; the content model says "fixed position" and names none). The reviewer's nine minors go into part 2's brief.
 - `modules/dld`: a video's still image is required (`video({ still: 'required' })`). The content model is silent; it says to set limits on the tight side, loosening later is free, and the site's video block needs a poster.
 - Labels the content model does not give (item labels such as „Mynd", „Myndband", „Hluti"; group members such as „Lína 1", „Heiti", „Fyrirsögn") were written by the module's builder and go to Einar in copy batch 2 with the rest.
 
