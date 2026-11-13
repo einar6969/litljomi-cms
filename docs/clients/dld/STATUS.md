@@ -56,6 +56,10 @@ State checked at the source before starting: the eight PRs' heads, passes and CI
 
 **WP7, batch 2, ready for E6:** [copy-batch-2.md](copy-batch-2.md), 73 strings (56 from the content model, 17 builder-written), 12 points that need a decision. The handbook draft is in the DLD workspace, `drafts/2026-11-13-handbok-vefstjorn-DRAFT.md`, with 13 open questions and 12 items marked unconfirmed. The site's vendored packages now record Hub `main` (`cms/integration` = `2007fd7`; contents byte-identical).
 
+**Paused by Einar, 2026-11-13 (resume here).** Production is at rest: `production` = `810d4ba`; tenant `dld` exists and holds only its two empty singletons, no files, no imported entry, no release. No import process is running. The import editor (the second address) has accepted its invitation, has a password and no authenticator; three first-batch attempts stopped at sign-in and wrote nothing.
+
+Next, in order: E4 first batch (`--first-batch-only`, as the import editor), the coordinator's check on production, then the rest with `--report`; E5; E6 (copy batch 2 and the handbook draft are ready). The export is in the DLD workspace, `reports/2026-11-13-dld-import/export/`. Run CLI commands from the Hub repo with `--filter ./tools/cli`. The slot-2 stack is stopped (its data kept; start it from the `hub-rehearsal` scratch worktree). Open for Einar: delete the unused Auth account of the mistyped address or leave it.
+
 **Coordinator's choices, 2026-11-13:**
 - WP4 runs in two parts. Part 1 adds the CMS source beside the site's own content source, chosen by the SDK's environment variables, so the default build stays today's 64 pages. Part 2 (after WP3 and WP5) re-vendors from merged `main`, proves parity against the local tenant and removes the old content files.
 - WP3 waits for the pushed integration branch rather than building on a private merge of A7 and A12.
