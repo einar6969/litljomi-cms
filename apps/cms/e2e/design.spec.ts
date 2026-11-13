@@ -382,8 +382,11 @@ test.describe('demo: groups, singleton, every field, publishing', () => {
 
   test('every field kind, with list items', async ({ page }) => {
     await newEvent(page, 'Opnunarhátíð vorsins');
-    await page.getByRole('button', { name: t.editor.list.add }).click();
-    await page.getByRole('button', { name: t.editor.list.add }).click();
+    // The event has several lists now (Highlights, Videos, Gallery), and the gallery also offers
+    // "Bæta við úr safni": the items go into Highlights, the one list this screen first showed.
+    const highlights = page.getByRole('group', { name: 'Program' }).getByRole('group', { name: 'Highlights' });
+    await highlights.getByRole('button', { name: t.editor.list.add, exact: true }).click();
+    await highlights.getByRole('button', { name: t.editor.list.add, exact: true }).click();
     await page.getByLabel('Capacity').fill('ekki tala');
     await expect(page.getByText(t.editor.number.invalid)).toBeVisible();
     await shoot(page, 'form-all-fields');
