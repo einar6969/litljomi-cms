@@ -31,6 +31,7 @@ Einar approved the fast lane on 2026-11-13 ("your recommendation of '2. Fast lan
 - **A re-review is done by the reviewer that failed the PR**, on the fix alone. The security reviewer reads again whenever a fix touches a migration, `privileged/` or sign-in.
 - **Builders push and return.** A cheap agent watches CI; builders don't sit in `gh pr checks --watch`.
 - **The coordinator settles technical choices** agents leave open, at once, and records them. Only product, copy and the ask-first list go to Einar.
+- **The coordinator deploys to production** (Einar, 2026-11-13: "Coordinator deploys"), by WP2's steps and no others. `supabase db push` works from this checkout without a typed password (dry-run checked on 2026-11-13). The three destructive Supabase commands still need Einar.
 - **Copy in two batches:** the platform's strings first, DLD's labels and the handbook second.
 - **Disk:** the coordinator may run `npm cache clean --force` and `docker image prune -a -f` without asking when less than 5 GB is free.
 - **Models:** the large model for boundary building and for the spec and security reviews of boundary code; the middle one for app logic, quality reviews and compiling; the small one for watching CI and mechanical checks.
@@ -40,7 +41,7 @@ Einar approved the fast lane on 2026-11-13 ("your recommendation of '2. Fast lan
 | | Work package | Starts | Needs | Einar |
 |---|---|---|---|---|
 | ☐ | **WP1** Land Track A as one integration PR | Now | Both stacks | none |
-| ☐ | **WP2** Deploy to production | WP1 merged | none | **E2** runs the two pushes |
+| ☐ | **WP2** Deploy to production | WP1 merged | none | none |
 | ☐ | **WP3** Finish DLD's module | Now, from WP1's branch | CI only | none |
 | ☐ | **WP4** The site reads from the CMS | Now, from WP1's branch | A stack, once WP5 has data | none |
 | ☐ | **WP5** Rehearse the import locally | WP1's branch builds, WP3 has a head | Slot 2 | none |
@@ -56,7 +57,7 @@ Einar approved the fast lane on 2026-11-13 ("your recommendation of '2. Fast lan
 | | What he does | When | About |
 |---|---|---|---|
 | E1 | Reads and approves copy batch 1 (the platform's new strings) | Any time after WP7 hands it over | 20 min |
-| E2 | Runs `supabase db push` and the push to `production` (runbook §8). The database password is his | When WP1 is merged; again after WP3 if it merged later | 10 min each |
+| E2 | Nothing: the coordinator deploys ("Coordinator deploys", 2026-11-13). The number is kept so the others don't move | | |
 | E3 | Provisions tenant `dld`, and an editor address he controls for the import (runbook §2, steps 7 and 8) | After the deploy that carries the module | 5 min |
 | E4 | Runs the production import, signed in as that editor: the first batch, a look, then the rest | After E3 and a clean rehearsal | Measured in WP5 |
 | E5 | Sets the site's variables on Vercel project `dld`, provisions the site at `https://dld.litljomi.is` and its preview (runbook §2, 11b–11d), and says yes to merging the site branch into `dld-is` `main` | After E4 | 15 min |
@@ -125,10 +126,11 @@ The eight PRs' own content is already passed. Reviewers read the integration-onl
 
 **Steps.**
 1. Read what goes out, as runbook §8 says: `git diff --name-only origin/production origin/main -- supabase/migrations`, and the grep for drops. Four files are expected: `20261112200000`, `…210000`, `…220000`, `…230000`. No drops.
-2. Hand Einar the two commands (E2). He runs them.
-3. Check: `supabase migration list` shows no local-only version; `vefstjorn` has a Ready deployment of the merged commit; a publish on `demo` reaches Live; LABAK's site still renders; the Supabase advisors show nothing new.
+2. Only if WP1's upgrade rehearsal passed on the merged head: confirm `cat supabase/.temp/project-ref` prints `rwpgpfsmhhtimauvpoyt`, then run `supabase db push --dry-run` and check it lists exactly the files from step 1. Then, with nothing in between: `supabase db push`, `supabase migration list`, `git push origin origin/main:refs/heads/production` (a fast-forward; never forced).
+3. If `db push` fails, stop: don't push `production`, and tell Einar. The one exception is a lock timeout, which changed nothing: run it once more. Never `db reset --linked`, `config push` or `migration repair`.
+4. Check: `supabase migration list` shows no local-only version; `vefstjorn` has a Ready deployment of the merged commit; a publish on `demo` reaches Live; LABAK's site still renders; the Supabase advisors show nothing new.
 
-**Done when** all of step 3 holds. A deploy that carries only WP3's module has no migration and repeats steps 2 and 3.
+**Done when** all of step 4 holds; say so to Einar in one line. A deploy that carries only WP3's module has no migration: `db push` has nothing to do, and steps 2 and 4 are repeated.
 
 ### WP3. Finish DLD's module
 
@@ -140,7 +142,7 @@ The eight PRs' own content is already passed. Reviewers read the integration-onl
 
 **Review.** App logic: one combined review. Nothing in it touches core beyond the registry line.
 
-**Done when** merged under the merge rule and on production (E2 again if WP2 already ran).
+**Done when** merged under the merge rule and on production (WP2 again if it already ran).
 
 ### WP4. The site reads from the CMS
 

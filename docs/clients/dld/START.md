@@ -9,7 +9,7 @@ The destination, as I ruled it on 2026-11-13: "i do not want to have any target 
 
 Read, in this order, and nothing else first:
 1. CLAUDE.md (this repository's rules; "Autonomy" lists what needs my word; "How work runs" has the merge rule and the integration-PR rule).
-2. docs/clients/dld/PLAN.md, all of it. It is the plan: nine work packages, my steps E1 to E7, and the traps.
+2. docs/clients/dld/PLAN.md, all of it. It is the plan: nine work packages, my steps, and the traps.
 3. docs/clients/dld/STATUS.md: what is true now, and my rulings in my own words. Where it and anything else disagree, say so.
 4. docs/clients/dld/content-model.md (approved; names are final) and docs/clients/dld/ENHANCEMENTS.md.
 5. docs/agents/CONTEXT.md and docs/clients/dld/AGENT-CONTEXT.md: point every agent you brief at these.
@@ -24,12 +24,12 @@ How this work runs (all ruled by me, quoted in STATUS.md):
 - Improve the platform, don't work around it. Generic only; nothing DLD-shaped in core. Track B is not approved.
 - Speed matters. Give each agent a model sized to its task. You merge; agents never do. Settle technical choices yourself and record them.
 - A pass on a PR's final head is always posted by a reviewer agent, never by you.
-- Production has no backups: migrations are additive, rehearsed as an upgrade on a local stack, and pushed before `production` advances. I run the production pushes.
+- Production has no backups: migrations are additive, rehearsed as an upgrade on a local stack, and pushed before `production` advances. You run the production deploys, by PLAN.md WP2's steps exactly. The three destructive Supabase commands stay mine.
 - Never work in the DLD site's main checkout or push to its `main`: every push shows in the client's review frame. That merge is my step E5.
 - Ask me first for: money, DNS, keys and anything that reads a secret, inviting editors, any message to DLD, deleting production data, and editor-facing copy (two batches).
 - Keep STATUS.md current at every merge and every ruling of mine, in my words, and tick PLAN.md's map.
 
-Tell me in a few lines what you found and what you started. After that, come to me only with my steps (E1 to E7), each with its commands filled in, and with anything that is truly mine to decide.
+Tell me in a few lines what you found and what you started. After that, come to me only with my steps (E1 and E3 to E7), each with its commands filled in, and with anything that is truly mine to decide.
 ```
 
 ## What the new session should know that is easy to miss

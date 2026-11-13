@@ -211,10 +211,18 @@ What that package said, and so what now holds:
 
 Not ruled on, and settled by the coordinator: the library's "Á vefnum" label follows spec §7.4 (shown only once a publish is confirmed live), as a small PR after the integration PR.
 
+### 2026-11-13: who deploys
+
+Asked "Do production deploys stay with you, as the plan has it?", Einar: "**Coordinator deploys**".
+
+- The coordinator runs `supabase db push` and the push to `production`, by PLAN.md WP2's steps. This replaces "Owner: Einar" in runbook §8 for this onboarding.
+- Checked the same day: `supabase db push --dry-run` runs from the Hub checkout without a typed password, and lists one pending migration (L1's, on `main` since #74).
+- Unchanged: the three destructive Supabase commands, and every key and secret, stay Einar's.
+
 ### Gates still ahead, each needing Einar
 
 - Track B rows, whenever he wants them ([ENHANCEMENTS.md](ENHANCEMENTS.md)).
-- The steps E1 to E7 in [PLAN.md](PLAN.md): copy batch 1, the production deploys, the tenant, the import, connecting the site, copy batch 2 and the handbook, inviting editors.
+- His steps in [PLAN.md](PLAN.md): copy batch 1 (E1), the tenant (E3), the import (E4), connecting the site (E5), copy batch 2 and the handbook (E6), inviting editors (E7).
 - The switch to `dld.is`, whenever he wants it.
 
 ## Open questions

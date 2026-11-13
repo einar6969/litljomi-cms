@@ -840,7 +840,7 @@ Look in the Supabase dashboard, Authentication, Rate Limits. The menu path and w
 
 ## 8. Advance `production`
 
-**HOSTED.** Owner: Einar runs `supabase db push` and the push to `production`, in this order, with nothing in between. Pushes to `production` need Einar's approval. That's a rule, not a technical control (decision 60): the permission patterns don't catch the command below, so nothing but the rule stops a session running it.
+**HOSTED.** Owner: Einar runs `supabase db push` and the push to `production`, in this order, with nothing in between. (For the DLD onboarding the coordinator runs both: Einar, 2026-11-13, "Coordinator deploys"; `docs/clients/dld/STATUS.md`.) Pushes to `production` need Einar's approval. That's a rule, not a technical control (decision 60): the permission patterns don't catch the command below, so nothing but the rule stops a session running it.
 
 **The rule.** Migrations and `production` advance together. `supabase db push` first, the push to `production` straight after. Merging to `main` deploys nothing. Only the `production` branch (named `staging` until 2026-11-12) does (production runbook G6.6).
 
