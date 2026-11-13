@@ -1,7 +1,7 @@
 // The dry run (import plan section 2.1): every check that needs no network, listing every problem
 // rather than the first. The real run starts with the same checks, so nothing is written for a
 // manifest the dry run would refuse.
-import { isSingleton, type ContentType, type ModuleManifest } from '@litljomi/cms-schema';
+import { isManuallyOrdered, isSingleton, type ContentType, type ModuleManifest } from '@litljomi/cms-schema';
 import { richTextDocSchema } from '@litljomi/rich-text';
 import { checkFrame, type Manifest } from './manifest.ts';
 import { IMPORT_NAMESPACE, safeFilename, sha256Hex, slugBase, slugFits, uuidV5, type ImageMetadata, type InspectImage } from './media.ts';
@@ -53,7 +53,14 @@ export interface Plan {
   dropped: Map<string, Set<string>>;
   /** Explicit slugs the editor's save would re-derive from the title (2.4). */
   slugsAtRisk: { key: string; slug: string; fromTitle: string }[];
+  /** The manifest's `order`, as written. */
   order: Record<string, string[]>;
+  /**
+   * The wanted order of each type the module orders by hand (`orderBy: 'manual'`) that has entries
+   * in the manifest: the keys `order.<type>` names, then the type's other entries as listed. Step 5
+   * puts the type's entries in this order (./order.ts); the report checks it.
+   */
+  manualOrder: Record<string, string[]>;
   problems: string[];
 }
 
@@ -283,15 +290,28 @@ export function planImport(manifest: Manifest, module: ModuleManifest, files: Ma
 
   const order: Record<string, string[]> = {};
   for (const [type, keys] of Object.entries(manifest.order ?? {})) {
-    if (!types.has(type)) {
+    const contentType = types.get(type);
+    if (contentType === undefined) {
       problems.push(`/order/${type}: type "${type}" is not in the module`);
       continue;
+    }
+    // Only a type editors put in order has an order to apply; any other is listed by its field.
+    if (!isManuallyOrdered(contentType)) {
+      problems.push(`/order/${type}: type "${type}" is not ordered by hand in the module (its orderBy is "${String(contentType.orderBy)}", not "manual"), so no order can be applied to it`);
     }
     for (const key of keys) {
       const item = byKey.get(key);
       if (item === undefined || item.type !== type || item.singleton) problems.push(`/order/${type}: ${JSON.stringify(key)} is not an entry of type "${type}"`);
     }
     order[type] = keys;
+  }
+  const manualOrder: Record<string, string[]> = {};
+  for (const contentType of module.types) {
+    if (!isManuallyOrdered(contentType)) continue;
+    const listed = items.filter((i) => i.type === contentType.name && !i.singleton).map((i) => i.key);
+    if (listed.length === 0) continue;
+    const first = (order[contentType.name] ?? []).filter((k) => listed.includes(k));
+    manualOrder[contentType.name] = [...first, ...listed.filter((k) => !first.includes(k))];
   }
 
   const plan = deriveWaves(items, (key, leftOut) => {
@@ -300,7 +320,7 @@ export function planImport(manifest: Manifest, module: ModuleManifest, files: Ma
     return item.contentType.publishValidator().safeParse(data).success;
   });
   problems.push(...plan.problems);
-  return { items, byKey, files, waves: plan.waves, secondPass: plan.secondPass, dropped: plan.dropped, slugsAtRisk, order, problems };
+  return { items, byKey, files, waves: plan.waves, secondPass: plan.secondPass, dropped: plan.dropped, slugsAtRisk, order, manualOrder, problems };
 }
 
 /** The frame, the files and the plan, in that order; a frame problem stops before the files are read. */

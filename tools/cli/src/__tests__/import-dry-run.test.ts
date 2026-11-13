@@ -129,6 +129,28 @@ describe('dry run', () => {
     expect(await problems((m) => (m.order.project = ['news/opening']))).toContain('/order/project: "news/opening" is not an entry of type "project"');
   });
 
+  it('an order for a type the module does not order by hand', async () => {
+    expect(await problems((m) => (m.order.news = ['news/opening']))).toContain(
+      '/order/news: type "news" is not ordered by hand in the module (its orderBy is "date", not "manual"), so no order can be applied to it',
+    );
+  });
+
+  it('the wanted order of a type ordered by hand: the order section first, then the type\'s other entries as listed', async () => {
+    const result = await check((m) => {
+      m.entries.project.push({ key: 'project/bay', data: { title: 'Bay' } }, { key: 'project/cliff', data: { title: 'Cliff' } });
+      m.order.project = ['project/cliff'];
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.manualOrder).toEqual({ project: ['project/cliff', 'project/harbour', 'project/bay'] });
+    // Without an order section, as listed; a type not ordered by hand has none.
+    const listed = await check((m) => {
+      m.entries.project.push({ key: 'project/bay', data: { title: 'Bay' } });
+      delete m.order;
+    });
+    expect(listed.ok && listed.plan.manualOrder).toEqual({ project: ['project/harbour', 'project/bay'] });
+  });
+
   it('a cycle: broken at an optional reference, refused when every reference is required', async () => {
     const ok = await check((m) => (m.entries.project[0].data.related = { $entry: 'project/harbour' }));
     expect(ok.ok).toBe(true);
@@ -158,11 +180,13 @@ describe('dry run', () => {
     const unexpected = async () => {
       throw new Error('the dry run must not do this');
     };
+    const manifest = exampleManifest() as M;
+    manifest.entries.project.push({ key: 'project/bay', data: { title: 'Bay' } }, { key: 'project/cliff', data: { title: 'Cliff' } });
     const deps: ImportDeps = {
       fetch: unexpected,
       readTextFile: async (p) => {
         if (p !== MANIFEST) throw new Error('the dry run reads the manifest only');
-        return JSON.stringify(exampleManifest());
+        return JSON.stringify(manifest);
       },
       lstat: (p) => media.lstat(p),
       readBytes: (p) => media.readBytes(p),
@@ -179,7 +203,12 @@ describe('dry run', () => {
     expect(code).toBe(0);
     const text = out.join('\n');
     expect(text).toContain('files: 3 (216 bytes)');
-    expect(text).toContain('entries: project 1, news 1, home 1');
+    expect(text).toContain('entries: project 3, news 1, home 1');
+    // What step 5 would move on a tenant that has none of these entries (listed newest first).
+    expect(text).toContain("order: 1 type(s) ordered by hand, put in the manifest's order through api.move_entry once the entries exist, before anything is published");
+    expect(text).toContain('  project: project/harbour, project/bay, project/cliff');
+    expect(text).toContain('  project on a tenant without these entries: 2 move(s)\n    project/harbour before project/cliff\n    project/bay after project/harbour');
+    expect(text).not.toContain('A12');
     expect(text).toContain('waves: 2');
     expect(text).toContain('project project/harbour /harbour-path');
     expect(text).toContain('  /body/content/0/content/0/text: A path along the harbour.');

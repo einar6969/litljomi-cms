@@ -11,13 +11,18 @@
 // thumb_path): without it every run stops at the probe, which the first test asserts instead.
 // A local bundle delivers its images at the stack's own http address (enhancement A4), so the
 // report's file half is checked here as on a hosted project: the delivered bytes are the manifest's.
+//
+// The importer gets L2's thumbnail maker as main.ts passes it (the same module an editor's upload
+// runs), and the demo module's `partner` type is ordered by hand (A12): the import puts partners in
+// the manifest's order through api.move_entry, and the delivered bundle lists them so.
 import { randomUUID } from 'node:crypto';
 import sharp from 'sharp';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { runImport, type ImportDeps } from '../../../../../../tools/cli/src/import.ts';
 import { LOCAL_ORIGINS } from '../../../../../../tools/cli/src/local.ts';
-import { imageInspector } from '../../../../../../tools/cli/src/import/media.ts';
+import { assetIdFor, imageInspector } from '../../../../../../tools/cli/src/import/media.ts';
+import { makeThumbnail, thumbnailPath } from '@/editor/server/thumbnail-maker';
 import { getModule } from '@/modules/registry';
 import { editorClient } from '../../../../../../tests/integration/src/clients.ts';
 import { env } from '../../../../../../tests/integration/src/env.ts';
@@ -168,6 +173,10 @@ async function run(f: Fixture, hooks: Hooks = {}): Promise<Run> {
     write: async (p, text) => void f.store.set(p, text),
     readPassword: async () => PERSONA_PASSWORD,
     inspectImage: imageInspector((bytes) => sharp(bytes).metadata()),
+    thumbnail: async (bytes, tenantId, assetId) => {
+      const made = await makeThumbnail(bytes);
+      return made === null ? null : { bytes: made, path: thumbnailPath(tenantId, assetId) };
+    },
     loadModule: async (slug) => {
       const m = getModule(slug);
       if (m === undefined) throw new Error('no module');
@@ -209,6 +218,14 @@ const ledgerId = (f: Fixture, suffix: string): string | undefined => {
 };
 const countCalls = (r: Run, fn: string) => r.calls.filter((c) => c.endsWith(`/rpc/${fn}`)).length;
 
+/** The ids of `type` in the order the demo tenant's current public bundle lists them, and its release. */
+async function delivered(type: string): Promise<{ release: number; ids: string[] }> {
+  const base = `${LOCAL}/storage/v1/object/public/delivery/demo`;
+  const pointer = (await (await fetch(`${base}/current.json`, { cache: 'no-store' })).json()) as { release: number; bundle: string };
+  const bundle = (await (await fetch(`${base}/${pointer.bundle}`, { cache: 'no-store' })).json()) as { entries: Record<string, { id: string }[]> };
+  return { release: pointer.release, ids: (bundle.entries[type] ?? []).map((e) => e.id) };
+}
+
 describe('import against the local stack (demo tenant)', () => {
   it('a full run, then a second run that creates nothing', async () => {
     const f = await fixture();
@@ -223,9 +240,50 @@ describe('import against the local stack (demo tenant)', () => {
     expect(JSON.stringify(report.unchecked)).not.toContain('image');
     expect(first.calls.some((c) => c.includes('/rpc/admin_') || c.includes('/rpc/worker_'))).toBe(false);
 
+    // Both files got their thumbnail from L2's maker, at the one path it may have.
+    for (const [name, bytes] of [['a.jpg', jpeg], ['b.png', png]] as const) {
+      const id = assetIdFor(TENANT.demo, await sha(bytes));
+      const { data, error } = await editor.schema('api').from('asset_list').select('thumb_path').eq('id', id).single();
+      expect(error, name).toBeNull();
+      expect(data?.thumb_path, name).toBe(thumbnailPath(TENANT.demo, id));
+    }
+    expect(first.text).not.toContain('comes with L2');
+
     const second = await run(f);
     expect(second.code, second.text).toBe(0);
-    for (const fn of ['create_entry', 'register_asset', 'save_draft', 'request_publish', 'update_asset_text']) expect(countCalls(second, fn), fn).toBe(0);
+    for (const fn of ['create_entry', 'register_asset', 'save_draft', 'request_publish', 'update_asset_text', 'set_asset_thumbnail']) expect(countCalls(second, fn), fn).toBe(0);
+  });
+
+  it("partners, ordered by hand: delivered in the manifest's order, and a second run moves nothing", async () => {
+    const f = await fixture((m, id) => {
+      // Four partners, listed in the order the site must show; an order section moves the last to the front.
+      m.entries.partner = ['a', 'b', 'c', 'd'].map((x) => ({ key: `partner/${id}/${x}`, data: { title: `Partner ${id} ${x}` } }));
+      m.order = { partner: [`partner/${id}/d`] };
+    });
+    const id = f.manifestPath.match(/manifest-([0-9a-f]{8})\.json$/)?.[1] as string;
+    const wantedKeys = ['d', 'a', 'b', 'c'].map((x) => `partner/${id}/${x}`);
+    const first = await run(f);
+    expect(first.code, first.text).toBe(0);
+    const wanted = wantedKeys.map((k) => ledgerId(f, k) as string);
+    expect(wanted.every((x) => typeof x === 'string')).toBe(true);
+    // The moves came before the first publish request of the run.
+    const lastMove = first.calls.map((c) => c.endsWith('/rpc/move_entry')).lastIndexOf(true);
+    expect(lastMove).toBeGreaterThan(-1);
+    expect(lastMove).toBeLessThan(first.calls.findIndex((c) => c.endsWith('/rpc/request_publish')));
+    const once = await delivered('partner');
+    expect(once.ids.filter((x) => wanted.includes(x))).toEqual(wanted);
+    const rep = reportOf(f);
+    expect(rep.differences).toEqual([]);
+    expect(rep.checked.orders).toBe(1);
+
+    const second = await run(f);
+    expect(second.code, second.text).toBe(0);
+    expect(countCalls(second, 'move_entry')).toBe(0);
+    expect(countCalls(second, 'request_publish')).toBe(0);
+    expect(second.text).toContain("order partner: already in the manifest's order; nothing moved");
+    const twice = await delivered('partner');
+    expect(twice.ids.filter((x) => wanted.includes(x))).toEqual(wanted);
+    expect(reportOf(f).differences).toEqual([]);
   });
 
   it('a run killed mid-wave and resumed', async () => {
