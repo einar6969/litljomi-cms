@@ -197,6 +197,9 @@ describe('buildRelease (labak)', () => {
       mime: 'image/jpeg',
       alt: 'Brauð',
       focal: null,
+      // Media library L3: delivered with every image, null when the file has none.
+      caption: null,
+      credit: null,
     });
     expect((await fetch(bundled!.url, { cache: 'no-store' })).status).toBe(200);
     // Task 20 quality r1, Minor 9: what the database stored. Other files' partial commits may be
